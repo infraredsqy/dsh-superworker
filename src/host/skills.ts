@@ -438,8 +438,61 @@ function flatSkillNames(root: string): Map<string, string> {
   return found
 }
 
+/** A directory that could not be removed because something is still in it: nobody else's file is at fault, and nothing more can be taken back. */
+function notEmpty(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOTEMPTY'
+}
+
+/** Remove a folder's empty directories, deepest first; a refusal is ignored on this path, which only exists to tidy up after a failed write. */
+function removeEmptyTree(folder: string): void {
+  let names: string[]
+  try {
+    names = readdirSync(folder, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+  } catch {
+    return
+  }
+  for (const name of names) removeEmptyTree(join(folder, name))
+  try {
+    rmdirSync(folder)
+  } catch {
+    /* Not empty (a file of ours could not be removed) or already gone: the refusal already names the write. */
+  }
+}
+
 /**
- * Remove one placed skill's files, then its directory when that directory is empty.
+ * Remove one placed file and the directories this line made for it, deepest first.
+ *
+ * The directories a skill folder holds are its own shape (`shared/pf/`, `subagent-prompts/`), not
+ * something the manifest records: they follow from the file's own path, so the walk up from the file
+ * to the skill's directory is the whole of it. A directory another file still lives in answers
+ * ENOTEMPTY and stays, with that file in it — which is why the attempt is the test, rather than a
+ * listing taken beforehand.
+ */
+function removePlacedFile(root: string, skillDir: string, file: string, problems: string[]): void {
+  const full = join(root, file)
+  try {
+    rmSync(full, { force: true })
+  } catch (error) {
+    problems.push(`${full}: ${messageOf(error)}`)
+  }
+  const stop = join(root, skillDir)
+  let dir = dirname(full)
+  for (;;) {
+    try {
+      rmdirSync(dir)
+    } catch (error) {
+      /* Not empty (somebody else's file, or one of ours not removed yet) or already gone: neither is a fault. */
+      if (!absent(error) && !notEmpty(error)) problems.push(`${dir}: ${messageOf(error)}`)
+    }
+    if (dir === stop || dir === dirname(dir)) return
+    dir = dirname(dir)
+  }
+}
+
+/**
+ * Remove one placed skill's files, then every directory of its folder this line left empty.
  *
  * Only the files the manifest recorded are removed: a directory that also holds somebody else's file
  * stays, with that file in it. Removal failures are collected and handed back rather than thrown —
@@ -448,20 +501,12 @@ function flatSkillNames(root: string): Map<string, string> {
 function removePlaced(root: string, skills: readonly PlacedSkill[]): string[] {
   const problems: string[] = []
   for (const skill of skills) {
-    for (const file of skill.files) {
-      try {
-        rmSync(join(root, file), { force: true })
-      } catch (error) {
-        problems.push(`${join(root, file)}: ${messageOf(error)}`)
-      }
-    }
+    for (const file of skill.files) removePlacedFile(root, skill.dir, file, problems)
     try {
       rmdirSync(join(root, skill.dir))
     } catch (error) {
       /* Not empty (somebody else's file lives there) or already gone: both are fine, none is a fault. */
-      if (!absent(error) && !(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOTEMPTY')) {
-        problems.push(`${join(root, skill.dir)}: ${messageOf(error)}`)
-      }
+      if (!absent(error) && !notEmpty(error)) problems.push(`${join(root, skill.dir)}: ${messageOf(error)}`)
     }
   }
   return problems
@@ -699,13 +744,7 @@ async function place(
         /* Rollback is best effort; the refusal names what could not be written. */
       }
     }
-    for (const directory of created.reverse()) {
-      try {
-        rmdirSync(directory)
-      } catch {
-        /* Not empty (a file of ours could not be removed) — the refusal already says so. */
-      }
-    }
+    for (const directory of created.reverse()) removeEmptyTree(directory)
     return { outcome: refused('skill-place-failed', `${skillRoot}: ${messageOf(error)}`), dispose: () => undefined }
   }
 }

@@ -42,7 +42,7 @@ disable-model-invocation: true
 循环与指挥者那几条不做，照 `/pf-conduct` 走，这里不抄第二份。本流程只多三条：
 
 - **分批按改动域，批宽受进行中上限管**：同一模块的条目成一批；确需跨模块的改动族整批显式声明。批内的改动能被同一次验证覆盖。每批 Fix 加 Review 是 2 个进行中，几批一起派之前先按 `pf config get max_agents` 数一遍
-- **每批 Fix → Review**：Fix 用 `~/.agents/skills/pf-conduct/subagent-prompts/fix.md`，Review 用同目录的 `review.md`（只读）；prompt 照 pf-conduct「Fix」那一节给
+- **每批 Fix → Review**：Fix 用 pf-conduct 技能目录下的 `subagent-prompts/fix.md`（默认在 `~/.dsh/skills/pf-conduct/`），Review 用同目录的 `review.md`（只读）；prompt 照 pf-conduct「Fix」那一节给
 - **批过即 commit**：整批判 no issue 才提交。不在管线里跑时没有节点收尾那一步，提交就落在这里
 
 `critical > 0` → 派新的一轮 Fix，修完回 Review；`minor` 且明确无害 → 记成新条目留待后续同域批次，其余照修。

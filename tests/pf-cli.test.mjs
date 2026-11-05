@@ -843,7 +843,7 @@ test('config 帮助：取值表按这台机器此刻认得的旋钮算（没装�
       /argument key: invalid choice: 'issue_pool' \(choose from 'max_agents', 'test_tier', 'worktree_mode'\)/u,
     );
 
-    // With the two plugins installed the same table carries their knobs — it is computed, not written down.
+    // With the shipped plugins installed the same table carries their knobs — it is computed, not written down.
     const full = run(['config', 'get', '--help'], { cwd: scratch.project, plugins, home: scratch.home });
     assert.equal(full.code, 0, full.stderr);
     assert.match(

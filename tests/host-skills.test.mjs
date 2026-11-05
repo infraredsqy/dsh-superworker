@@ -5,7 +5,9 @@
  * - one placement puts every method the plugin folders declare into the skill root DSH's filesystem
  *   provider scans (`<dshHome>/skills`, the provider's rank 400), one language per method, with the
  *   bytes of the shipped `SKILL.md` untouched — derived from the folders themselves, not from a list
- *   written down here;
+ *   written down here; the pipeline plugin's three core sheets (`pf-conduct` / `pf-route` /
+ *   `pf-instruct`) are part of that set, so the dispatch's `/pf-conduct` line has a skill to read on
+ *   a clean machine, and a sheet a body points at (`shared/pf/`) travels inside the method's folder;
  * - the **session's own view** (`list({ cwd, scope })`, the read a session's catalog does) shows the
  *   placed copy winning every name over the old hand-copied copies at rank 500 — that catalog read is
  *   the judgement's own reading — and a bare `list()` with no layer of its own does *not*: that read
@@ -136,6 +138,31 @@ test('装一次：技能进了 DSH 读技能的那个根，清单把名字、目
     /* The siblings a skill points at travel with it (`pool.md`, `scan.md`, `anti-patterns.md`). */
     assert.ok(existsSync(join(root, 'pf-issue-repair', 'pool.md')), '技能指向的兄弟文件没跟着装')
 
+    /* The dispatch's first line is `/pf-conduct <node>`, so that method has to be in the catalog on a
+     * clean machine: the three core sheets come from the pipeline plugin, beside the four the issue
+     * and test-audit plugins ship. */
+    for (const name of ['pf-conduct', 'pf-route', 'pf-instruct']) {
+      assert.ok(declared.includes(name), `${name}: 发布件的插件文件夹里没有这份核心技能`)
+      assert.ok(existsSync(join(root, name, 'SKILL.md')), `${name}: SKILL.md 没放进 ${root}`)
+    }
+    /* A sheet the body points at lands inside the method's own folder: the placed root is
+     * `<dshHome>/skills/<method>/`, so `../shared/pf/` would point outside the skill. */
+    assert.ok(
+      existsSync(join(root, 'pf-conduct', 'shared', 'pf', 'subagents.md')),
+      'pf-conduct 指向的共享单页没跟着装',
+    )
+    assert.ok(
+      existsSync(join(root, 'pf-route', 'shared', 'pf', 'toolcraft.md')),
+      'pf-route 指向的共享单页没跟着装',
+    )
+    for (const name of ['pf-conduct', 'pf-route']) {
+      assert.equal(
+        readFileSync(join(root, name, 'SKILL.md'), 'utf8').includes('../shared/pf/'),
+        false,
+        `${name}: 装进去的正文还在往技能目录外面指`,
+      )
+    }
+
     const manifest = JSON.parse(readFileSync(install.outcome.manifest, 'utf8'))
     assert.equal(manifest.root, root)
     assert.deepEqual(manifest.skills.map((one) => one.name).sort(), declared)
@@ -147,6 +174,43 @@ test('装一次：技能进了 DSH 读技能的那个根，清单把名字、目
     /* The record sits outside the skill root: the provider must never scan it as a skill. */
     assert.equal(install.outcome.manifest.startsWith(root), false, '清单写进了技能根，会被当成一条技能')
     install.dispose()
+  } finally {
+    h.clean()
+  }
+})
+
+test('自足：三份核心技能装进去后各自带着它引用的单页，正文里的每一处引用都在自己目录里', async () => {
+  const h = homes()
+  try {
+    const install = await installPluginSkills({}, { dshHome: h.dsh })
+    assert.equal(install.outcome.ok, true, `install refused: ${JSON.stringify(install.outcome)}`)
+    const root = skillRootOf(h.dsh)
+    /* The placed root is `<dshHome>/skills/<method>/`, so a body that still said `../shared/pf/...`
+     * would point outside the skill: the placement carries each method's own sheets into its folder
+     * and ships the body with the in-folder form. */
+    for (const name of ['pf-conduct', 'pf-route', 'pf-instruct']) {
+      const body = readFileSync(join(root, name, 'SKILL.md'), 'utf8')
+      assert.equal(body.includes('../shared/pf/'), false, `${name}: 装进去的正文还在往技能目录外面指`)
+      const referenced = new Set([...body.matchAll(/shared\/pf\/([a-z-]+)\.md/gu)].map((m) => m[1]))
+      for (const sheet of referenced) {
+        assert.ok(
+          existsSync(join(root, name, 'shared', 'pf', `${sheet}.md`)),
+          `${name}: 正文引用的 shared/pf/${sheet}.md 没跟着装进它自己的目录`,
+        )
+      }
+    }
+    /* Only the sheets a method's own body names travel with it. */
+    assert.ok(
+      existsSync(join(root, 'pf-route', 'shared', 'pf', 'philosophy.md')),
+      'pf-route: 正文引用的 philosophy.md 没跟着装',
+    )
+    assert.equal(existsSync(join(root, 'pf-instruct', 'shared')), false, 'pf-instruct 什么都不引用，却带了一份单页')
+    /* Unloading takes the directories the placement made, not only the files: an emptied folder left
+     * behind would be litter under the skill root for every install cycle. */
+    install.dispose()
+    for (const name of ['pf-conduct', 'pf-route', 'pf-instruct']) {
+      assert.equal(existsSync(join(root, name)), false, `${name}: 卸载后目录还留在技能根里`)
+    }
   } finally {
     h.clean()
   }

@@ -31,7 +31,7 @@ const RUNTIME_SWITCHES = [
  *   that bites: it is a machine-wide knob, and the node detail's session lists go through it). An
  *   empty sandbox reads exactly like a machine that stores nothing, which is what every case here
  *   assumes. It goes away again at teardown.
- * - `PF_PLUGINS_DIR` is cleared and **not** pointed anywhere: the two plugins the repo carries
+ * - `PF_PLUGINS_DIR` is cleared and **not** pointed anywhere: the three plugins the repo carries
  *   (`plugins/`) travel with the tree and are what the plugin and doctor cases stand on, so hiding
  *   them would take those cases' premise away. A case that needs the switch sets it itself and puts
  *   it back.

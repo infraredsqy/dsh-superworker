@@ -62,9 +62,9 @@ second time here. This flow adds three things only:
   a whole batch. The same verification covers the changes inside a batch. Each batch's Fix plus
   Review is 2 in flight, so before dispatching several batches together, count once against
   `pf config get max_agents`
-- **Fix → Review per batch**: Fix uses `~/.agents/skills/pf-conduct/subagent-prompts/fix.md`, and
-  Review the `review.md` in the same directory (read-only); the prompt follows pf-conduct's "Fix"
-  section
+- **Fix → Review per batch**: Fix uses `subagent-prompts/fix.md` under the pf-conduct skill
+  directory (by default `~/.dsh/skills/pf-conduct/`), and Review the `review.md` in the same
+  directory (read-only); the prompt follows pf-conduct's "Fix" section
 - **Commit once a batch passes**: only when the whole batch reviews with no issue is it committed.
   Running outside the pipeline there is no node-close step, so the commit lands here
 

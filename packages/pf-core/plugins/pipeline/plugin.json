@@ -1,0 +1,6 @@
+{
+  "name": "pipeline",
+  "summary": "the pipeline's own instruction sheets: it carries text only and inserts nothing at the close",
+  "timing": "close",
+  "action": "insert"
+}

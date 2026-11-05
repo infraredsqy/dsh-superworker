@@ -12,4 +12,4 @@
 - `ledger-*` `layout` `atomic-write` `pf-dir-hash` `merge-ledger-bin` — 立起记录目录、布局、写入底座与合并驱动的进程入口
 - `conductor-*` `config` `sessions` `env-switches` `clock` `tempclean` `handle-additions` `doctor-*` — 推线、设置、会话、运行期开关、时刻、清理与体检
 - `executor` `git-seam` `fs-helpers` `handle-home` `stubs` `global-setup` — 几条接缝（含句柄的机器层）、替身与全库的前后哈希守卫
-- `plugin-*` — 插件框架，外加自带的两个插件
+- `plugin-*` — 插件框架，外加自带的三个插件

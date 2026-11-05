@@ -222,7 +222,7 @@ npm install --global --omit=peer --no-audit --no-fund <那份 .tgz 的绝对路�
 
 核一遍，都在仓外跑：`pf version`，然后进一个有记录的项目根跑 `pf doctor`。`doctor` 的 `plugins` 那一格读的是
 **这份运行时自带的插件**（`<装机目录>/packages/pf-core/plugins`，与引擎的产物并排）；项目根下的 `plugins/`
-留给引擎自己的缺省，这条命令不经过它。于是没有 `plugins/` 的项目照样读到 `2 installed`，插件词（`pf issue …`）
+留给引擎自己的缺省，这条命令不经过它。于是没有 `plugins/` 的项目照样读到 `3 installed`，插件词（`pf issue …`）
 与两道收尾守卫（`issue_pool_weight_limit` / `test_seconds_limit`）在任何项目里都答得上。优先级一行：用户的
 `PF_PLUGINS_DIR` 压过这份自带的插件（指哪儿扫哪儿），这也是把扫描指回项目文件夹的唯一出口。引擎里那条
 `<项目根>/plugins` 的缺省因此不经这条命令生效——这是照参考实现（旧 CLI 扫自己那棵树）对齐后定下的口径。
@@ -235,10 +235,12 @@ npm uninstall --global dsh-pathfinder
 
 卸掉之后命令回落到 PATH 上更早的那一份；再装上同一个 `.tgz` 就回到新的这份。**旧的 Python 树只作只读参照**：
 它是这份效应的对照实现，盘上原样留着；切过去之后，本仓与它之间没有命令解析、也没有插件来源的依赖，只剩下
-「读过它」这一句来路说明。技能那一半只剪干净了一部分：随插件装的四条（`pf-issue-scan` / `pf-issue-repair` /
-`pf-issue-discuss` / `pf-test-audit`）由发布件供给，落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的
-同哈希，根序 rank 400 压过 rank 500）；三条核心技能（`pf-conduct` / `pf-instruct` / `pf-route`）仍经
-`~\.agents\skills` 的 junction 读到旧树，属上一节点记下的已知项。
+「读过它」这一句来路说明。技能那一半也由发布件供给：`issue` 与 `test-audit` 两个插件带的四条
+（`pf-issue-scan` / `pf-issue-repair` / `pf-issue-discuss` / `pf-test-audit`），加上 `pipeline` 插件带的三条核心技能
+（`pf-conduct` / `pf-route` / `pf-instruct`，每份把它正文指向的 `shared/pf/` 单页带在自己目录里），一共七条。
+都落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的同哈希，根序 rank 400 压过 `~\.agents\skills` 下那几份
+rank 500 的旧手抄副本）。派发的第一行 `/pf-conduct <节点 id>` 因此在干净机器上也读得到；`~\.agents\skills` 的
+junction 只作对照，摘不摘都不影响这一行读哪一份。
 
 ### 与旧实现共用记录时的锁
 
