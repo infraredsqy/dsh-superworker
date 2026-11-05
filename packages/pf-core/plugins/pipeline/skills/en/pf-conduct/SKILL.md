@@ -1,6 +1,6 @@
 ---
 name: pf-conduct
-description: Conduct one DAG node from prepare to close: dispatch Execute, review it independently, fix as needed; the last command closes the node and decides dispatch or stop.
+description: Run one DAG node from prepare to close: dispatch Execute, review it independently, fix, close, decide dispatch or stop.
 disable-model-invocation: true
 ---
 
@@ -238,6 +238,9 @@ not, tell the user to open a session in the right workspace. When the project ha
 init-ed (`.pf/` is missing `.gitignore` and `.gitattributes`), run `pf init` once first — once
 per project, and it settles whether this project is the commit or the local flavour; any other
 command meeting an uninit-ed `.pf/` refuses outright and hands you this command.
+
+The pipeline's words are one table with two doors: run them on the `pf` command line, or
+call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
 
 **0 | Sync**: first look at the `.pf/` flavour — if `git ls-files .pf` has output it is the commit
 flavour, and one `git pull --rebase` brings the other machine's graph, conclusions and commits

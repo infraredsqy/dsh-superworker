@@ -12,6 +12,8 @@ disable-model-invocation: true
 
 别处敲了就是敲错地方，回一句，别往清单里记。
 
+管线这些词是一张表两个入口：命令行走 `pf`，模型侧走 `pathfinder` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
+
 把调用行里那句话**原话照抄**进清单，`--scope` 必须点名，它决定谁能看见这条：
 
 ```pwsh

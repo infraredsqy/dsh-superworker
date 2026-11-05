@@ -6,10 +6,8 @@
 ## The root principle
 
 **`--help` first, then act.** Before calling `pf dag`, look at `--help` to learn every command and
-option; do not work from feel or memory. The full set of commands follows it: `search` searches
-titles / descriptions by regex, `info` shows the detail and the direct dependencies, `context`
-shows the full up- and downstream, `list` sorts by urgency×importance, `open` gives spec.md's
-path, and adding, changing, dropping and connecting each have their own command.
+option; do not work from feel or memory. The full set of commands is what `pf dag --help` prints;
+what follows here are only the habits a help page cannot teach.
 
 ## The efficiency rules
 

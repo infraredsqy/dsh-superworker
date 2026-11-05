@@ -1,6 +1,6 @@
 ---
 name: pf-issue-discuss
-description: The pool's human face: record one entry, look at the state, review which entries really need the user's call, then settle the external ones batch by batch.
+description: The pool's human face: record an entry, read the state, review which entries need a call, settle them batch by batch.
 disable-model-invocation: true
 ---
 
@@ -12,6 +12,9 @@ disable-model-invocation: true
 > Do I dispatch subagents: no. To repair, go to `/pf-issue-repair`; to scan, go to `/pf-issue-scan`
 
 Tools and conventions are in [`../pf-issue-repair/pool.md`](../pf-issue-repair/pool.md).
+
+The pipeline's words are one table with two doors: run them on the `pf` command line, or
+call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
 
 ## Read the intent at the door
 

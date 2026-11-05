@@ -6,15 +6,9 @@
 
 ## 只走工具
 
-```pwsh
-pf issue <command> --help    # 动手前先看它
-pf issue status             # 现状
-pf issue top --limit 10     # 按优先级
-pf issue search '<正则>'    # 定位；同类词用 | 一次搜完
-pf issue weight -v          # 加权和是怎么加出来的
-```
+动池子之前先问这个词自己：`pf issue --help` 给出它那一页；agent 侧的门是 `pathfinder` 工具——给它 `word`、该词的 `args` 跑一条，`help` 取它那一页。
 
-- 与池子的**一切**读写只走这个工具。**禁止直接 read `.pf/issues/issues.json`**：巨型 JSON，烧上下文，还绕过工具自己的统计口径。
+- 与池子的**一切**读写只走 `issue` 这个词——两个入口都算。**禁止直接 read `.pf/issues/issues.json`**：巨型 JSON，烧上下文，还绕过工具自己的统计口径。
 
 ## 口径
 

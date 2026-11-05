@@ -1,6 +1,6 @@
 ---
 name: pf-issue-scan
-description: Scan the project's code for debt that has not made it into the pool, write it into the issue pool, and check whether the entries already there are still there.
+description: Scan the code for debt not yet in the pool, record it there, and re-check that the entries already in it still stand.
 disable-model-invocation: true
 ---
 
@@ -17,6 +17,9 @@ The scan **fixes nothing, discusses nothing with the user and rules no
 works on it).
 
 The pool's tools and conventions are in [`../pf-issue-repair/pool.md`](../pf-issue-repair/pool.md).
+
+The pipeline's words are one table with two doors: run them on the `pf` command line, or
+call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
 
 ## Prepare
 

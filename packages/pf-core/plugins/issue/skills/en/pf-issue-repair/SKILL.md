@@ -1,6 +1,6 @@
 ---
 name: pf-issue-repair
-description: Repair the issue pool's debt back under the line: batch by change domain, Fix→Review per batch, commit once a batch passes; how an entry is disposed of follows "whose board is still open" only.
+description: Repair the pool's debt back under the line: batch by change domain, Fix then Review, commit when a batch passes.
 disable-model-invocation: true
 ---
 
@@ -15,6 +15,9 @@ There is one place to draw material from: the pool. Tools and conventions are in
 [`./pool.md`](./pool.md). **The scope is not yours to set** — the pipeline
 node's spec, the few lines of "why it was inserted", or the user's sentence: whoever called you in
 sets it, and you do not widen it to everything yourself. Once the criterion is passed, stop.
+
+The pipeline's words are one table with two doors: run them on the `pf` command line, or
+call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
 
 ## How one entry is disposed of
 

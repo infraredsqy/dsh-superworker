@@ -9,15 +9,11 @@ passing), `conduct` (run into by a working session).
 
 ## Go through the tool only
 
-```pwsh
-pf issue <command> --help    # look at it before touching anything
-pf issue status             # the present state
-pf issue top --limit 10     # by priority
-pf issue search '<regex>'    # locate; search like words in one go with |
-pf issue weight -v          # how the weighted sum adds up
-```
+Before touching the pool, ask the word itself: `pf issue --help` gives its page, and the agent-side
+door is the `pathfinder` tool — a `word` plus its `args` to run one, and `help` for that word's
+page.
 
-- **Every** read and write of the pool goes through this tool only. **Reading
+- **Every** read and write of the pool goes through the `issue` word only — either door. **Reading
   `.pf/issues/issues.json` directly is forbidden**: a giant JSON, it burns context and it bypasses
   the tool's own counting conventions too.
 

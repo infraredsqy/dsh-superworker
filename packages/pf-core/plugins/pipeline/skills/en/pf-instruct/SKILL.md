@@ -1,6 +1,6 @@
 ---
 name: pf-instruct
-description: Record one constraint in the project instruction list, so that agents working later follow it (used inside a pf session).
+description: Record one constraint in the project's instruction list so that later agents follow it; used inside a pf session.
 disable-model-invocation: true
 ---
 
@@ -11,6 +11,9 @@ disable-model-invocation: true
 > Do I dispatch subagents: no
 
 Typed anywhere else, it is typed in the wrong place: say so, and record nothing in the list.
+
+The pipeline's words are one table with two doors: run them on the `pf` command line, or
+call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
 
 Copy that sentence from the call line into the list **word for word**; `--scope` is required, and
 it decides who can see the entry:

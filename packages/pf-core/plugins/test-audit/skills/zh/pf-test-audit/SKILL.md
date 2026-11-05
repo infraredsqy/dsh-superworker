@@ -57,6 +57,8 @@ disable-model-invocation: true
 
 scan subagent 的数量按文件量定：默认 1 个覆盖全部，文件多到一份清单扫不动才拆。**上限不在这里**——派之前按 `pf config get max_agents` 数一次进行中的，越不过就合并或分批。
 
+管线这些词是一张表两个入口：命令行走 `pf`，模型侧走 `pathfinder` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
+
 每个 scan subagent 的 prompt 必须带：
 
 - `./garbage-patterns.md` 与 `./compression-criteria.md` 的**绝对路径**，让它自己读

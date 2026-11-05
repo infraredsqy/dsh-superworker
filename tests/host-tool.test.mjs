@@ -8,8 +8,12 @@
  * - **唤醒一次**: both triggers hit the same wake; a second skill load for an armed
  *   agent registers nothing more.
  * - the description the tool registers with stays at or under 400 bytes;
- * - the name lock: the registered name, the README and the skills' own spelling all
- *   come from one constant.
+ * - the name lock: the registered name, the README and every markdown page the skills
+ *   ship under a `skills/` tree come from one constant — the whole tree is walked, not
+ *   just `SKILL.md`, and every `SKILL.md` has to name the tool at least once (without
+ *   that leg a walk over a corpus that never names it would pass vacuously). A mention is
+ *   the bare word: a `pathfinder` that is a segment of a path (the manifest directory) is
+ *   a different constant and is not counted.
  *
  *   node --test tests/
  */
@@ -175,32 +179,51 @@ test('工具的三层帮助：argv 由 word / args / help 拼出，词面自己�
   assert.match(answer.stdout, /pf -- the agent pipeline/u, '空手问它，答的是整张索引')
 })
 
-test('名字锁：注册名、README 的拼法来自同一个常量；技能正文的拼法与它一致', () => {
+test('名字锁：注册名、README 的拼法来自同一个常量；技能正文的拼法与它一致，且每个 SKILL.md 都点到它', () => {
   assert.equal(PATHFINDER_TOOL_NAME, 'pathfinder')
   assert.equal(SKILL_NAME_PREFIX, 'pf-')
   for (const file of ['README.md', 'README.zh.md']) {
     const text = readFileSync(join(repo, file), 'utf8')
     assert.match(text, /`pathfinder`/u, `${file} 提到这个工具时用注册处的拼写`)
   }
-  // The skills live under the shipped plugins; wherever one names the tool, it names the
-  // registered spelling (the bodies say it in their own words; phase 5 keeps this red
-  // on any drift).
-  const skillsRoot = join(repo, 'packages', 'pf-core', 'plugins')
+  // The skills live under the shipped plugins. Walk *every* markdown page in their
+  // `skills/` trees — the pools and the reference pages quote command lines too — and
+  // wherever one names the tool it names the registered spelling. A page that never
+  // names it is not this lock's business; a `SKILL.md` that never names it is, because
+  // otherwise the spelling scan passes without ever reading a spelling this phase wrote.
+  const pluginsRoot = join(repo, 'packages', 'pf-core', 'plugins')
   const files = []
-  const walk = (dir) => {
+  const collect = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = join(dir, entry.name)
-      if (entry.isDirectory()) walk(full)
-      else if (entry.name === 'SKILL.md') files.push(full)
+      if (entry.isDirectory()) collect(full)
+      else if (entry.name.endsWith('.md')) files.push(full)
     }
   }
-  walk(skillsRoot)
-  assert.ok(files.length >= 7, '随包技能都在')
+  const walkSkills = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const full = join(dir, entry.name)
+      if (entry.name === 'skills') collect(full)
+      else walkSkills(full)
+    }
+  }
+  walkSkills(pluginsRoot)
+  assert.ok(files.length >= 60, `随包技能正文都在（走到 ${files.length} 篇，至少 60）`)
+  // The tool is a word, not a directory: `MANIFEST_DIR` in `src/host/skills.ts` happens
+  // to spell `pathfinder` too, and a tool rename must not force the doc path to move. Keep
+  // only path-free tokens — not preceded by a slash or a backslash, not followed by a
+  // slash — so `<dshHome>/pathfinder/skills.json` is a path, not a spelling of the tool.
+  const TOOL_MENTION = /(?<![/\\])pathfinder[A-Za-z]*(?!\/)/gu
   for (const file of files) {
     const text = readFileSync(file, 'utf8')
-    const mentions = text.match(/pathfinder[A-Za-z]*/gu) ?? []
+    const mentions = text.match(TOOL_MENTION) ?? []
     for (const spelling of mentions) {
       assert.equal(spelling, PATHFINDER_TOOL_NAME, `${file}: ${spelling} 不是注册处的拼写`)
+    }
+    if (file.endsWith('SKILL.md')) {
+      const named = mentions.filter((spelling) => spelling === PATHFINDER_TOOL_NAME)
+      assert.ok(named.length >= 1, `${file}: 没提到 ${PATHFINDER_TOOL_NAME}，名字锁就空转了`)
     }
   }
 })

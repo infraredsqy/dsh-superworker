@@ -1,6 +1,6 @@
 ---
 name: pf-route
-description: Maintain the dependency graph by hand: step back and talk through what is wanted, then write it down as nodes, add / change / drop nodes and dependency edges, and query the graph's state.
+description: Maintain the dependency graph by hand: talk through what is wanted, add, change or drop nodes and edges, then query it.
 disable-model-invocation: true
 ---
 
@@ -287,6 +287,9 @@ spec.
 
 Commands, options and values follow `pf dag --help` (already read once in step 1); this section
 carries the judgements and the conventions only.
+
+The pipeline's words are one table with two doors: run them on the `pf` command line, or
+call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
 
 **Adding a node:**
 
