@@ -104,13 +104,13 @@ async function liveGateway(root) {
 
   new TypertRegistry(ctx)
   const gateway = new TypertGatewayService(ctx)
-  ctx.provide('pathfinderRecords', new PathfinderRecordsGateway(ctx))
+  ctx.provide('pathfinder', new PathfinderRecordsGateway(ctx))
   const peer = { signal: new AbortController().signal, principal: { kind: 'owner' } }
   return {
     ctx,
     call: async (method, args) => {
       try {
-        return { ok: true, value: await gateway.invoke({ namespace: 'pathfinderRecords', method, args, peer }) }
+        return { ok: true, value: await gateway.invoke({ namespace: 'pathfinder', method, args, peer }) }
       } catch (error) {
         return { ok: false, code: error?.code, message: error?.message ?? String(error) }
       }

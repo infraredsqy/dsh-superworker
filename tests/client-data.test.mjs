@@ -52,7 +52,7 @@ function refusedWith(failure) {
 
 test('装好了远程命名空间：走它，取数是 read(sessionId, 工作区根, {})', async () => {
   const { calls, namespace } = fakeNamespace()
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
 
   assert.equal(port.source, 'remote')
   const reading = await port.read('s1', 'C:\\picked')
@@ -62,7 +62,7 @@ test('装好了远程命名空间：走它，取数是 read(sessionId, 工作区
 
 test('没挑工作区：那个位置递一个空字符串，由宿主按会话身份定根', async () => {
   const { calls, namespace } = fakeNamespace()
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
 
   await port.read('s1', '')
   assert.deepEqual(calls[0], { method: 'read', values: ['s1', '', {}] })
@@ -70,7 +70,7 @@ test('没挑工作区：那个位置递一个空字符串，由宿主按会话�
 
 test('命名空间挂在 remote 下面一层也认', async () => {
   const { calls, namespace } = fakeNamespace()
-  const port = createPanelPort({ get: (name) => (name === 'remote' ? { pathfinderRecords: namespace } : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote' ? { pathfinder: namespace } : undefined) })
 
   assert.equal(port.source, 'remote')
   await port.read('s1', '')
@@ -79,7 +79,7 @@ test('命名空间挂在 remote 下面一层也认', async () => {
 
 test('远程那条路上，三个写动作各叫哪一个端点', async () => {
   const { calls, namespace } = fakeNamespace({ ok: true, value: { ok: true, text: '' } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
 
   await port.write('archive', 's1', 'C:\\picked', 'i-1')
   await port.write('revive', 's1', 'C:\\picked', 'i-1')
@@ -95,7 +95,7 @@ test('远程那条路上，三个写动作各叫哪一个端点', async () => {
 
 test('远程那条路上，设置那两条各叫哪一个端点', async () => {
   const { calls, namespace } = fakeNamespace({ ok: true, value: { workspaceRoot: 'C:\\ws', ok: true, text: '', entries: {} } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
 
   const reading = await port.readConfig('s1', 'C:\\picked')
   await port.setConfig('s1', 'C:\\picked', 'test_tier', 'minimal')
@@ -108,7 +108,7 @@ test('远程那条路上，设置那两条各叫哪一个端点', async () => {
 
 test('记下一条那一条口子：端点叫 addInstruction，原话与范围按位置递出去', async () => {
   const { calls, namespace } = fakeNamespace({ ok: true, value: { ok: true, text: 'INSTRUCTION i-0003' } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
 
   const outcome = await port.say('s1', 'C:\\picked', '先看一眼记录再动手', 'cycle', 'panel-to-plugin', '')
 
@@ -121,7 +121,7 @@ test('记下一条那一条口子：端点叫 addInstruction，原话与范围�
 
 test('远程那一层说没成：写面把它的话带回来，不假装成了', async () => {
   const { namespace } = fakeNamespace({ ok: false, error: { code: 'gateway/internal', message: '工具拒了' } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
   const outcome = await port.write('archive', 's1', '', 'i-1')
 
   assert.deepEqual(
@@ -132,7 +132,7 @@ test('远程那一层说没成：写面把它的话带回来，不假装成了',
 
   /* 这一半认识的码原样穿过边界：工具拒了就是工具拒了，不必再把它当成别人的一句话去猜。 */
   const known = fakeNamespace({ ok: false, error: { code: 'tool-refused', message: '没有 i-0007 这一条' } })
-  const carried = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? known.namespace : undefined) })
+  const carried = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? known.namespace : undefined) })
   assert.deepEqual(
     await carried.write('archive', 's1', '', 'i-1'),
     { ok: false, code: 'tool-refused', detail: '没有 i-0007 这一条' },
@@ -142,14 +142,14 @@ test('远程那一层说没成：写面把它的话带回来，不假装成了',
 
 test('远程那一层取数失败：读数照抛，不编一份空的', async () => {
   const { namespace } = fakeNamespace({ ok: false, error: { message: '读不动' } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
 
   await assert.rejects(() => port.read('s1', ''), refusedWith({ code: 'transport-failed', detail: '读不动' }))
 })
 
 test('会话笔记那一条：端点叫 readSessions(sessionId, 工作区根)，搬回来的原样带回来', async () => {
   const { calls, namespace } = fakeNamespace({ ok: true, value: { workspaceRoot: 'C:\\ws', recordPath: '.pf/meta/sessions', state: 'read', notes: { 'n-1.json': '{"run":[]}' } } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
 
   const reading = await port.readSessions('s1', 'C:\\picked')
   assert.deepEqual(reading.notes, { 'n-1.json': '{"run":[]}' })
@@ -158,7 +158,7 @@ test('会话笔记那一条：端点叫 readSessions(sessionId, 工作区根)，
 
 test('开会话那一条口子：端点叫 openNodeSession，线与格子按位置递出去；回执不往字面上摆', async () => {
   const { calls, namespace } = fakeNamespace({ ok: true, value: { ok: true, session: 'session-minted' } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
 
   const outcome = await port.openNodeSession('s1', 'C:\\picked', 'panel-to-plugin', 'n1')
 
@@ -170,7 +170,7 @@ test('开会话那一条口子：端点叫 openNodeSession，线与格子按位�
   }])
 
   const refused = fakeNamespace({ ok: false, error: { code: 'prompt-missing', message: '' } })
-  const other = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? refused.namespace : undefined) })
+  const other = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? refused.namespace : undefined) })
   assert.deepEqual(
     await other.openNodeSession('s1', '', 'c1', 'n1'),
     { ok: false, code: 'prompt-missing' },
@@ -186,27 +186,27 @@ test('命名空间没装上：退到载体那一层，端点与参数都指名�
   const reading = await port.read('s1', 'C:\\picked')
   assert.equal(reading.workspaceRoot, 'C:\\ws')
   assert.equal(calls[0].path, '/api')
-  assert.equal(calls[0].endpoint, 'pathfinderRecords/read')
+  assert.equal(calls[0].endpoint, 'pathfinder/read')
   assert.deepEqual(calls[0].payload, { args: { sessionId: 's1', workspaceRoot: 'C:\\picked', options: {} } })
 
   await port.write('remove', 's1', 'C:\\picked', 'i-1')
-  assert.equal(calls[1].endpoint, 'pathfinderRecords/removeInstruction')
+  assert.equal(calls[1].endpoint, 'pathfinder/removeInstruction')
   assert.deepEqual(calls[1].payload, { args: { sessionId: 's1', workspaceRoot: 'C:\\picked', id: 'i-1' } })
 
   await port.readConfig('s1', '')
-  assert.equal(calls[2].endpoint, 'pathfinderRecords/readConfig')
+  assert.equal(calls[2].endpoint, 'pathfinder/readConfig')
   assert.deepEqual(calls[2].payload, { args: { sessionId: 's1', workspaceRoot: '' } })
 
   await port.setConfig('s1', '', 'issue_repair', 'off')
-  assert.equal(calls[3].endpoint, 'pathfinderRecords/setConfig')
+  assert.equal(calls[3].endpoint, 'pathfinder/setConfig')
   assert.deepEqual(calls[3].payload, { args: { sessionId: 's1', workspaceRoot: '', key: 'issue_repair', value: 'off' } })
 
   await port.readSessions('s1', '')
-  assert.equal(calls[4].endpoint, 'pathfinderRecords/readSessions')
+  assert.equal(calls[4].endpoint, 'pathfinder/readSessions')
   assert.deepEqual(calls[4].payload, { args: { sessionId: 's1', workspaceRoot: '' } })
 
   await port.say('s1', 'C:\\picked', '先看一眼记录再动手', 'node', '', '3fac279b')
-  assert.equal(calls[5].endpoint, 'pathfinderRecords/addInstruction')
+  assert.equal(calls[5].endpoint, 'pathfinder/addInstruction')
   assert.deepEqual(calls[5].payload, {
     args: { sessionId: 's1', workspaceRoot: 'C:\\picked', text: '先看一眼记录再动手', scope: 'node', cycle: '', node: '3fac279b' },
   })
@@ -229,7 +229,7 @@ test('两条都没接上：口子说实话，读不出来就是读不出来', as
 
 test('通道上没有这个端点：读写都报 no-operation，端点名放进 detail', async () => {
   const partial = { read: async () => ({ ok: true, value: { workspaceRoot: 'C:\\ws' } }) }
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? partial : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? partial : undefined) })
 
   assert.deepEqual(
     await port.write('archive', 's1', '', 'i-1'),
@@ -245,7 +245,7 @@ test('通道上没有这个端点：读写都报 no-operation，端点名放进 
 
 test('答案不是一份能读的东西：报 unparsable-answer，不编读数', async () => {
   const { namespace } = fakeNamespace('不是对象')
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinderRecords' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
 
   await assert.rejects(() => port.read('s1', ''), refusedWith({ code: 'unparsable-answer' }))
   assert.deepEqual(await port.write('archive', 's1', '', 'i-1'), { ok: false, code: 'unparsable-answer' })

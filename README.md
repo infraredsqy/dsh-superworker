@@ -10,6 +10,10 @@ gateway; the browser half draws it as the **Pathfinder Center** panel in the sid
 instructions, node details, the map of who owes whom, the issue pool — comes from that record, and
 writes from the panel go back to the same place.
 
+In a session the pipeline is also reachable as the agent-facing `pathfinder` tool: it answers the
+pipeline's words in place. A session sees the tool only after one of the `pf-*` skills loads —
+until then the session's request header stays exactly as it would be without this plugin.
+
 ## Status
 
 Early, and tied to the DSH developer preview. The manifest declares an `engines.dsh` range, and DSH

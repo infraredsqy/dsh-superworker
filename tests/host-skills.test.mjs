@@ -528,7 +528,7 @@ test('apply：技能装载接在这条线自己的 fiber 上，装完盘上有�
       },
     })
     const dispose = await pending
-    assert.equal(provided.name, 'pathfinderRecords')
+    assert.equal(provided.name, 'pathfinder')
     assert.equal(reported.length, 1, `装好的时候该留一行读数：${reported.join(' / ')}`)
     assert.deepEqual(
       placedSkills(h.dsh).manifest.skills.map((one) => one.name).sort(),

@@ -103,9 +103,10 @@ function relayOn(): boolean {
  * The engine hands the request over after its own gates and preparation; the
  * opener reads the prompt it landed and creates the session. A refusal throws
  * — the engine then writes no claim and hands the reason back as the
- * dispatch's own refusal detail.
+ * dispatch's own refusal detail. The words layer's tool opens sessions through
+ * this same seam, which is why it is exported.
  */
-function executorOf(ctx: Context, sessionId: SessionId, workspaceRoot: string): Executor {
+export function executorOf(ctx: Context, sessionId: SessionId, workspaceRoot: string): Executor {
   return {
     async dispatch(request) {
       const cycle = request.cycle ?? ''

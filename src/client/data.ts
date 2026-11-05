@@ -18,7 +18,7 @@ import type { SessionOpenOutcome } from '../host/executor.ts'
 import { RefusedError, type Failure, type FailureCode, type Outcome } from './failure.ts'
 
 /** The namespace, named after the host-half service key. */
-export const NAMESPACE = 'pathfinderRecords'
+export const NAMESPACE = 'pathfinder'
 
 export type WriteVerb = 'archive' | 'revive' | 'remove'
 

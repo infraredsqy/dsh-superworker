@@ -172,7 +172,7 @@ test('这一份产物：外壳装得上、画得出来、每一格都走得通�
   const provided = {}
   const form = fakeSettingsForm({}, { watchCount: true })
   const services = {
-    'remote.pathfinderRecords': remoteFace,
+    'remote.pathfinder': remoteFace,
     slots,
     configForms: { get: () => form },
     uiWorkspace: { openSession: () => undefined },

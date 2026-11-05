@@ -69,16 +69,16 @@ function fakeContext({ live = {}, stored = {}, sandboxRoot = 'C:\\fallback-root'
   return { ctx, provided, asked: workspaceFiles.asked, statCalls }
 }
 
-test('插件名与依赖声明就是宿主那三样', () => {
+test('插件名与依赖声明就是宿主那四样', () => {
   assert.equal(name, 'pathfinder-records')
-  assert.deepEqual(inject, ['workspaceFiles', 'sessions', 'sandboxPolicy'])
+  assert.deepEqual(inject, ['workspaceFiles', 'sessions', 'sandboxPolicy', 'tools'])
 })
 
-test('出口面收在插件协议要的那四样上：内部件不再从入口过一遍', async () => {
+test('出口面收在插件协议要的那五样上：内部件不再从入口过一遍', async () => {
   const entry = await import('../src/host/index.ts')
 
   assert.equal(entry.name, 'pathfinder-records')
-  assert.deepEqual(entry.inject, ['workspaceFiles', 'sessions', 'sandboxPolicy'])
+  assert.deepEqual(entry.inject, ['workspaceFiles', 'sessions', 'sandboxPolicy', 'tools'])
   assert.equal(typeof entry.apply, 'function')
   assert.ok('Config' in entry, 'Config 要在出口面上：DSH 拿它建那一节的设置命名空间')
 
@@ -103,7 +103,7 @@ test('活着的会话头说话：它写的 cwd 就是取数的那个根', async 
     stored: { s1: { header: { cwd: 'C:\\from-the-stored-header' } } },
   })
   apply(ctx)
-  const reading = await provided.pathfinderRecords.read('s1', { signal })
+  const reading = await provided.pathfinder.read('s1', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\from-the-live-session')
   assert.ok(asked.length > 0)
@@ -116,7 +116,7 @@ test('活着的会话头说话：它写的 cwd 就是取数的那个根', async 
 test('没有活着的会话时，落盘的会话头说话', async () => {
   const { ctx, provided, asked } = fakeContext({ stored: { s2: { header: { cwd: 'C:\\from-the-stored-header' } } } })
   apply(ctx)
-  const reading = await provided.pathfinderRecords.read('s2', { signal })
+  const reading = await provided.pathfinder.read('s2', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\from-the-stored-header')
   assert.equal(asked[0].scope.workspaceRoot, 'C:\\from-the-stored-header')
@@ -129,7 +129,7 @@ test('有活着的会话头就不再问落盘的头：它没写 cwd 时落到沙
     sandboxRoot: 'C:\\sandbox-root-for-tests',
   })
   apply(ctx)
-  const reading = await provided.pathfinderRecords.read('s4', { signal })
+  const reading = await provided.pathfinder.read('s4', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\sandbox-root-for-tests')
   assert.equal(asked[0].scope.workspaceRoot, 'C:\\sandbox-root-for-tests')
@@ -143,7 +143,7 @@ test('两个会话头都没写 cwd 时，落到沙箱策略那个根', async () 
     sandboxRoot: 'C:\\sandbox-root-for-tests',
   })
   apply(ctx)
-  const reading = await provided.pathfinderRecords.read('s3', { signal })
+  const reading = await provided.pathfinder.read('s3', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\sandbox-root-for-tests')
   assert.equal(asked[0].scope.workspaceRoot, 'C:\\sandbox-root-for-tests')
@@ -152,7 +152,7 @@ test('两个会话头都没写 cwd 时，落到沙箱策略那个根', async () 
 test('整条会话都没人认得时，走的还是沙箱策略那个根，取数不抛', async () => {
   const { ctx, provided } = fakeContext({ sandboxRoot: 'C:\\sandbox-root-for-tests' })
   apply(ctx)
-  const reading = await provided.pathfinderRecords.read('nobody-knows-me', { signal })
+  const reading = await provided.pathfinder.read('nobody-knows-me', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\sandbox-root-for-tests')
   assert.deepEqual(reading.sources, { nodes: 'missing', cycles: 'missing', instructions: 'missing', issues: 'missing' })
@@ -162,10 +162,10 @@ test('整条会话都没人认得时，走的还是沙箱策略那个根，取�
 test('服务装在 ctx 上，由调用方给的取消信号转手递给口子', async () => {
   const { ctx, provided, asked } = fakeContext({ sandboxRoot: 'C:\\sandbox-root-for-tests' })
   apply(ctx)
-  assert.equal(typeof provided.pathfinderRecords.read, 'function')
+  assert.equal(typeof provided.pathfinder.read, 'function')
 
   const controlled = new AbortController()
-  await provided.pathfinderRecords.read('s9', '', { signal: controlled.signal })
+  await provided.pathfinder.read('s9', '', { signal: controlled.signal })
   assert.ok(asked.length > 0, '这一趟要真走到口子上，才谈得上信号到没到')
   for (const call of asked) {
     assert.equal(call.signal, controlled.signal, '口子收到的信号得是调用方递的那一条，不是端点自己新造的')

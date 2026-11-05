@@ -28,7 +28,7 @@ npm run bundle:client         # lib/client.js（浏览器半身）
 
 | 口子 | 落点 | 谁用 |
 |---|---|---|
-| `.`（`main`） | `lib/host/index.js` | 宿主半身：装成 `ctx.pathfinderRecords`，那几手端点经网关交出去 |
+| `.`（`main`） | `lib/host/index.js` | 宿主半身：装成 `ctx.pathfinder`，那几手端点经网关交出去 |
 | `./client` | `lib/client.js` | 浏览器半身：`dsh.client.platform` 是 `web`，外壳按启动名册去拉这一份 |
 | `./locale/*.json` | `locale/{zh,en}.json` | DSH 的插件清单读它来印这一行的名字与说明；与面板自己的对照表是两处（那份在浏览器包里，说面板上的词） |
 
@@ -44,7 +44,7 @@ npm run bundle:client         # lib/client.js（浏览器半身）
 
 **这两行都不能摘**：外壳照启动名册先送达 `connection` 那条客户端插件，再应用本包的面板，浏览器半身
 那条取数口子才接得上。摘掉之后面板应用得早，中央栏那一格正文里没有记录的数，摆的是「该部署未连接
-寻路记录服务，无法读取记录。」（宿主那一侧的端点 `/api/pathfinderRecords/read` 照旧是好的）。
+寻路记录服务，无法读取记录。」（宿主那一侧的端点 `/api/pathfinder/read` 照旧是好的）。
 `locale` 那条管的是语言：不声明它，面板照样画得出来（语言端口会退回包里那份中文对照表），但跟随 DSH
 设置切换语言这一条就接不上了。
 

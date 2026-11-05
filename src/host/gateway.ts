@@ -91,7 +91,7 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
   /**
    * @param serviceKey - The service key, i.e. the remote namespace; normally omitted.
    */
-  constructor(ctx: Context, serviceKey = 'pathfinderRecords') {
+  constructor(ctx: Context, serviceKey = 'pathfinder') {
     this.ctx = ctx
     const registered = new Set<string>()
     for (const method of REMOTE_METHODS) {
