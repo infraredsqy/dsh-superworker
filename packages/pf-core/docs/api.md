@@ -13,7 +13,7 @@
   有一套机器层。不传时按 `PF_HOME_DIR`，再缺省到本机 home。
 - `Pf { root: string; ledger; conductor; config; sessions }` —— `root` 是打开时给的项目根，原样保存。
 - `pf.ledger.dag` 十五动词、`pf.ledger.cycles` 十三动词、`pf.ledger.instructions` 五动词、
-  `pf.config` 五动词、`ledger.init` / `ledger.register` / `ledger.cleanTemp`、`pf.sessions` 两动词与
+  `pf.config` 五动词、`ledger.init` / `ledger.register` / `ledger.cleanTemp`、`pf.sessions` 三动词与
   `conductor.next` / `conductor.close` / `conductor.closeWith` / `conductor.dispatch` /
   `conductor.doctor` / `conductor.handoff` / `conductor.handoffForm` / `conductor.pluginCommand` /
   `conductor.pluginCommands` / `conductor.prepare` 都在句柄上，全是真实现；没有一个桩。
@@ -271,12 +271,13 @@ pf 项目」，主树的设置一个字都漏不出来（in-repo 档记录随检
 
 ## pf.sessions
 
-会话档的只读入口，两个动词。
+会话档的入口，三个动词：两个读、一个写。
 
 | 动作 | 签名 | 一句话语义 |
 | --- | --- | --- |
 | `sessions.list` | `list()` | 全部会话档，按节点给，每条带节点 id、标题与档本身 |
 | `sessions.show` | `show(node)` | 一个节点的会话档；没写过时两个名单都是空的 |
+| `sessions.note` | `note(node, role, session)` | 往这个节点的会话档里记一条会话：新写交回 `true`，同一会话已经在那一档里就交回 `false` |
 
 `show` 交回 `SessionShow { node, title, v, discussion, run }`：节点 id 与图上的标题都在，标题从
 `ideas.json` 现读（记录没写标题时读空串）。`list` 每条是
@@ -291,6 +292,13 @@ pf 项目」，主树的设置一个字都漏不出来（in-repo 档记录随检
 按节点 id 排；读宿主用的那条解析链对整份清单只走一次，写了一个不认得的宿主的档只丢它自己——
 别的条目照常给出（`show` 到那个节点还是当场拒绝并点出那个词）。
 `show` 认全 id 与唯一前缀：前缀认出多个节点、或一个都认不出，都当场拒绝，不替调用方猜。
+
+`note` 是这一层唯一的写口：一条会话记进 `discussion` / `run` 之一（`role` 只收这两个词，别的当场
+拒绝）。读写是一次动作、全程持这个项目的记录锁，所以同一个节点上的两个写者——开它会话的宿主，以及
+引擎自己在登记节点时记 discussion 的那条路——不会互相丢掉条目。同一个会话 id 已经在那一档里时不再
+写，交回 `false`（部分失败后的重试不该把同一个 run 记两遍）。文件按规范形状整份重写：两个名单、
+`{v, discussion, run}`，原有条目过写者自己的清理，别的什么都不动。`node` 收全 id：前缀是给人读的
+id，写口认的是节点已有的那个目录。
 
 ## pf.conductor
 

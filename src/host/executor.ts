@@ -5,16 +5,17 @@
  *
  * One open, in order:
  *
- * 1. probe the host's session side (`sessions` store, `agents` registry);
- *    either missing is an explicit refusal naming the piece, never silence;
+ * 1. probe the host's session side: the `sessions` store is an inject
+ *    requirement, and a missing `agents` registry is an explicit refusal
+ *    naming the piece, never silence;
  * 2. read the plan's launch prompt for this cell out of the record store —
  *    the first instruction is exactly that line, so it agrees with the plan
  *    by construction;
- * 3. create the agent and its session under the workspace root (`cwd` is the
- *    root, which is what groups the session under that workspace instead of
- *    leaving it ungrouped), arm the opening round's listeners, hand the
- *    prompt over as the first instruction, and write the session note — the
- *    opener's own entry, in the record store's note layer;
+ * 3. create the agent and its session under the workspace root, attach the
+ *    session to that workspace when the host carries a workspace service
+ *    (`cwd` alone joins nothing), arm the opening round's listeners, hand the
+ *    prompt over as the first instruction, and note the session through the
+ *    engine's writer — this side only names the entry;
  * 4. settle the opening round: hosts whose agents expose the wait interface
  *    get `whenIdle()`; older ones get the idle notification plus the
  *    turn-end events, resolved together.
@@ -74,17 +75,79 @@ interface SessionSide {
 }
 
 /**
- * Probe the host's session side before anything else: a deployment whose
- * `sessions` store or `agents` registry is absent gets a refusal naming the
- * missing piece. An open that never happened must not read as one that
- * failed halfway.
+ * Probe the host's session side before anything else: the `sessions` store is
+ * an inject requirement of this line, and an open needs the `agents` registry
+ * itself — a deployment without it gets a refusal naming the piece. An open
+ * that never happened must not read as one that failed halfway.
  */
 function sessionSideOf(ctx: Context): SessionSide | PfFailure {
-  const sessions = ctx.get('sessions')
-  if (sessions === undefined || sessions === null) return { ok: false, code: 'no-session-service', detail: 'sessions' }
   const agents = ctx.get('agents')
   if (agents === undefined || agents === null) return { ok: false, code: 'no-session-service', detail: 'agents' }
   return { agents: agents as AgentRegistry }
+}
+
+/**
+ * The workspace side of one open, as a narrow local face. The installed host
+ * exposes a workspace registry: `create` answers the entity for a canonical
+ * path (repeating it for the same path answers the same entity unchanged), and
+ * `attachSession` is what joins a live session to it. Neither is a declared
+ * dependency of this line — a headless composition mounts no workspace layer —
+ * so the service is fetched by name and anything that answers another shape
+ * counts as absent.
+ */
+interface WorkspacePort {
+  attachSession(session: SessionId): Promise<void>
+}
+
+interface WorkspaceRegistryPort {
+  /** The workspace at one canonical path; `undefined` when the entity names no `attachSession`. */
+  create(path: string): Promise<WorkspacePort | undefined>
+}
+
+/** The workspace registry this context carries, when it answers the shape above. */
+function workspaceRegistryOf(ctx: Context): WorkspaceRegistryPort | undefined {
+  const read = (ctx as { get?: (name: string) => unknown }).get
+  const held = typeof read === 'function' ? read.call(ctx, 'workspaceRegistry') : undefined
+  if (held === null || typeof held !== 'object') return undefined
+  const create = (held as { create?: unknown }).create
+  if (typeof create !== 'function') return undefined
+  return {
+    async create(path: string): Promise<WorkspacePort | undefined> {
+      const workspace = await (create as (path: string) => Promise<unknown>).call(held, path)
+      if (workspace === null || typeof workspace !== 'object') return undefined
+      const attach = (workspace as { attachSession?: unknown }).attachSession
+      if (typeof attach !== 'function') return undefined
+      return {
+        async attachSession(session: SessionId): Promise<void> {
+          await (attach as (session: SessionId) => Promise<unknown>).call(workspace, session)
+        },
+      }
+    },
+  }
+}
+
+/** The logging face this open reads; every level is optional, like the skill host's. */
+interface LogPort {
+  info?(line: string): void
+  warn?(line: string): void
+}
+
+/** One line through the host's logger, when it carries one; a logger that throws never takes the open down. */
+function logLine(ctx: Context, line: string): void {
+  const held = (ctx as { logger?: LogPort }).logger
+  if (held === undefined || held === null) return
+  const write = held.warn ?? held.info
+  if (write === undefined) return
+  try {
+    write.call(held, line)
+  } catch {
+    /* The logger is the composition's, and the open has its own answer to give. */
+  }
+}
+
+/** Say that the session is open and stays un-attached, naming the cell and the workspace it missed. */
+function reportUnattached(ctx: Context, cycle: string, node: string, root: string, reason: string): void {
+  logLine(ctx, `could not attach the session opened for ${cycle}/${node} to the workspace at ${root}: ${reason}; the session stays cwd-only`)
 }
 
 /**
@@ -191,7 +254,7 @@ export async function openNodeSession(
   const opened = `session-${randomUUID()}` as SessionId
   const selection = modelSelectionOf(ctx)
 
-  /* The workspace-touching stretch, queued: create the session under the root (the grouping fact), arm the round's listeners, hand the prompt over, then write the note while the line still holds — the note names a session that exists on disk. */
+  /* The workspace-touching stretch, queued: create the session under the root, join it to that one workspace, arm the round's listeners, hand the prompt over, then note the session while the line still holds. */
   let settlement: Settlement
   try {
     settlement = await inLine(workspaceRoot, async () => {
@@ -200,6 +263,29 @@ export async function openNodeSession(
         meta: { cwd: workspaceRoot },
         ...(selection === undefined ? {} : { agentOptions: selection }),
       })
+      /* A host with a workspace layer owns the grouping: the session is attached to the entity of the root, which is the call that puts it in that workspace. A composition without the layer keeps the cwd-only open. */
+      const registry = workspaceRegistryOf(ctx)
+      try {
+        const workspace = registry === undefined ? undefined : await registry.create(workspaceRoot)
+        if (workspace === undefined) {
+          reportUnattached(
+            ctx,
+            cycle,
+            node,
+            workspaceRoot,
+            registry === undefined
+              ? 'this host exposes no workspace service'
+              : 'this host\'s workspace service answered no attachable workspace',
+          )
+        } else {
+          await workspace.attachSession(opened)
+        }
+      } catch (error) {
+        /* The agent is alive already: say which cell is open un-attached instead of letting the next open run a second session on it. */
+        throw new Error(
+          `${cycle}/${node} is open but was not attached to the workspace at ${workspaceRoot}: ${messageOf(error)}`,
+        )
+      }
       const armed = armSettlement(ctx, handle.agent, opened)
       try {
         handle.agent.followup(createUserMessage({

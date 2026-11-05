@@ -10,7 +10,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { handleOf, messageOf, projectRoot } from './engine.mjs';
+import { handleOf, messageOf, projectRoot, sessionOpenerAvailable } from './engine.mjs';
 import { pyIndented } from './pyjson.mjs';
 import { pyScalar, refuse, short } from './out.mjs';
 
@@ -52,6 +52,7 @@ export function actionText(action) {
     );
   }
   if ('applied' in action) lines.push(`applied: ${pyScalar(action.applied)}`);
+  if (action.spawn_error !== undefined) lines.push(`spawn_error: ${action.spawn_error}`);
   for (const extra of (action.insertions ?? []).slice(1)) {
     lines.push(`node:   ${extra.title ?? ''}  (${extra.node_id ?? extra.spec_path ?? ''})`);
     if (extra.spec_path !== undefined) lines.push(`spec:   ${extra.spec_path}`);
@@ -263,7 +264,7 @@ export async function nextVerb({ values }) {
       await pf.conductor.prepare({ cycle: action.cycle });
     }
     if (values.spawn === true && (planMode === false || values.after !== undefined)) {
-      const folded = await spawnPlan(pf, action, values.spawner);
+      const folded = await spawnPlan(root, pf, action, values.spawner);
       did.push(...(folded.spawned_did ?? []));
       action = folded.action;
     }
@@ -273,7 +274,7 @@ export async function nextVerb({ values }) {
     }
     const applied = applyCells(action, {
       did,
-      ...(action.action === 'dispatch' ? { opened: action.node_id } : {}),
+      ...(action.action === 'dispatch' && action.spawn_error === undefined ? { opened: action.node_id } : {}),
       // The progress reading is the stopping action's: it says what the line held and where it went.
       ...(action.action !== 'stop_pipeline' || before === undefined
         ? {}
@@ -324,9 +325,19 @@ async function progressOf(pf, cycleId) {
 }
 
 /** Start one session per node a dispatch plan names, and fold the receipts into the plan's print. */
-async function spawnPlan(pf, action, spawner) {
+async function spawnPlan(root, pf, action, spawner) {
   if (action.action !== 'dispatch' || (action.nodes ?? []).length === 0) {
     return { action, spawned_did: [] };
+  }
+  // The plan still prints; the spawn step reports itself as not done, and not one node is claimed.
+  // Handing the call to the engine is what would land the claim before the placeholder executor
+  // refused, leaving the cell "already open" with no session behind it.
+  if (!sessionOpenerAvailable()) {
+    const folded = {
+      ...action,
+      spawn_error: noOpenerSentence(root, action.cycle, action.nodes.map((item) => item.node_id)),
+    };
+    return { action: folded, spawned_did: [] };
   }
   const spawned = [];
   const skipped = [];
@@ -364,6 +375,20 @@ function launchPromptPath(root, cycleId, nodeId) {
 /** The claim of one dispatch: `<pf>/meta/launch/<cycle>/<node>/started`, the reference's only "already open" evidence. */
 function launchStartedPath(root, cycleId, nodeId) {
   return join(root, '.pf', 'meta', 'launch', String(cycleId), String(nodeId), 'started');
+}
+
+/**
+ * The sentence both spawn paths answer when this process has no session opener: the panel is the
+ * opener on this machine, the material is already on disk, and the line in it is the instruction a
+ * session works from. It names the paths and both ways a human finishes the dispatch by hand.
+ */
+function noOpenerSentence(root, cycleId, nodeIds) {
+  const prompts = nodeIds.map((nodeId) => launchPromptPath(root, cycleId, nodeId));
+  return (
+    'no session can be opened from this process: the opener is the panel (寻路中心), and a command ' +
+    `line carries none. The material is at ${prompts.join(', ')}; dispatch it in the panel, or start ` +
+    'a new session and paste that line in.'
+  );
 }
 
 /** The reference's refusal for a node whose prompt is not on disk: where it should be, and the command that writes it. */
@@ -438,6 +463,12 @@ export async function dispatchVerb({ values, positionals }) {
     }
     if (prompts.length === 0) {
       return alreadyStartedRefusal(cycleId, already);
+    }
+    // The opener comes before the engine, which lands the claim and only then asks its executor: a
+    // process with none would claim the cell and leave no session behind. The gate above wrote
+    // nothing, so this refusal leaves the records exactly as it found them.
+    if (!sessionOpenerAvailable()) {
+      return refuse(noOpenerSentence(root, cycleId, prompts), 2);
     }
     // The material is on disk and this half only opens the session: the engine's dispatch finds the
     // landed prompt, leaves it alone and lands the claim. Nothing here writes a file.

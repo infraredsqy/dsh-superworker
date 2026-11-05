@@ -619,6 +619,64 @@ test('dispatch：prompt 在盘上、没有 started 记号、票还在盘上—�
   }
 });
 
+test('dispatch：这个进程开不了会话时先拒，退出码 2，一个 started 也不落', () => {
+  const scratch = scratchProject();
+  try {
+    const node = JSON.parse(readFileSync(join(fixture, 'ids.json'), 'utf8')).A;
+    const options = { cwd: scratch.project, plugins, home: scratch.home };
+    const pfDir = join(scratch.project, '.pf');
+    // The state that reaches the engine: the prompt is on disk, the claim is not. An opener-less
+    // process would land the claim before its placeholder executor refused, so the cell would read
+    // as "already open" with no session behind it.
+    const launch = join(pfDir, 'meta', 'launch', 'c1', node);
+    mkdirSync(launch, { recursive: true });
+    writeFileSync(join(launch, 'prompt.txt'), `/pf-conduct ${node} [pipeline]\n`, 'utf8');
+
+    const before = snapshot(pfDir);
+    const refused = run(['dispatch', 'c1'], { ...options, env: { DSH_CONDUCT_SPAWN_DRY_RUN: '' } });
+    assert.equal(refused.code, 2, refused.stderr);
+    assert.match(refused.stderr, /寻路中心/u, '拒绝句说开会话的是面板');
+    assert.ok(refused.stderr.includes(join(launch, 'prompt.txt')), '拒绝句说出材料在哪');
+    assert.equal(existsSync(join(launch, 'started')), false, '一个 started 都没落');
+    assert.deepEqual(snapshot(pfDir), before, '这一拒一个字节都没写');
+  } finally {
+    scratch.done();
+  }
+});
+
+test('next --spawn：这个进程开不了会话时计划照印，spawn 那一步说没做，一个节点也不认领', () => {
+  const scratch = scratchProject();
+  try {
+    const options = { cwd: scratch.project, plugins, home: scratch.home };
+    const pfDir = join(scratch.project, '.pf');
+    const ok = (argv) => {
+      const answer = run(argv, options);
+      assert.equal(answer.code, 0, `${argv.join(' ')}: ${answer.stderr}`);
+      return answer;
+    };
+    ok(['cycle', 'status', 'c1', 'inactive']);
+    ok(['cycle', 'start', 'c9', '--tags', 'coding']);
+    const node = JSON.parse(readFileSync(join(pfDir, 'state.json'), 'utf8'))
+      .cycles.find((cycle) => cycle.id === 'c9').holding[0].id;
+    const prompt = join(pfDir, 'meta', 'launch', 'c9', node, 'prompt.txt');
+
+    const answer = run(['next', '--cycle', 'c9', '--spawn'], {
+      ...options,
+      env: { DSH_CONDUCT_SPAWN_DRY_RUN: '' },
+    });
+    assert.equal(answer.code, 0, answer.stderr);
+    assert.match(answer.stdout, /^action: dispatch$/mu, '计划照印');
+    assert.match(answer.stdout, /^spawn_error: \S/mu, 'spawn 那一步说自己没做');
+    assert.match(answer.stdout, /寻路中心/u, '那句话点名面板');
+    assert.ok(answer.stdout.includes(prompt), '那句话说出材料在哪');
+    assert.match(answer.stdout, /^applied: True$/mu, '钉住与落材料那几步照做');
+    assert.equal(existsSync(prompt), true, '材料照常落');
+    assert.equal(existsSync(join(pfDir, 'meta', 'launch', 'c9', node, 'started')), false, '一个节点也不认领');
+  } finally {
+    scratch.done();
+  }
+});
+
 test('dispatch：技能那两行按顺序跑得通——next --after 先落 prompt，dispatch 再开会话', () => {
   const scratch = scratchProject();
   try {

@@ -20,7 +20,7 @@ const FROZEN_METHODS = [
   'ledger.instructions.add', 'ledger.instructions.list', 'ledger.instructions.resolve',
   'ledger.instructions.revive', 'ledger.instructions.remove',
   'config.get', 'config.set', 'config.unset', 'config.list',
-  'sessions.list', 'sessions.show',
+  'sessions.list', 'sessions.show', 'sessions.note',
   'conductor.next', 'conductor.prepare', 'conductor.dispatch', 'conductor.handoff', 'conductor.close',
   'conductor.doctor',
 ];

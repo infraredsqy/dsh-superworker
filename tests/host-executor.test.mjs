@@ -1,13 +1,14 @@
-/* The host half's native executor: locks in the five facts an open must not miss.
+/* The host half's native executor: locks in the facts an open must not miss.
  *
  * The open runs against stand-ins for the host's own services (the session side, the workspace
- * files port, the event bus), so the cases here judge the flow, not a deployment: the session is
- * created under the workspace root it will group under, the plan's launch prompt is the first
- * instruction verbatim, the note is written by the opener itself, the two host versions settle
- * differently and both settle, a missing session side is refused with the piece named, and two
- * opens aimed at one workspace create their sessions one after another.
+ * registry, the workspace files port, the event bus), so the cases here judge the flow, not a
+ * deployment: the session is created under the workspace root and attached to that workspace when
+ * the host carries one, the plan's launch prompt is the first instruction verbatim, the note is
+ * written by the engine's writer, the two host versions settle differently and both settle, a
+ * missing agent registry is refused with the piece named, and two opens aimed at one workspace
+ * create their sessions one after another.
  *
- * The note lands on real disk (a temporary directory per case), because the write is the opener's
+ * The note lands on real disk (a temporary directory per case), because the write is the engine's
  * own fs action; the prompt is read through the port stand-in the other host tests share.
  *
  *   node --test tests/
@@ -85,8 +86,8 @@ function fakeAgents({ withWhenIdle = true, gate, idleRefusal } = {}) {
   }
 }
 
-/** The host context stand-in: services by name, the port as a property, and an event bus with `on`/`emit`. `sessions` is passed as-is: an absent service is the thing the probe must see. */
-function fakeContext({ files, agents, sessions, defaultModel } = {}) {
+/** The host context stand-in: services by name, the port as a property, and an event bus with `on`/`emit`. `sessions` is passed as-is: the store is an inject requirement, and a stand-in that omits it still opens. */
+function fakeContext({ files, agents, sessions, defaultModel, workspaceRegistry } = {}) {
   const listeners = new Map()
   const bus = {
     on(name, listener) {
@@ -105,6 +106,7 @@ function fakeContext({ files, agents, sessions, defaultModel } = {}) {
       if (name === 'sessions') return sessions
       if (name === 'agents') return agents
       if (name === 'agentDefaultModel') return defaultModel
+      if (name === 'workspaceRegistry') return workspaceRegistry
       return undefined
     },
     on: bus.on,
@@ -127,14 +129,6 @@ function rig({ files = {}, node = 'n1', cycle = 'c1', prompt = PROMPT, ...rest }
 function noteOnDisk(root, node) {
   return JSON.parse(readFileSync(join(root, '.pf', 'meta', 'sessions', `${node}.json`), 'utf8'))
 }
-
-test('探测：会话库不在，点名 sessions 拒绝，什么都没建', async () => {
-  const agents = fakeAgents()
-  const { ctx } = fakeContext({ files: {}, agents, sessions: undefined })
-  const outcome = await openNodeSession(ctx, 's1', 'C:\\ws', 'c1', 'n1')
-  assert.deepEqual(outcome, { ok: false, code: 'no-session-service', detail: 'sessions' })
-  assert.equal(agents.created.length, 0)
-})
 
 test('探测：代理登记不在，点名 agents 拒绝，什么都没建', async () => {
   const agents = fakeAgents()
@@ -162,6 +156,76 @@ test('归组与首条指令：会话建在工作区根下，计划的提示原�
   assert.equal(said.source.kind, 'user')
   assert.equal(said.content[0].type, 'text')
   assert.equal(said.content[0].text, PROMPT_LINE, '首条指令就是计划那一句，一字不改')
+})
+
+test('归组与挂接：宿主带工作区服务时，开出的会话挂到根所在的那个工作区上', async () => {
+  const created = []
+  const attached = []
+  const workspaceRegistry = {
+    async create(path) {
+      created.push(path)
+      return {
+        async attachSession(session) {
+          attached.push(session)
+        },
+      }
+    },
+  }
+  const rigging = rig({ workspaceRegistry })
+  const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
+  await flush()
+  rigging.agents.created[0].whenIdle.resolve()
+  const outcome = await pending
+  assert.equal(outcome.ok, true, JSON.stringify(outcome))
+  assert.deepEqual(created, [rigging.root], '服务按根要的就是那个工作区')
+  assert.deepEqual(attached, [rigging.agents.created[0].options.sessionId], '开出来的会话挂上去')
+})
+
+test('归组与挂接：宿主没有工作区服务时照旧开成，只留一行说会话没能挂上', async () => {
+  const lines = []
+  const rigging = rig()
+  const ctx = {
+    ...rigging.ctx,
+    logger: {
+      info: (line) => lines.push(`info: ${line}`),
+      warn: (line) => lines.push(`warn: ${line}`),
+    },
+  }
+  const pending = openNodeSession(ctx, 's1', rigging.root, rigging.cycle, rigging.node)
+  await flush()
+  rigging.agents.created[0].whenIdle.resolve()
+  const outcome = await pending
+  assert.equal(outcome.ok, true, JSON.stringify(outcome))
+  assert.equal(lines.length, 1, `一行读数：${lines.join(' / ')}`)
+  assert.match(lines[0], /^warn: could not attach/u)
+  assert.ok(lines[0].includes(`${rigging.cycle}/${rigging.node}`), '读数点名哪一格')
+  assert.ok(lines[0].includes(rigging.root), '读数点名哪个工作区')
+  assert.ok(existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')), '会话照常开成、档照常落')
+})
+
+test('归组与挂接：会话挂不上时拒绝为 open-failed，说清哪一格开着而没挂上', async () => {
+  const workspaceRegistry = {
+    async create() {
+      return {
+        async attachSession() {
+          throw new Error('attach blew up')
+        },
+      }
+    },
+  }
+  const rigging = rig({ workspaceRegistry })
+  const outcome = await openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
+  assert.equal(outcome.ok, false)
+  assert.equal(outcome.code, 'open-failed')
+  const detail = outcome.detail ?? ''
+  assert.ok(detail.includes(`${rigging.cycle}/${rigging.node}`), '拒绝句点名的是格子')
+  assert.ok(detail.includes('not attached'), '拒绝句说清会话没挂上')
+  assert.ok(detail.includes('attach blew up'), '拒绝句带着挂接报的原话')
+  assert.ok(!detail.includes(rigging.agents.created[0].options.sessionId), '会话身份留在 outcome 的地址位上')
+  assert.ok(
+    !existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')),
+    '没挂上的会话不落档',
+  )
 })
 
 test('会话档由开会话方写：run 里多了这一条，别的条目原样留着', async () => {
@@ -412,7 +476,7 @@ function clearPlacement() {
   rmSync(join(testHome, 'skills'), { recursive: true, force: true })
 }
 
-/** The host context with a skill catalog that answers one fixed view, and a logger that keeps its lines. */
+/** The host context with a skill catalog that answers one fixed view, and a logger that keeps its lines. The workspace layer is present and quiet, so the only line these cases read is the diagnostic's own. */
 function rigWithCatalog(rigging, view) {
   const lines = []
   const ctx = {
@@ -424,6 +488,13 @@ function rigWithCatalog(rigging, view) {
     },
     get(name) {
       if (name === 'skills') return { async list(options) { return view(options) } }
+      if (name === 'workspaceRegistry') {
+        return {
+          async create() {
+            return { async attachSession() {} }
+          },
+        }
+      }
       return rigging.ctx.get(name)
     },
   }

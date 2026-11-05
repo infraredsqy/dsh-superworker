@@ -28,7 +28,7 @@ export interface SessionShow extends SessionNoteRecord {
   title: string;
 }
 
-/** The sessions namespace: reading session files, these two verbs only. */
+/** The sessions namespace: reading session files and noting one, these three verbs. */
 export interface SessionsNamespace {
   /**
    * Every session file that can say something, by node, sorted by node id. A page that cannot be read
@@ -37,6 +37,13 @@ export interface SessionsNamespace {
   list(): Promise<SessionNoteSummary[]>;
   /** Read one node's session file; when nothing was ever written, both lists are empty. */
   show(node: string): Promise<SessionShow>;
+  /**
+   * Note one session under one role: `true` when the file changed, `false` when that same session was
+   * already in that list. The read and the write are one act under the project's ledger lock, so the
+   * two writers a node can have — the host that opens its session and an engine path noting a
+   * discussion entry — never lose one another's entries.
+   */
+  note(node: string, role: SessionNoteRole, session: string): Promise<boolean>;
 }
 
 /** The own options of the namespace: where the machine layer's home is (the host override is a global-layer setting). */
@@ -345,6 +352,15 @@ export function createSessionsNamespace(
       // The title is read off the same table the id was resolved against: a node that is gone gives
       // an empty title, and the note it left behind is still worth reading.
       return { node: uid, title: titleOn(nodes, uid), ...note };
+    },
+
+    /*
+     * The one writer on the namespace. It takes the full node id as given: a prefix is an id a reader
+     * can say, and a note names the directory a node already has. Everything else — the lock, the
+     * carry-forward cleaning, the de-duplication by session id — belongs to `appendSessionNote`.
+     */
+    async note(node: string, role: SessionNoteRole, session: string): Promise<boolean> {
+      return appendSessionNote(root, node, role, session);
     },
   };
 }

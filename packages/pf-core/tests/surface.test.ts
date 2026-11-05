@@ -17,7 +17,7 @@ const CYCLE_METHODS = [
 ];
 const INSTRUCTION_METHODS = ['add', 'list', 'resolve', 'revive', 'remove'];
 const CONFIG_METHODS = ['get', 'set', 'unset', 'list', 'keys'];
-const SESSION_METHODS = ['list', 'show'];
+const SESSION_METHODS = ['list', 'show', 'note'];
 const CONDUCTOR_METHODS = [
   'next', 'prepare', 'dispatch', 'handoff', 'close', 'closeWith', 'doctor',
   'handoffForm', 'pluginCommand', 'pluginCommands',
@@ -57,7 +57,7 @@ describe('pf.config / pf.sessions / pf.conductor', () => {
   it('config has all five verbs', () => {
     expect(Object.keys(pf.config).sort()).toEqual([...CONFIG_METHODS].sort());
   });
-  it('sessions has both verbs', () => {
+  it('sessions has all three verbs', () => {
     expect(Object.keys(pf.sessions).sort()).toEqual([...SESSION_METHODS].sort());
   });
   it('conductor has all ten verbs', () => {

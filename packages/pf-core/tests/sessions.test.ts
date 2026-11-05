@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -300,6 +300,36 @@ describe('list: the whole book of session notes', () => {
     const rows = await sessions.list();
     expect(rows).toHaveLength(3);
     expect(settingsProbe.reads).toBe(1);
+  });
+});
+
+describe('note: the one writer on the session book', () => {
+  it('appends one entry under the role it is told, and answers true when the file changed', async () => {
+    expect(await sessions.note(NODE_A, 'run', 'session-run-1')).toBe(true);
+    const note = JSON.parse(readFileSync(notePath(NODE_A), 'utf8'));
+    expect(note.v).toBe(1);
+    expect(note.discussion).toEqual([]);
+    expect(note.run).toHaveLength(1);
+    expect(note.run[0]).toMatchObject({ session: 'session-run-1', host: 'dsh' });
+    expect(note.run[0].at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+  });
+
+  it('the same session noted twice lands once: the second call answers false and writes nothing', async () => {
+    expect(await sessions.note(NODE_A, 'run', 'session-run-1')).toBe(true);
+    const before = readFileSync(notePath(NODE_A), 'utf8');
+    expect(await sessions.note(NODE_A, 'run', 'session-run-1')).toBe(false);
+    expect(readFileSync(notePath(NODE_A), 'utf8')).toBe(before);
+  });
+
+  it('an entry this writer did not write is carried forward field for field', async () => {
+    const talked = { session: 'sess_talk', host: 'zcode', at: '2026-01-01T00:00:00Z', source: 'ledger' };
+    writeNote(NODE_A, { v: 1, discussion: [talked], run: [] });
+    expect(await sessions.note(NODE_A, 'run', 'session-run-1')).toBe(true);
+    const note = JSON.parse(readFileSync(notePath(NODE_A), 'utf8'));
+    expect(note.discussion).toEqual([talked]);
+    expect(note.run).toEqual([
+      { session: 'session-run-1', host: 'dsh', at: expect.any(String) },
+    ]);
   });
 });
 

@@ -104,7 +104,7 @@ export type {
   ConfigSource,
   ConfigValue,
 } from './config';
-export type { SessionNoteSummary, SessionShow, SessionsNamespace } from './sessions';
+export type { SessionNoteRole, SessionNoteSummary, SessionShow, SessionsNamespace } from './sessions';
 export type { PreparedDispatch, PreparedNode } from './prepare';
 export type {
   ConductorCloseAnswers,

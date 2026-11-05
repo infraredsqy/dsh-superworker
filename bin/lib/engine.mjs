@@ -111,6 +111,21 @@ export const gitRunner = {
 };
 
 /**
+ * Whether this process can open a session at all: true exactly under the drill switch, the one
+ * condition under which `executor()` hands the engine a simulated opener. With the switch off a
+ * command-line process has no opener — opening a node's session is the panel's work — and the verbs
+ * read this before the engine gets a chance to land a `started` claim nobody can honour.
+ */
+export function sessionOpenerAvailable() {
+  return drillOn();
+}
+
+/** The drill switch, read the way the engine reads it: on unless the value is one of the four off spellings, and absent reads as off. */
+function drillOn() {
+  return !['', '0', 'false', 'False'].includes(process.env.DSH_CONDUCT_SPAWN_DRY_RUN ?? '');
+}
+
+/**
  * The session opener this process hands the engine.
  *
  * Opening a node's session is the execution seam (`Executor`); the engine never opens one itself.
@@ -120,8 +135,7 @@ export const gitRunner = {
  * out loud instead of pretending a session exists.
  */
 export function executor() {
-  const dryRun = !['', '0', 'false', 'False'].includes(process.env.DSH_CONDUCT_SPAWN_DRY_RUN ?? '');
-  if (dryRun) return new engine.SimulatedExecutor();
+  if (sessionOpenerAvailable()) return new engine.SimulatedExecutor();
   return {
     async dispatch() {
       throw new Error(
