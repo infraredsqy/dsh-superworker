@@ -685,6 +685,55 @@ test('next --spawn：这个进程开不了会话时计划照印，spawn 那一�
   }
 });
 
+test('next --spawn：不点名 --cycle 与点名 c1 两种写法逐字节同答，钉住的那一行就是 c1', () => {
+  const scratch = scratchProject();
+  try {
+    // The reported state: c1 in service with its hand emptied, and the node the ranking picks with
+    // no note on disk yet — a fresh pick, so the step after the pin is a dispatch and the material
+    // for its session lands. This test pins the fixed answer; the ported crash (a pin against the
+    // word `undefined`) is the defect, and it is not restored here or in the two spellings' bytes.
+    const ids = JSON.parse(readFileSync(join(fixture, 'ids.json'), 'utf8'));
+    const statePath = join(scratch.project, '.pf', 'state.json');
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    state.cycles.find((cycle) => cycle.id === 'c1').holding = [];
+    writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+    rmSync(join(scratch.project, '.pf', 'signals', 'c1', `${ids.A}.json`));
+    const pristine = join(scratch.work, 'pristine');
+    cpSync(scratch.project, pristine, { recursive: true });
+
+    const options = {
+      cwd: scratch.project,
+      plugins,
+      home: scratch.home,
+      env: { DSH_CONDUCT_SPAWN_DRY_RUN: '1' },
+    };
+    const without = run(['next', '--spawn', '--json'], options);
+    assert.equal(without.code, 0, without.stderr);
+    const opened = JSON.parse(without.stdout);
+    assert.equal(opened.action, 'dispatch');
+    assert.equal(opened.cycle, 'c1');
+    const pinned = opened.nodes[0].node_id;
+    assert.deepEqual(opened.did, [
+      `pf: pinned ${pinned} on c1`,
+      `pf: opened a session for ${pinned} on c1`,
+    ]);
+    // The pin landed on the line the plan named: c1 holds the node now, and the session's material
+    // is on disk.
+    const held = JSON.parse(readFileSync(statePath, 'utf8')).cycles.find((cycle) => cycle.id === 'c1').holding;
+    assert.deepEqual(held.map((item) => item.id), [pinned]);
+    assert.equal(existsSync(join(scratch.project, '.pf', 'meta', 'launch', 'c1', pinned, 'prompt.txt')), true);
+
+    // The same starting bytes at the same path: the explicit spelling answers the same line.
+    rmSync(scratch.project, { recursive: true, force: true });
+    cpSync(pristine, scratch.project, { recursive: true });
+    const withCycle = run(['next', '--cycle', 'c1', '--spawn', '--json'], options);
+    assert.equal(withCycle.code, 0, withCycle.stderr);
+    assert.equal(withCycle.stdout, without.stdout);
+  } finally {
+    scratch.done();
+  }
+});
+
 test('dispatch：技能那两行按顺序跑得通——next --after 先落 prompt，dispatch 再开会话', () => {
   const scratch = scratchProject();
   try {
@@ -857,6 +906,77 @@ test('config 帮助：取值表按这台机器此刻认得的旋钮算（没装�
     assert.match(
       full.stdout,
       /\{issue_pool,issue_pool_weight_limit,max_agents,test_audit,test_seconds_limit,test_tier,worktree_mode\}/u,
+    );
+  } finally {
+    scratch.done();
+  }
+});
+
+test('config set：switch 旋钮写下的就是 on / off 两个词，读回来也是那个词', () => {
+  const scratch = scratchProject();
+  try {
+    const options = { cwd: scratch.project, plugins, home: scratch.home };
+    const ok = (argv) => {
+      const answer = run(argv, options);
+      assert.equal(answer.code, 0, `${argv.join(' ')}: ${answer.stderr}`);
+      return answer;
+    };
+    // A switch stores the word, never a boolean: the gate accepts exactly `on` / `off`, and the
+    // first line prints the word that was typed. This is the fixed answer, not parity kept with the
+    // ported refusal (`read false`).
+    for (const key of ['issue_pool', 'test_audit']) {
+      const off = ok(['config', 'set', key, 'off']);
+      assert.equal(
+        off.stdout,
+        `CONFIG: ${key} = off (written to project .pf/config.json)\n` +
+          `CONFIG: effective ${key} = off (from project .pf/config.json)\n`,
+        `${key} off`,
+      );
+      if (key === 'issue_pool') {
+        // The read-back the report names: `config get` answers the record's own string.
+        assert.equal(ok(['config', 'get', key]).stdout, 'off\n');
+      }
+      const on = ok(['config', 'set', key, 'on']);
+      assert.equal(
+        on.stdout,
+        `CONFIG: ${key} = on (written to project .pf/config.json)\n` +
+          `CONFIG: effective ${key} = on (from project .pf/config.json)\n`,
+        `${key} on`,
+      );
+    }
+
+    // The machine-layer switch is the third one of the kind, and its value is the same string; this
+    // verb's vocabulary is the project-layer names, so `config list` is where it is read, and `set`
+    // naming it is the parser's own refusal.
+    assert.match(
+      ok(['config', 'list']).stdout,
+      /^session_host_override\s+= off \(factory default\)$/mu,
+    );
+    const outside = run(['config', 'set', 'session_host_override', 'off', '--global'], options);
+    assert.equal(outside.code, 2);
+    assert.match(outside.stderr, /argument key: invalid choice: 'session_host_override'/u);
+
+    // The kind's gate still refuses a word it does not take, with the kind's own sentence.
+    const refused = run(['config', 'set', 'issue_pool', 'maybe'], options);
+    assert.equal(refused.code, 1);
+    assert.equal(refused.stderr.trim(), 'Error: issue_pool wants on or off, but read "maybe"');
+
+    // The bytes of the other kinds stay as they were: the first line repeats the typed word, and
+    // `1_000` is the spelling whose effective cell parses to 1000.
+    assert.equal(
+      ok(['config', 'set', 'max_agents', '5']).stdout,
+      'CONFIG: max_agents = 5 (written to project .pf/config.json)\n' +
+        'CONFIG: effective max_agents = 5 (from project .pf/config.json)\n',
+    );
+    assert.equal(
+      ok(['config', 'set', 'max_agents', '1_000']).stdout,
+      'CONFIG: max_agents = 1_000 (written to project .pf/config.json)\n' +
+        'CONFIG: effective max_agents = 1000 (from project .pf/config.json)\n',
+    );
+    assert.equal(
+      ok(['config', 'set', 'test_tier', 'minimal']).stdout,
+      'CONFIG: test_tier = minimal (written to project .pf/config.json)\n' +
+        'CONFIG: effective test_tier = minimal (from project .pf/config.json)\n',
     );
   } finally {
     scratch.done();

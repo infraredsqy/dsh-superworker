@@ -8,7 +8,7 @@
  * longer.
  */
 import { join } from 'node:path';
-import type { ConfigLayer, ConfigValue } from '../config';
+import type { ConfigLayer } from '../config';
 import type { CyclePolicyValue, InstructionReaderRow } from '../ledger';
 import type { CycleStatus, InstructionRecord, NodeResult, NodeStatus } from '../types';
 import {
@@ -672,12 +672,14 @@ export const configSetVerb = guarded(async (call: VerbCall) => {
   const [key, raw] = positionals.map((words) => words[0]);
   const { pf } = await project(values.project, call.io);
   const target = targetLayer(values);
-  const stored = readConfigValue(raw) as ConfigValue;
-  await pf.config.set(key, stored, target.at);
+  // The word travels to the gate exactly as typed: the gate parses it by the knob's kind, which is
+  // where a switch's two strings `on` / `off` belong. The first line prints that same word, so
+  // `max_agents 1_000` reads back as typed while the effective cell shows the parsed 1000.
+  await pf.config.set(key, raw, target.at);
   const reading = await pf.config.get(key, target.at);
   return {
     stdout:
-      `CONFIG: ${key} = ${pyScalar(stored)} (written to ${layerLabel(target.layer, values.cycle, values.node)})\n` +
+      `CONFIG: ${key} = ${pyScalar(raw)} (written to ${layerLabel(target.layer, values.cycle, values.node)})\n` +
       `CONFIG: effective ${key} = ${shownValue(reading.value)} (from ${layerLabel(reading.source, values.cycle, values.node)})`,
   };
 }, 1);
@@ -696,14 +698,6 @@ export const configUnsetVerb = guarded(async (call: VerbCall) => {
       `CONFIG: effective ${key} = ${shownValue(reading.value)} (from ${layerLabel(reading.source, values.cycle, values.node)})`,
   };
 }, 1);
-
-/** A written value as its kind reads it: `on` / `off` are switches, digits are numbers. */
-function readConfigValue(raw: unknown): unknown {
-  if (raw === 'on') return true;
-  if (raw === 'off') return false;
-  if (typeof raw === 'string' && raw !== '' && Number.isFinite(Number(raw)) && String(Number(raw)) === raw) return Number(raw);
-  return raw;
-}
 
 // ═══ instruction: the user's standing words ══════════════════════════════════
 

@@ -10,7 +10,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { handleOf, messageOf, projectRootOf, pyScalar, refuse, short, pyIndented } from './out';
+import { handleOf, messageOf, projectRootOf, pyList, pyScalar, refuse, short, pyIndented } from './out';
 import type { VerbCall, WordsIO } from './types';
 
 /**
@@ -49,6 +49,13 @@ export function actionText(action: Record<string, any>): string {
   }
   if ('applied' in action) lines.push(`applied: ${pyScalar(action.applied)}`);
   if (action.spawn_error !== undefined) lines.push(`spawn_error: ${action.spawn_error}`);
+  // The session this step opened is the one fact a reader cannot read off `applied`: a rehearsed
+  // call carries `spawn_error` here instead, and the two never appear together.
+  if (action.spawned !== undefined) {
+    lines.push(
+      `spawned: ${Array.isArray(action.spawned) ? pyList(action.spawned.map(String)) : pyScalar(action.spawned)}`,
+    );
+  }
   for (const extra of ((action.insertions ?? []) as any[]).slice(1)) {
     lines.push(`node:   ${extra.title ?? ''}  (${extra.node_id ?? extra.spec_path ?? ''})`);
     if (extra.spec_path !== undefined) lines.push(`spec:   ${extra.spec_path}`);
@@ -254,13 +261,16 @@ export async function nextVerb(call: VerbCall) {
       if (action.action === 'open_node' && !planMode) {
         // The line has room and nothing in hand: pin the nodes the ranking picked, then read the plan
         // again — a pin is the mechanical step behind `open_node`, and what a caller reads is the
-        // slot it opens.
+        // slot it opens. The line to pin against is the one this plan named, whether the caller
+        // spelled `--cycle` or left it out: one resolved id for the pin, the re-read and the `did`
+        // line, so those three can never name different lines.
+        cycleId = String(action.cycle);
         const picks = action.nodes ?? (action.node_id === undefined ? [] : [action.node_id]);
         for (const id of picks) {
-          await pf.ledger.cycles.hold(String(cycleId), String(id));
-          did.push(`pf: pinned ${String(id)} on ${String(cycleId)}`);
+          await pf.ledger.cycles.hold(cycleId, String(id));
+          did.push(`pf: pinned ${String(id)} on ${cycleId}`);
         }
-        action = await pf.conductor.next({ ...(cycleId === undefined ? {} : { cycle: cycleId }) });
+        action = await pf.conductor.next({ cycle: cycleId });
       }
     }
     // The pinning step lands the material, never the standalone verb: the prompt each node's session is
