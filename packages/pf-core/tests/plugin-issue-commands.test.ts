@@ -360,6 +360,31 @@ describe('the gates of the command surface', () => {
     expect(await err(['weight', 'extra'])).toContain('positional argument(s)');
   });
 
+  it('a trailing help flag after a verb asks the same page `issue help` does, without running the verb; the bare verb still runs', async () => {
+    const page = await out(['help']);
+    // `--help` and `-h` are the help flag's two spellings, the pair the words table's rows carry.
+    expect(await out(['status', '--help'])).toBe(page);
+    expect(await out(['status', '-h'])).toBe(page);
+    // A page, not a run: `update` would refuse a ghost id if it ran.
+    expect(await out(['update', 'ghost', '--help'])).toBe(page);
+    // Without the flag the verb runs as before and answers its own reading.
+    expect(JSON.parse(await out(['status']))).toHaveProperty('by_status');
+  });
+
+  it('a help flag anywhere else in the line is not one: it reaches the verb\'s parser, and a value spelled `--help` rides attached', async () => {
+    const page = await out(['help']);
+    // Mid-line with a real token after it: the parser sees the token it does not know and refuses.
+    expect(await err(['status', '--help', '--verbose'])).toContain('unrecognized argument: --help');
+    seed({ a: row({ id: 'a' }) });
+    // The trailing rule's accepted edge: a value-taking flag followed by `--help` in the last cell
+    // reads as help, so the verb did not run. The spelling that carries such a value attaches it,
+    // and the attached cell is not the help flag.
+    expect(await out(['update', 'a', '--reason', '--help'])).toBe(page);
+    expect(poolData().issues.a.reason).toBeNull();
+    expect(await out(['update', 'a', '--reason=--help'])).toContain('Issue updated: a');
+    expect(poolData().issues.a.reason).toBe('--help');
+  });
+
   it('an absent pool is an empty pool rather than an error: read verbs all answer empty and a write verb raises the dir', async () => {
     expect(await out(['weight'])).toBe(`0${EOL}`);
     expect(JSON.parse(await out(['list']))).toEqual([]);

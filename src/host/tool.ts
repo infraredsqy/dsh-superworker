@@ -85,11 +85,9 @@ export function toolDescriptionOf(): string {
  *
  * `help: true` composes with `args` instead of throwing them away: it asks the page of the exact
  * call the caller spelled, so `word: "issue", args: ["status"]` asks `issue status --help`, not
- * the group page. The trailing `--help` is the cell the words layer reads as the help request —
- * a `--help` anywhere else in the line is not one (a group word drops a mid-line one while it
- * looks for its verb) — so the appended flag is what makes the composed call a page, and a
- * caller who already ended the line with `--help` keeps their own spelling rather than getting
- * a second one.
+ * the group page. That flag rides in the line's last cell, which is how a table row and a plugin
+ * word alike are asked for a call's page, so the composed call is a page; a caller who already
+ * ended the line with `--help` keeps their own spelling rather than getting a second one.
  */
 export function argvOf(args: PathfinderToolArgs): string[] {
   const word = typeof args.word === 'string' && args.word !== '' ? args.word : undefined

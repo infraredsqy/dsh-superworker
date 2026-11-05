@@ -895,7 +895,14 @@ export function usage() {
   ].join(EOL);
 }
 
-/** The command's entry point: the first entry of argv is the verb (the declaration says `keep_name: false`, so the host takes the command word off). */
+/**
+ * The command's entry point: the first entry of argv is the verb (the declaration says `keep_name: false`, so the host takes the command word off).
+ *
+ * A help flag in the last cell — exactly `--help` or `-h`, with something before it — asks the same
+ * page the first-cell spelling asks. A help flag anywhere else is not that request: it reaches the
+ * verb's parser like any other token, and a value-taking flag before it takes it as that value. A
+ * value that must end the line with the flag's own spelling is attached instead: `--reason=--help`.
+ */
 export async function main(argv, ctx) {
   const args = [...argv];
   if (args.length === 0) return usage();
@@ -903,6 +910,8 @@ export async function main(argv, ctx) {
   if (word === 'help' || word === '--help' || word === '-h') return usage();
   const runner = RUNNERS[word];
   if (runner === undefined) throw new Error(`unrecognized command "${word}" (run \`issue help\`)`);
+  // A trailing help flag is the help request: the last cell is exactly `--help` or `-h`, with something before it.
+  if (args.length > 1 && (args[args.length - 1] === '--help' || args[args.length - 1] === '-h')) return usage();
   const spec = SPECS[word];
   const parsed = parseArgs(normalizeShortFlags(args.slice(1), spec), spec);
   if (WRITING_VERBS.has(word)) return withPoolLock(ctx.root, () => runner(parsed, ctx));
