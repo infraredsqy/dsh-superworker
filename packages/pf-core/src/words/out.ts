@@ -11,6 +11,8 @@ import { open } from '../open';
 import type { Pf } from '../open';
 import type { WordsIO, WordProject } from './types';
 
+const encoder = new TextEncoder();
+
 /** The first eight characters of an id: the short form the lines print. */
 export const short = (id: unknown): string => String(id).slice(0, 8);
 
@@ -175,7 +177,7 @@ const LONG_RESULT_POINTERS: Record<string, string> = {
  * after it.
  */
 export function longResultPointerOf(stdout: string, word: string): string | null {
-  if (new TextEncoder().encode(stdout).byteLength <= LONG_RESULT_LIMIT) return null;
+  if (encoder.encode(stdout).byteLength <= LONG_RESULT_LIMIT) return null;
   return LONG_RESULT_POINTERS[word] ?? null;
 }
 

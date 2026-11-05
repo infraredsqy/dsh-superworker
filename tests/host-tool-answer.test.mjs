@@ -90,6 +90,16 @@ test('字节锁四：上限常量是 4000，且超限的长结果整份在场、
   assert.equal(LONG_RESULT_LIMIT, 4000)
   assert.equal(longResultPointerOf('x'.repeat(4000), 'dag list'), null, '到上限为止都不带指针')
   assert.match(longResultPointerOf('x'.repeat(4001), 'dag list'), /dag info/u)
+  assert.equal(
+    longResultPointerOf('好'.repeat(1333), 'dag list'),
+    null,
+    '3999 字节、1333 字符：按字节量也没过 4000，带指针就是量错了',
+  )
+  assert.match(
+    longResultPointerOf('好'.repeat(1334), 'dag list'),
+    /dag info/u,
+    '4002 字节、1334 字符：按字节超限才带指针，按字符会放过',
+  )
   assert.equal(longResultPointerOf('x'.repeat(4001), 'dag info'), null, '不是长结果词就没有指针')
 
   const stage = await projectWith(Array.from({ length: 40 }, (_, i) => `node number ${i + 1} with a fairly long title to fill the answer`))
