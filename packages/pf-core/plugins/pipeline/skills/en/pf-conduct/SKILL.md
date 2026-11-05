@@ -213,15 +213,15 @@ With an active cycle already there, `cycle start` gets refused, and only `--forc
 call without it, and you write it even when the graph has just one line. `--title` takes only the
 user's own words; it goes into the cycle's name and into no prompt.
 
-That one `next --spawn` command pins what this line should open next (one node by default) and
-lands the material (each prompt and this round's run doc), while its spawn step answers one
-`spawn_error` line naming the panel — **this process opens no session**; the host opens the next
-round itself as this run ends (the panel's cell, or the relay firing on `turn/end`). So **your run
-ends here — do not wait on it here**: either this session stops outright, or it carries on through
-a `[pipeline]` call line; with no panel and no relay to open it, hand the user the prompt path that
-`spawn_error` names and the line in it. Before stopping, tell the user how far you will push; in
-full auto, say: "Full auto is on; I will keep pushing until the graph has no ready node left, or
-some instruction says stop."
+`next --spawn` pins what this line should open next (one node by default) and lands the material
+(each prompt and this round's run doc). The spawn step answers by door: through the agent-side tool
+the host opens the session then and there, and the answer carries `spawned` with `opened_node`; on
+the command line this process has no opener, so it answers one `spawn_error` line naming the panel.
+Either way **your run ends here — do not wait on it here**: the next round is the host's to open
+(the panel's cell, or the relay firing on `turn/end`); when the host opens nothing, hand the user
+the prompt path and the line in it. Before stopping, tell the user how far you will push; in full
+auto, say: "Full auto is on; I will keep pushing until the graph has no ready node left, or some
+instruction says stop."
 
 **How far this line runs depends on the node's own mode alone**: a `checkpoint` node stops at its
 close and hands over to a human; a `manual` node lives in the conversation throughout, and once
@@ -239,8 +239,10 @@ init-ed (`.pf/` is missing `.gitignore` and `.gitattributes`), run `pf init` onc
 per project, and it settles whether this project is the commit or the local flavour; any other
 command meeting an uninit-ed `.pf/` refuses outright and hands you this command.
 
-The pipeline's words are one table with two doors: run them on the `pf` command line, or
-call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
+The pipeline's words are one table with two doors: call the `pathfinder` tool — a `word`, its
+`args`, and `help` for that word's page — or run them on the `pf` command line, spelled the same
+way. Every `pf <…>` line in this sheet is a row of that table: use the tool when the session has
+it, and the two doors ask the same table.
 
 **0 | Sync**: first look at the `.pf/` flavour — if `git ls-files .pf` has output it is the commit
 flavour, and one `git pull --rebase` brings the other machine's graph, conclusions and commits
@@ -800,14 +802,14 @@ prompt is not on disk yet) and writes the `started` claim only once a session is
 that claim on disk, this cell is never dispatched a second time. For who calls it, and where to look
 when it breaks, see `docs/conduct-dsh-dispatch.md`.
 
-**This process has no seam for opening a session**: `pf dispatch <cycle>` reads the `started` claim
-and the prompt on disk, then refuses outright — exit code 2, not one byte written, naming the panel
-(寻路中心) and the path of every prompt; `pf next --spawn` prints the plan and lands the material as
-usual, and its spawn step answers `spawn_error` only, claiming no node at all. A rehearsal runs under
-`DSH_CONDUCT_SPAWN_DRY_RUN=1`: the call walks the whole way and the claim lands too, so take it away
-with `pf cycle retry <cycle> <node> --drop` before dispatching for real. The tool blocks a double
-dispatch itself, so on seeing a refusal first check whether that node already has a session running
-— do not force your way in.
+**The `pf` command's own process has no seam for opening a session**: `pf dispatch <cycle>` reads
+the `started` claim and the prompt on disk, then refuses outright — exit code 2, not one byte
+written, naming the panel (寻路中心) and the path of every prompt; `pf next --spawn` prints the plan
+and lands the material as usual, and its spawn step answers `spawn_error` only, claiming no node at
+all. A rehearsal runs under `DSH_CONDUCT_SPAWN_DRY_RUN=1`: the call walks the whole way and the claim
+lands too, so take it away with `pf cycle retry <cycle> <node> --drop` before dispatching for real.
+The tool blocks a double dispatch itself, so on seeing a refusal first check whether that node
+already has a session running — do not force your way in.
 
 ## References
 

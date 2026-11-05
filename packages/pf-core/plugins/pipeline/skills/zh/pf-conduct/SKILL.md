@@ -136,7 +136,7 @@ pf next --spawn --json
 
 已有 active cycle 时 `cycle start` 会被拒，`--force` 才放行——先想清楚为什么同时有两个。`--tags` **必给**：工具拒收没有它的调用；图里只有一条线也照样写。`--title` 只放用户原话，它进的是 cycle 的名字，不进任何 prompt。
 
-`next --spawn` 那一条命令钉住这条线手里要开的节点、把材料落盘（prompt 与本轮 run 文档），spawn 那一步只回一句 `spawn_error` 并点名面板——**会话不由这个进程开**，本趟收手时由宿主自己开下一棒（面板那一格，或接力在 `turn/end` 上开）。所以**你这一趟到此结束，别在这里等**：要么本会话直接收手，要么用 `[pipeline]` 调用行继续；没有面板也没有接力时，把 `spawn_error` 里那份 prompt 路径和它那一行交给用户。收手前告诉用户你会推到哪儿；全自动就说：「已进入全自动，会一直推到图里没有就绪节点、或某条指令说停。」
+`next --spawn` 那一条命令钉住这条线手里要开的节点、把材料落盘（prompt 与本轮 run 文档），spawn 那一步按入口作答：走工具这条入口时由宿主当场把会话开出来，答案里带 `spawned` 与 `opened_node`；走命令行时这个进程没有 opener，只回一句 `spawn_error` 并点名面板。两边都是**本趟到此结束**——下一棒由宿主开（面板那一格，或接力在 `turn/end` 上开），所以**别在这里等**：要么本会话直接收手，要么用 `[pipeline]` 调用行继续；宿主没有开着下一棒时，把 prompt 路径和它那一行交给用户。收手前告诉用户你会推到哪儿；全自动就说：「已进入全自动，会一直推到图里没有就绪节点、或某条指令说停。」
 
 **这条线跑多远，只看节点自己的 mode**：`checkpoint` 的节点收尾就停下交人；`manual` 的节点整个活在对话里，用户明确放行（「标成完成，继续」）之后线照 `auto` 一样接着走；`auto` 的节点干完自己开下一个。线停下来就是 `cycle status <cycle> inactive`，收尾命令自己写；人用 `cycle status <cycle> active` 把它放回服务，它才会接着挑下一个节点（为什么放回服务只有人能写，见 `docs/conduct-state.md`「两个入口」）。
 
@@ -144,7 +144,7 @@ pf next --spawn --json
 
 先确认当前工作区落在项目根目录（`.pf/` 的父目录）；对不上就提示用户开对应工作区的会话。项目还没 init 过（`.pf/` 底下缺 `.gitignore` 与 `.gitattributes`）时，先跑一次 `pf init`——一个项目一次，它定下这个项目是提交档还是本地档；别的命令撞见没 init 的 `.pf/` 会直接拒绝并给出这条命令。
 
-管线这些词是一张表两个入口：命令行走 `pf`，模型侧走 `pathfinder` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
+管线这些词是一张表两个入口：模型侧走 `pathfinder` 工具，`word` 放词名、`args` 放这一行的其余部分、`help` 取它那一页；命令行走 `pf`，拼法就是同一行。本册里写成 `pf <…>` 的每一行都是这张表的一行——会话里有这个工具时走工具，两边问的是同一张表。
 
 **0｜同步**：先看 `.pf/` 档——`git ls-files .pf` 有输出就是提交档，`git pull --rebase` 一次把另一台机器的图、结论与提交一并拿下来再读。本地档分两发拉：`git pull --rebase` 拉代码，`.pf/.git` 在的时候再 `git -C .pf pull --rebase` 拉记录那一份。`git remote` 一个都没有的项目没有上游，pull 与 push 那一次提交整套跳过；`.pf/` 自成仓库但它没有远端时，记录那一次提交同样跳过。**两条命令都从项目根跑**——`git -C .pf` 里的 `.pf` 是相对 cwd 的，而 fork 档收尾时 cwd 落在 worktree 里，那里的 `.pf/` 要么是陈旧检出、要么压根不存在。
 
@@ -423,7 +423,7 @@ git worktree add .pf/worktrees/<节点短id> -b pf/<节点短id>
 
 派发这一步由**宿主**开新会话：面板的那一格与它的自动接力走同一条路（`src/host/relay.ts` 的 `dispatchCell`），原生 opener 把这个节点的 prompt 交给新会话（`src/host/executor.ts`）。引擎先把这一格的材料落盘（prompt 不在盘上时才落），会话真的开出来之后才写 `started` 认领——认领落了盘，这一格就不会再被派第二次。谁调它、断了看哪儿，见 `docs/conduct-dsh-dispatch.md`。
 
-**这个进程里没有开会话的接缝**：`pf dispatch <cycle>` 读盘上的 `started` 与 prompt 之后当场拒——退出码 2，一个字节都不写，句子里点名面板（寻路中心）与每一份 prompt 的路径；`pf next --spawn` 照印计划、照落材料，spawn 那一步只回 `spawn_error`，一个节点都不认领。演练走 `DSH_CONDUCT_SPAWN_DRY_RUN=1`：调用照走完，认领也会落盘，要真派之前先 `pf cycle retry <cycle> <node> --drop` 把它撤掉。补发之前工具会自己挡双派发，见到拒绝先查那个节点是不是已经有会话在跑，别硬闯。
+**命令行这个进程里没有开会话的接缝**：`pf dispatch <cycle>` 读盘上的 `started` 与 prompt 之后当场拒——退出码 2，一个字节都不写，句子里点名面板（寻路中心）与每一份 prompt 的路径；`pf next --spawn` 照印计划、照落材料，spawn 那一步只回 `spawn_error`，一个节点都不认领。演练走 `DSH_CONDUCT_SPAWN_DRY_RUN=1`：调用照走完，认领也会落盘，要真派之前先 `pf cycle retry <cycle> <node> --drop` 把它撤掉。补发之前工具会自己挡双派发，见到拒绝先查那个节点是不是已经有会话在跑，别硬闯。
 
 ## 参照
 

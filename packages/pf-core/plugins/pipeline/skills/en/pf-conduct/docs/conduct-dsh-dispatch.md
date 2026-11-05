@@ -78,6 +78,10 @@ hands the engine a `SimulatedExecutor`: the call walks the whole way, the sessio
 claim lands as usual — it rehearses **the whole chain**. So a cell rehearsed that way and really dispatched again
 afterwards needs `pf cycle retry <cycle> <node> --drop` first, to take the claim away.
 
+**The host side honours the same switch.** In a drill the native opener creates no agent and answers a receipt
+whose host is `drill`, carrying no session id — which is also why the relay never takes it for one of its own
+sessions. The claim still lands, and it comes away the same way.
+
 ## 4. The dispatch chain and its failure modes
 
 - **It cannot open.** Every refusal of `openNodeSession` is a code plus a reason (`no-session-service` /
