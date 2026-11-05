@@ -832,7 +832,7 @@ export const COMMANDS = {
   },
   "dag add": {
     "word": "add",
-    "prog": "pf add",
+    "prog": "pf dag add",
     "description": null,
     "positionals": [
       {
@@ -913,7 +913,7 @@ export const COMMANDS = {
   },
   "dag rm": {
     "word": "rm",
-    "prog": "pf rm",
+    "prog": "pf dag rm",
     "description": null,
     "positionals": [
       {
@@ -945,7 +945,7 @@ export const COMMANDS = {
   },
   "dag update": {
     "word": "update",
-    "prog": "pf update",
+    "prog": "pf dag update",
     "description": null,
     "positionals": [
       {
@@ -1026,7 +1026,7 @@ export const COMMANDS = {
   },
   "dag depend": {
     "word": "depend",
-    "prog": "pf depend",
+    "prog": "pf dag depend",
     "description": null,
     "positionals": [
       {
@@ -1060,7 +1060,7 @@ export const COMMANDS = {
   },
   "dag undepend": {
     "word": "undepend",
-    "prog": "pf undepend",
+    "prog": "pf dag undepend",
     "description": null,
     "positionals": [
       {
@@ -1099,7 +1099,7 @@ export const COMMANDS = {
   },
   "dag status": {
     "word": "status",
-    "prog": "pf status",
+    "prog": "pf dag status",
     "description": null,
     "positionals": [
       {
@@ -1168,7 +1168,7 @@ export const COMMANDS = {
   },
   "dag revive": {
     "word": "revive",
-    "prog": "pf revive",
+    "prog": "pf dag revive",
     "description": null,
     "positionals": [
       {
@@ -1193,7 +1193,7 @@ export const COMMANDS = {
   },
   "dag list": {
     "word": "list",
-    "prog": "pf list",
+    "prog": "pf dag list",
     "description": null,
     "positionals": [],
     "options": [
@@ -1257,7 +1257,7 @@ export const COMMANDS = {
   },
   "dag info": {
     "word": "info",
-    "prog": "pf info",
+    "prog": "pf dag info",
     "description": null,
     "positionals": [
       {
@@ -1289,7 +1289,7 @@ export const COMMANDS = {
   },
   "dag context": {
     "word": "context",
-    "prog": "pf context",
+    "prog": "pf dag context",
     "description": null,
     "positionals": [
       {
@@ -1314,7 +1314,7 @@ export const COMMANDS = {
   },
   "dag search": {
     "word": "search",
-    "prog": "pf search",
+    "prog": "pf dag search",
     "description": null,
     "positionals": [
       {
@@ -1355,7 +1355,7 @@ export const COMMANDS = {
   },
   "dag open": {
     "word": "open",
-    "prog": "pf open",
+    "prog": "pf dag open",
     "description": null,
     "positionals": [
       {
@@ -1380,7 +1380,7 @@ export const COMMANDS = {
   },
   "dag validate": {
     "word": "validate",
-    "prog": "pf validate",
+    "prog": "pf dag validate",
     "description": null,
     "positionals": [],
     "options": [
@@ -1398,7 +1398,7 @@ export const COMMANDS = {
   },
   "dag help": {
     "word": "help",
-    "prog": "pf help",
+    "prog": "pf dag help",
     "description": null,
     "positionals": [],
     "options": [
@@ -2426,7 +2426,7 @@ export const GROUPS = {
     "commands": [
       {
         "word": "add",
-        "prog": "pf add",
+        "prog": "pf dag add",
         "description": null,
         "positionals": [
           {
@@ -2507,7 +2507,7 @@ export const GROUPS = {
       },
       {
         "word": "rm",
-        "prog": "pf rm",
+        "prog": "pf dag rm",
         "description": null,
         "positionals": [
           {
@@ -2539,7 +2539,7 @@ export const GROUPS = {
       },
       {
         "word": "update",
-        "prog": "pf update",
+        "prog": "pf dag update",
         "description": null,
         "positionals": [
           {
@@ -2620,7 +2620,7 @@ export const GROUPS = {
       },
       {
         "word": "depend",
-        "prog": "pf depend",
+        "prog": "pf dag depend",
         "description": null,
         "positionals": [
           {
@@ -2654,7 +2654,7 @@ export const GROUPS = {
       },
       {
         "word": "undepend",
-        "prog": "pf undepend",
+        "prog": "pf dag undepend",
         "description": null,
         "positionals": [
           {
@@ -2693,7 +2693,7 @@ export const GROUPS = {
       },
       {
         "word": "status",
-        "prog": "pf status",
+        "prog": "pf dag status",
         "description": null,
         "positionals": [
           {
@@ -2762,7 +2762,7 @@ export const GROUPS = {
       },
       {
         "word": "revive",
-        "prog": "pf revive",
+        "prog": "pf dag revive",
         "description": null,
         "positionals": [
           {
@@ -2787,7 +2787,7 @@ export const GROUPS = {
       },
       {
         "word": "list",
-        "prog": "pf list",
+        "prog": "pf dag list",
         "description": null,
         "positionals": [],
         "options": [
@@ -2851,7 +2851,7 @@ export const GROUPS = {
       },
       {
         "word": "info",
-        "prog": "pf info",
+        "prog": "pf dag info",
         "description": null,
         "positionals": [
           {
@@ -2883,7 +2883,7 @@ export const GROUPS = {
       },
       {
         "word": "context",
-        "prog": "pf context",
+        "prog": "pf dag context",
         "description": null,
         "positionals": [
           {
@@ -2908,7 +2908,7 @@ export const GROUPS = {
       },
       {
         "word": "search",
-        "prog": "pf search",
+        "prog": "pf dag search",
         "description": null,
         "positionals": [
           {
@@ -2949,7 +2949,7 @@ export const GROUPS = {
       },
       {
         "word": "open",
-        "prog": "pf open",
+        "prog": "pf dag open",
         "description": null,
         "positionals": [
           {
@@ -2974,7 +2974,7 @@ export const GROUPS = {
       },
       {
         "word": "validate",
-        "prog": "pf validate",
+        "prog": "pf dag validate",
         "description": null,
         "positionals": [],
         "options": [
@@ -2992,7 +2992,7 @@ export const GROUPS = {
       },
       {
         "word": "help",
-        "prog": "pf help",
+        "prog": "pf dag help",
         "description": null,
         "positionals": [],
         "options": [
