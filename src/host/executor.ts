@@ -57,6 +57,14 @@ export type SessionOpenOutcome =
 export interface SessionOpenOptions {
   /** Stops the settlement wait; the session and its note stay whatever this decides. */
   readonly signal?: AbortSignal
+  /**
+   * Runs once the session is minted and alive, before its first instruction
+   * goes in — the earliest point a caller can start watching it, ahead of
+   * every event the opening round will emit (the round may settle before this
+   * open returns, so a watcher that registers on the return never sees the
+   * round's own turn end). Best effort: a throwing hook does not fail the open.
+   */
+  readonly onOpened?: (session: string) => void
 }
 
 /**
@@ -347,6 +355,13 @@ export async function openNodeSession(
        * ever carry them. The opener knows the agent it just minted, so it arms it here,
        * before the first step's tool set resolves. */
       wakeAgent(handle.agent, { ctx })
+      /* The caller's earliest watch point: the session exists and its first instruction has
+       * not gone in — registration here lands ahead of every event the opening round emits. */
+      try {
+        options?.onOpened?.(opened)
+      } catch {
+        /* A caller's registration problem is not this open's failure. */
+      }
       try {
         handle.agent.followup(createUserMessage({
           content: [{ type: 'text', text: prompt }],

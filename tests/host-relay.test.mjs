@@ -97,8 +97,8 @@ async function drainFor(ms) {
   }
 }
 
-/** The session-side stand-in: every create is recorded; each agent settles its opening round on the spot. */
-function fakeAgents() {
+/** The session-side stand-in: every create is recorded; each agent settles its opening round on the spot. With `idleGate`, the opening round's settlement waits for the gate — the in-flight shape a long first round produces. */
+function fakeAgents({ idleGate } = {}) {
   const created = []
   return {
     created,
@@ -110,7 +110,7 @@ function fakeAgents() {
           sessionId: options.sessionId,
           status: 'idle',
           followup(message) { record.followups.push(message) },
-          whenIdle: () => Promise.resolve(),
+          whenIdle: idleGate ? () => idleGate : () => Promise.resolve(),
         }
         record.agent = agent
         return Promise.resolve({ agent, dispose: async () => {} })
@@ -257,6 +257,43 @@ test('触发：自己开的会话收尾，计划说 dispatch，下一棒自己�
     const second = agents.created[1]
     const promptNext = (await readFile(join(root, '.pf', 'meta', 'launch', 'c-1', 'n-2', 'prompt.txt'), 'utf8')).trim()
     assert.equal(second.followups[0].content[0].text, promptNext, '下一棒的首条指令是盘上那份派发提示')
+  } finally {
+    installOff()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('注册先于回合结束：本棒在途时它的 turn/end 就该被接力听到（长首回合形态）', async () => {
+  const root = rigRecordRoot(['n-1'])
+  let releaseIdle
+  const idleGate = new Promise((give) => { releaseIdle = give })
+  const agents = fakeAgents({ idleGate })
+  const { ctx, events, warnings } = fakeContext({ root, agents })
+  const installOff = installRelay(ctx)
+  try {
+    /* 第一棒在途：首条指令已进，回合被 gate 挂着——dispatch 尚未返回。 */
+    const pending = dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
+    await until(
+      () => agents.created.length >= 1 && agents.created[0].followups.length === 1,
+      '首条指令进箱',
+      warnings,
+    )
+    const sid = agents.created[0].options.sessionId
+
+    /* 本棒在途时收尾落地，轮次结束来了：此刻 tracked 必须已登记，接力才开得出下一棒。 */
+    await settleClose(root, 'n-1', 'n-2')
+    events.emit('session/event', { id: sid }, { type: 'turn/end' })
+
+    /* 下一棒排在本棒之后（进程级串行链）；松开回合，本棒返回，接力这一棒才落地。 */
+    releaseIdle()
+    const first = await pending
+    assert.equal(first.ok, true, JSON.stringify(first))
+    await until(
+      () => agents.created.length >= 2 && existsSync(claimPath(root, 'c-1', 'n-2')),
+      '下一棒的会话与它的认领',
+      warnings,
+    )
+    assert.ok(existsSync(claimPath(root, 'c-1', 'n-2')), '下一棒的认领随派发落盘')
   } finally {
     installOff()
     rmSync(root, { recursive: true, force: true })

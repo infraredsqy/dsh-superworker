@@ -120,7 +120,14 @@ export function executorOf(ctx: Context, sessionId: SessionId, workspaceRoot: st
         throw new Error('the dispatch request named no cell (cycle and node are both required here)')
       }
       if (request.dryRun === true) return { host: 'drill' }
-      const outcome = await openNodeSession(ctx, sessionId, workspaceRoot, cycle, node)
+      /* Register the opened session the moment it exists — before its opening
+       * round can settle. This open does not return until that round does, so
+       * a registration on the return would always lose the round's own
+       * turn-end event, and the relay would never hear a session it opened
+       * itself. */
+      const outcome = await openNodeSession(ctx, sessionId, workspaceRoot, cycle, node, {
+        onOpened: (session) => { tracked.set(session, workspaceRoot) },
+      })
       if (!outcome.ok) throw new Error(outcome.detail ?? outcome.code)
       return { sessionId: outcome.session, host: 'dsh' }
     },
