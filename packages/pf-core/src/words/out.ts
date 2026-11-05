@@ -148,3 +148,34 @@ export function readPolicyValue(text: unknown): unknown {
   if (text !== '' && text !== undefined && text !== null && Number.isFinite(Number(raw))) return Number(raw);
   return text;
 }
+
+// ── the long-answer contract ────────────────────────────────────────────────
+//
+// A tool answer is one message, and three words can outgrow it. The cap and the
+// per-word pointer live here, once: the transport's printer never applies them (a
+// command line's printed bytes are their own contract), and a projection that needs
+// the pointer asks this layer instead of spelling its own — so the cap and the words
+// it covers cannot drift apart between two callers.
+
+/** The answer size in UTF-8 bytes above which one of the long words carries a pointer instead of more rows. */
+export const LONG_RESULT_LIMIT = 4000;
+
+/** The pointer each long word hands back, naming the word to ask next (never a second pagination state). */
+const LONG_RESULT_POINTERS: Record<string, string> = {
+  'dag list': 'ask `dag info <node id>` for one node in full, or rerun with `--limit <n>`',
+  'dag search': 'rerun with `--limit <n>` to narrow this answer, or `dag info <node id>` for one node in full',
+  'session list': "ask `session show <node id>` for one node's note in full",
+};
+
+/**
+ * The pointer one long answer carries, or `null` when it fits (or the word is not one
+ * of the long ones): the cap and the comparison both count UTF-8 bytes, the same measure
+ * `Buffer.byteLength` gives, never characters. The caller appends it as the answer's own
+ * last line — nothing here truncates: an oversized answer travels whole, with the pointer
+ * after it.
+ */
+export function longResultPointerOf(stdout: string, word: string): string | null {
+  if (new TextEncoder().encode(stdout).byteLength <= LONG_RESULT_LIMIT) return null;
+  return LONG_RESULT_POINTERS[word] ?? null;
+}
+

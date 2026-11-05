@@ -19,7 +19,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { answer, describe } from 'pf-core'
+import { answer, describe, longResultPointerOf } from 'pf-core'
 import { workspaceRootOf } from './gateway.ts'
 import { executorOf } from './relay.ts'
 import { shippedPluginsDir } from './skills.ts'
@@ -129,13 +129,21 @@ export function definePathfinderTool(host: PathfinderToolHost): PathfinderToolDe
       const raw = typeof exec.agent?.id === 'string' ? exec.agent.id : ''
       const sessionId = raw as SessionId
       const root = await workspaceRootOf(host.ctx, sessionId)
-      const outcome = await answer(argvOf(args), {
+      const argv = argvOf(args)
+      const outcome = await answer(argv, {
         root,
         executor: executorOf(host.ctx, sessionId, root),
         openerAvailable: true,
         pluginsDir: shippedPluginsDir(),
       })
-      return { code: outcome.code, stdout: outcome.stdout, stderr: outcome.stderr }
+      // The long-answer contract comes from the words layer, never restated here: an
+      // oversized answer travels whole, with the pointer as its own last line. The word
+      // a pointer is asked about is the line's first two cells (`dag list`), the way the
+      // table spells a group's verb.
+      const word = argv.length >= 2 ? `${argv[0]} ${argv[1]}` : (argv[0] ?? '')
+      const pointer = longResultPointerOf(outcome.stdout, word)
+      const stdout = pointer === null ? outcome.stdout : `${outcome.stdout}\n(${pointer})\n`
+      return { code: outcome.code, stdout, stderr: outcome.stderr }
     },
   }
 }

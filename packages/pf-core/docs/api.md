@@ -27,12 +27,14 @@
 ```text
 COMMANDS
 GROUPS
+LONG_RESULT_LIMIT
 PLUGIN_SKILL_FILE
 SimulatedExecutor
 answer
 describe
 helpText
 loadPlugins
+longResultPointerOf
 open
 parse
 skillFolders
@@ -58,7 +60,10 @@ usageError
 自述词、动词与组的行、版式常数），顶层清单与 agent 面的帮助页渲染同一份；`topHelp(io)` 交出拼好的
 顶层清单文本（插件词按 `io` 现读）。`COMMANDS` / `GROUPS` / `specOf` / `helpText` / `parse` /
 `usageError` 是那张词表与它的桥、打印器、解析器与用法错误——一张表喂解析、打印与路由，谁需要表
-从引擎拿。
+从引擎拿。`LONG_RESULT_LIMIT`（4000，按 UTF-8 字节计——与 `Buffer.byteLength` 同一把尺子，不是字符数）与
+`longResultPointerOf(stdout, word)` 是长结果的上限与指针，只在这一处定义：`dag list` / `dag search` /
+`session list` 三个词的应答超过上限时，投影层在尾部补指针问的下一句词，绝不静默截断；命令面的打印
+不走它（命令行印出的字节是它自己的契约）。
 
 包另有一个进程入口 `pf-merge-ledger`（`package.json` 的 `bin` 里只有这一条，
 产物是 `dist/merge-ledger.mjs`）：git 的合并驱动只能靠进程叫，它是边界上唯一那个例外，做的是

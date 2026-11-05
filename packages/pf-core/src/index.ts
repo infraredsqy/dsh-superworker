@@ -14,6 +14,7 @@ export { SimulatedExecutor } from './executor';
 export { answer, describe, topHelp } from './words/router';
 export { COMMANDS, GROUPS, specOf } from './words/spec';
 export { helpText, parse, usageError } from './words/argparse';
+export { LONG_RESULT_LIMIT, longResultPointerOf } from './words/out';
 export type { WordsIndex } from './words/router';
 export type { WordsIO } from './words/types';
 /* A plugin's skills are read out of its folder by anyone who installs them: the scan of the plugin
