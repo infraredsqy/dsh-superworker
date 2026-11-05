@@ -1,0 +1,82 @@
+# DSH 派发链（conduct 管线用）
+
+> 给会话看的那一半是同一份技能（[`../SKILL.md`](../SKILL.md)）的「派发通路」一节：谁调它、断了看哪儿。
+> 这份放**为什么这么写**、**别怎么写** —— 供排障与搬迁时对照。这条链上只有三个名字：
+> 面板的接力（`src/host/relay.ts`）、原生 opener（`src/host/executor.ts`）、引擎的 dispatch
+> （`packages/pf-core/src/conductor.ts`）。没有 spawner 脚本，也没有任何一步去拼一份 argv。
+
+## 一、谁开这个会话
+
+**两个开法，都由宿主自己开，走的是同一条路。**
+
+- **面板的那一格**：`dispatchCell`（`relay.ts`）一次调用走完三步 —— 引擎的 `conductor.dispatch`
+  先把这一格的材料落盘（prompt 还不在盘上时）、再把请求交给执行者接缝、会话真的开出来之后
+  才写 `started` 认领。
+- **自动接力**：同一个 `dispatchCell`，由 `turn/end` 触发。接力听的是**这个宿主自己开出去的那些
+  会话**（`dispatch` 返回时记进 `tracked` 表）；每一轮结束只读一次 plan，plan 说 `dispatch` 才开
+  下一棒，plan 说 `wait` 就一概不越过去。开关 `autoRelay`（默认开）关的只是触发，按钮照旧能用。
+
+**唯一那道接缝是 `Executor`**：引擎只认 `dispatch(request)`，自己从不开会话。这个宿主把
+`openNodeSession`（`executor.ts`）挂上去，一开就是五步：探宿主有没有 `agents` 服务（没有就拒，
+点名这一块）；从记录里读这一格的 prompt（`<pf>/meta/launch/<线>/<节点>/prompt.txt`）；在这个
+工作区名下建 agent 与会话，把它挂进那个工作区（只给 `cwd` 建出来的会话不进任何分组，面板里
+散在「未分组」）；先挂好这一轮结束的监听，再把 prompt 当第一条指令交进去；最后给这个节点写一条
+`run` 备忘。会话 id 是宿主自己撮的（`session-<uuid>`），它是面板导航用的地址，读的人不需要看见。
+
+**prompt 只有一个调用行**（`prepare.ts` 的 `promptTextOf`：`/pf-conduct <节点 id> [pipeline]`），
+字节就是这一行。为什么不往里多拼：节点标题、spec 路径、收尾命令、用户的指令，会话自己都读得到；
+拼进去的那一份是同一件事的第二个副本，而且更旧。
+
+## 二、引擎与磁盘的先后
+
+```
+读 started 认领 -> 插件派发闸 -> 材料（prompt 不在盘上才落） -> executor.dispatch -> 写 started
+```
+
+- **认领先读。** `conductor.dispatch` 第一件事是看这一格的 `started` 在不在盘上；在，就回
+  `already_open`，一个字节不写、一次 executor 调用都不发。
+- **材料后落。** prompt 已经在盘上（钉住那一步落的）就跳过准备；不在，才由 `prepareDispatch`
+  落 prompt 与本轮的 `run.md`（run doc 独占创建，已经写过就不动它）。
+- **认领最后写。** 会话真开出来才写 `started`。写不进去按事故处理：会话已经出去、盘上没有一句
+  话说得清，这一调用当场抛，句子里带着会话 id 并说明「再派一次就是第二个会话」。
+- **派发闸在材料与会话之前。** 插件可以在派发这个时机答一句「不」，理由逐条进 `dispatch_blocked`
+  的拒绝；这一次因此不落 prompt、不开会话，刚钉住的那个节点留着（钉住是上一步的事），线照旧在
+  服务中。
+- 这个顺序有代价：认领只要落了盘，plan 就把这一格当成已经在跑，永不第二次派它。所以「先问能不能
+  开、再落认领」必须由开的那一方保证 —— 命令行那一侧见下一节。
+
+## 三、命令行这一侧：没有 opener，就一个字都别写
+
+`bin/lib/next.mjs` 里两个动作读的是同一件事：**这个进程有没有开会话的接缝**
+（`bin/lib/engine.mjs` 的 `sessionOpenerAvailable()`，只有排练档为真）。
+
+- `pf dispatch <cycle>`：先读盘上那对事实，节点挨个来 —— `started` 在，记成「已经开过」；不在，
+  就要求 prompt 在盘上（不在就拒，并说这份 prompt 由钉住那一步写）。都读过了、确认这个进程没有
+  opener，**就在调引擎之前拒**：退出码 2，一个字节不写，句子里点名面板（寻路中心）与每一份
+  prompt 的路径，再给出人自己补这一格的两条路（在面板上派，或新开一个会话把那一行贴进去）。
+  一个节点都没得派时另有一句：已经开过的节点不再派第二次。
+- `pf next --spawn`：计划照印，材料照落（钉住那一步本来就要落 prompt），spawn 那一步只把
+  `spawn_error` 写进答案、一个节点都不认领 —— 调用根本不交给引擎。这就是「不写认领」的写法：
+  占位 opener 一旦拒在认领之后，这一格就成了「已经开着、背后却没有会话」。
+- `pf next --after <node>` 落材料、不开会话（技能那条命令不带 `--spawn`）。技能那两条命令
+  （先 `next --after`、再 `dispatch`）就是这么分工的：第二条读得到第一条写下的 prompt。
+
+**排练档。** `DSH_CONDUCT_SPAWN_DRY_RUN` 的值不属于 `''` / `0` / `false` / `False` 时，`engine.mjs`
+交给引擎的是 `SimulatedExecutor`：调用照走完，会话 id 是 `sess-N`，`started` 认领照样落盘 ——
+它演练的是**整条链**。所以演练过的那一格真要再派，先 `pf cycle retry <cycle> <node> --drop`
+把认领撤掉。
+
+## 四、派发链与它的失败模式
+
+- **开不出来。** `openNodeSession` 的每种拒绝都是一个码加一句理由（`no-session-service` /
+  `prompt-missing` / `open-failed` …）。执行者抛，引擎就不落认领（材料可能已经落了）、不动记录，理由原样回到调用方：
+  面板的按钮念给读的人，自动接力只落一行 warn 日志，不往事件总线上抛。
+- **会话开了、认领没落。** 引擎抛，句子里带着会话 id，并明说该先补认领；这时盘上留着一条 prompt
+  而没有认领，下一次派发会照常开 —— 先按上面那句把认领补上，或者撤掉重来。
+- **会话死了、认领还在。** `started` 是唯一的「已经开过」证据，plan 因此不再派这一格。重开的走法
+  只有一条：`pf cycle retry <cycle> <node> --drop`（认领与旧票一起撤）、`pf cycle hold <cycle> <node>`、
+  再 `pf next --cycle <cycle> --spawn --json`。
+- **两条线并排。** 醒着的那条可能正往同一棵树上跑 git，写操作撞 `index.lock` 是瞬时撞锁：等几秒
+  重跑同一条命令，两三次仍不解放就停手交人；锁文件属于活进程，不许删。
+- **排查顺序。** 面板里看不到会话，看它挂在哪一个工作区；按钮拒了，念它回的那句 `detail`；
+  命令行拒了，那就是这个进程没有 opener —— 这个进程本来就不开会话，跟配置无关。

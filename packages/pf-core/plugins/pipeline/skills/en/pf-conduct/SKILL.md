@@ -599,10 +599,9 @@ run and the words to say:
 - `dispatch`: **hand in the ticket and stop** — the handoff is on disk and the node is closed, and
   the host opens the next round itself (the panel's auto-relay, on by default); this session ends
   here, and no dispatch command is run. Only when the relay is switched off, or the next round
-  fails to appear, does a person re-send it: `pf dispatch <cycle>` (add `--project <project root>`
-  when cwd is not the project root) starts one session for each node this line holds at that moment
-  (one node by default; the nodes whose sessions already started are skipped); it refuses to
-  dispatch when the line is not in service, so put the line back in service before re-sending
+  fails to appear, does a person finish that cell in the panel: the command-line
+  `pf dispatch <cycle>` has no opener in this process and only refuses, reading out the panel and
+  the prompt path (see "The dispatch path")
 - `insert_node`: nodes have just been put into the graph, **nothing was pinned** and there is no
   prompt — commit and push as usual, then run `pf next --cycle <cycle> --spawn --json` and let the
   picking rules dispatch them (this is where a debt node comes from, see "Debt nodes"
@@ -796,25 +795,26 @@ quotes, so a backslash needs one more layer of escaping.
 
 ## The dispatch path
 
-This dispatch step opens a new session through a **spawner script** and **always carries
-`-PromptFile`**; which spawner answers is the tool's to give, not yours to pick — the most
-specific answer wins: `--spawner dsh|zcode|path` (named on the spot) > this line's `spawner`
-policy (`pf cycle policy <cycle> spawner dsh|zcode`, travelling with the line's record) >
-`DSH_CONDUCT_SPAWNER` > the host's own answer (falling back to `dsh` when the probe cannot say).
-For who calls it, and where to look when it breaks, see `docs/conduct-dsh-dispatch.md`.
+This dispatch step is opened by **the host**: the panel's cell and its automatic relay walk the same
+road (`dispatchCell` in `src/host/relay.ts`), and the native opener hands this node's prompt to the
+new session (`src/host/executor.ts`). The engine lands this cell's material first (only when the
+prompt is not on disk yet) and writes the `started` claim only once a session is really out — with
+that claim on disk, this cell is never dispatched a second time. For who calls it, and where to look
+when it breaks, see `docs/conduct-dsh-dispatch.md`.
 
-When a dispatch fails, the tool drops a failure marker file named per line and does not clear it
-(for where it lands and its shape, see `docs/conduct-dsh-dispatch.md` "the dispatch chain and its
-failure modes") — a human coming in looks at it first (one file per line, so with two lines in
-parallel each looks at its own), and on seeing it runs `next --cycle <id> --spawn` by cycle id to
-fish it back; a successful spawn clears this line's old marker (the marker exists = this chain is
-broken right now). Before re-sending, the tool blocks double dispatch itself, so on seeing a
-refusal first check whether that node already has a session running — do not force your way in.
+**This process has no seam for opening a session**: `pf dispatch <cycle>` reads the `started` claim
+and the prompt on disk, then refuses outright — exit code 2, not one byte written, naming the panel
+(寻路中心) and the path of every prompt; `pf next --spawn` prints the plan and lands the material as
+usual, and its spawn step answers `spawn_error` only, claiming no node at all. A rehearsal runs under
+`DSH_CONDUCT_SPAWN_DRY_RUN=1`: the call walks the whole way and the claim lands too, so take it away
+with `pf cycle retry <cycle> <node> --drop` before dispatching for real. The tool blocks a double
+dispatch itself, so on seeing a refusal first check whether that node already has a session running
+— do not force your way in.
 
 ## References
 
-The `docs/*.md` referenced here do not ship with this skill, and are not under the current
-project's `docs/`.
+The `docs/*.md` referenced here travel inside this skill: open them from the skill directory you are
+reading (`docs/conduct-state.md` sits under this skill's `docs/`).
 
 - The contract and the design: `docs/conduct-state.md` — the full set of `next`'s actions, the
   close's two ways in and the invariants are all in it (`holding` is a set of nodes, `parallel`

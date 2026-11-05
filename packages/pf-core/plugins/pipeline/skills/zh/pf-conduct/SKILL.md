@@ -329,7 +329,7 @@ git -C .pf push                # 这份仓库有远端才推
 
 推送成功后，按 `next --after` 那条给的 `action` 走——它自己带着该跑的命令和该说的话：
 
-- `dispatch`：**交票即止**——交接单已落盘、节点已关，下一棒由宿主自己开出来（面板设置里的自动接力，默认开），本会话到此收手，不要再跑任何派发命令；接力被关掉、或下一棒迟迟没有开出来时，才由人补棒：`pf dispatch <cycle>`（cwd 不在项目根就加 `--project <项目根>`），它把这条线此刻握着的每一个节点各开一个会话（默认只有一个节点；已经开过会话的那几个节点跳过），线不在服务中时它拒发，补发前先把线放回服务
+- `dispatch`：**交票即止**——交接单已落盘、节点已关，下一棒由宿主自己开出来（面板设置里的自动接力，默认开），本会话到此收手，不要再跑任何派发命令；接力被关掉、或下一棒迟迟没有开出来时，才由人在面板上补那一格：命令行这条 `pf dispatch <cycle>` 在这个进程里没有 opener，它只会拒，并把面板与 prompt 路径念给你（见「派发通路」）
 - `insert_node`：刚往图里插了节点，**什么都没钉**，也没有 prompt —— 照常提交、推送，然后 `pf next --cycle <cycle> --spawn --json`，由挑选按正常规则把它们派出去（越线时插的维护节点就是这么来的，见下面「维护节点」）
 - `stop_pipeline`：把 `reason` 照原话说给用户（`attention` 有内容就一起念），然后停手 —— 线里还有别的节点进行中时它不停这条线，`reason` 会说
 - `wait`：读它的 `note` / `close_with`，照那条命令做，**绝不轮询**
@@ -432,13 +432,13 @@ $rec | ConvertTo-Json | Set-Content -Encoding utf8 .pf/meta/FORK-<节点短id>.j
 
 ## 派发通路
 
-派发这一步由 **spawner 脚本**开新会话，**总是带 `-PromptFile`**；哪一份 spawner 由工具回答，不用你挑——最具体的答案赢：`--spawner dsh|zcode|路径`（当场点名）> 这条线的 `spawner` 策略（`pf cycle policy <cycle> spawner dsh|zcode`，随线记录走）> `DSH_CONDUCT_SPAWNER` > 宿主自认（探测答不上来就退到 `dsh`）。谁调它、断了看哪儿，见 `docs/conduct-dsh-dispatch.md`。
+派发这一步由**宿主**开新会话：面板的那一格与它的自动接力走同一条路（`src/host/relay.ts` 的 `dispatchCell`），原生 opener 把这个节点的 prompt 交给新会话（`src/host/executor.ts`）。引擎先把这一格的材料落盘（prompt 不在盘上时才落），会话真的开出来之后才写 `started` 认领——认领落了盘，这一格就不会再被派第二次。谁调它、断了看哪儿，见 `docs/conduct-dsh-dispatch.md`。
 
-派发失败时工具会落一个按线命名的失败标记文件并且不清除（落点与形状见 `docs/conduct-dsh-dispatch.md`「派发链与它的失败模式」）——人工进来先看它（按线分文件，并行时两条线各看各的），见到就按 cycle id 跑 `next --cycle <id> --spawn` 把它捞回来；spawn 成功会清掉本线的旧标记（标记存在 = 这条链现在是断的）。补发之前工具会自己挡双派发，见到拒绝先查那个节点是不是已经有会话在跑，别硬闯。
+**这个进程里没有开会话的接缝**：`pf dispatch <cycle>` 读盘上的 `started` 与 prompt 之后当场拒——退出码 2，一个字节都不写，句子里点名面板（寻路中心）与每一份 prompt 的路径；`pf next --spawn` 照印计划、照落材料，spawn 那一步只回 `spawn_error`，一个节点都不认领。演练走 `DSH_CONDUCT_SPAWN_DRY_RUN=1`：调用照走完，认领也会落盘，要真派之前先 `pf cycle retry <cycle> <node> --drop` 把它撤掉。补发之前工具会自己挡双派发，见到拒绝先查那个节点是不是已经有会话在跑，别硬闯。
 
 ## 参照
 
-这里引到的 `docs/*.md` 不随这份技能装出去，也不在当前项目的 `docs/` 下。
+这里引到的 `docs/*.md` 跟着这份技能一起装：从你正在读的这个技能目录打开它们，`docs/conduct-state.md` 就在本 skill 目录的 `docs/` 下。
 
 - 契约与设计：`docs/conduct-state.md`——`next` 的动作全集、收尾两个入口、不变量都在里面（`holding` 是一组节点、`parallel` 是这条线的上限）
 - 装了哪些插件、各自的工具与口径：`pf doctor` 列出装了什么，每份声明自带的技能里写着它自己的工具与口径
