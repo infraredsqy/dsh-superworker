@@ -191,10 +191,8 @@ export const en: Readonly<Record<WordKey, string>> = {
   /* ── When an operation is refused ─────────────────────────────────────────────────────────── */
   /* The tool's own reason and the transport's own message are carried out verbatim: no lookup table
    * here owns another program's words. */
-  'failure.arg-not-allowed': 'This argument cannot go into a command: {detail}',
-  'failure.no-subprocess': 'This host exposes no process gateway, so this write cannot run.',
+  'failure.arg-not-allowed': 'This argument cannot address a record: {detail}',
   'failure.tool-refused': '{detail}',
-  'failure.spawn-failed': '{detail}',
   'failure.scope-unknown': 'Unrecognized scope: {detail}',
   'failure.empty-text': 'Nothing to record: write the sentence first.',
   'failure.no-session-service': 'This host exposes no {detail} service, so no session can be opened.',

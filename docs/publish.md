@@ -216,9 +216,9 @@ npm install --global --omit=peer --no-audit --no-fund <那份 .tgz 的绝对路�
   `Get-Command pf` 指的就是它，PATH 上更早的那一份被它压过
 - `pf version` 印的就是这份装机目录：`pf <号> at <前缀>/node_modules/dsh-pathfinder/bin (tools: <前缀>/node_modules/dsh-pathfinder)`。
   在一个没有 `.pf` 的目录里（比如 `~`）与在项目根里印的是同一份，仓外跑得起来就是装对了
-- 面板的写入一律交给本包自带的命令入口：不走 PATH，也不经 shell——跑的是发布件里那条命令入口
-  （`<装机目录>/bin/pf.mjs`），由跑宿主半身的那个 node 起，argv 直接交给子进程口子；带用户原话的那次
-  把那句话原样接在 argv 末尾，一个参数，不拼字符串
+- 面板的写入在宿主半身里就地作答：走的是同一份词面（引擎的 `answer()`，agent 那条 `pathfinder`
+  工具也走它），不起命令、不问 PATH、不经过 shell；带用户原话的那次把那句话原样接在那一行末尾，
+  一个参数，不拼字符串。写记录因此不需要 `bin/`，发布件里没有它也写得成
 
 核一遍，都在仓外跑：`pf version`，然后进一个有记录的项目根跑 `pf doctor`。`doctor` 的 `plugins` 那一格读的是
 **这份运行时自带的插件**（`<装机目录>/packages/pf-core/plugins`，与引擎的产物并排）；项目根下的 `plugins/`

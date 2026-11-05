@@ -195,9 +195,7 @@ export function ago(t: Translate, parts: AgoParts | null): string {
 /** What each refusal code reads as. One entry per code, so a new code fails to compile until it speaks. */
 const FAILURE_WORDS: Readonly<Record<FailureCode, WordKey>> = {
   'arg-not-allowed': 'failure.arg-not-allowed',
-  'no-subprocess': 'failure.no-subprocess',
   'tool-refused': 'failure.tool-refused',
-  'spawn-failed': 'failure.spawn-failed',
   'scope-unknown': 'failure.scope-unknown',
   'empty-text': 'failure.empty-text',
   'no-session-service': 'failure.no-session-service',

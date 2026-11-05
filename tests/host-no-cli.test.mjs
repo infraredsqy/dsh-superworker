@@ -10,7 +10,7 @@
  * unresolvable from inside itself before it runs anything; a step that tried to shell out would
  * surface `ENOENT`.
  *
- * One child run, five legs:
+ * One child run, six legs:
  *
  * - the empty target project has no `.pf/`, and `help` answers the word index there (exit 0);
  * - `init` → `dag add` ×2 → `cycle create` → `cycle start` → `next` → `dispatch` → `handoff` →
@@ -22,10 +22,15 @@
  *   lands) and the claim `started` is on disk afterwards — the record shows the one call it received;
  * - the host bundle applies to a minimal stand-in context from inside the release tree: it registers
  *   **no tool** by itself, and the tool appears only after a `skill` tool call settles;
- * - the skills the shipped plugins carry land under the child's own temp DSH home, not the machine's.
+ * - the skills the shipped plugins carry land under the child's own temp DSH home, not the machine's;
+ * - the applied service answers a write from that tree: an `instruction add` through the endpoint the
+ *   panel calls lands the sentence in the project, and no command runs anywhere — the tree never had
+ *   a `bin/`. A static lock beside it reads the assembled tree and `src/host/**`: the command entry's
+ *   literal appears in exactly two places, the engine's own usage text in each of its two shipped
+ *   copies (documentation, not a dependence), and nowhere else.
  *
  * The engine product and the host bundle must be built, and the host half's declared peer must be
- * installed (`npm test` builds the first; nothing in this suite builds `lib/` — the published package
+ * installed (`npm test` builds both; nothing in this suite builds `lib/` — the published package
  * builds it at `prepack`). Without them every leg skips itself with that reason, the same discipline
  * as `tests/runtime-outside-repo.test.mjs`.
  *
@@ -34,7 +39,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -83,6 +88,22 @@ function pfExecutables(dir) {
     const full = join(dir, entry.name)
     if (entry.isDirectory()) found.push(...pfExecutables(full))
     else if (PF_NAMES.includes(entry.name.toLowerCase())) found.push(full)
+  }
+  return found
+}
+
+/** Every file in a tree carrying the given literal, as its slash-separated path and how many times. */
+function filesSaying(dir, literal, prefix = '') {
+  const found = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const rel = prefix === '' ? entry.name : `${prefix}/${entry.name}`
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      found.push(...filesSaying(full, literal, rel))
+      continue
+    }
+    const count = readFileSync(full, 'utf8').split(literal).length - 1
+    if (count > 0) found.push({ path: rel, count })
   }
   return found
 }
@@ -160,6 +181,7 @@ const record = {
   executorFinal: [],
   host: null,
   skills: null,
+  write: null,
 }
 
 /* The "no command on PATH" gate, made explicit from inside the child: if a shell ever tried the
@@ -274,10 +296,42 @@ record.skills = existsSync(manifestPath)
   ? JSON.parse(readFileSync(manifestPath, 'utf8')).skills.flatMap((skill) => skill.files.map((file) => join(home, 'skills', file)))
   : null
 
+/* The panel's write endpoint, from the release tree: the applied service answers it through the words
+ * layer the bundle carries, and the sentence lands in the project. A write that reached for a command
+ * entry would have to find one — and this tree has none. */
+const said = 'the release shape wrote this'
+const answered = await provided.pathfinder.addInstruction('agent-1', project, said, 'global', '', '')
+const instructionFile = join(project, '.pf', 'instructions.json')
+record.write = {
+  outcome: snapshot(answered),
+  landed: existsSync(instructionFile)
+    ? JSON.parse(readFileSync(instructionFile, 'utf8')).instructions.filter((entry) => entry.text === said)
+    : [],
+  binAfter: existsSync(join(release, 'bin')),
+}
+
 process.stdout.write(JSON.stringify(record) + '\\n')
 `
 
 test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目先答词索引', { skip }, () => {
+  /* A stale host bundle is the one failure the rest of this case cannot see: the assembled tree copies
+   * whatever `lib/host/index.js` already is, so a write path that still named a command could hide
+   * behind a bundle built before that change. The bundle must therefore be newer than every source it
+   * claims to be built from, and newer than the two files that shape it. */
+  const hostSrcDir = fileURLToPath(new URL('../src/host/', import.meta.url))
+  if (existsSync(hostEntry)) {
+    const newest = [
+      ...filesUnder(hostSrcDir).map((relative) => join(hostSrcDir, relative)),
+      join(repo, 'tsdown.config.ts'),
+      join(repo, 'package.json'),
+    ]
+      .map((file) => ({ file, mtimeMs: statSync(file).mtimeMs }))
+      .reduce((latest, next) => (next.mtimeMs > latest.mtimeMs ? next : latest))
+    assert.ok(
+      statSync(hostEntry).mtimeMs >= newest.mtimeMs,
+      `lib/host/index.js is older than ${newest.file}: the host bundle is stale. Rebuild it with \`npm run types && npm run bundle\` (or \`npm test\`, which builds it).`,
+    )
+  }
   const work = mkdtempSync(join(tmpdir(), 'pf-no-cli-'))
   try {
     const release = join(work, 'release')
@@ -304,6 +358,52 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
       assert.ok(inventory.some((entry) => entry.path === required), `the shipped shape is missing ${required}`)
     }
     assert.equal(existsSync(join(release, 'lib', 'types', 'host', 'index.js')), false, 'lib/types must ship only its .d.ts: the compiled .js is packing input, not payload')
+
+    /* Step 1b: the static lock. No host code names the command entry — every write answers in this
+     * process. The literal survives in the engine's own usage text (it prints the spelling a shell-safe
+     * caller may hand over) and, in the host bundle, only where that engine text is inlined: those two
+     * files are the whole list, so one reference of the host's own makes the list longer. The engine
+     * product is not this package's to edit; the lock is exact about what it can prove instead. */
+    const ENTRY_LITERAL = 'bin/pf.mjs'
+    assert.deepEqual(
+      filesSaying(fileURLToPath(new URL('../src/host/', import.meta.url)), ENTRY_LITERAL),
+      [],
+      'src/host/** must carry no reference to the command entry',
+    )
+    const saying = filesSaying(release, ENTRY_LITERAL)
+    assert.deepEqual(
+      saying.map((hit) => hit.path).sort(),
+      ['lib/host/index.js', 'packages/pf-core/dist/index.mjs'],
+      `the assembled tree may carry the literal only in the engine's own usage text, and in the copy the host bundle inlines: ${JSON.stringify(saying)}`,
+    )
+    assert.equal(saying.find((hit) => hit.path === 'packages/pf-core/dist/index.mjs').count, 1, 'the engine product prints the literal once')
+    assert.equal(
+      saying.find((hit) => hit.path === 'lib/host/index.js').count,
+      1,
+      'the host bundle carries exactly the line its inlined engine prints, and none of its own',
+    )
+
+    /* The literal, read a shape wider. A bare host reference could hide inside the counts above if it
+     * sat beside the one literal the engine prints; so the single occurrence those counts allow must
+     * be the engine's own usage line, and the host source must name no `bin/` path at all, in either
+     * spelling, before the assembled tree is trusted. */
+    assert.deepEqual(
+      filesSaying(hostSrcDir, 'bin/'),
+      [],
+      'src/host/** must name no `bin/` path: the slash spelling failed',
+    )
+    assert.deepEqual(
+      filesSaying(hostSrcDir, 'bin\\'),
+      [],
+      'src/host/** must name no `bin\\` path: the Windows spelling failed',
+    )
+    const ENGINE_USAGE = /node <checkout>\/bin\/pf\.mjs/gu
+    const usageLines = (readFileSync(join(release, 'lib', 'host', 'index.js'), 'utf8').match(ENGINE_USAGE) ?? []).length
+    assert.equal(
+      usageLines,
+      1,
+      `the host bundle must carry the engine's own usage line (\`node <checkout>/bin/pf.mjs\`) exactly once: the usage-line shape failed, saw ${usageLines}`,
+    )
 
     /* The host half's declared peer, provided outside the assembled tree the way a profile does. */
     mkdirSync(join(work, 'node_modules', '@deepseek-ai'), { recursive: true })
@@ -444,6 +544,19 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
       assert.ok(file.toLowerCase().startsWith(join(home, 'skills').toLowerCase()), `a skill was placed outside the temp home: ${file}`)
       assert.ok(existsSync(file), `the skills manifest records a file that is not on disk: ${file}`)
     }
+
+    /* Step 7: the write endpoint, from the release tree — the sentence lands in the project, and the
+     * tree that answered it never held a command entry and never had one resolvable on PATH. */
+    assert.equal(record.write.outcome.ok, true, `the write endpoint refused from the release shape: ${JSON.stringify(record.write.outcome)}`)
+    assert.match(
+      record.write.outcome.text,
+      /^INSTRUCTION \S+: \[global\/stage\] the release shape wrote this$/u,
+      'the words layer\'s own line came back',
+    )
+    assert.equal(record.write.landed.length, 1, `the sentence did not land in the project: ${JSON.stringify(record.write.landed)}`)
+    assert.equal(record.write.landed[0].scope, 'global')
+    assert.equal(record.write.landed[0].state, 'live')
+    assert.equal(record.write.binAfter, false, 'the assembled tree must still hold no bin/ after the write')
 
     /* One real run's full record, for a report: opt-in, and only into the repo's gitignored scratch.
      *   PF_NO_CLI_RECORD=1 node --test tests/host-no-cli.test.mjs */

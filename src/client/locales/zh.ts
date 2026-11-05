@@ -219,10 +219,8 @@ export const zh = {
    * another program's words — the `pf` tool's own reason, or a message from the transport — and no
    * table here owns those. They are carried out verbatim, which is also why the panel can show
    * them in a language it does not speak; `failure.unstated` stands in when they said nothing. */
-  'failure.arg-not-allowed': '该参数不能进入命令：{detail}',
-  'failure.no-subprocess': '该宿主没有可用的进程通道，无法执行这次写入。',
+  'failure.arg-not-allowed': '该参数不能进入记录：{detail}',
   'failure.tool-refused': '{detail}',
-  'failure.spawn-failed': '{detail}',
   'failure.scope-unknown': '无法识别的范围：{detail}',
   'failure.empty-text': '空话不落笔：先写一句原话。',
   'failure.no-session-service': '这个宿主没有 {detail} 服务，开不了会话。',

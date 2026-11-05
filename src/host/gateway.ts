@@ -12,7 +12,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-workspace-files'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-subprocess'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { bindTypertRemote, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type { TypertGatewayBinding } from '@deepseek-ai/dsh-typert-protocol'
@@ -45,12 +44,13 @@ const REMOTE_METHODS: readonly string[] = [
 ]
 
 /**
- * The signal endpoints use when the caller passes none: never cancelled.
+ * The signal a read uses when the caller passes none: never cancelled.
  *
  * "Never cancelled" is this layer's standing trade-off (these are all small
  * reads and writes, worth waiting for), but the idiom is declared exactly
- * once in this module; the four places that use it all take it from this
- * constant.
+ * once in this module; every read that needs it takes it from this constant.
+ * A write carries no signal at all: the words layer answers it in this
+ * process and is not interruptible.
  */
 const NEVER_ABORT = new AbortController().signal
 
@@ -129,12 +129,10 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * Record an instruction: the user's words are copied verbatim, with the
    * scope named.
    *
-   * This endpoint takes a different route from the other three: the words
-   * bypass the argument gate (they may be any free-form sentence), so the
-   * whole sentence is passed to the tool as one argument without going
-   * through cmd — see `write.ts`. Which cycle or node the scope binds to is
-   * the panel's call: pass it when named, otherwise the tool resolves it from
-   * the records.
+   * The words may be any free-form sentence, so the whole sentence is one
+   * argument on the line, appended last — see `write.ts`. Which cycle or node
+   * the scope binds to is the panel's call: pass it when named, otherwise the
+   * words layer resolves it from the records.
    *
    * The parameter list stays on one line with no trailing comma: the gateway
    * splits method parameters from source, same reason as `read` above.
@@ -181,18 +179,18 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
   /**
    * Read the project settings of the named workspace.
    *
-   * What gets read is the four lines the tool prints: values live on three
-   * layers (factory defaults / global / project), the global layer lives in
-   * the home directory where the workspace file gateway cannot look, and only
-   * the tool can tell the effective value and which layer it came from — so
-   * this runs a command instead of reading a file.
+   * What gets read is the four lines the words layer prints: values live on
+   * three layers (factory defaults / global / project), the global layer lives
+   * in the home directory where the workspace file gateway cannot look, and
+   * only the words layer can tell the effective value and which layer it came
+   * from — so this asks it instead of reading a file.
    *
    * The parameter list stays on one line with no trailing comma, same reason as `read`.
    * @param workspaceRoot - The workspace root to read; an empty string means this session's own root.
    */
-  async readConfig(sessionId: SessionId, workspaceRoot: string, options?: PathfinderReadOptions): Promise<PathfinderConfigReading> {
+  async readConfig(sessionId: SessionId, workspaceRoot: string): Promise<PathfinderConfigReading> {
     const project = await rootFor(this.ctx, sessionId, workspaceRoot)
-    const outcome = await runPf(this.ctx, project, ['config', 'list'], options?.signal ?? NEVER_ABORT)
+    const outcome = await runPf(project, ['config', 'list'])
     if (!outcome.ok) {
       return {
         workspaceRoot: project,
@@ -216,17 +214,17 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * `--global`, since that layer follows the user, while this panel cell
    * edits what belongs to this workspace.
    *
-   * There is no `--project <root>`: the command runs on the workspace root
-   * and `config set`'s `--project` defaults to the current directory, so the
-   * landing spot is exact; besides, paths in write-side command lines never
-   * pass the argument gate — it only allows `[A-Za-z0-9_.:+-]`, while Windows
-   * paths carry backslashes and quoting them would confuse cmd.
+   * There is no `--project <root>`: the words answer at the workspace root
+   * handed in, and `config set`'s `--project` defaults to that root, so the
+   * landing spot is exact; besides, this path builds its own argv and takes no
+   * raw line from a browser, so a Windows path needs neither a gate nor
+   * quoting — it is one cell the engine reads, not a command line.
    *
-   * Value validity is the tool's call: its `parse_value` is the only judge,
-   * and a non-zero exit means nothing was written. Keys get the same
-   * treatment: only the tool knows which keys it accepts, so no allow-list is
+   * Value validity is the words layer's call: its `parse_value` is the only
+   * judge, and a non-zero answer means nothing was written. Keys get the same
+   * treatment: only the engine knows which keys it accepts, so no allow-list is
    * kept here — key and value are passed through as-is; for an unknown key it
-   * errors, exits non-zero, writes nothing, and its message surfaces verbatim.
+   * errors, answers non-zero, writes nothing, and its message surfaces verbatim.
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    */
   async setConfig(sessionId: SessionId, workspaceRoot: string, key: string, value: string): Promise<PfOutcome> {
@@ -286,11 +284,11 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
   }
 
   /**
-   * The single command-running path shared by the five write endpoints; the true private `#pf` is not on the prototype, so the endpoint table's missing-registration scan cannot see it. A write never carries a caller signal: "never cancelled" is this layer's standing trade-off, taken once in {@link NEVER_ABORT}.
+   * The single write path shared by the five write endpoints; the true private `#pf` is not on the prototype, so the endpoint table's missing-registration scan cannot see it.
    */
   async #pf(sessionId: SessionId, workspaceRoot: string, args: readonly string[], said?: string): Promise<PfOutcome> {
     const root = await rootFor(this.ctx, sessionId, workspaceRoot)
-    return runPf(this.ctx, root, args, NEVER_ABORT, said)
+    return runPf(root, args, said)
   }
 }
 

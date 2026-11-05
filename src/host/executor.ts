@@ -58,8 +58,8 @@ export interface SessionOpenOptions {
  * One record-directory segment, guarded at the one place it becomes a path:
  * an empty id, a self or parent segment, or anything outside the record
  * tree's own character set would address a file outside that cell's own
- * place. The refusal is the argument gate's own code; the offending value
- * rides as the detail.
+ * place. The refusal is this record-path guard's own code (`arg-not-allowed`);
+ * the offending value rides as the detail.
  */
 function segmentFailure(value: string): PfFailure | undefined {
   const SAFE_SEGMENT = /^[A-Za-z0-9_.:+-]{1,200}$/

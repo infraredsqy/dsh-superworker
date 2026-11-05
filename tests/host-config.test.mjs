@@ -1,17 +1,28 @@
-/* The two endpoints of the config section: locks in "what the tool's printed lines parse into"
- * and "what the write command looks like".
+/* The two endpoints of the config section: locks in "what the engine's printed lines parse into"
+ * and "what a write lands on disk".
  *
- * Reading parses the lines printed by `pf config list`; writing hands a `config set` command
- * outward — keys and values pass through unfiltered for the tool to judge (it errors on unknown
- * keys, exits non-zero, writes nothing), and no path under `.pf` is assembled locally.
+ * Reading parses the lines the words layer prints; writing hands a `config set` line to that same
+ * words layer — keys and values pass through unfiltered for it to judge (an unknown key or a value
+ * outside the knob's kind is refused, nothing is written, and its own sentence rides back as
+ * `detail`), and no path under `.pf` is assembled locally.
  *
  *   node --test tests/
  */
-import test from 'node:test'
+import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { open } from 'pf-core'
 import { PathfinderRecordsGateway } from '../src/host/gateway.ts'
 import { parseConfigList } from '../src/host/project-config.ts'
-import { fakeContext, fakeSubprocess, wordsOf } from './helpers/host-fixtures.mjs'
+import { fakeContext } from './helpers/host-fixtures.mjs'
+
+/* One machine layer for this file: the global settings layer lives in the home directory, and
+ * `PF_HOME_DIR` is the engine's own switch for it — a test may not read the developer's own home. */
+const home = mkdtempSync(join(tmpdir(), 'pf-host-config-home-'))
+process.env.PF_HOME_DIR = home
+after(() => rmSync(home, { recursive: true, force: true }))
 
 /** The four lines printed by a local `pf config list`, verbatim. */
 const LISTED = [
@@ -20,6 +31,23 @@ const LISTED = [
   'worktree_mode = off（项目 .pf/config.json）',
   'issue_repair  = on（出厂默认）',
 ].join('\n')
+
+/** A throwaway project: `.pf` laid down by the engine itself, closed again when the case is done. */
+async function project() {
+  const root = mkdtempSync(join(tmpdir(), 'pf-host-config-'))
+  await open(root).ledger.init()
+  return {
+    root,
+    done() {
+      rmSync(root, { recursive: true, force: true })
+    },
+  }
+}
+
+/** The project settings file as it sits on disk; `init` lays an empty object and writes add to it. */
+function configOnDisk(root) {
+  return JSON.parse(readFileSync(join(root, '.pf', 'config.json'), 'utf8'))
+}
 
 test('工具印的四行：值与它住哪一层都读出来', () => {
   const entries = parseConfigList(LISTED)
@@ -86,72 +114,70 @@ test('不是设置行的都不收：工具另印的提醒、空行、没有值�
   assert.deepEqual(Object.keys(entries), ['max_agents'])
 })
 
-test('读一趟：跑的就是 config list，跑在这个工作区的根上', async () => {
-  const subprocess = fakeSubprocess({ stdout: LISTED })
-  const gateway = new PathfinderRecordsGateway(fakeContext({ subprocess }))
-  const reading = await gateway.readConfig('s1', '')
+test('读一趟：答的就是 config list，答在这个工作区的根上，表就是它印的那几行', async () => {
+  const stage = await project()
+  try {
+    const gateway = new PathfinderRecordsGateway(fakeContext({ workspaceRoot: stage.root }))
+    const reading = await gateway.readConfig('s1', '')
 
-  assert.equal(reading.ok, true)
-  assert.equal(reading.workspaceRoot, 'C:\\workspace')
-  assert.equal(reading.entries['max_agents']?.value, '1')
-  assert.equal(reading.entries['issue_repair']?.layer, 'default')
-  assert.deepEqual(wordsOf(subprocess.specs[0]), ['config', 'list'])
-  assert.equal(subprocess.specs[0].cwd, 'C:\\workspace')
+    assert.equal(reading.ok, true, reading.refusal?.detail)
+    assert.equal(reading.workspaceRoot, stage.root, '读的是这条会话自己那个根')
+    assert.equal(reading.refusal, null, '成功那一支不带拒绝理由')
+    assert.deepEqual(reading.entries, parseConfigList(reading.text), 'entries 就是 text 解析出来的那一份')
+    assert.deepEqual(reading.entries['worktree_mode'], { value: 'off', layer: 'default' }, '没写过就是出厂默认')
+    assert.equal(reading.entries['max_agents']?.layer, 'default')
+  } finally {
+    stage.done()
+  }
 })
 
-test('readConfig 认 options 上的取消信号：递进来的那条原样到进程口子', async () => {
-  const subprocess = fakeSubprocess({ stdout: LISTED })
-  const gateway = new PathfinderRecordsGateway(fakeContext({ subprocess }))
-  const mine = new AbortController()
-  await gateway.readConfig('s1', '', { signal: mine.signal })
+test('读那一趟没成：如实说它没成，一行都不编，理由还是引擎自己那一句', async () => {
+  const stage = await project()
+  try {
+    /* A project settings file that is not JSON: the engine refuses, and its sentence is the detail. */
+    writeFileSync(join(stage.root, '.pf', 'config.json'), '{ this is not json')
+    const gateway = new PathfinderRecordsGateway(fakeContext({ workspaceRoot: stage.root }))
+    const reading = await gateway.readConfig('s1', '')
 
-  assert.equal(subprocess.specs[0].signal, mine.signal, '进程口子收到的得是调用方那条信号，不是端点自己新造的')
+    /* The reason is a code, and the engine's own words ride along as the detail: those words are not
+     * this plugin's to translate, and the panel prints them as they came. */
+    assert.equal(reading.ok, false)
+    assert.equal(reading.text, '', '没成的时候不往 text 里塞话——那句话没有语言')
+    assert.equal(reading.refusal?.code, 'tool-refused')
+    assert.ok((reading.refusal?.detail ?? '').length > 0, '引擎说了原因，原因在 detail 里')
+    assert.deepEqual(reading.entries, {})
+  } finally {
+    stage.done()
+  }
 })
 
-test('读那一趟没成：如实说它没成，一行都不编', async () => {
-  const subprocess = fakeSubprocess({ exitCode: 1, stderr: 'pf: this folder has no .pf record' })
-  const gateway = new PathfinderRecordsGateway(fakeContext({ subprocess }))
-  const reading = await gateway.readConfig('s1', '')
+test('写一条：config set <键> <值>，落的是项目那一层（不带 --global）', async () => {
+  const stage = await project()
+  try {
+    const gateway = new PathfinderRecordsGateway(fakeContext({ workspaceRoot: stage.root }))
+    const outcome = await gateway.setConfig('s1', '', 'worktree_mode', 'fork')
 
-  /* The reason is a code, and the tool's own words ride along as the detail: those words are not
-   * this plugin's to translate, and the panel prints them as they came. */
-  assert.equal(reading.ok, false)
-  assert.equal(reading.text, '', '没成的时候不往 text 里塞话——那句话没有语言')
-  assert.equal(reading.refusal?.code, 'tool-refused')
-  assert.match(reading.refusal?.detail ?? '', /no \.pf record/u)
-  assert.deepEqual(reading.entries, {})
+    assert.equal(outcome.ok, true, outcome.detail)
+    assert.match(outcome.text, /^CONFIG: worktree_mode = fork \(written to project \.pf\/config\.json\)$/mu)
+    assert.equal(configOnDisk(stage.root).worktree_mode, 'fork', '值落在项目那一层')
+  } finally {
+    stage.done()
+  }
 })
 
-test('写一条：pf config set <键> <值>，落的是项目那一层（不带 --global）', async () => {
-  const subprocess = fakeSubprocess()
-  const gateway = new PathfinderRecordsGateway(fakeContext({ subprocess }))
-  const outcome = await gateway.setConfig('s1', '', 'worktree_mode', 'reuse')
+test('没登记的键照递：这一手不立放行表，拒的是引擎自己', async () => {
+  const stage = await project()
+  try {
+    const gateway = new PathfinderRecordsGateway(fakeContext({ workspaceRoot: stage.root }))
+    const outcome = await gateway.setConfig('s1', '', 'spawner', 'dsh')
 
-  assert.equal(outcome.ok, true)
-  assert.deepEqual(wordsOf(subprocess.specs[0]), ['config', 'set', 'worktree_mode', 'reuse'])
-  assert.equal(subprocess.specs[0].cwd, 'C:\\workspace')
-})
-
-test('没登记的键照递：这一手不立放行表，键与值一并交工具判', async () => {
-  const subprocess = fakeSubprocess({ exitCode: 1, stderr: "Error: 'spawner' 不是可配的键" })
-  const gateway = new PathfinderRecordsGateway(fakeContext({ subprocess }))
-  const outcome = await gateway.setConfig('s1', '', 'spawner', 'dsh')
-
-  /* The command is still forwarded and the tool's refusal surfaces as its own code, with the
-   * tool's words in the detail. */
-  assert.equal(outcome.ok, false)
-  assert.deepEqual(wordsOf(subprocess.specs[0]), ['config', 'set', 'spawner', 'dsh'])
-  assert.equal(outcome.code, 'tool-refused')
-  assert.match(outcome.detail ?? '', /spawner/u)
-})
-
-test('值合不合法由工具判：面板这一手照递，回来的是它那一句话', async () => {
-  const subprocess = fakeSubprocess({ exitCode: 1, stderr: "Error: max_agents 要一个正整数，读到的是 '0'" })
-  const gateway = new PathfinderRecordsGateway(fakeContext({ subprocess }))
-  const outcome = await gateway.setConfig('s1', '', 'max_agents', '0')
-
-  assert.equal(outcome.ok, false)
-  assert.equal(outcome.code, 'tool-refused')
-  assert.match(outcome.detail ?? '', /要一个正整数/u)
-  assert.deepEqual(wordsOf(subprocess.specs[0]), ['config', 'set', 'max_agents', '0'])
+    /* The line is still handed over and the engine's refusal surfaces as its own code, with its
+     * words in the detail. */
+    assert.equal(outcome.ok, false)
+    assert.equal(outcome.code, 'tool-refused')
+    assert.match(outcome.detail ?? '', /spawner/u)
+    assert.equal(configOnDisk(stage.root).spawner, undefined, '不认识的键落不了盘')
+  } finally {
+    stage.done()
+  }
 })

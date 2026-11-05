@@ -13,14 +13,10 @@
 
 /** Every reason this half can refuse an operation. */
 export type PfRefusalCode =
-  /** An argument failed the character gate that keeps values out of cmd's interpretation. */
+  /** An argument cannot address a record: the segment gate in `executor.ts` refused it. */
   | 'arg-not-allowed'
-  /** The host exposes no subprocess gateway, so no command can run. */
-  | 'no-subprocess'
-  /** The tool ran and exited non-zero; `detail` is its own output. */
+  /** The words layer answered non-zero; `detail` is its own output. */
   | 'tool-refused'
-  /** Spawning or collecting the command failed outright. */
-  | 'spawn-failed'
   /** An instruction scope outside the three the tool spells. */
   | 'scope-unknown'
   /** An empty verbatim sentence: nothing to record. */
@@ -41,11 +37,11 @@ export interface PfRefusal {
 }
 
 /**
- * What a command-running operation returns.
+ * What a write returns.
  *
- * On success `text` is the tool's own output, carried out verbatim: those are the tool's words, not
+ * On success `text` is the words layer's own output, carried out verbatim: those are its words, not
  * this plugin's, and the config reader parses exactly this stream. On failure the reason is a code,
- * with the tool's own words — when it said any — in `detail`.
+ * with the words layer's own words — when it said any — in `detail`.
  */
 export type PfOutcome =
   | { readonly ok: true; readonly text: string }

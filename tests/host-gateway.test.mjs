@@ -11,13 +11,20 @@
  *
  *   node --test tests/
  */
-import test from 'node:test'
+import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PathfinderRecordsGateway } from '../src/host/gateway.ts'
 import { absentError, readPage } from './helpers/workspace-files-port.mjs'
+
+/* One machine layer for this file: the settings endpoint reads the global layer, which lives in the
+ * home directory — `PF_HOME_DIR` is the engine's own switch for it, so this case never reads (or is
+ * steered by) the developer's own home. */
+const home = mkdtempSync(join(tmpdir(), 'pf-gateway-home-'))
+process.env.PF_HOME_DIR = home
+after(() => rmSync(home, { recursive: true, force: true }))
 
 /** The nine endpoints, matching the table in `gateway.ts`. */
 const ENDPOINTS = [
@@ -97,10 +104,6 @@ async function liveGateway(root) {
   })
   ctx.provide('sessions', { get: (id) => (id === 's1' ? { header: { cwd: root } } : undefined) })
   ctx.provide('sandboxPolicy', { workspaceRoot: root })
-  ctx.provide('subprocess', {
-    async resolveExecutable() { return 'pf' },
-    spawn() { return { done: Promise.resolve({ exitCode: 0 }), collected: { stdout: { readFrom: () => ({ text: '' }) } } } },
-  })
 
   new TypertRegistry(ctx)
   const gateway = new TypertGatewayService(ctx)
@@ -300,10 +303,10 @@ test('三个写端点与设置那两条：网关也都叫得动', { skip: !wired
     const listed = await call('readConfig', { sessionId: 's1', workspaceRoot: '' })
     assert.equal(listed.ok, true, String(listed.message))
     assert.equal(listed.value.workspaceRoot, root)
-    assert.equal(listed.value.ok, true, '工具跑成了，读数落在成功那一支')
+    assert.equal(listed.value.ok, true, '词面答成了，读数落在成功那一支')
     assert.equal(listed.value.refusal, null, '成功那一支不带拒绝理由')
-    assert.equal(listed.value.text, '', '这个替身命令没有输出，text 原样就是空串')
-    assert.deepEqual(listed.value.entries, {}, '空输出解析不出任何一行')
+    assert.ok(listed.value.text.length > 0, '成功的读数带着引擎印的那几行')
+    assert.ok(Object.keys(listed.value.entries).length > 0, '那几行解析得出设置项')
     const written = await call('setConfig', { sessionId: 's1', workspaceRoot: '', key: 'test_tier', value: 'minimal' })
     assert.equal(written.ok, true, String(written.message))
   } finally {

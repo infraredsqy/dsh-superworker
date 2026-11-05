@@ -4,9 +4,9 @@
  * scope of exactly the agents whose session loads a pipeline skill.
  *
  * It holds no data and caches nothing: every call resolves the workspace root
- * from the session identity on the spot. The subprocess gateway is not in
- * `inject`; the write side fetches it on demand and rejects the operation if
- * it is missing, so the plugin never gets stuck pending installation.
+ * from the session identity on the spot. A process gateway is not in `inject`
+ * and is never consulted: writes are answered in-process by the engine's words
+ * layer, so the plugin never gets stuck pending installation.
  *
  * The export surface is only the things the plugin protocol requires
  * (`name` / `inject` / `apply` / `Config`) plus the gateway class itself: the

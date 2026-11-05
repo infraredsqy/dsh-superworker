@@ -146,8 +146,9 @@ test('这一份产物：外壳装得上、画得出来、每一格都走得通�
     /* The real host resolves a session's workspace from its header's cwd. */
     sessions: { get: () => ({ header: { cwd: workspaceRoot } }) },
     sandboxPolicy: { workspaceRoot },
-    /* No subprocess gateway here: the one endpoint that needs a command hands back its refusal, which
-     * is a reading the panel has words for rather than an error. */
+    /* No further services on this stand-in: every reading the panel asks for above answers from the
+     * workspace-files port, and a service that is missing is a reading the panel has words for
+     * rather than an error. */
     get: () => undefined,
     provide: () => undefined,
   })

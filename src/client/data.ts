@@ -294,9 +294,7 @@ function failureIn(error: unknown): Failure {
  * One entry per `FailureCode`, so a code added to the vocabulary fails to compile until it lands here. */
 const KNOWN_CODES = {
   'arg-not-allowed': true,
-  'no-subprocess': true,
   'tool-refused': true,
-  'spawn-failed': true,
   'scope-unknown': true,
   'empty-text': true,
   'no-session-service': true,
