@@ -266,7 +266,7 @@ describe('the verdict reaches stderr whole: the real product on real pipes', () 
       expect(verdict).toHaveLength(CONFLICT_NODES + 1);
       for (const line of verdict.slice(0, -1)) {
         expect(line).toMatch(
-          /^pf conflict \[\.pf\/ideas\.json\] Node \d{8} field title: ours="甲侧标题 \d+" theirs="乙侧标题 \d+"( \([^)]+\))?$/,
+          /^merge-ledger: conflict \[\.pf\/ideas\.json\] Node \d{8} field title: ours="甲侧标题 \d+" theirs="乙侧标题 \d+"( \([^)]+\))?$/,
         );
       }
       const closing = verdict[verdict.length - 1]!;

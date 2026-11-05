@@ -144,7 +144,7 @@ export class MergeReport {
   conflict(entry: string, field: string, ours: unknown, theirs: unknown, note = ''): void {
     const tail = note ? ` (${note})` : '';
     this.conflicts.push(
-      `pf conflict [${this.path}] ${entry} field ${field}: ` +
+      `merge-ledger: conflict [${this.path}] ${entry} field ${field}: ` +
         `ours=${fmt(ours)} theirs=${fmt(theirs)}${tail}`,
     );
   }

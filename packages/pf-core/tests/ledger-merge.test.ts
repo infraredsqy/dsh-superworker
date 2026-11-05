@@ -175,7 +175,7 @@ describe('byte-for-byte replay: the output collected in a temp git repo', () => 
       path: conflict.path,
     });
     expect(run1.code).toBe(1);
-    expect(run1.stderr).toContain('pf conflict [.pf/ideas.json] Node aaaaaaaa field title');
+    expect(run1.stderr).toContain('merge-ledger: conflict [.pf/ideas.json] Node aaaaaaaa field title');
     expect(run1.stderr).toContain('ours="甲侧标题"');
     expect(run1.stderr).toContain('theirs="乙侧标题"');
     expect(run1.stderr).toContain('1 places need a human decision');

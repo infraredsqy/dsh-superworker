@@ -211,7 +211,7 @@ export async function runMergeDriver(
   if (report.conflicts.length > 0) {
     for (const line of report.conflicts) io.stderr(`${line}\n`);
     io.stderr(
-      `pf: ${report.conflicts.length} places need a human decision; not a byte of ` +
+      `merge-ledger: ${report.conflicts.length} places need a human decision; not a byte of ` +
         `${report.path} was touched. Merge it by hand first, then \`git add\` and carry on.\n`,
     );
     return EXIT_CONFLICT;

@@ -18,7 +18,7 @@ import type { TableTop, WordRow } from './types';
  * Frozen: edit a row only together with the surface it describes.
  */
 export const TOP = {
-  "prog": "pf",
+  "prog": "pathfinder",
   "verbs": [
     "init",
     "register",
