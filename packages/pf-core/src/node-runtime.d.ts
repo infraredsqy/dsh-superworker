@@ -30,6 +30,12 @@ declare var process: {
   /** The two exits of the verdict: decisions and usage errors. */
   readonly stdout: { write(text: string): void };
   readonly stderr: { write(text: string): void };
+  /** The words layer's `-o -`: one handoff body read to the end of the stream. */
+  readonly stdin: {
+    setEncoding(encoding: 'utf8'): void;
+    on(event: 'data', listener: (chunk: string) => void): void;
+    on(event: 'end', listener: () => void): void;
+  };
   /** The current working directory (the record tree of the merge driver lands in the driver process's cwd by default). */
   cwd(): string;
   /** Leave with this exit code (git reads it as the merge verdict); the call does not return. */

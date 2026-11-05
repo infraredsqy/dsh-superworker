@@ -1,3 +1,14 @@
+import type { TableTop, WordRow } from './types';
+
+/**
+ * The words table: one row per word, and every cell states that word's shape -- the usage line's
+ * required / repeated / exclusive shapes, the two section listings, each option's invocation and its
+ * help. The parser, the help printer and the router all read this one table, so a word cannot be
+ * routable and unprintable at the same time.
+ *
+ * Frozen: edit a row only together with the surface it describes. This is the one copy: the
+ * transport layer in front of the engine reads it from here.
+ */
 /**
  * The command table: one row per word, and every cell states that word's shape -- the usage line's
  * required / repeated / exclusive shapes, the two section listings, each option's invocation and its
@@ -195,6 +206,7 @@ export const COMMANDS = {
         "flags": [
           "--spawn"
         ],
+        "dest": "open_sessions",
         "help": "If the resulting action is a dispatch, start that session too (makes the closing call one-and-done: settle, then spawn)",
         "invocation": "--spawn"
       },
@@ -3633,3 +3645,10 @@ export const GROUPS = {
     ]
   }
 };
+
+// The rows as the readers type them: the data above stays verbatim, and these are the two tables
+// every reader walks (a leaf's row, a group's row with its verbs).
+const commandRows = COMMANDS as unknown as Record<string, WordRow>;
+const groupRows = GROUPS as unknown as Record<string, WordRow>;
+const tableTop = TOP as TableTop;
+export { commandRows as COMMAND_ROWS, groupRows as GROUP_ROWS, tableTop as TABLE_TOP };

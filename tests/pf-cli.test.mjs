@@ -117,8 +117,7 @@ test('启动：node 起入口，version 报本树的版本与落点', () => {
 });
 
 test('帮助面：每条字的帮助都印得出来，而且以它自己的 usage 行开头', async () => {
-  const { helpText } = await import(new URL('../bin/lib/argparse.mjs', import.meta.url));
-  const { specOf, COMMANDS, GROUPS } = await import(new URL('../bin/lib/spec.mjs', import.meta.url));
+  const { helpText, specOf, COMMANDS, GROUPS } = await import('pf-core');
   for (const [key, row] of Object.entries(COMMANDS)) {
     const text = helpText(specOf(row));
     assert.ok(text.startsWith(`usage: ${row.prog}`), `${key}: ${text.split('\n')[0]}`);
@@ -136,9 +135,9 @@ test('帮助面：每条字的帮助都印得出来，而且以它自己的 usag
 });
 
 test('帮助面：pf --help 覆盖命令全集：每个动词、每个组都在名单上', async () => {
-  const { topHelp } = await import(new URL('../bin/lib/cli.mjs', import.meta.url));
-  const { COMMANDS, GROUPS } = await import(new URL('../bin/lib/spec.mjs', import.meta.url));
-  const text = await topHelp();
+  const { topHelp } = await import('pf-core');
+  const { COMMANDS, GROUPS } = await import('pf-core');
+  const text = await topHelp({ root: process.cwd() });
   for (const row of Object.values(COMMANDS).filter((row) => row.group === undefined)) {
     assert.ok(new RegExp(`^\\s{12}${row.word}\\s`, 'mu').test(text), `verbs list carries ${row.word}`);
   }
@@ -148,8 +147,7 @@ test('帮助面：pf --help 覆盖命令全集：每个动词、每个组都在�
 });
 
 test('帮助面：抽查两条，与捕获下来的清单逐字节一致', async () => {
-  const { helpText } = await import(new URL('../bin/lib/argparse.mjs', import.meta.url));
-  const { specOf, COMMANDS } = await import(new URL('../bin/lib/spec.mjs', import.meta.url));
+  const { helpText, specOf, COMMANDS } = await import('pf-core');
   for (const [caseName, key] of [['next', 'next'], ['clean-temp', 'clean-temp']]) {
     const expected = readFileSync(
       join(root, 'tests', 'fixtures', 'pf-cli', 'help', `${caseName}.txt`),
@@ -379,6 +377,16 @@ test('合并驱动：init 印的就是 git 里真写下的；已经能跑的注�
   } finally {
     scratch.done();
   }
+});
+
+test('合并驱动：--help 走词表自己的页；参数不足是这一层的用法拒绝', () => {
+  const help = run(['merge-ledger', '--help']);
+  assert.equal(help.code, 0, help.stderr);
+  assert.match(help.stdout, /^usage: pf merge-ledger/u);
+  const usage = run(['merge-ledger']);
+  assert.equal(usage.code, 2, usage.stderr);
+  assert.match(usage.stderr, /^usage: pf merge-ledger/u);
+  assert.match(usage.stderr, /pf merge-ledger: error: the following arguments are required:/u);
 });
 
 test('config 帮助：没有 .pf 的目录回落成核心键，不印捕获下来的插件键表', () => {

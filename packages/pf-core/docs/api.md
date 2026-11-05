@@ -25,12 +25,21 @@
 ## 运行时导出
 
 ```text
+COMMANDS
+GROUPS
 PLUGIN_SKILL_FILE
 SimulatedExecutor
+answer
+describe
+helpText
 loadPlugins
 open
+parse
 skillFolders
 skillProblems
+specOf
+topHelp
+usageError
 ```
 
 `PLUGIN_SKILL_FILE` 是技能文件名（`SKILL.md`）；`SimulatedExecutor` 是执行者接缝；`open` 是句柄入口。
@@ -38,6 +47,18 @@ skillProblems
 `skillFolders` 交出一个插件带的技能目录，`skillProblems` 说出它与声明对不上的两种情形（度量点名的
 方法没有技能、一个技能名被两个插件交出）。读的是同一个插件目录，判什么由调用方定：引擎只交结论，
 装与卸归装它的那一侧。
+
+`answer(argv, io)` 是词面（words layer）的唯一应答口：一行命令进来，交回
+`{ code, stdout, stderr }`——两个流已是命令面会写出的字节（非空、以换行收尾）。`io` 是本次调用的
+接缝（`WordsIO { root; executor?; git?; homeDir?; pluginsDir?; openerAvailable? }`）：`root`
+替代「进程当前目录」这个隐含依赖（28/44 个词不接受 `--project`，它们读的就是它），`executor` /
+`git` 注入，`openerAvailable` 说出本调用能否真开会话（`next` 的开场开关与 `dispatch` 据此照实回
+答，不认领节点）。本进程自己的三个词（checkout 的 doctor、version、合并驱动的进程交接）归命令面
+的适配器答，词面不路由。`describe()` 交出词表的静态索引数据（`WordsIndex`：形状说明、三个
+自述词、动词与组的行、版式常数），顶层清单与 agent 面的帮助页渲染同一份；`topHelp(io)` 交出拼好的
+顶层清单文本（插件词按 `io` 现读）。`COMMANDS` / `GROUPS` / `specOf` / `helpText` / `parse` /
+`usageError` 是那张词表与它的桥、打印器、解析器与用法错误——一张表喂解析、打印与路由，谁需要表
+从引擎拿。
 
 包另有一个进程入口 `pf-merge-ledger`（`package.json` 的 `bin` 里只有这一条，
 产物是 `dist/merge-ledger.mjs`）：git 的合并驱动只能靠进程叫，它是边界上唯一那个例外，做的是

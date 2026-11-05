@@ -12,4 +12,5 @@
 - `initledger.ts` `git.ts` `executor.ts` — 立起 `.pf` 并接上 git、git 接缝、执行者接缝
 - `types.ts` `node-runtime.d.ts` — 冻结的记录类型与 Node 内置面声明
 - `merge-ledger-bin.ts` `ledgermerge/` — 唯一的进程入口与它背后的合并驱动
+- `words/` — 词面：一张词表与它的解析、打印、读法与路由（`answer` / `describe`），命令面与 agent 面共用的那一层；接缝全部经 `WordsIO` 注入
 - `plugins/` — 插件框架：声明校验、装载、时机门

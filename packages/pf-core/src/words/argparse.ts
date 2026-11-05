@@ -8,6 +8,7 @@
  * senses wrapped in what is left. The rules are written once, in `usageBlock` / `sectionBlock`, so the
  * parser's usage, the printed help and the router's words cannot come apart.
  */
+import type { ParsedLine, SpecAction, WordSpec } from './types';
 
 /** The printed body's width: listings wrap here with no terminal to ask. */
 export const WIDTH = 78;
@@ -16,7 +17,7 @@ export const MAX_HELP_POSITION = 24;
 /** Where the word column opens. */
 const MARGIN = 2;
 
-const SECTION_TITLES = { positional: 'positional arguments:', option: 'options:' };
+const SECTION_TITLES: Record<string, string> = { positional: 'positional arguments:', option: 'options:' };
 
 // ── wrapping ────────────────────────────────────────────────────────────────
 
@@ -25,9 +26,9 @@ const SECTION_TITLES = { positional: 'positional arguments:', option: 'options:'
  * wider than the whole column goes on a line of its own rather than being cut (the wrapper never cuts
  * a word it printed).
  */
-export function wrap(text, width) {
+export function wrap(text: unknown, width: number): string[] {
   const words = String(text).replace(/\s+/gu, ' ').trim().split(' ').filter((word) => word !== '');
-  const lines = [];
+  const lines: string[] = [];
   let line = '';
   for (const word of words) {
     if (line === '') {
@@ -48,11 +49,17 @@ export function wrap(text, width) {
 // ── the usage line ──────────────────────────────────────────────────────────
 
 /** One option's usage spelling: its first flag and its value cell. */
-function optionUsage(action) {
-  const flag = action.usageFlag ?? action.flags[0];
+function optionUsage(action: SpecAction): string {
+  const flag = action.usageFlag ?? action.flags![0]!;
   if (action.metavar === undefined) return flag;
   if (action.nargs === '*' || action.nargs === '+') return `${flag} ${action.metavar} [${action.metavar} ...]`;
   return `${flag} ${action.metavar}`;
+}
+
+/** One piece of a usage line: its words, and whether they are a positional's. */
+interface UsagePiece {
+  readonly positional: boolean;
+  readonly texts: string[];
 }
 
 /**
@@ -60,15 +67,15 @@ function optionUsage(action) {
  * mutually exclusive cell's members stand next to each other: they print as one bracketed run with
  * ` | ` between the members and the brackets on the outsides.
  */
-function usagePieces(actions) {
-  const pieces = [];
+function usagePieces(actions: readonly SpecAction[]): UsagePiece[] {
+  const pieces: UsagePiece[] = [];
   let index = 0;
   while (index < actions.length) {
-    const action = actions[index];
+    const action = actions[index]!;
     if (action.exclusive !== undefined) {
-      const run = [];
-      while (index < actions.length && actions[index].exclusive?.title === action.exclusive.title) {
-        run.push(actions[index]);
+      const run: SpecAction[] = [];
+      while (index < actions.length && actions[index]!.exclusive?.title === action.exclusive.title) {
+        run.push(actions[index]!);
         index += 1;
       }
       const texts = run.map((cell) => optionUsage(cell));
@@ -94,15 +101,15 @@ function usagePieces(actions) {
     const meta = action.metavar;
     if (action.nargs === '*') pieces.push({ positional: true, texts: [`[${meta} ...]`] });
     else if (action.nargs === '+') pieces.push({ positional: true, texts: [`${meta} [${meta} ...]`] });
-    else pieces.push({ positional: true, texts: [action.required === true ? meta : `[${meta}]`] });
+    else pieces.push({ positional: true, texts: [action.required === true ? meta! : `[${meta}]`] });
   }
   return pieces;
 }
 
 /** Lay pieces out under one indent, the first line carrying `prefix` when one is given. */
-function wrapPieces(pieces, indent, prefix) {
-  const lines = [];
-  let line = [];
+function wrapPieces(pieces: readonly string[], indent: string, prefix?: string): string[] {
+  const lines: string[] = [];
+  let line: string[] = [];
   let lineLength = (prefix === undefined ? indent.length : prefix.length) - 1;
   for (const piece of pieces) {
     if (lineLength + 1 + [...piece].length > WIDTH && line.length > 0) {
@@ -114,12 +121,12 @@ function wrapPieces(pieces, indent, prefix) {
     lineLength += [...piece].length + 1;
   }
   if (line.length > 0) lines.push(indent + line.join(' '));
-  if (prefix !== undefined && lines.length > 0) lines[0] = prefix + lines[0].slice(indent.length);
+  if (prefix !== undefined && lines.length > 0) lines[0] = prefix + lines[0]!.slice(indent.length);
   return lines;
 }
 
 /** One command's usage block, as printed (no trailing blank line). */
-export function usageBlock(spec) {
+export function usageBlock(spec: WordSpec): string {
   const prefix = 'usage: ';
   const all = usagePieces(spec.actions());
   const optionalPieces = all.filter((cell) => !cell.positional).flatMap((cell) => cell.texts);
@@ -135,10 +142,9 @@ export function usageBlock(spec) {
 // ── the sections ────────────────────────────────────────────────────────────
 
 /** The invocation printed in the word column: flags, then the metavar, as the listing spells it. */
-export function invocationOf(action) {
-  if (action.kind === 'positional') return action.metavar;
-  if (action.kind === 'exclusive') return action.actions.map(invocationOf).join(' | ');
-  const flags = action.flags.join(', ');
+export function invocationOf(action: SpecAction): string {
+  if (action.kind === 'positional') return action.metavar!;
+  const flags = action.flags!.join(', ');
   if (action.metavar === undefined) return flags;
   // A repeated option prints its value cell twice: `--status {a} [{a} ...]`.
   if (action.nargs === '*' || action.nargs === '+') {
@@ -147,18 +153,21 @@ export function invocationOf(action) {
   return `${flags} ${action.metavar}`;
 }
 
-/**
- * One section: the word column and the sense column, one row per action; a sense that does not fit the
- * row wraps under itself. `senseColumn` is fixed for the whole section so every row lines up.
- */
+/** One row of a section listing: the word column's invocation, the sense beside it, and its indent. */
+interface SectionRow {
+  readonly invocation: string;
+  readonly sense?: string;
+  readonly indent?: number;
+}
+
 /**
  * One section: the word column and the sense column, one row per action; a sense that does not fit the
  * row wraps under itself. `senseColumn` is fixed for the whole section so every row lines up, and a
  * nested row (a group's verbs) opens two columns further in.
  */
-function sectionBlock(title, rows, senseColumn) {
+function sectionBlock(title: string, rows: readonly SectionRow[], senseColumn: number): string[] {
   const width = Math.max(WIDTH - senseColumn, 11);
-  const lines = [title];
+  const lines: string[] = [title];
   for (const row of rows) {
     const indent = row.indent ?? MARGIN;
     const actionWidth = senseColumn - indent - 2;
@@ -183,34 +192,34 @@ function sectionBlock(title, rows, senseColumn) {
 }
 
 /** The sense column of one section: the widest word of that section, under the printer's ceiling. */
-function senseColumnOf(rows) {
+function senseColumnOf(rows: readonly SectionRow[]): number {
   let widest = 0;
   for (const row of rows) widest = Math.max(widest, [...row.invocation].length + (row.indent ?? MARGIN));
   return Math.min(widest + 2, MAX_HELP_POSITION);
 }
 
 /** One command's full help text, as printed. */
-export function helpText(spec) {
-  const blocks = [usageBlock(spec)];
+export function helpText(spec: WordSpec): string {
+  const blocks: string[] = [usageBlock(spec)];
   if (typeof spec.description === 'string' && spec.description !== '') blocks.push(spec.description);
 
-  const positionalRows = [];
-  const widest = [];
+  const positionalRows: SectionRow[] = [];
+  const widest: SectionRow[] = [];
   for (const action of spec.actions()) {
     if (action.kind === 'positional') {
-      positionalRows.push({ invocation: action.metavar, sense: action.help, indent: MARGIN });
-      widest.push({ invocation: action.metavar, indent: MARGIN });
+      positionalRows.push({ invocation: action.metavar!, sense: action.help, indent: MARGIN });
+      widest.push({ invocation: action.metavar!, indent: MARGIN });
     }
     if (action.kind === 'subparsers') {
-      positionalRows.push({ invocation: action.metavar, sense: '', indent: MARGIN });
-      widest.push({ invocation: action.metavar, indent: MARGIN });
-      for (const command of action.commands) {
+      positionalRows.push({ invocation: action.metavar!, sense: '', indent: MARGIN });
+      widest.push({ invocation: action.metavar!, indent: MARGIN });
+      for (const command of action.commands ?? []) {
         positionalRows.push({ invocation: command.word, sense: command.help, indent: MARGIN + 2 });
         widest.push({ invocation: command.word, indent: MARGIN + 2 });
       }
     }
   }
-  const optionRows = spec
+  const optionRows: SectionRow[] = spec
     .actions()
     .filter((action) => action.kind === 'option')
     .map((action) => ({ invocation: invocationOf(action), sense: action.help, indent: MARGIN }));
@@ -220,10 +229,10 @@ export function helpText(spec) {
   // line up under one sense column.
   const column = senseColumnOf(widest);
   if (positionalRows.length > 0) {
-    blocks.push(sectionBlock(SECTION_TITLES.positional, positionalRows, column).join('\n'));
+    blocks.push(sectionBlock(SECTION_TITLES.positional!, positionalRows, column).join('\n'));
   }
   if (optionRows.length > 0) {
-    blocks.push(sectionBlock(SECTION_TITLES.option, optionRows, column).join('\n'));
+    blocks.push(sectionBlock(SECTION_TITLES.option!, optionRows, column).join('\n'));
   }
   if (typeof spec.epilog === 'string' && spec.epilog !== '') blocks.push(spec.epilog);
   return `${blocks.join('\n\n')}\n`;
@@ -233,14 +242,14 @@ export function helpText(spec) {
 
 const LONG_FLAG = /^--[^=]+/u;
 
-/** One option's value cell: how many words it takes and whether they are a closed list. */
-function valueCells(option) {
+/** One option's value cell: how many words it takes (`null` is "all the rest"). */
+function valueCells(option: SpecAction): number | null {
   if (option.nargs === '*' || option.nargs === '+') return null;
   return 1;
 }
 
 /** The destination name an option / positional writes to. */
-export function destOf(flags) {
+export function destOf(flags: readonly string[]): string {
   const long = flags.find((flag) => flag.startsWith('--'));
   const name = (long ?? flags[0]).replace(/^--?/u, '');
   return name.replace(/-/gu, '_');
@@ -253,24 +262,25 @@ export function destOf(flags) {
  * positionals }` otherwise. Options are matched by their flags; a value-taking option takes the next
  * word (or the text after `=`); a subparser group takes its verb from the first positional word.
  */
-export function parse(spec, argv) {
+export function parse(spec: WordSpec, argv: readonly string[]): ParsedLine {
   const actions = spec.actions();
-  const byFlag = new Map();
-  const byWord = new Map();
+  const byFlag = new Map<string, SpecAction>();
+  const byWord = new Map<string, WordSpec & { readonly word: string }>();
   for (const action of actions) {
-    if (action.kind === 'option') for (const flag of action.flags) byFlag.set(flag, action);
-    if (action.kind === 'exclusive') for (const option of action.actions) for (const flag of option.flags) byFlag.set(flag, { ...option, exclusive: action });
+    if (action.kind === 'option') for (const flag of action.flags!) byFlag.set(flag, action);
   }
   const subparsers = actions.find((action) => action.kind === 'subparsers');
-  if (subparsers !== undefined) for (const command of subparsers.commands) byWord.set(command.word, command);
+  if (subparsers !== undefined) {
+    for (const command of subparsers.commands ?? []) byWord.set(command.word, command);
+  }
 
-  const values = {};
-  const positionalWords = [];
-  const seenExclusive = new Map();
+  const values: Record<string, any> = {};
+  const positionalWords: string[] = [];
+  const seenExclusive = new Map<string, string>();
   let i = 0;
   let help = false;
   while (i < argv.length) {
-    const word = argv[i];
+    const word = argv[i]!;
     if (word === '--') {
       positionalWords.push(...argv.slice(i + 1));
       break;
@@ -281,12 +291,12 @@ export function parse(spec, argv) {
       const inline = word.includes('=') ? word.slice(word.indexOf('=') + 1) : undefined;
       const action = byFlag.get(flag);
       if (action === undefined) return { error: `unrecognized arguments: ${word}` };
-      if (action.kind === 'help' || action.flags.includes('-h') || action.flags.includes('--help')) {
+      if (action.flags!.includes('-h') || action.flags!.includes('--help')) {
         help = true;
         i += 1;
         continue;
       }
-      const dest = action.dest ?? destOf(action.flags);
+      const dest = action.dest ?? destOf(action.flags!);
       if (action.exclusive !== undefined) {
         const other = seenExclusive.get(action.exclusive.title);
         if (other !== undefined && other !== flag) {
@@ -296,10 +306,10 @@ export function parse(spec, argv) {
       }
       const cells = valueCells(action);
       if (cells === null) {
-        const collected = [];
+        const collected: string[] = [];
         let j = i + 1;
-        while (j < argv.length && !argv[j].startsWith('-')) {
-          collected.push(argv[j]);
+        while (j < argv.length && !argv[j]!.startsWith('-')) {
+          collected.push(argv[j]!);
           j += 1;
         }
         values[dest] = collected;
@@ -326,7 +336,7 @@ export function parse(spec, argv) {
     i += 1;
   }
 
-  const positionals = [];
+  const positionals: string[][] = [];
   let wordAt = 0;
   const positionSpecs = actions.filter((action) => action.kind === 'positional');
   for (const action of positionSpecs) {
@@ -376,9 +386,9 @@ export function parse(spec, argv) {
   }
   const requiredOptions = actions.filter((action) => action.kind === 'option' && action.required === true);
   for (const option of requiredOptions) {
-    const dest = option.dest ?? destOf(option.flags);
+    const dest = option.dest ?? destOf(option.flags!);
     if (values[dest] === undefined) {
-      return { error: `the following arguments are required: ${option.flags.join('/')}` };
+      return { error: `the following arguments are required: ${option.flags!.join('/')}` };
     }
   }
   const extras = positionalWords.slice(wordAt);
@@ -387,11 +397,11 @@ export function parse(spec, argv) {
   }
   for (const option of actions) {
     if (option.kind !== 'option' || option.choices === undefined) continue;
-    const dest = option.dest ?? destOf(option.flags);
+    const dest = option.dest ?? destOf(option.flags!);
     const given = values[dest];
     if (typeof given === 'string' && !option.choices.includes(given)) {
       return {
-        error: `argument ${option.flags[0]}: invalid choice: '${given}' (choose from ${option.choices.map((c) => `'${c}'`).join(', ')})`,
+        error: `argument ${option.flags![0]}: invalid choice: '${given}' (choose from ${option.choices.map((c) => `'${c}'`).join(', ')})`,
       };
     }
   }
@@ -399,6 +409,6 @@ export function parse(spec, argv) {
 }
 
 /** The usage error a refused line prints, with the program's own name. */
-export function usageError(spec, message) {
+export function usageError(spec: WordSpec, message: string): string {
   return `${usageBlock(spec)}\n${spec.prog}: error: ${message}\n`;
 }

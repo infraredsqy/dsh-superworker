@@ -6,6 +6,16 @@
 export { open } from './open';
 export type { Pf, PfOpenOptions } from './open';
 export { SimulatedExecutor } from './executor';
+/* The words layer: the one table, its parser and printer, the verbs that read engine answers into
+   lines, and the two entries a caller answers through — `answer(argv, io)` (one command line in, the
+   two streams and the exit code out) and `describe()` (the static index of the words). The transport
+   in front of the engine and the agent-facing tool both read this layer; the words about this
+   *process* (doctor, version, the merge driver's hand-off) stay with the transport. */
+export { answer, describe, topHelp } from './words/router';
+export { COMMANDS, GROUPS, specOf } from './words/spec';
+export { helpText, parse, usageError } from './words/argparse';
+export type { WordsIndex } from './words/router';
+export type { WordsIO } from './words/types';
 /* A plugin's skills are read out of its folder by anyone who installs them: the scan of the plugin
    directory, the folders one plugin ships, and the two ways those folders disagree with the
    declaration. The engine keeps the verdict; the caller owns what happens next. */

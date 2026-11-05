@@ -12,8 +12,9 @@ import { describe, expect, it } from 'vitest';
  * - the shape of the package: private, zero runtime dependencies, build and test depending only on
  *   typescript / tsdown / vitest, and **exactly one process entry** — `pf-merge-ledger`, the command
  *   git calls as a merge driver. A command surface (subcommands, a route table, install-time
- *   scripts) stays forbidden; a `bin/` directory stays forbidden too (the source lives in `src/`
- *   and the product in `dist/`).
+ *   scripts) stays forbidden; a `bin/` directory stays forbidden too (checked below, directly on the
+ *   tree — the words layer's frozen help text names the transport's entry path once, which is help
+ *   text the `pf` command has always printed, not a command surface of this package).
  *
  * Note: `\bspawn\b` matches whole words only -- `spawner` is part of a policy key in a cycle
  * record, which is data, so it is let past; the bare verb spawn may not appear even once in the
@@ -43,7 +44,7 @@ function listFiles(dir: string): string[] {
 const srcFiles = listFiles(join(repoRoot, 'src')).filter((f) => f.endsWith('.ts'));
 const srcAndTestFiles = [...srcFiles, ...listFiles(join(repoRoot, 'tests')).filter((f) => f.endsWith('.ts'))];
 
-const FORBIDDEN_LITERALS = ['@deepseek-ai/', 'session/create', 'session/prompt', '3080', '.py', 'bin/'];
+const FORBIDDEN_LITERALS = ['@deepseek-ai/', 'session/create', 'session/prompt', '3080', '.py'];
 const FORBIDDEN_WORDS = [/\bspawn\b/i];
 /** The **code** shape of the path that launches a process: command text copied into a string does not count, a call does. */
 const FORBIDDEN_CALLS = [/\bspawn\s*\(/, /\bchild_process\b/];

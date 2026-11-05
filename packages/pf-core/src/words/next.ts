@@ -1,6 +1,6 @@
 /**
  * The two verbs that carry a line forward: `next` (the composed one: plan, settle, pin, land the
- * material, spawn) and `dispatch` (start the sessions of the nodes the line holds).
+ * material, open the session) and `dispatch` (start the sessions of the nodes the line holds).
  *
  * `next` is not a forwarding row. The engine's `conductor.next` is a **read-only plan**; carrying the
  * step out is `conductor.closeWith` (a settle), `ledger.cycles.hold` (a pin), `conductor.prepare` (the
@@ -10,19 +10,15 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { handleOf, messageOf, projectRoot, sessionOpenerAvailable } from './engine.mjs';
-import { pyIndented } from './pyjson.mjs';
-import { pyScalar, refuse, short } from './out.mjs';
-
-/** The words that only mean something on a closing call. */
-const CLOSING_CELLS = ['continue', 'stop', 'node', 'note'];
+import { handleOf, messageOf, projectRootOf, pyScalar, refuse, short, pyIndented } from './out';
+import type { VerbCall, WordsIO } from './types';
 
 /**
  * One plan as the caller reads it: the action, then every cell a
  * reader has to act on. Key order is that reading's order, not the bag's.
  */
-export function actionText(action) {
-  const lines = [`action: ${action.action}`];
+export function actionText(action: Record<string, any>): string {
+  const lines: string[] = [`action: ${action.action}`];
   if (action.cycle !== undefined && action.cycle !== null) lines.push(`cycle:  ${action.cycle}`);
   for (const key of ['note', 'reason', 'question', 'hint', 'blocked', 'close_with']) {
     const value = action[key];
@@ -33,12 +29,12 @@ export function actionText(action) {
   if (action.node_id !== undefined && action.node_id !== null) {
     lines.push(`node:   ${action.node_title ?? ''}  (${action.node_id})`);
   }
-  for (const item of action.nodes ?? []) {
+  for (const item of (action.nodes ?? []) as any[]) {
     if (typeof item === 'object' && item !== null && item.node_id !== action.node_id) {
       lines.push(`node:   ${item.node_title ?? ''}  (${item.node_id})`);
     }
   }
-  for (const step of action.steps ?? []) lines.push(`  - ${step}`);
+  for (const step of (action.steps ?? []) as any[]) lines.push(`  - ${step}`);
   if (action.prompt !== undefined) lines.push(`prompt: ${action.prompt}`);
   if (action.spec !== undefined) lines.push(`spec:   ${action.spec}`);
   if (action.action === 'dispatch') lines.push(`mode:   ${action.mode}`);
@@ -53,12 +49,12 @@ export function actionText(action) {
   }
   if ('applied' in action) lines.push(`applied: ${pyScalar(action.applied)}`);
   if (action.spawn_error !== undefined) lines.push(`spawn_error: ${action.spawn_error}`);
-  for (const extra of (action.insertions ?? []).slice(1)) {
+  for (const extra of ((action.insertions ?? []) as any[]).slice(1)) {
     lines.push(`node:   ${extra.title ?? ''}  (${extra.node_id ?? extra.spec_path ?? ''})`);
     if (extra.spec_path !== undefined) lines.push(`spec:   ${extra.spec_path}`);
-    for (const step of extra.steps ?? []) lines.push(`  - ${step}`);
+    for (const step of (extra.steps ?? []) as any[]) lines.push(`  - ${step}`);
   }
-  for (const item of action.attention ?? []) {
+  for (const item of (action.attention ?? []) as any[]) {
     const who = item.node_id ? `${item.node_title} (${item.node_id})` : '?';
     lines.push(`attention: ${item.kind}  ${who}`);
     if (item.hint) lines.push(`           ${item.hint}`);
@@ -67,7 +63,7 @@ export function actionText(action) {
 }
 
 /** The node ids on the graph right now: the proof that a close inserted something. */
-async function graphIds(pf) {
+async function graphIds(pf: Awaited<ReturnType<typeof handleOf>>) {
   const rows = await pf.ledger.dag.list({});
   return new Set(rows.map((row) => row.id));
 }
@@ -79,10 +75,17 @@ async function graphIds(pf) {
  * sentence is not among them — the engine keeps no copy of an offer once it has landed, so this
  * action carries the shape and the provable cells, and not one word the plugin did not hand back.
  */
-async function insertionAction(pf, cycleId, closedNode, before, after, heldNow) {
+async function insertionAction(
+  pf: Awaited<ReturnType<typeof handleOf>>,
+  cycleId: string,
+  closedNode: string,
+  before: Set<string>,
+  after: Set<string>,
+  heldNow: string | undefined,
+): Promise<Record<string, any> | null> {
   const fresh = [...after].filter((id) => !before.has(id));
   if (fresh.length === 0) return null;
-  const insertions = [];
+  const insertions: Record<string, any>[] = [];
   for (const id of fresh) {
     const info = await pf.ledger.dag.info(id);
     // The detail reading has no tag cell: the record itself is where the tags landed, and they are the
@@ -94,7 +97,7 @@ async function insertionAction(pf, cycleId, closedNode, before, after, heldNow) 
       `insert a node with the generated spec (${specPosix}), behind ${closedNode}`,
       'no session was opened and the inserted node is not pinned: the next dispatch picks it by the usual ranking',
     ];
-    const cell = {
+    const cell: Record<string, any> = {
       title: info.title,
       tags: record?.tags ?? [],
       spec_path: specPosix,
@@ -110,8 +113,8 @@ async function insertionAction(pf, cycleId, closedNode, before, after, heldNow) 
     cell.node_id = id;
     insertions.push(cell);
   }
-  const first = insertions[0];
-  const action = { action: 'insert_node', cycle: cycleId };
+  const first = insertions[0]!;
+  const action: Record<string, any> = { action: 'insert_node', cycle: cycleId };
   action.node_id = first.node_id;
   action.node_title = first.title;
   action.note = first.note;
@@ -122,14 +125,18 @@ async function insertionAction(pf, cycleId, closedNode, before, after, heldNow) 
 }
 
 /** Print one plan: the JSON spelling when asked for, else the lines. */
-function printAction(action, asJson) {
+function printAction(action: Record<string, any>, asJson: boolean) {
   return { stdout: asJson ? pyIndented(action) : actionText(action) };
 }
 
 /** The cycle that holds one node, when exactly one does; the refusal sentence otherwise. */
-async function holderOf(pf, nodeId, known) {
+async function holderOf(
+  _pf: Awaited<ReturnType<typeof handleOf>>,
+  nodeId: string,
+  known: readonly any[],
+): Promise<{ cycle?: any; refusal?: string }> {
   const holders = known.filter((cycle) =>
-    (Array.isArray(cycle.holding) ? cycle.holding : []).some((item) => item.id === nodeId),
+    ((Array.isArray(cycle.holding) ? cycle.holding : []) as any[]).some((item) => item.id === nodeId),
   );
   if (holders.length === 1) return { cycle: holders[0] };
   if (holders.length > 1) {
@@ -138,7 +145,7 @@ async function holderOf(pf, nodeId, known) {
     };
   }
   const closed = known.filter((cycle) =>
-    (cycle.path ?? []).some((step) => step.node === nodeId),
+    ((cycle.path ?? []) as any[]).some((step) => step.node === nodeId),
   );
   if (closed.length > 0) {
     return {
@@ -148,12 +155,13 @@ async function holderOf(pf, nodeId, known) {
   return {
     refusal:
       `--after ${nodeId} does not name a node any cycle is holding. Every cycle holds ` +
-      `${known.map((cycle) => `${cycle.id}:${(cycle.holding ?? []).map((item) => item.id).join(', ') || '(none)'}`).join('; ') || 'none'}.`,
+      `${known.map((cycle) => `${cycle.id}:${((cycle.holding ?? []) as any[]).map((item) => item.id).join(', ') || '(none)'}`).join('; ') || 'none'}.`,
   };
 }
 
-/** `pf next`: read the plan, carry it out (settle → pin → spawn), then print what is next. */
-export async function nextVerb({ values }) {
+/** `pf next`: read the plan, carry it out (settle → pin, then the session), then print what is next. */
+export async function nextVerb(call: VerbCall) {
+  const { values, io } = call;
   const decision = values.continue === true ? 'continue' : values.stop === true ? 'stop' : undefined;
   const answersGiven =
     decision !== undefined ||
@@ -166,15 +174,15 @@ export async function nextVerb({ values }) {
       2,
     );
   }
-  const root = await projectRoot(values.project);
-  const pf = await handleOf(root);
-  let cycleId = values.cycle;
+  const root = projectRootOf(values.project, io.root);
+  const pf = await handleOf(root, io);
+  let cycleId: string | undefined = values.cycle;
   const asJson = values.json === true;
   const planMode = values.plan === true;
   try {
-    let action;
-    let did = [];
-    let before;
+    let action: Record<string, any>;
+    let did: string[] = [];
+    let before: Awaited<ReturnType<typeof progressOf>> | undefined;
     if (values.after !== undefined) {
       // Which line the finished node belongs to: a worker should not have to learn cycle bookkeeping,
       // so the node names its own line — unless the caller named one, which is checked below.
@@ -218,7 +226,7 @@ export async function nextVerb({ values }) {
       did = [`pf: settled ${values.after} on ${cycleId}`];
       const after = await graphIds(pf);
       const pinned = (closed.holding ?? [])[0]?.id;
-      const inserted = await insertionAction(pf, cycleId, values.after, grid, after, pinned);
+      const inserted = await insertionAction(pf, cycleId!, values.after, grid, after, pinned);
       if (inserted !== null) {
         const folded = applyCells(inserted, { did });
         return printAction(folded, asJson);
@@ -263,9 +271,9 @@ export async function nextVerb({ values }) {
     if ((planMode === false || values.after !== undefined) && action.action === 'dispatch') {
       await pf.conductor.prepare({ cycle: action.cycle });
     }
-    if (values.spawn === true && (planMode === false || values.after !== undefined)) {
-      const folded = await spawnPlan(root, pf, action, values.spawner);
-      did.push(...(folded.spawned_did ?? []));
+    if (values.open_sessions === true && (planMode === false || values.after !== undefined)) {
+      const folded = await openPlan(root, pf, action, values.spawner, io);
+      did.push(...(folded.opened_did ?? []));
       action = folded.action;
     }
     if (values.after !== undefined && action.action === 'dispatch') {
@@ -294,10 +302,19 @@ export async function nextVerb({ values }) {
  * cells, then `commands` (a dispatch carries the empty list: the mechanical steps have run), then
  * `applied`, `opened_node`, `did`, and — on a dispatch — the note that says what it opened.
  */
-function applyCells(action, { did = [], opened, before, after, preview = false } = {}) {
+function applyCells(
+  action: Record<string, any>,
+  { did = [], opened, before, after, preview = false }: {
+    did?: string[];
+    opened?: string;
+    before?: Awaited<ReturnType<typeof progressOf>>;
+    after?: Awaited<ReturnType<typeof progressOf>>;
+    preview?: boolean;
+  } = {},
+): Record<string, any> {
   if (preview) return action;
   const dispatch = action.action === 'dispatch';
-  const folded = {};
+  const folded: Record<string, any> = {};
   for (const [key, value] of Object.entries(action)) {
     if (key === 'settling') continue;
     if (key === 'note' && dispatch) continue;
@@ -313,35 +330,41 @@ function applyCells(action, { did = [], opened, before, after, preview = false }
 }
 
 /** One line's standing as the closing bookkeeping reads it: what is in hand, whether a step landed, its state. */
-async function progressOf(pf, cycleId) {
+async function progressOf(pf: Awaited<ReturnType<typeof handleOf>>, cycleId: string | undefined) {
   const line = (await pf.ledger.cycles.list()).find((cycle) => cycle.id === cycleId);
   if (line === undefined) return undefined;
-  const hand = [];
+  const hand: Array<[string, string | null]> = [];
   for (const item of line.holding ?? []) {
-    const standing = await pf.ledger.cycles.standing(cycleId, item.id);
+    const standing = await pf.ledger.cycles.standing(cycleId!, item.id);
     hand.push([item.id, standing.signal?.status ?? null]);
   }
   return { hand, path: (line.path ?? []).length > 0, status: line.status };
 }
 
 /** Start one session per node a dispatch plan names, and fold the receipts into the plan's print. */
-async function spawnPlan(root, pf, action, spawner) {
+async function openPlan(
+  root: string,
+  pf: Awaited<ReturnType<typeof handleOf>>,
+  action: Record<string, any>,
+  spawner: string | undefined,
+  io: WordsIO,
+): Promise<{ action: Record<string, any>; opened_did?: string[] }> {
   if (action.action !== 'dispatch' || (action.nodes ?? []).length === 0) {
-    return { action, spawned_did: [] };
+    return { action, opened_did: [] };
   }
-  // The plan still prints; the spawn step reports itself as not done, and not one node is claimed.
-  // Handing the call to the engine is what would land the claim before the placeholder executor
-  // refused, leaving the cell "already open" with no session behind it.
-  if (!sessionOpenerAvailable()) {
+  // The plan still prints; the session step reports itself as not done, and not one node is claimed.
+  // Handing the call to the engine is what would land the claim before a missing opener refused,
+  // leaving the cell "already open" with no session behind it.
+  if (io.openerAvailable !== true) {
     const folded = {
       ...action,
-      spawn_error: noOpenerSentence(root, action.cycle, action.nodes.map((item) => item.node_id)),
+      spawn_error: noOpenerSentence(root, action.cycle, (action.nodes as any[]).map((item) => item.node_id)),
     };
-    return { action: folded, spawned_did: [] };
+    return { action: folded, opened_did: [] };
   }
-  const spawned = [];
-  const skipped = [];
-  const spawnedDid = [];
+  const opened: string[] = [];
+  const skipped: string[] = [];
+  const openedDid: string[] = [];
   for (const item of action.nodes) {
     const receipt = await pf.conductor.dispatch({
       cycle: action.cycle,
@@ -352,13 +375,13 @@ async function spawnPlan(root, pf, action, spawner) {
       skipped.push(item.node_id);
       continue;
     }
-    spawnedDid.push(`pf: opened a session for ${item.node_id} on ${action.cycle}`);
-    spawned.push(receipt.session?.sessionId ?? item.node_id);
+    openedDid.push(`pf: opened a session for ${item.node_id} on ${action.cycle}`);
+    opened.push(receipt.session?.sessionId ?? item.node_id);
   }
   const folded = { ...action };
   if (skipped.length > 0) folded.spawn_skipped = skipped;
-  folded.spawned = spawned.length > 1 ? spawned : (spawned[0] ?? '');
-  return { action: folded, spawned_did: spawnedDid };
+  folded.spawned = opened.length > 1 ? opened : (opened[0] ?? '');
+  return { action: folded, opened_did: openedDid };
 }
 
 /**
@@ -368,21 +391,21 @@ async function spawnPlan(root, pf, action, spawner) {
  * node — a node whose prompt the pinning step never wrote is refused, not invented, and a node whose
  * claim is already on disk is a session that is out already, not a cell to dispatch again.
  */
-function launchPromptPath(root, cycleId, nodeId) {
+function launchPromptPath(root: string, cycleId: unknown, nodeId: unknown): string {
   return join(root, '.pf', 'meta', 'launch', String(cycleId), String(nodeId), 'prompt.txt');
 }
 
 /** The claim of one dispatch: `<pf>/meta/launch/<cycle>/<node>/started`, the one "already open" evidence. */
-function launchStartedPath(root, cycleId, nodeId) {
+function launchStartedPath(root: string, cycleId: unknown, nodeId: unknown): string {
   return join(root, '.pf', 'meta', 'launch', String(cycleId), String(nodeId), 'started');
 }
 
 /**
- * The sentence both spawn paths answer when this process has no session opener: the panel is the
+ * The sentence both open paths answer when this call has no session opener: the panel is the
  * opener on this machine, the material is already on disk, and the line in it is the instruction a
  * session works from. It names the paths and both ways a human finishes the dispatch by hand.
  */
-function noOpenerSentence(root, cycleId, nodeIds) {
+function noOpenerSentence(root: string, cycleId: unknown, nodeIds: readonly unknown[]): string {
   const prompts = nodeIds.map((nodeId) => launchPromptPath(root, cycleId, nodeId));
   return (
     'no session can be opened from this process: the opener is the panel (寻路中心), and a command ' +
@@ -392,7 +415,7 @@ function noOpenerSentence(root, cycleId, nodeIds) {
 }
 
 /** The refusal for a node whose prompt is not on disk: where it should be, and the command that writes it. */
-function noPromptRefusal(prompt, nodeId) {
+function noPromptRefusal(prompt: string, nodeId: string) {
   return refuse(
     `no prompt file at ${prompt}. That file is written by the step that pinned this node: usually ` +
       `the closing call (\`pf next --after ${nodeId} --json\`), and after an insertion the later ` +
@@ -404,9 +427,9 @@ function noPromptRefusal(prompt, nodeId) {
 /**
  * The refusal when every node in hand already had its session started: one more dispatch would boot a
  * second one. This sentence is the only place that names the way back in, so the three commands are
- * carried whole — retry with `--drop`, hold again, then the one-shot spawn.
+ * carried whole — retry with `--drop`, hold again, then the one-shot opening.
  */
-function alreadyStartedRefusal(cycleId, ids) {
+function alreadyStartedRefusal(cycleId: string, ids: readonly string[]) {
   return refuse(
     `every node this cycle holds already had its session started (${ids.map(short).join(', ') || '(none)'}), ` +
       'so there is nothing to dispatch: doing it again would boot a second session onto the same node. ' +
@@ -417,10 +440,11 @@ function alreadyStartedRefusal(cycleId, ids) {
 }
 
 /** `pf dispatch`: start the sessions of the nodes this line holds, and nothing else. */
-export async function dispatchVerb({ values, positionals }) {
-  const cycleId = positionals[0][0];
-  const root = await projectRoot(values.project);
-  const pf = await handleOf(root);
+export async function dispatchVerb(call: VerbCall) {
+  const { values, io, positionals } = call;
+  const cycleId: string = positionals[0]![0]!;
+  const root = projectRootOf(values.project, io.root);
+  const pf = await handleOf(root, io);
   try {
     const line = (await pf.ledger.cycles.list()).find((cycle) => cycle.id === cycleId);
     if (line === undefined) {
@@ -450,8 +474,8 @@ export async function dispatchVerb({ values, positionals }) {
     // step that pinned the node wrote. A node with neither is where this verb stops, having written
     // nothing; a node with the prompt and no claim is a dispatch — the line may still be waiting on
     // that node's ticket, and the plan is not this verb's gate — so it goes to the engine below.
-    const prompts = [];
-    const already = [];
+    const prompts: string[] = [];
+    const already: string[] = [];
     for (const nodeId of held) {
       if (existsSync(launchStartedPath(root, cycleId, nodeId))) {
         already.push(nodeId);
@@ -467,13 +491,13 @@ export async function dispatchVerb({ values, positionals }) {
     // The opener comes before the engine, which lands the claim and only then asks its executor: a
     // process with none would claim the cell and leave no session behind. The gate above wrote
     // nothing, so this refusal leaves the records exactly as it found them.
-    if (!sessionOpenerAvailable()) {
+    if (io.openerAvailable !== true) {
       return refuse(noOpenerSentence(root, cycleId, prompts), 2);
     }
     // The material is on disk and this half only opens the session: the engine's dispatch finds the
     // landed prompt, leaves it alone and lands the claim. Nothing here writes a file.
-    const opened = [];
-    let prompt;
+    const opened: Array<{ node_id: string; session: string }> = [];
+    let prompt: string | undefined;
     for (const nodeId of prompts) {
       const receipt = await pf.conductor.dispatch({
         cycle: cycleId,
@@ -495,10 +519,10 @@ export async function dispatchVerb({ values, positionals }) {
         stdout: pyIndented({
           action: 'dispatch',
           cycle: cycleId,
-          node_id: opened[0].node_id,
+          node_id: opened[0]!.node_id,
           prompt,
           nodes: opened.map((cell) => cell.node_id),
-          spawned: opened.length > 1 ? opened.map((cell) => cell.session) : opened[0].session,
+          spawned: opened.length > 1 ? opened.map((cell) => cell.session) : opened[0]!.session,
         }),
       };
     }

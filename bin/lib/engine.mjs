@@ -76,6 +76,8 @@ async function loadEngine() {
 }
 
 const engine = await loadEngine();
+/** The engine module itself: the words layer (`answer`, `describe`) rides on the same load. */
+export { engine as pfCore };
 
 /** This tree's own version number, read off the package manifest it ships. */
 export function version() {
@@ -202,6 +204,20 @@ function homeDirOption() {
   const home = process.env.PF_HOME_DIR;
   return home === undefined || home === '' ? {} : { homeDir: resolve(home) };
 }
+
+/**
+ * The plugin folder the words layer's handles scan, with the same one line of precedence the
+ * `pf` command has always answered with: the user's `PF_PLUGINS_DIR` when it names one (the engine
+ * reads the switch itself), else the plugins this runtime bundles. Passing the option keeps the
+ * in-process reads and the child reads on the same set without a second spelling of the rule.
+ */
+function pluginsDirOption() {
+  const stated = process.env.PF_PLUGINS_DIR;
+  if (stated !== undefined && stated.trim() !== '') return {};
+  return { pluginsDir: BUNDLED_PLUGINS };
+}
+
+export { homeDirOption, pluginsDirOption };
 
 /** The exact words of one refusal: the engine's own sentence when it carries one. */
 export function messageOf(error) {

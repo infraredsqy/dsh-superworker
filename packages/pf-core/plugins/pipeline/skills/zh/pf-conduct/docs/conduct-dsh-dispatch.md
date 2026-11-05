@@ -47,8 +47,8 @@
 
 ## 三、命令行这一侧：没有 opener，就一个字都别写
 
-`bin/lib/next.mjs` 里两个动作读的是同一件事：**这个进程有没有开会话的接缝**
-（`bin/lib/engine.mjs` 的 `sessionOpenerAvailable()`，只有排练档为真）。
+引擎词面（`answer()`）里两个动作读的是同一件事：**本次调用有没有开会话的接缝**
+（`io.openerAvailable`，由命令面适配器按 `sessionOpenerAvailable()` 填，只有排练档为真）。
 
 - `pf dispatch <cycle>`：先读盘上那对事实，节点挨个来 —— `started` 在，记成「已经开过」；不在，
   就要求 prompt 在盘上（不在就拒，并说这份 prompt 由钉住那一步写）。都读过了、确认这个进程没有

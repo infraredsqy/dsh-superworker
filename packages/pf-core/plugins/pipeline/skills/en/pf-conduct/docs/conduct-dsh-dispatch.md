@@ -55,8 +55,8 @@ read the started claim -> the plugin dispatch gate -> the material (landed only 
 
 ## 3. The command line: with no opener, write nothing
 
-The two verbs in `bin/lib/next.mjs` read the same one thing: **whether this process has a seam for opening a session**
-(`sessionOpenerAvailable()` in `bin/lib/engine.mjs`, true under the drill switch alone).
+The two verbs in the engine's words layer (`answer()`) read the same one thing: **whether this call has a seam for opening a session**
+(`io.openerAvailable`, filled by the command-line adapter from `sessionOpenerAvailable()`, true under the drill switch alone).
 
 - `pf dispatch <cycle>`: it reads the pair of disk facts first, node by node — a `started` on disk counts as "already
   opened"; without one it requires the prompt on disk (and refuses when it is absent, saying which step writes that
