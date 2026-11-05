@@ -187,7 +187,7 @@ test('工具的四层帮助：argv 由 word / args / help 拼出，help 与 args
   wakeAgent(agent, { ctx })
   const answer = await registered[0].execute({ help: true }, { agent })
   assert.equal(answer.code, 0, answer.stderr)
-  assert.match(answer.stdout, /pf -- the agent pipeline/u, '空手问它，答的是整张索引')
+  assert.match(answer.stdout, /pathfinder -- the agent pipeline/u, '空手问它，答的是整张索引')
 })
 
 test('名字锁：注册名、README 的拼法来自同一个常量；技能正文的拼法与它一致，且每个 SKILL.md 都点到它', () => {

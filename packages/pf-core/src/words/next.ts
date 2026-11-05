@@ -166,7 +166,7 @@ async function holderOf(
   };
 }
 
-/** `pf next`: read the plan, carry it out (settle → pin, then the session), then print what is next. */
+/** `next`: read the plan, carry it out (settle → pin, then the session), then print what is next. */
 export async function nextVerb(call: VerbCall) {
   const { values, io } = call;
   const decision = values.continue === true ? 'continue' : values.stop === true ? 'stop' : undefined;
@@ -230,7 +230,7 @@ export async function nextVerb(call: VerbCall) {
         ...(values.note === undefined ? {} : { note: values.note }),
         ...(values.node === undefined ? {} : { named: values.node }),
       });
-      did = [`pf: settled ${values.after} on ${cycleId}`];
+      did = [`settled ${values.after} on ${cycleId}`];
       const after = await graphIds(pf);
       const pinned = (closed.holding ?? [])[0]?.id;
       const inserted = await insertionAction(pf, cycleId!, values.after, grid, after, pinned);
@@ -251,7 +251,7 @@ export async function nextVerb(call: VerbCall) {
       }
       action = await pf.conductor.next({ cycle: cycleId });
       if (rehearsal.action === 'dispatch' && pinned !== undefined) {
-        did.push(`pf: pinned ${pinned} on ${cycleId}`);
+        did.push(`pinned ${pinned} on ${cycleId}`);
         const note = `${short(values.after)} closed; opening ${action.node_title ?? ''}`;
         action = { ...action, note };
       }
@@ -268,7 +268,7 @@ export async function nextVerb(call: VerbCall) {
         const picks = action.nodes ?? (action.node_id === undefined ? [] : [action.node_id]);
         for (const id of picks) {
           await pf.ledger.cycles.hold(cycleId, String(id));
-          did.push(`pf: pinned ${String(id)} on ${cycleId}`);
+          did.push(`pinned ${String(id)} on ${cycleId}`);
         }
         action = await pf.conductor.next({ cycle: cycleId });
       }
@@ -276,8 +276,8 @@ export async function nextVerb(call: VerbCall) {
     // The pinning step lands the material, never the standalone verb: the prompt each node's session is
     // started from, and this round's run doc. A preview (`--plan` without `--after`) is not executable
     // and writes nothing; every other spelling of `next` is the step that pinned the node, so the
-    // material lands here — that is what makes the skill's two lines (`pf next --after <node> --json`,
-    // then `pf dispatch <cycle>`) run in that order, the second one finding what the first one wrote.
+    // material lands here — that is what makes the skill's two lines (`next --after <node> --json`,
+    // then `dispatch <cycle>`) run in that order, the second one finding what the first one wrote.
     if ((planMode === false || values.after !== undefined) && action.action === 'dispatch') {
       await pf.conductor.prepare({ cycle: action.cycle });
     }
@@ -385,7 +385,7 @@ async function openPlan(
       skipped.push(item.node_id);
       continue;
     }
-    openedDid.push(`pf: opened a session for ${item.node_id} on ${action.cycle}`);
+    openedDid.push(`opened a session for ${item.node_id} on ${action.cycle}`);
     opened.push(receipt.session?.sessionId ?? item.node_id);
   }
   const folded = { ...action };
@@ -428,7 +428,7 @@ function noOpenerSentence(root: string, cycleId: unknown, nodeIds: readonly unkn
 function noPromptRefusal(prompt: string, nodeId: string) {
   return refuse(
     `no prompt file at ${prompt}. That file is written by the step that pinned this node: usually ` +
-      `the closing call (\`pf next --after ${nodeId} --json\`), and after an insertion the later ` +
+      `the closing call (\`next --after ${nodeId} --json\`), and after an insertion the later ` +
       '`next` that picks the node up.',
     2,
   );
@@ -443,13 +443,13 @@ function alreadyStartedRefusal(cycleId: string, ids: readonly string[]) {
   return refuse(
     `every node this cycle holds already had its session started (${ids.map(short).join(', ') || '(none)'}), ` +
       'so there is nothing to dispatch: doing it again would boot a second session onto the same node. ' +
-      `To reopen one, retry it the documented way: \`pf cycle retry ${cycleId} <node> --drop\`, then ` +
-      `\`pf cycle hold ${cycleId} <node>\`, then \`pf next --cycle ${cycleId} --spawn --json\`.`,
+      `To reopen one, retry it the documented way: \`cycle retry ${cycleId} <node> --drop\`, then ` +
+      `\`cycle hold ${cycleId} <node>\`, then \`next --cycle ${cycleId} --spawn --json\`.`,
     2,
   );
 }
 
-/** `pf dispatch`: start the sessions of the nodes this line holds, and nothing else. */
+/** `dispatch`: start the sessions of the nodes this line holds, and nothing else. */
 export async function dispatchVerb(call: VerbCall) {
   const { values, io, positionals } = call;
   const cycleId: string = positionals[0]![0]!;
@@ -466,7 +466,7 @@ export async function dispatchVerb(call: VerbCall) {
     if (line.status !== 'active') {
       return refuse(
         `cycle "${cycleId}" is '${line.status}', not active: a line that is not in service does not ` +
-          `dispatch. \`pf cycle status ${cycleId} active\` puts it back.`,
+          `dispatch. \`cycle status ${cycleId} active\` puts it back.`,
         2,
       );
     }

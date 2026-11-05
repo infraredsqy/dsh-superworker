@@ -1,5 +1,5 @@
 /**
- * The router: one command line in, one answer out — the two streams and the exit code, spelled the
+ * The router: one line of words in, one answer out — the two streams and the exit code, spelled the
  * same way the transport layer in front of the engine writes them.
  *
  * Level 2 is a verb (it acts on the project or on the pipeline itself); level 3 is a noun plus the
@@ -25,7 +25,7 @@ const HELP_WORDS = ['-h', '--help', 'help'];
 /** The knob names a folder with no `.pf` of its own can still be asked for: the engine's three core settings. */
 const CORE_CONFIG_KEYS = ['max_agents', 'test_tier', 'worktree_mode'];
 
-/** The words `pf` itself runs: word → the form `--help` prints, the one line of sense, the handler. */
+/** The words the tool itself runs: word → the form `--help` prints, the one line of sense, the handler. */
 const SELF_VERBS: ReadonlyArray<readonly [string, string, string]> = [
   ['doctor', 'doctor [--fix]', 'read the health of this checkout and this project'],
   ['version', 'version', 'print the version and where this checkout lives'],
@@ -33,7 +33,7 @@ const SELF_VERBS: ReadonlyArray<readonly [string, string, string]> = [
 
 /**
  * The verbs: word → the row found in the table (its flags and values come off that one table)
- * plus the handler that answers it. This is the `pf <verb>` layer; a group's verbs live one level in.
+ * plus the handler that answers it. This is the verb layer; a group's verbs live one level in.
  * The merge driver's process hand-off is the transport layer's own word; it prints in the listing and
  * is answered there.
  */
@@ -44,6 +44,9 @@ const VERB_ROUTES: Record<string, string> = {
   dispatch: 'dispatchVerb',
   'clean-temp': 'cleanTempVerb',
   handoff: 'handoffVerb',
+  doctor: 'doctorVerb',
+  version: 'versionVerb',
+  'merge-ledger': 'mergeLedgerVerb',
 };
 
 /** The handlers of a group's verbs, by `"<group> <verb>"`. */
@@ -95,15 +98,11 @@ const USAGE_COLUMN = 42;
 const USAGE_WIDTH = 100;
 
 /** The shape description printed above the tables, then the tables grown from the router's rows. */
-const USAGE_SHAPE = `pf -- the agent pipeline's own command
+const USAGE_SHAPE = `pathfinder -- the agent pipeline's own words
 
   Level 2 is a verb: it acts on the project or on the pipeline itself. Level 3 is a noun -- a record
-  with an identity -- plus the verb that acts on it. So \`pf init\` and \`pf next\` are verbs, and
-  \`pf cycle list\`, \`pf dag add\` are a group's verbs.
-
-  An argument carrying shell punctuation is safest handed over as \`-o @path\` or \`-o -\`, and
-  \`node <checkout>/bin/pf.mjs …\` answers the same as the installed command where a shell does eat it.
-
+  with an identity -- plus the verb that acts on it. So \`init\` and \`next\` are verbs, and
+  \`cycle list\`, \`dag add\` are a group's verbs.
 `;
 
 /** Where one table's sense column opens: the widest word of that table plus one blank. */
@@ -154,7 +153,7 @@ async function pluginCommands(io: WordsIO) {
     const pf = await handleOf(root, io);
     return await pf.conductor.pluginCommands();
   } catch {
-    // The listing answers even when the folder behind it cannot be read; `pf doctor` names that.
+    // The listing answers even when the folder behind it cannot be read; `doctor` names that.
     return [];
   }
 }
@@ -193,7 +192,7 @@ function groupSense(word: string): string {
 export interface WordsIndex {
   /** The shape description printed above the tables. */
   readonly shape: string;
-  /** The words about this checkout itself (`pf doctor`, `pf version`), as the listing prints them. */
+  /** The words about this checkout itself (`doctor`, `version`), as the listing prints them. */
   readonly self: ReadonlyArray<readonly [string, string]>;
   /** The verbs, with their one-line senses. */
   readonly verbs: ReadonlyArray<readonly [string, string]>;
@@ -220,7 +219,7 @@ export function describe(): WordsIndex {
   };
 }
 
-/** `pf --help`: the shape of the command, then every word the router walks. */
+/** `--help`: the shape of the listing, then every word the router walks. */
 export async function topHelp(io: WordsIO): Promise<string> {
   const index = describe();
   const verbRows = index.verbs.map(([word]) => [word, verbSense(word)] as const);
@@ -230,27 +229,27 @@ export async function topHelp(io: WordsIO): Promise<string> {
   );
   let text =
     USAGE_SHAPE +
-    '\n  pf itself:\n' +
+    '\n  the tool itself:\n' +
     usageRows(index.self) +
-    '\n\n  verbs:    (each one hands the rest of the line to a tool)\n' +
+    '\n\n  verbs:    (each one takes the rest of the line as `args`)\n' +
     usageRows(verbRows) +
-    "\n\n  groups:   (a group's verbs are that tool's: `pf <group> --help`)\n" +
+    "\n\n  groups:   (a group's verbs are the group's own: `help` with the group answers them)\n" +
     usageRows(groupRows);
   if (plugins.length > 0) {
     const rows = plugins.map((entry) => [entry.name, entry.summary ?? ''] as const);
     const column = usageColumn(rows);
     const title =
-      '(a word an installed plugin contributes, answered by that plugin: `pf <word> --help`\n' +
-      senseLines('is its own, and `pf doctor` lists what is installed)', column)
+      '(a word an installed plugin contributes, answered by that plugin: `help` with the word\n' +
+      senseLines('answers its own page, and `doctor` lists what is installed)', column)
         .map((line) => `${' '.repeat(column)}${line}`)
         .join('\n');
     text += `\n\n  plugins:  ${title}\n${usageRows(rows)}`;
   }
   return (
     text +
-    "\n\n  Run `pf <verb> --help` for the verb's own flags and values, or `pf <group> --help`\n" +
+    "\n\n  `word` takes the first word of a line, `args` takes the rest; `help` answers that word's page,\n" +
     // The listing closes on one blank line.
-    "  for a group's verbs.\n\n"
+    "  and a word with its `args` and no `help` runs it.\n\n"
   );
 }
 
@@ -375,7 +374,7 @@ function streamText(text: string | undefined): string {
 }
 
 /**
- * The whole command line: argv in, one answer out. The words about this process itself — the
+ * The whole line of words: argv in, one answer out. The words about this process itself — the
  * checkout's doctor, its version, the merge driver's hand-off to the engine's process entry — are the
  * transport layer's own; everything else answers here.
  */
@@ -414,7 +413,7 @@ export async function answer(argv: readonly string[], io: WordsIO): Promise<{ co
   }
   return normalize({
     code: 2,
-    stderr: `pf: does not recognize \`${verb}\`.\n\n${await topHelp(io)}`,
+    stderr: `no word \`${verb}\` in this table.\n\n${await topHelp(io)}`,
   });
 }
 

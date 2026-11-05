@@ -3,7 +3,7 @@
 > Role: the executor — dispatched by the conductor. It reads and reports only,
 > and dispatches nobody further down.
 
-First thing: run `pf instruction list --project <project root>` to see the user instructions in
+First thing: run `instruction list --project <project root>` to see the user instructions in
 force right now, and only then start. Do not read `instructions.json`; run the command.
 
 ## What you hold
@@ -24,7 +24,7 @@ met, or met in a way that cannot be argued, is reported critical.
 When the node is a **debt-clearing** one (the spec carries a `method: ` line), the goal is
 the one standard the spec writes: this batch of entries reaches a terminal status, or that reading
 comes back under the line. Check it against the tool that owns that record — its own skill says
-which one it is, and `pf doctor` lists what is installed — not just against a diff.
+which one it is, and `doctor` lists what is installed — not just against a diff.
 
 The basic items go by in the same round: functional completeness; a passing reading from the
 project **test tier** in the conductor's supplement (`full` tier = the whole fast lane green;

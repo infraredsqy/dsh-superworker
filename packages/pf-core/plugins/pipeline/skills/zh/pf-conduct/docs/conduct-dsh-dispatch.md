@@ -43,27 +43,27 @@
   的拒绝；这一次因此不落 prompt、不开会话，刚钉住的那个节点留着（钉住是上一步的事），线照旧在
   服务中。
 - 这个顺序有代价：认领只要落了盘，plan 就把这一格当成已经在跑，永不第二次派它。所以「先问能不能
-  开、再落认领」必须由开的那一方保证 —— 命令行那一侧见下一节。
+  开、再落认领」必须由开的那一方保证 —— 没有 opener 的那一侧见下一节。
 
-## 三、命令行这一侧：没有 opener，就一个字都别写
+## 三、没有 opener：就一个字都别写
 
 引擎词面（`answer()`）里两个动作读的是同一件事：**本次调用有没有开会话的接缝**
-（`io.openerAvailable`，由命令面适配器按 `sessionOpenerAvailable()` 填，只有排练档为真）。
+（`io.openerAvailable`，由调用方按 `sessionOpenerAvailable()` 填，只有排练档为真）。
 
-- `pf dispatch <cycle>`：先读盘上那对事实，节点挨个来 —— `started` 在，记成「已经开过」；不在，
+- `dispatch <cycle>`：先读盘上那对事实，节点挨个来 —— `started` 在，记成「已经开过」；不在，
   就要求 prompt 在盘上（不在就拒，并说这份 prompt 由钉住那一步写）。都读过了、确认这个进程没有
   opener，**就在调引擎之前拒**：退出码 2，一个字节不写，句子里点名面板（寻路中心）与每一份
   prompt 的路径，再给出人自己补这一格的两条路（在面板上派，或新开一个会话把那一行贴进去）。
   一个节点都没得派时另有一句：已经开过的节点不再派第二次。
-- `pf next --spawn`：计划照印，材料照落（钉住那一步本来就要落 prompt），spawn 那一步只把
+- `next --spawn`：计划照印，材料照落（钉住那一步本来就要落 prompt），spawn 那一步只把
   `spawn_error` 写进答案、一个节点都不认领 —— 调用根本不交给引擎。这就是「不写认领」的写法：
   占位 opener 一旦拒在认领之后，这一格就成了「已经开着、背后却没有会话」。
-- `pf next --after <node>` 落材料、不开会话（技能那条命令不带 `--spawn`）。技能那两条命令
+- `next --after <node>` 落材料、不开会话（技能那条命令不带 `--spawn`）。技能那两条命令
   （先 `next --after`、再 `dispatch`）就是这么分工的：第二条读得到第一条写下的 prompt。
 
 **排练档。** `DSH_CONDUCT_SPAWN_DRY_RUN` 的值不属于 `''` / `0` / `false` / `False` 时，`engine.mjs`
 交给引擎的是 `SimulatedExecutor`：调用照走完，会话 id 是 `sess-N`，`started` 认领照样落盘 ——
-它演练的是**整条链**。所以演练过的那一格真要再派，先 `pf cycle retry <cycle> <node> --drop`
+它演练的是**整条链**。所以演练过的那一格真要再派，先 `cycle retry <cycle> <node> --drop`
 把认领撤掉。
 
 **宿主那一侧也认这个开关。** 演练档里原生 opener 一个 agent 都不建，回的收条 host 是 `drill`、
@@ -77,9 +77,9 @@
 - **会话开了、认领没落。** 引擎抛，句子里带着会话 id，并明说该先补认领；这时盘上留着一条 prompt
   而没有认领，下一次派发会照常开 —— 先按上面那句把认领补上，或者撤掉重来。
 - **会话死了、认领还在。** `started` 是唯一的「已经开过」证据，plan 因此不再派这一格。重开的走法
-  只有一条：`pf cycle retry <cycle> <node> --drop`（认领与旧票一起撤）、`pf cycle hold <cycle> <node>`、
-  再 `pf next --cycle <cycle> --spawn --json`。
+  只有一条：`cycle retry <cycle> <node> --drop`（认领与旧票一起撤）、`cycle hold <cycle> <node>`、
+  再 `next --cycle <cycle> --spawn --json`。
 - **两条线并排。** 醒着的那条可能正往同一棵树上跑 git，写操作撞 `index.lock` 是瞬时撞锁：等几秒
   重跑同一条命令，两三次仍不解放就停手交人；锁文件属于活进程，不许删。
 - **排查顺序。** 面板里看不到会话，看它挂在哪一个工作区；按钮拒了，念它回的那句 `detail`；
-  命令行拒了，那就是这个进程没有 opener —— 这个进程本来就不开会话，跟配置无关。
+  因为没 opener 被拒了，那就是这个进程没有 opener —— 这个进程本来就不开会话，跟配置无关。

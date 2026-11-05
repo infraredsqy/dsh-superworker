@@ -2,7 +2,7 @@
  *
  * The column answers only "which line to look at": the mark is drawn left of the name, and the row
  * carries no numbers and no action of its own — a line's own numbers are written outside the panel
- * (`pf cycle policy`), where the tool is the one that judges them.
+ * (`cycle policy`), where the tool is the one that judges them.
  *
  * The row itself — its height, its inset, the cell left of the name, the name's face — is the object
  * this column and the map's rail both use, so it is declared in `tokens.css`. What stands here is

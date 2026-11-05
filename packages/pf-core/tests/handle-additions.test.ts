@@ -94,7 +94,7 @@ describe('ledger.cleanTemp: one cell, and a listing run writes nothing', () => {
   });
 });
 
-describe('ledger.cycles: the two readings the command line prints', () => {
+describe('ledger.cycles: the two readings the words print', () => {
   it('policies answers the effective set: the defaults, then what the line states', async () => {
     const lab = makeLab('pf-add-policies-');
     try {

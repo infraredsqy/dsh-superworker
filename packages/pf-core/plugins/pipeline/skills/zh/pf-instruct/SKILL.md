@@ -12,19 +12,19 @@ disable-model-invocation: true
 
 别处敲了就是敲错地方，回一句，别往清单里记。
 
-管线这些词是一张表两个入口：命令行走 `pf`，模型侧走 `pathfinder` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
+管线这些词是一张表一个入口：走 `pathfinder` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
 
 把调用行里那句话**原话照抄**进清单，`--scope` 必须点名，它决定谁能看见这条：
 
 ```pwsh
 # global：往后每个读清单的会话都看见，一直生效
-pf instruction add --text "<用户原话>" --scope global
+instruction add --text "<用户原话>" --scope global
 
 # cycle：这个 cycle 里的会话看见，cycle 结束就没
-pf instruction add --text "<用户原话>" --scope cycle --cycle <id>
+instruction add --text "<用户原话>" --scope cycle --cycle <id>
 
 # node：只管记它的那个节点，节点收尾就没
-pf instruction add --text "<用户原话>" --scope node --node <id>
+instruction add --text "<用户原话>" --scope node --node <id>
 ```
 
 - 两条线并排时 `--cycle <id>` / `--node <id>` 要点名，绑不上工具会拒收

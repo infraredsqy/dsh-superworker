@@ -4,7 +4,7 @@
  *
  * Only the tool knows the effective value and which layer it came from (the
  * global layer lives in the home directory, out of the workspace file
- * gateway's sight), so this module only parses each line `pf config list`
+ * gateway's sight), so this module only parses each line `config list`
  * prints and makes no second set of judgments. Which keys the tool accepts is
  * also the tool's business: no key list is kept here — whatever is printed
  * gets read.

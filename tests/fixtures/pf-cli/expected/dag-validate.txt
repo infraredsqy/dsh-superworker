@@ -1,4 +1,0 @@
-PASS  check=no_cycles  nodes=5
-PASS  check=no_dangling
-Total nodes: 5
-  todo: 5

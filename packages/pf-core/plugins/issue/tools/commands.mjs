@@ -78,7 +78,7 @@ function describe(value) {
   return typeof value;
 }
 
-/** A text key: absent and `null` both count as "not given" and take the default; the command line and the batch file are read the same way. */
+/** A text key: absent and `null` both count as "not given" and take the default; the arguments and the batch file are read the same way. */
 function pick(source, name, fallback) {
   const value = source[name];
   return value === undefined || value === null ? fallback : value;

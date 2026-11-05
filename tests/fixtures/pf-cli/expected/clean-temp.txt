@@ -1,4 +1,0 @@
-4d29abb8  held by a cycle right now; skipped
-75b2fbba     1 files       0.0 KB
-1 temp directories can be cleared; another 1 are working right now and skipped.
-Add --yes to delete (no per-file judgement: the whole directory goes).

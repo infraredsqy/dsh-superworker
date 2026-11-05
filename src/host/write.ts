@@ -9,12 +9,13 @@
  * agent-facing tool answers through this same layer. The user's verbatim
  * sentence may be any sentence, with spaces, quotes and `&`: it rides as one
  * argv cell, the way the tool hands its own line over. `PF_PLUGINS_DIR` is the
- * `pf` command's deployment switch, not this side's: the host half names the
+ * engine's deployment switch, not this side's: the host half names the
  * folder it ships (`shippedPluginsDir()`) rather than reading that switch, so
- * moving it moves the command's view and not the panel's.
+ * moving it moves the engine's view and not the panel's.
  */
 import { answer } from 'pf-core'
 import type { PfOutcome } from './failure.ts'
+import { hostGitRunner } from './git.ts'
 import { shippedPluginsDir } from './skills.ts'
 
 /**
@@ -27,6 +28,7 @@ export async function runPf(workspaceRoot: string, args: readonly string[], said
   const settled = await answer(said === undefined ? args : [...args, said], {
     root: workspaceRoot,
     pluginsDir: shippedPluginsDir(),
+    git: hostGitRunner(),
   })
   if (settled.code === 0) return { ok: true, text: settled.stdout.trim() }
   /* A non-zero answer is not this plugin's sentence to write: the words layer said its own

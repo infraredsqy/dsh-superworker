@@ -11,9 +11,6 @@
     "tag": "latest"
   },
   "type": "module",
-  "bin": {
-    "pf": "bin/pf.mjs"
-  },
   "main": "lib/host/index.js",
   "types": "lib/types/host/index.d.ts",
   "exports": {
@@ -34,7 +31,6 @@
     "lib/types/**/*.d.ts",
     "locale/*.json",
     "cordis.patch.yml",
-    "bin/**/*",
     "packages/pf-core/dist/**/*",
     "packages/pf-core/plugins/**/*"
   ],

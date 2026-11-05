@@ -21,6 +21,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { answer, describe, longResultPointerOf } from 'pf-core'
 import { workspaceRootOf } from './gateway.ts'
+import { hostGitRunner } from './git.ts'
 import { executorOf } from './relay.ts'
 import { shippedPluginsDir } from './skills.ts'
 
@@ -155,6 +156,7 @@ export function definePathfinderTool(host: PathfinderToolHost): PathfinderToolDe
         executor: executorOf(host.ctx, sessionId, root),
         openerAvailable: true,
         pluginsDir: shippedPluginsDir(),
+        git: hostGitRunner(),
       })
       // The long-answer contract comes from the words layer, never restated here: an
       // oversized answer travels whole, with the pointer as its own last line. The word

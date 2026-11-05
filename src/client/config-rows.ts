@@ -1,7 +1,7 @@
 /**
  * The reading face of the settings view: how known keys are described (display name, caption,
  * control kind, the category it belongs in, a copy of the dropdown candidates); the rows themselves
- * grow out of the `pf config list` reading.
+ * grow out of the `config list` reading.
  *
  * No JSX and no DOM here, so it can be measured standalone where no browser is installed. The tool
  * is the single source of settings keys, so this file does not declare "which keys the tool has":
@@ -145,7 +145,7 @@ export function groupOfUnregistered(key: string): ConfigGroup {
  * recognize, and one that does not wobble with the order the tool prints);
  * unregistered keys follow, in reading order, showing the key name directly with a text box — the
  * write side does not filter keys, and the tool judges whether a value is valid.
- * @param entries - The key to "value + layer" table read out of `pf config list`.
+ * @param entries - The key to "value + layer" table read out of `config list`.
  */
 export function configRowsOf(entries: Readonly<Record<string, ConfigEntry>>): readonly ConfigRow[] {
   const rows: ConfigRow[] = []
@@ -169,7 +169,7 @@ export interface ConfigSection {
  * The page under the index: one section per category that has at least one row, in the index's own
  * order. An empty category is not drawn — no head over nothing, and no line in the index to a place
  * with nothing in it.
- * @param entries - The key to "value + layer" table read out of `pf config list`.
+ * @param entries - The key to "value + layer" table read out of `config list`.
  */
 export function configSectionsOf(entries: Readonly<Record<string, ConfigEntry>>): readonly ConfigSection[] {
   const rows = configRowsOf(entries)

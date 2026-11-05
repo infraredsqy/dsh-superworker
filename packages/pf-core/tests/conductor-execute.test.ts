@@ -223,7 +223,7 @@ describe('blockers and reruns: pending counts as a blocker, and the traces a rer
     const planTicketed = await pf.conductor.next({ cycle: 'c1' });
     expect(planTicketed.action).toBe('wait');
     if (planTicketed.action === 'wait') {
-      expect(planTicketed.close_with).toBe(`pf next --after ${a} --json`);
+      expect(planTicketed.close_with).toBe(`next --after ${a} --json`);
     }
     const settled = await pf.conductor.close({ cycle: 'c1' });
     expect(settled.path[0]).toMatchObject({ node: a, result: 'completed' });

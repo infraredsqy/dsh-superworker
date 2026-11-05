@@ -1,6 +1,6 @@
 ---
 name: pf-instruct
-description: Record one constraint in the project's instruction list so that later agents follow it; used inside a pf session.
+description: Record one constraint in the project's instruction list so that later agents follow it; used inside a pipeline session.
 disable-model-invocation: true
 ---
 
@@ -12,21 +12,21 @@ disable-model-invocation: true
 
 Typed anywhere else, it is typed in the wrong place: say so, and record nothing in the list.
 
-The pipeline's words are one table with two doors: run them on the `pf` command line, or
-call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
+The pipeline's words are one table with one door: call the `pathfinder` tool — a `word`, its
+`args`, and `help` for that word's page.
 
 Copy that sentence from the call line into the list **word for word**; `--scope` is required, and
 it decides who can see the entry:
 
 ```pwsh
 # global: every session that reads the list from now on sees it, and it stays in force
-pf instruction add --text "<the user's own words>" --scope global
+instruction add --text "<the user's own words>" --scope global
 
 # cycle: the sessions in this cycle see it, and it is gone when the cycle ends
-pf instruction add --text "<the user's own words>" --scope cycle --cycle <id>
+instruction add --text "<the user's own words>" --scope cycle --cycle <id>
 
 # node: it governs only the node it was recorded on, and it is gone when that node closes
-pf instruction add --text "<the user's own words>" --scope node --node <id>
+instruction add --text "<the user's own words>" --scope node --node <id>
 ```
 
 - With two lines side by side, `--cycle <id>` / `--node <id>` has to be named; when it cannot

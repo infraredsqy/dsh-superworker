@@ -87,7 +87,7 @@ export interface WordSpec {
   actions(): readonly SpecAction[];
 }
 
-/** One parsed command line: values by dest, positionals as word lists, or a help word / a refusal. */
+/** One parsed line of words: values by dest, positionals as word lists, or a help word / a refusal. */
 export interface ParsedLine {
   readonly help?: boolean;
   readonly error?: string;

@@ -7,9 +7,12 @@
  * indent, the same short id (the first eight characters) when a longer one would only make the line
  * longer.
  */
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { ConfigLayer } from '../config';
 import type { CyclePolicyValue, InstructionReaderRow } from '../ledger';
+import { runMergeDriver } from '../ledgermerge/driver';
 import type { CycleStatus, InstructionRecord, NodeResult, NodeStatus } from '../types';
 import {
   guarded,
@@ -33,7 +36,7 @@ import type { VerbCall } from './types';
 // ═══ the pipeline verbs ══════════════════════════════════════════════════════
 
 /**
- * `pf init`: put the record directory in place. The engine's report is the reading; the lines below
+ * `init`: put the record directory in place. The engine's report is the reading; the lines below
  * are that reading spelled out (what was written, what was skipped and why).
  */
 export const initVerb = guarded(async (call: VerbCall) => {
@@ -55,8 +58,8 @@ export const initVerb = guarded(async (call: VerbCall) => {
   const configFile = join(root, '.pf', 'config.json');
   lines.push(
     report.written.includes('config.json')
-      ? `Config file: ${configFile} (written; empty = all factory defaults, and \`pf config set\` is how to change one)`
-      : `Config file: ${configFile} (already there, left alone; empty = all factory defaults, and \`pf config set\` is how to change one)`,
+      ? `Config file: ${configFile} (written; empty = all factory defaults, and \`config set\` is how to change one)`
+      : `Config file: ${configFile} (already there, left alone; empty = all factory defaults, and \`config set\` is how to change one)`,
   );
   const exclude = {
     written: 'the ignore line is in place in this repository\'s info/exclude',
@@ -83,7 +86,7 @@ export const initVerb = guarded(async (call: VerbCall) => {
   return { stdout: lines.join('\n') };
 }, 1);
 
-/** `pf register`: write the merge driver's two keys, nothing else. */
+/** `register`: write the merge driver's two keys, nothing else. */
 export const registerVerb = guarded(async (call: VerbCall) => {
   const { values, io } = call;
   const root = projectRootOf(values.project, io.root);
@@ -98,7 +101,7 @@ export const registerVerb = guarded(async (call: VerbCall) => {
   return { stdout: command };
 }, 1);
 
-/** `pf clean-temp`: list (or with `--yes`, remove) every node's `temp/` directory. */
+/** `clean-temp`: list (or with `--yes`, remove) every node's `temp/` directory. */
 export const cleanTempVerb = guarded(async (call: VerbCall) => {
   const { values } = call;
   const { pf } = await project(values.project, call.io);
@@ -129,7 +132,7 @@ export const cleanTempVerb = guarded(async (call: VerbCall) => {
   return { stdout: lines.join('\n') };
 }, 1);
 
-/** `pf handoff`: the ticket shape, or one ticket written. */
+/** `handoff`: the ticket shape, or one ticket written. */
 export const handoffVerb = guarded(async (call: VerbCall) => {
   const { values, positionals } = call;
   const root = projectRootOf(values.project, call.io.root);
@@ -137,7 +140,7 @@ export const handoffVerb = guarded(async (call: VerbCall) => {
   const [cycle, node, status] = positionals.map((words) => words[0]);
   if (values.form === true) {
     if (cycle === undefined) {
-      return refuse('the form needs <cycle>: `pf handoff --form <cycle>`', 2);
+      return refuse('the form needs <cycle>: `handoff --form <cycle>`', 2);
     }
     const form = await pf.conductor.handoffForm({ cycle, ...(node === undefined ? {} : { node }) });
     const fields = [
@@ -155,7 +158,7 @@ export const handoffVerb = guarded(async (call: VerbCall) => {
     const lines = [
       `the ticket this line (${form.cycle}) asks for:`,
       '',
-      `pf handoff ${form.cycle} ${node ?? '<node id>'} completed -s "<one-line summary>" -o '{${fields.join(',')}}'`,
+      `handoff ${form.cycle} ${node ?? '<node id>'} completed -s "<one-line summary>" -o '{${fields.join(',')}}'`,
     ];
     if (form.readings.length > 0) {
       lines.push(
@@ -183,7 +186,7 @@ export const handoffVerb = guarded(async (call: VerbCall) => {
   return {
     stdout:
       `handoff: ${ticket.node} ticket written; the node is not closed yet -- finish it with ` +
-      `\`pf next --after ${ticket.node} --json\` (no session was opened)`,
+      `\`next --after ${ticket.node} --json\` (no session was opened)`,
   };
 }, 2);
 
@@ -220,8 +223,8 @@ async function readOutputs(raw: unknown): Promise<{ error?: string; value?: Reco
 /** The refusal of a line that names no picking range: the range is required, so it is refused here. */
 function noTagsRefusal(verb: string) {
   return refuse(
-    `pf cycle ${verb} must be given --tags (the range this line picks from). For example: ` +
-      `pf cycle ${verb} <slug> --tags coding. Known words: writing/coding/art ` +
+    `cycle ${verb} must be given --tags (the range this line picks from). For example: ` +
+      `cycle ${verb} <slug> --tags coding. Known words: writing/coding/art ` +
       '(a word outside the vocabulary is fine too; it is taken as given). Every pick this line ' +
       'makes, and which plugins may react to it, reads this one range.',
     2,
@@ -919,5 +922,87 @@ export const sessionListVerb = guarded(async (call: VerbCall) => {
   }
   return { stdout: lines.join('\n') };
 }, 1);
+
+// ═══ the words about where this is standing ══════════════════════════════════
+
+/** The package root this module answers from: the nearest ancestor that carries a manifest. */
+function packageRoot(): string {
+  const dir = dirname(fileURLToPath(import.meta.url));
+  for (const candidate of [
+    resolve(dir, '..'),
+    resolve(dir, '..', '..'),
+    resolve(dir, '..', '..', '..'),
+  ]) {
+    try {
+      JSON.parse(readFileSync(join(candidate, 'package.json'), 'utf8'));
+      return candidate;
+    } catch {
+      // Not this one: the bundle sits two levels above its module, the engine product three.
+    }
+  }
+  return resolve(dir, '..', '..');
+}
+
+/** The one line `version` prints, and the first line `doctor` prints. */
+function standingLine(): string {
+  const root = packageRoot();
+  try {
+    const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { name?: string; version?: string };
+    return `${manifest.name ?? 'pf-core'} ${manifest.version ?? '0.0.0'} at ${root}`;
+  } catch {
+    // A tree with no readable manifest still answers where it stands.
+    return `pf-core 0.0.0 at ${root}`;
+  }
+}
+
+/** `version`: which package this is, its version, and the directory it was read from. */
+export const versionVerb = guarded(async () => ({ stdout: standingLine() }));
+
+/**
+ * `doctor [--fix]`: the engine's check-up, printed cell by cell. With `--fix` it runs `init` once
+ * afterwards — `init` recognizes what is already there, so the cell a missing layout file turned
+ * red comes back green without a second setup act.
+ */
+export const doctorVerb = guarded(async (call: VerbCall) => {
+  const { values, io } = call;
+  const root = projectRootOf(values.project, io.root);
+  const pf = await handleOf(root, io);
+  const report = await pf.conductor.doctor({ git: io.git });
+  const lines: string[] = [standingLine(), `project root: ${root}`];
+  for (const check of report.checks) {
+    const detail = (check.detail ?? '').split('\n');
+    const one = detail.length === 1 && detail[0] !== '';
+    lines.push(`  ${check.ok ? '✓' : '✗'} ${check.name}${one ? `: ${detail[0]}` : ''}`);
+    if (!one) for (const line of detail) lines.push(`      ${line}`);
+  }
+  if (values.fix === true) {
+    await pf.ledger.init({ git: io.git });
+    lines.push('  → `init` ran once to fill the layout files in (it recognizes what is already there)');
+  }
+  lines.push(report.ok ? 'every health check passed.' : `${report.checks.filter((check) => !check.ok).length} check(s) still red.`);
+  return { stdout: lines.join('\n'), ...(report.ok ? {} : { code: 1 }) };
+});
+
+/**
+ * `merge-ledger`: the record merge driver git calls, answered in this process. The rule itself is
+ * the driver's own (`ledgermerge/`); this word only hands the four paths over and carries the exit
+ * code back out.
+ */
+export const mergeLedgerVerb = guarded(async (call: VerbCall) => {
+  const [base, ours, theirs, path] = (call.positionals ?? []).flatMap((words) => [...words]);
+  if (base === undefined || ours === undefined || theirs === undefined) {
+    return refuse(
+      'the merge driver takes four paths (%O %A %B %P: the common side, this side, the other side, and the path in the repository)',
+      2,
+    );
+  }
+  const out: string[] = [];
+  const err: string[] = [];
+  const code = await runMergeDriver(
+    { base, ours, theirs, path: path ?? ours },
+    { stdout: (text) => out.push(text), stderr: (text) => err.push(text) },
+  );
+  return { code, stdout: out.join(''), stderr: err.join('') };
+});
 
 export { nextVerb, dispatchVerb } from './next';

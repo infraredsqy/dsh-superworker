@@ -84,7 +84,7 @@ const LEDGER_AGENTS_BODY = [
   '`signals/` are the pipeline\'s records, and `nodes/<uuid>/` holds the spec and the deliverable of',
   'each slot (DAG node).',
   '',
-  '- Records are read and written only through `pf` (`pf dag …`, `pf next`); hand-editing the JSON is forbidden, and so is reading `ideas.json` raw -- use the tool\'s list / plan output.',
+  '- Records are read and written only through the pipeline\'s words (`dag …`, `next`); hand-editing the JSON is forbidden, and so is reading `ideas.json` raw -- use the tool\'s list / plan output.',
   '- Process artifacts belonging to one slot (probes, raw output, self-check scripts) go in `.pf/nodes/<uuid>/temp/`, which is temporary and not committed: do not submit them as deliverables.',
   '- Everything else temporary goes in `.tmp/` at the workspace root.',
   '- `meta/`, `worktrees/` and `nodes/<id>/temp/` are kept out of the repository by `.gitignore`; do not move anything from inside them out by hand and commit it.',
@@ -135,8 +135,7 @@ export function isLedgerInitialized(paths: PfPaths): boolean {
 export function assertLedgerInitialized(paths: PfPaths): void {
   if (isLedgerInitialized(paths)) return;
   throw new Error(
-    `${paths.pfDir} was never init-ed (missing ${INIT_MARKERS.join(' or ')}). Run this first:\n` +
-      '  pf init',
+    `${paths.pfDir} was never init-ed (missing ${INIT_MARKERS.join(' or ')}). Ask \`init\` first.`,
   );
 }
 
@@ -581,15 +580,28 @@ export function resolvesOnPath(command: string): boolean {
 }
 
 /**
- * The built entry the absolute form points at: the sibling of this module in the built output; run
- * from source (a test importing `src/`), the product `pnpm build` lays in the package's `dist/`.
+ * The built entry the absolute form points at. Three shapes are shipped or run, and the entry sits
+ * beside this module in only the first of them:
+ *
+ * - the engine product itself (`dist/index.mjs`): its sibling `merge-ledger.mjs`;
+ * - the host bundle (`lib/host/index.js`, which inlines this module): the entry did not come along,
+ *   and the package carries it where the publishing surface lists it,
+ *   `packages/pf-core/dist/`;
+ * - run from source (a test importing `src/`): the product `pnpm build` lays in the package's `dist/`.
+ *
+ * The first candidate that is a file here wins. When none is, the first is named as it stands: a
+ * driver string that points at nothing is worth seeing spelled out rather than guessed around.
  */
 function mergeLedgerProductPath(): string {
   const here = fileURLToPath(import.meta.url);
   const dir = dirname(here);
-  return basename(here).endsWith('.ts')
-    ? resolve(dir, '..', 'dist', MERGE_DRIVER_PRODUCT)
-    : join(dir, MERGE_DRIVER_PRODUCT);
+  const candidates = basename(here).endsWith('.ts')
+    ? [resolve(dir, '..', 'dist', MERGE_DRIVER_PRODUCT)]
+    : [
+        join(dir, MERGE_DRIVER_PRODUCT),
+        resolve(dir, '..', '..', 'packages', 'pf-core', 'dist', MERGE_DRIVER_PRODUCT),
+      ];
+  return candidates.find((candidate) => isFile(candidate)) ?? candidates[0]!;
 }
 
 /**

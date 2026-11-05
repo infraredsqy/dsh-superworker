@@ -97,8 +97,8 @@ export interface DispatchReceipt {
 /**
  * One query of `next`: the read-only mode, plus one closing rehearsal.
  *
- * - `plan` — the explicit spelling of the "read-only, do not execute" mode: on a command line it is
- *   `pf next --plan`. This one word takes only `true` here (read-only is the default); writing `false`
+ * - `plan` — the explicit spelling of the "read-only, do not execute" mode: in the words layer it is
+ *   `next --plan`. This one word takes only `true` here (read-only is the default); writing `false`
  *   is refused on the spot, because the action that carries the next step out is called
  *   `conductor.dispatch`, the two actions each go through their own gate, and there is no "execute it on
  *   the way" fork on the `next` path.
@@ -119,7 +119,7 @@ export interface NextQuery extends ConductorTarget {
 /**
  * The next step: a plan that can be read and explained and is not executed.
  *
- * The literals of the action bag and their key order are fixed (the output of `pf next --plan --json`), and
+ * The literals of the action bag and their key order are fixed (the output of `next --plan --json`), and
  * the byte-for-byte comparison rests on exactly that; the six actions each take one word:
  *
  * - `dispatch` — the node is pinned and the prompt's location is named too: hand this step to the executor.
@@ -269,7 +269,7 @@ export interface ConductorPluginCommandInput {
  * What one routed plugin command did: which plugin answered, whether it ran to its end, the text it answered
  * with, and — when it did not run — the sentence the failure leaves. `main` may hand back a number as its
  * answer: that number is the exit code the run asks for, and it lands in `code` (null when the plugin asked
- * for none). A caller that runs on a command line keeps it, the way a command's own exit code is kept.
+ * for none). A caller that runs a word keeps it, the way a process's own exit code is kept.
  */
 export interface PluginCommandAnswer {
   word: string;
@@ -662,7 +662,7 @@ export function createConductorNamespace(
       const query = input ?? {};
       if (query.plan === false) {
         throw new Error(
-          'conductor.next is a read-only plan (the `pf next --plan` mode): it reads the records and hands ' +
+          'conductor.next is a read-only plan (the `next --plan` mode): it reads the records and hands ' +
             'back what the next step is, writing not one byte. The action that carries the next step out is ' +
             'conductor.dispatch.',
         );
@@ -884,7 +884,7 @@ export function createConductorNamespace(
         return answer;
       }
       // The context is the same one a timing's door gets: the knobs' chain, the readings, the tag lookup, the
-      // graph snapshot and the node layout. A command run from the command line stands on no node and no line,
+      // graph snapshot and the node layout. A plugin word run from outside the pipeline stands on no node and no line,
       // so both cells are empty and the whole graph is handed over as the snapshot.
       const warnings: string[] = [];
       const ctx = createContext({

@@ -12,7 +12,7 @@
  * languages.
  *
  * Two things deliberately do NOT live here: the records' own words (a node's title, a status the
- * tool wrote, a `pf config` value) and the console diagnostics this plugin prints for developers.
+ * tool wrote, a `config` value) and the console diagnostics this plugin prints for developers.
  * The first is data — it is shown verbatim in every language. The second is not interface text.
  */
 export const zh = {
@@ -111,8 +111,8 @@ export const zh = {
    * instruction goes in verbatim. */
   'node.open': '开会话',
   /* The stranded dispatch: the claim is on disk, the session is gone. The sentence names the two
-   * record words the remedy names, and the exact command, so it can be followed as it is read. */
-  'cell.stranded': '这一格的认领还在盘上，会话已经不在了：跑 pf cycle retry {cycle} {node} --drop 清掉认领，再 pf next --cycle {cycle} --spawn --json 重开这一棒。',
+   * record words the remedy names, and the exact word line, so it can be followed as it is read. */
+  'cell.stranded': '这一格的认领还在盘上，会话已经不在了：请 `cycle retry {cycle} {node} --drop` 清掉认领，再 `next --cycle {cycle} --spawn --json` 重开这一棒。',
 
   /* ── The instruction ledger ───────────────────────────────────────────────────────────────── */
   'notes.scroll.aria': '用户指令',
@@ -216,7 +216,7 @@ export const zh = {
   /* Each code from `src/host/failure.ts` and `src/client/failure.ts` reads as one of these.
    *
    * Two of them are the whole detail and nothing else: `tool-refused` and `transport-failed` carry
-   * another program's words — the `pf` tool's own reason, or a message from the transport — and no
+   * another program's words — the words layer's own reason, or a message from the transport — and no
    * table here owns those. They are carried out verbatim, which is also why the panel can show
    * them in a language it does not speak; `failure.unstated` stands in when they said nothing. */
   'failure.arg-not-allowed': '该参数不能进入记录：{detail}',

@@ -75,19 +75,19 @@ spec is read-only to downstream.
 
 1. Read `shared/pf/toolcraft.md` and `shared/pf/philosophy.md`
 2. Read the project's docs/ and spec
-3. When building or changing a graph, `pf config get test_tier` reads this project's test tier
-   (`full` / `minimal`; factory default `full`, the same as `pf config list` prints). When this
+3. When building or changing a graph, `config get test_tier` reads this project's test tier
+   (`full` / `minimal`; factory default `full`, the same as `config list` prints). When this
    project has not touched it yet and this run needs `minimal`, ask once, only once, and offer a
    view: a demo or a fast-iteration prototype → `minimal`; product-grade and maintained long term
    → `full`, with the user making the call. Once the call is made, write it into the project's
-   `.pf/config.json` with `pf config set test_tier minimal`. For what each tier is and who reads
+   `.pf/config.json` with `config set test_tier minimal`. For what each tier is and who reads
    it, see the "Test tier and verification" table in
    [`../pf-conduct/SKILL.md`](../pf-conduct/SKILL.md); it is project-level and does not go into
    the spec. **It does not go into the project root's `AGENTS.md` / `CLAUDE.md`** — settings live
    only in `.pf/config.json` and the global copy. The worktree mode is the same, through
-   `pf config set worktree_mode`. A pure graph query asks nothing
-4. Read the DAG, and read the lines with it: first `pf dag --help` to confirm the full set of
-   commands, then list the graph once to see the skeleton; `pf cycle list` and `pf cycle current`
+   `config set worktree_mode`. A pure graph query asks nothing
+4. Read the DAG, and read the lines with it: first `dag --help` to confirm the full set of
+   commands, then list the graph once to see the skeleton; `cycle list` and `cycle current`
    say which lines are in service and what each line's tags cover — the lines enter here, to be
    settled together with the nodes in step 3
    - The user names a specific feature → search by keyword, merging like words into one query
@@ -98,7 +98,7 @@ spec is read-only to downstream.
    the code and bring back the key findings; do not read the source yourself
 
 When you are unsure whether some practice is a constraint the user settled → read the instruction
-record once with `pf instruction list --project <project root>`, do not guess.
+record once with `instruction list --project <project root>`, do not guess.
 
 ### Step 2: step back and align on what is wanted
 
@@ -161,8 +161,8 @@ now, some have to enter the graph and queue, and the queued ones have an order a
 - **Which line**: which line the new work belongs to is settled here, together with value and
   dependency. A line in service whose tags cover the new node takes it; when no line can take it,
   lay the two roads out for him to pick — which parked line to put back
-  (`pf cycle status <line> active`), or open a new one
-  (`pf cycle start <slug> --title "<the user's own words>" --tags <tags>`). **Only the user
+  (`cycle status <line> active`), or open a new one
+  (`cycle start <slug> --title "<the user's own words>" --tags <tags>`). **Only the user
   decides whether a line comes back to service**; your pen is only his hand. The decision is
   settled here, and the close only executes it (see step 5)
 
@@ -247,7 +247,7 @@ rule. When any one of them is not satisfied, change the node or split it first, 
 only after the user nods.
 
 **Four: whose run this work's running is.** To clear debt (a batch of entries some record holds),
-**do not write debt-clearing steps yourself**: run `pf doctor` once and read off which plugins are
+**do not write debt-clearing steps yourself**: run `doctor` once and read off which plugins are
 installed, and the dedupe tag and method name each one declares — copy those two strings in. One
 line, `method: <that method>`, means "this node is run by the conductor from that skill itself",
 and the order outranks `weight` (see "Method" in
@@ -279,17 +279,17 @@ kinds of work go this road:
 These also go this road: pick the current state back up for the user (an inventory, a check, a
 rendered graph); reproduce a problem to confirm whether it is there; repository hygiene (stale
 temporary products, duplicate entries a record already holds); write a settled conclusion into the
-project's `.pf/config.json` (`pf config set`); record a piece of debt run into; make a technology
+project's `.pf/config.json` (`config set`); record a piece of debt run into; make a technology
 comparison for a node not yet written down and back-fill the conclusion into its spec.
 
 When these pieces are a node's prerequisites, wait for them to come back before writing the
 spec.
 
-Commands, options and values follow `pf dag --help` (already read once in step 1); this section
+Commands, options and values follow `dag --help` (already read once in step 1); this section
 carries the judgements and the conventions only.
 
-The pipeline's words are one table with two doors: run them on the `pf` command line, or
-call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
+The pipeline's words are one table with one door: call the `pathfinder` tool — a `word`, its
+`args`, and `help` for that word's page.
 
 **Adding a node:**
 
@@ -304,10 +304,10 @@ call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's 
    referent, a size one round can carry, a completion rule in one section (an executable command /
    script / probe); when the discussion really rejected a practice, add the "what is not done"
    section as well; the debt-clearing kind adds one `method: ` line (the name comes from
-   `pf doctor`) and its scope; anything with function names, file paths or line counts written in
+   `doctor`) and its scope; anything with function names, file paths or line counts written in
    gets deleted
 5. The session a node is born in is not yours to write: the tool records it itself when the node
-   is built (`pf dag info`'s `sessions.discussion`, or `pf session show <node>`). To trace it back
+   is built (`dag info`'s `sessions.discussion`, or `session show <node>`). To trace it back
    — judging whether this node is the user's own intent, or a spec written crooked, or a situation
    that changed — follow that id back to that conversation for the user's own words. That id means
    something on this machine only: on another machine that conversation is not there, and not
@@ -343,8 +343,8 @@ To run it right now, the line was settled together with the nodes in step 3; her
 it, then collect the commits:
 
 1. **Land the line** (the user has nodded; you are only the hand that executes): putting a parked
-   line back runs `pf cycle status <line> active`; opening a new one runs
-   `pf cycle start <slug> --title "<the user's own words>" --tags <tags>` — `--tags` is required,
+   line back runs `cycle status <line> active`; opening a new one runs
+   `cycle start <slug> --title "<the user's own words>" --tags <tags>` — `--tags` is required,
    and matches these nodes' tags
 2. **Collect the commits**, in two shots:
    - **One commit for the graph, the spec and the cycle records** (`docs:`, with the description
@@ -353,7 +353,7 @@ it, then collect the commits:
      see this node
    - **One commit for what "do it now" produced** (`docs:` / `style:` / `chore:`, picked by what
      changed)
-3. **Verify**: `pf next --plan` (with `--cycle <line>` when several lines are in service) — the
+3. **Verify**: `next --plan` (with `--cycle <line>` when several lines are in service) — the
    answer has to point at a dispatchable node; when it does not, an empty ready set means going
    back to grow the graph, and a tag block or a gate is read out as its `reason` says — **never
    hand over a line that cannot run**
@@ -378,7 +378,7 @@ Distil the key information into the answer; do not dump the raw JSON.
 ## Boundaries
 
 - **pf-route** (you): the graph is yours. Adding, changing and dropping nodes, connecting edges,
-  querying the graph; writing the DAG, the spec and the project's settings (`pf config set`);
+  querying the graph; writing the DAG, the spec and the project's settings (`config set`);
   reading no code, running no node, changing no project code
 - Small things that do not need a graph entry (docs catching up with the state, a non-behavioural
   small change, a feasibility probe) go to a subagent, and you still do not touch a file's body

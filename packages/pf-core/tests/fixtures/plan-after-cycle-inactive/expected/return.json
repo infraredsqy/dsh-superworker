@@ -2,7 +2,7 @@
   "action": "stop_pipeline",
   "cycle": "c1",
   "node_id": "@node-a@",
-  "reason": "cycle 'c1' is not active (inactive): a close on this line only records -- it closes @short-a@ and marks the DAG, picks no next node and dispatches nothing; the line keeps the status it was given. To carry on: pf cycle status c1 active",
+  "reason": "cycle 'c1' is not active (inactive): a close on this line only records -- it closes @short-a@ and marks the DAG, picks no next node and dispatches nothing; the line keeps the status it was given. To carry on: cycle status c1 active",
   "note": "cycle parked; nothing more to do without a human",
   "attention": [],
   "settling": true

@@ -522,7 +522,7 @@ describe('the init gate: a `.pf` that was never init-ed keeps every byte', () =>
       const naked = open(bare);
       await expect(
         naked.ledger.instructions.add({ text: '进不来的', scope: 'global' }),
-      ).rejects.toThrow(/was never init-ed .*Run this first/);
+      ).rejects.toThrow(/was never init-ed .*Ask `init` first/);
       expect(existsSync(join(bare, '.pf'))).toBe(false);
     } finally {
       rmSync(bare, { recursive: true, force: true });

@@ -25,8 +25,8 @@ what you did in the panel. One report per problem is enough.
 ## Out of scope
 
 - DSH itself: that is the DeepSeek Harness project's report.
-- A record you control anyway: the panel writes into your workspace's `.pf/` through `pf`, and
-  hand-editing that is yours to do.
+- A record you control anyway: the panel writes into your workspace's `.pf/` through the engine's
+  words layer, and hand-editing that is yours to do.
 
 ## Supported versions
 

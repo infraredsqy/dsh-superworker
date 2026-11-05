@@ -1,14 +1,13 @@
 /* The whole pipeline from the shipped shape, with no `pf` on PATH and no checkout behind it.
  *
- * What a real install supplies: `npm install --global` unpacks the package into a directory of its
- * own, and the agent-facing half then answers out of that directory — the engine's built product,
- * beside the plugins folder and the host bundle. Nothing in that directory reaches back into this
- * repository, and nothing there is a command: the published `files` list carries a `bin/` entry, but
- * the pipeline does not need it. So this case assembles the shipped list with the `bin/` entry left
- * out, proves the tree holds no `bin/` and no `pf` executable, and runs the flow from it in a child
- * process whose PATH has every directory holding a `pf` command taken out. The child proves `pf` is
- * unresolvable from inside itself before it runs anything; a step that tried to shell out would
- * surface `ENOENT`.
+ * What a real install supplies: the package unpacked into a directory of its own, and the
+ * agent-facing half then answers out of that directory — the engine's built product, beside the
+ * plugins folder and the host bundle. Nothing in that directory reaches back into this repository,
+ * and nothing there is a command: the pipeline answers in-process. So this case assembles exactly
+ * the shipped `files` list, proves the tree holds no `bin/` and no `pf` executable, and runs the
+ * flow from it in a child process whose PATH has every directory holding a `pf` command taken out.
+ * The child proves `pf` is unresolvable from inside itself before it runs anything; a step that
+ * tried to shell out would surface `ENOENT`.
  *
  * One child run, six legs:
  *
@@ -24,10 +23,9 @@
  *   **no tool** by itself, and the tool appears only after a `skill` tool call settles;
  * - the skills the shipped plugins carry land under the child's own temp DSH home, not the machine's;
  * - the applied service answers a write from that tree: an `instruction add` through the endpoint the
- *   panel calls lands the sentence in the project, and no command runs anywhere — the tree never had
- *   a `bin/`. A static lock beside it reads the assembled tree and `src/host/**`: the command entry's
- *   literal appears in exactly two places, the engine's own usage text in each of its two shipped
- *   copies (documentation, not a dependence), and nowhere else.
+ *   panel calls lands the sentence in the project, and no command runs anywhere — the tree carries no
+ *   `bin/`. A static lock beside it reads the assembled tree and `src/host/**`: no file there names a
+ *   command entry, in either spelling.
  *
  * The engine product and the host bundle must be built, and the host half's declared peer must be
  * installed (`npm test` builds both; nothing in this suite builds `lib/` — the published package
@@ -109,14 +107,12 @@ function filesSaying(dir, literal, prefix = '') {
 }
 
 /**
- * The shipped shape: exactly the manifest's `files` entries except the ones under `bin/`, plus a
- * manifest of the same name, version, type and exports with no `bin` field. Returns the inventory it
- * copied.
+ * The shipped shape: exactly the manifest's `files` entries, plus a manifest of the same name,
+ * version, type and exports. Returns the inventory it copied.
  */
 function ship(dir) {
-  const patterns = (manifest.files ?? []).filter((pattern) => !pattern.startsWith('bin/'))
-  assert.ok((manifest.files ?? []).some((pattern) => pattern.startsWith('bin/')), 'the manifest no longer ships a bin/ entry: this leg is testing nothing')
-  assert.ok(patterns.length > 0, 'the manifest lists no files outside bin/')
+  const patterns = manifest.files ?? []
+  assert.ok(patterns.length > 0, 'the manifest lists no files')
   const inventory = []
   for (const pattern of patterns) {
     const star = pattern.indexOf('*')
@@ -340,7 +336,7 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
     mkdirSync(project, { recursive: true })
     mkdirSync(home, { recursive: true })
 
-    /* Step 1: the shipped list minus bin/, and the shape it must have. */
+    /* Step 1: the shipped list, and the shape it must have. */
     const inventory = ship(release)
     assert.equal(existsSync(join(release, 'bin')), false, 'the assembled tree must not hold a bin/ directory')
     assert.deepEqual(pfExecutables(release), [], 'the assembled tree must not hold a pf executable')
@@ -353,40 +349,17 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
       'locale/en.json',
       'locale/zh.json',
       'packages/pf-core/dist/index.mjs',
+      'packages/pf-core/dist/merge-ledger.mjs',
       'packages/pf-core/plugins/pipeline/plugin.json',
     ]) {
       assert.ok(inventory.some((entry) => entry.path === required), `the shipped shape is missing ${required}`)
     }
     assert.equal(existsSync(join(release, 'lib', 'types', 'host', 'index.js')), false, 'lib/types must ship only its .d.ts: the compiled .js is packing input, not payload')
 
-    /* Step 1b: the static lock. No host code names the command entry — every write answers in this
-     * process. The literal survives in the engine's own usage text (it prints the spelling a shell-safe
-     * caller may hand over) and, in the host bundle, only where that engine text is inlined: those two
-     * files are the whole list, so one reference of the host's own makes the list longer. The engine
-     * product is not this package's to edit; the lock is exact about what it can prove instead. */
-    const ENTRY_LITERAL = 'bin/pf.mjs'
-    assert.deepEqual(
-      filesSaying(fileURLToPath(new URL('../src/host/', import.meta.url)), ENTRY_LITERAL),
-      [],
-      'src/host/** must carry no reference to the command entry',
-    )
-    const saying = filesSaying(release, ENTRY_LITERAL)
-    assert.deepEqual(
-      saying.map((hit) => hit.path).sort(),
-      ['lib/host/index.js', 'packages/pf-core/dist/index.mjs'],
-      `the assembled tree may carry the literal only in the engine's own usage text, and in the copy the host bundle inlines: ${JSON.stringify(saying)}`,
-    )
-    assert.equal(saying.find((hit) => hit.path === 'packages/pf-core/dist/index.mjs').count, 1, 'the engine product prints the literal once')
-    assert.equal(
-      saying.find((hit) => hit.path === 'lib/host/index.js').count,
-      1,
-      'the host bundle carries exactly the line its inlined engine prints, and none of its own',
-    )
-
-    /* The literal, read a shape wider. A bare host reference could hide inside the counts above if it
-     * sat beside the one literal the engine prints; so the single occurrence those counts allow must
-     * be the engine's own usage line, and the host source must name no `bin/` path at all, in either
-     * spelling, before the assembled tree is trusted. */
+    /* Step 1b: the static lock. Nothing the release carries spells a command entry, and no host source
+     * names a `bin/` path in either spelling. The engine text that used to spell one is gone with the
+     * command, so the lock reads what ships and asks it to stay empty. */
+    assert.deepEqual(filesSaying(release, 'bin/pf.mjs'), [], 'the assembled tree must carry no reference to a command entry')
     assert.deepEqual(
       filesSaying(hostSrcDir, 'bin/'),
       [],
@@ -396,13 +369,6 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
       filesSaying(hostSrcDir, 'bin\\'),
       [],
       'src/host/** must name no `bin\\` path: the Windows spelling failed',
-    )
-    const ENGINE_USAGE = /node <checkout>\/bin\/pf\.mjs/gu
-    const usageLines = (readFileSync(join(release, 'lib', 'host', 'index.js'), 'utf8').match(ENGINE_USAGE) ?? []).length
-    assert.equal(
-      usageLines,
-      1,
-      `the host bundle must carry the engine's own usage line (\`node <checkout>/bin/pf.mjs\`) exactly once: the usage-line shape failed, saw ${usageLines}`,
     )
 
     /* The host half's declared peer, provided outside the assembled tree the way a profile does. */
@@ -447,7 +413,7 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
     assert.equal(record.help.stderr, '')
     assert.equal(record.help.bytes, Buffer.byteLength(record.help.stdout), 'the recorded byte count is the answer itself')
     assert.ok(record.help.bytes > 200, `the word index should be more than a line: ${record.help.bytes} bytes`)
-    assert.match(record.help.stdout, /pf -- the agent pipeline/u, 'the index is the words layer\'s own top listing')
+    assert.match(record.help.stdout, /pathfinder -- the agent pipeline/u, 'the index is the words layer\'s own top listing')
     assert.equal(record.afterHelp, false, 'answering the index must not create .pf/')
 
     /* Step 4: the flow, word by word, all eight plus the graph it runs on. */

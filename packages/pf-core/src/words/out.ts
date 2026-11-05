@@ -155,7 +155,7 @@ export function readPolicyValue(text: unknown): unknown {
 //
 // A tool answer is one message, and three words can outgrow it. The cap and the
 // per-word pointer live here, once: the transport's printer never applies them (a
-// command line's printed bytes are their own contract), and a projection that needs
+// word's printed bytes are their own contract), and a projection that needs
 // the pointer asks this layer instead of spelling its own — so the cap and the words
 // it covers cannot drift apart between two callers.
 

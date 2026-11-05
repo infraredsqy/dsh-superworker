@@ -13,14 +13,13 @@ import { describe, expect, it } from 'vitest';
  *   typescript / tsdown / vitest, and **exactly one process entry** — `pf-merge-ledger`, the command
  *   git calls as a merge driver. A command surface (subcommands, a route table, install-time
  *   scripts) stays forbidden; a `bin/` directory stays forbidden too (checked below, directly on the
- *   tree — the words layer's frozen help text names the transport's entry path once, which is help
- *   text the `pf` command has always printed, not a command surface of this package).
+ *   tree).
  *
  * Note: `\bspawn\b` matches whole words only -- `spawner` is part of a policy key in a cycle
  * record, which is data, so it is let past; the bare verb spawn may not appear even once in the
  * code or the comments of the source.
  * **String literals do not count as source**: the plan the planning step hands back carries copied
- * command-line text (things like `pf next --spawn --json`), which is deliverable body, a sentence
+ * call text (things like `next --spawn --json`), which is deliverable body, a sentence
  * for a reader, and has nothing to do with whether the engine launches processes; the shape that
  * really must be blocked -- a `spawn(` call -- is checked separately, before literals are stripped.
  * Writing the function name into a string key (`(process as any)['spawn'](...)`) is the same thing

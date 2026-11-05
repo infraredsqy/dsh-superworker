@@ -40,7 +40,7 @@ export const TOP = {
 export const COMMANDS = {
   "init": {
     "word": "init",
-    "prog": "pf init",
+    "prog": "init",
     "description": "Write `.pf/.gitignore` and `.pf/.gitattributes`, and decide whether this project commits its `.pf/` or keeps that directory to itself. `--local` (the default) writes one line into the repository's `info/exclude` -- a per-clone file, so no teammate ever sees a line about a directory that does not exist for them -- and gives `.pf/` its own repository unless `--no-own-repo`. `--commit` takes the exclude line back out and lets `.pf/` travel with the project. Idempotent: re-running it never does anything twice, and switching modes is just running it again with the other flag.",
     "positionals": [],
     "options": [
@@ -98,8 +98,8 @@ export const COMMANDS = {
   },
   "register": {
     "word": "register",
-    "prog": "pf register",
-    "description": "Set `merge.pf.name` and `merge.pf.driver` in the project's git config. `init` already does this as part of its one setup act; the verb is here so a project can be brought forward, or a moved checkout re-pointed, without re-running setup. `pf register` calls exactly this.",
+    "prog": "register",
+    "description": "Set `merge.pf.name` and `merge.pf.driver` in the project's git config. `init` already does this as part of its one setup act; the verb is here so a project can be brought forward, or a moved checkout re-pointed, without re-running setup. `register` calls exactly this.",
     "positionals": [],
     "options": [
       {
@@ -122,7 +122,7 @@ export const COMMANDS = {
   },
   "next": {
     "word": "next",
-    "prog": "pf next",
+    "prog": "next",
     "description": "The one entry point. plan: read-only, writes nothing. apply (no --plan): drive the pipeline to its next stable action -- consume a finished node's signal, do the bookkeeping, stop at the first thing a caller can act on. The actions a caller may have to act on are `dispatch` (spawn this node), `insert_node` (a node was just put into the graph and nothing was opened: commit and push, then run `next --spawn` again and the pick decides), `wait` (read its note / close_with and run that one command), `ask_user`, `stop_pipeline`, `no_cycle` (there is no cycle yet: opening one takes a human's intent). An `open_node` never reaches you -- it is the tool pinning the next node itself, and what you read is that slot's `dispatch`. The returned action NEVER carries commands to run: the tool runs them.",
     "positionals": [],
     "options": [
@@ -229,7 +229,7 @@ export const COMMANDS = {
   },
   "dispatch": {
     "word": "dispatch",
-    "prog": "pf dispatch",
+    "prog": "dispatch",
     "description": "Dispatch and nothing else: read the node this cycle holds, then start the session whose prompt the step that pinned it already wrote at .pf/meta/launch/<cycle>/<node>/prompt.txt. No bookkeeping and no state change -- that is what makes \"commit and push first, then dispatch\" expressible: the next session boots in the same worktree and pulls. DSH_CONDUCT_SPAWN_DRY_RUN=1 makes the call and reports it without opening a session.",
     "positionals": [
       {
@@ -275,7 +275,7 @@ export const COMMANDS = {
   },
   "clean-temp": {
     "word": "clean-temp",
-    "prog": "pf clean-temp",
+    "prog": "clean-temp",
     "description": null,
     "positionals": [],
     "options": [
@@ -321,7 +321,7 @@ export const COMMANDS = {
   },
   "handoff": {
     "word": "handoff",
-    "prog": "pf handoff",
+    "prog": "handoff",
     "description": "Write one node's signal and hand the baton on (one command for a worker).",
     "positionals": [
       {
@@ -399,9 +399,46 @@ export const COMMANDS = {
       }
     ]
   },
+  "doctor": {
+    "word": "doctor",
+    "prog": "doctor",
+    "description": "Read the health of this tree and this project, cell by cell.",
+    "options": [
+      {
+        "flags": [
+          "-h",
+          "--help"
+        ],
+        "help": "show this help message and exit",
+        "invocation": "-h, --help"
+      },
+      {
+        "flags": [
+          "--fix"
+        ],
+        "help": "run `init` once afterwards, to fill in the layout files a red cell named",
+        "invocation": "--fix"
+      }
+    ]
+  },
+  "version": {
+    "word": "version",
+    "prog": "version",
+    "description": "Print which package this is, its version, and the directory it was read from.",
+    "options": [
+      {
+        "flags": [
+          "-h",
+          "--help"
+        ],
+        "help": "show this help message and exit",
+        "invocation": "-h, --help"
+      }
+    ]
+  },
   "merge-ledger": {
     "word": "merge-ledger",
-    "prog": "pf merge-ledger",
+    "prog": "merge-ledger",
     "description": "Three-way merge of one pf ledger file (a git merge driver: %O %A %B [%P]).",
     "positionals": [
       {
@@ -449,7 +486,7 @@ export const COMMANDS = {
   },
   "cycle create": {
     "word": "create",
-    "prog": "pf cycle create",
+    "prog": "cycle create",
     "description": null,
     "positionals": [
       {
@@ -496,7 +533,7 @@ export const COMMANDS = {
   },
   "cycle start": {
     "word": "start",
-    "prog": "pf cycle start",
+    "prog": "cycle start",
     "description": null,
     "positionals": [
       {
@@ -551,7 +588,7 @@ export const COMMANDS = {
   },
   "cycle rename": {
     "word": "rename",
-    "prog": "pf cycle rename",
+    "prog": "cycle rename",
     "description": null,
     "positionals": [
       {
@@ -584,7 +621,7 @@ export const COMMANDS = {
   },
   "cycle status": {
     "word": "status",
-    "prog": "pf cycle status",
+    "prog": "cycle status",
     "description": null,
     "positionals": [
       {
@@ -618,7 +655,7 @@ export const COMMANDS = {
   },
   "cycle policy": {
     "word": "policy",
-    "prog": "pf cycle policy",
+    "prog": "cycle policy",
     "description": null,
     "positionals": [
       {
@@ -645,7 +682,7 @@ export const COMMANDS = {
         "name": "value",
         "metavar": "value",
         "required": true,
-        "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; spawner: dsh | zcode -- which spawner opens this line's sessions (words only, never a path: the cycle record merges across machines). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `pf config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `pf config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
+        "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; spawner: dsh | zcode -- which spawner opens this line's sessions (words only, never a path: the cycle record merges across machines). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
       }
     ],
     "options": [
@@ -659,11 +696,11 @@ export const COMMANDS = {
       }
     ],
     "group": "cycle",
-    "summary": "Write one policy on this line's own record (the effective set is echoed back; a core setting is `pf config set`'s, not this line's)"
+    "summary": "Write one policy on this line's own record (the effective set is echoed back; a core setting is `config set`'s, not this line's)"
   },
   "cycle list": {
     "word": "list",
-    "prog": "pf cycle list",
+    "prog": "cycle list",
     "description": null,
     "positionals": [],
     "options": [
@@ -681,7 +718,7 @@ export const COMMANDS = {
   },
   "cycle current": {
     "word": "current",
-    "prog": "pf cycle current",
+    "prog": "cycle current",
     "description": null,
     "positionals": [],
     "options": [
@@ -699,7 +736,7 @@ export const COMMANDS = {
   },
   "cycle show": {
     "word": "show",
-    "prog": "pf cycle show",
+    "prog": "cycle show",
     "description": null,
     "positionals": [
       {
@@ -728,7 +765,7 @@ export const COMMANDS = {
   },
   "cycle hold": {
     "word": "hold",
-    "prog": "pf cycle hold",
+    "prog": "cycle hold",
     "description": null,
     "positionals": [
       {
@@ -757,7 +794,7 @@ export const COMMANDS = {
   },
   "cycle close": {
     "word": "close",
-    "prog": "pf cycle close",
+    "prog": "cycle close",
     "description": null,
     "positionals": [
       {
@@ -800,7 +837,7 @@ export const COMMANDS = {
   },
   "cycle retry": {
     "word": "retry",
-    "prog": "pf cycle retry",
+    "prog": "cycle retry",
     "description": null,
     "positionals": [
       {
@@ -844,7 +881,7 @@ export const COMMANDS = {
   },
   "dag add": {
     "word": "add",
-    "prog": "pf dag add",
+    "prog": "dag add",
     "description": null,
     "positionals": [
       {
@@ -925,7 +962,7 @@ export const COMMANDS = {
   },
   "dag rm": {
     "word": "rm",
-    "prog": "pf dag rm",
+    "prog": "dag rm",
     "description": null,
     "positionals": [
       {
@@ -957,7 +994,7 @@ export const COMMANDS = {
   },
   "dag update": {
     "word": "update",
-    "prog": "pf dag update",
+    "prog": "dag update",
     "description": null,
     "positionals": [
       {
@@ -1038,7 +1075,7 @@ export const COMMANDS = {
   },
   "dag depend": {
     "word": "depend",
-    "prog": "pf dag depend",
+    "prog": "dag depend",
     "description": null,
     "positionals": [
       {
@@ -1072,7 +1109,7 @@ export const COMMANDS = {
   },
   "dag undepend": {
     "word": "undepend",
-    "prog": "pf dag undepend",
+    "prog": "dag undepend",
     "description": null,
     "positionals": [
       {
@@ -1111,7 +1148,7 @@ export const COMMANDS = {
   },
   "dag status": {
     "word": "status",
-    "prog": "pf dag status",
+    "prog": "dag status",
     "description": null,
     "positionals": [
       {
@@ -1147,7 +1184,7 @@ export const COMMANDS = {
   },
   "dag approve": {
     "word": "approve",
-    "prog": "pf dag approve",
+    "prog": "dag approve",
     "description": null,
     "positionals": [
       {
@@ -1180,7 +1217,7 @@ export const COMMANDS = {
   },
   "dag revive": {
     "word": "revive",
-    "prog": "pf dag revive",
+    "prog": "dag revive",
     "description": null,
     "positionals": [
       {
@@ -1205,7 +1242,7 @@ export const COMMANDS = {
   },
   "dag list": {
     "word": "list",
-    "prog": "pf dag list",
+    "prog": "dag list",
     "description": null,
     "positionals": [],
     "options": [
@@ -1269,7 +1306,7 @@ export const COMMANDS = {
   },
   "dag info": {
     "word": "info",
-    "prog": "pf dag info",
+    "prog": "dag info",
     "description": null,
     "positionals": [
       {
@@ -1301,7 +1338,7 @@ export const COMMANDS = {
   },
   "dag context": {
     "word": "context",
-    "prog": "pf dag context",
+    "prog": "dag context",
     "description": null,
     "positionals": [
       {
@@ -1326,7 +1363,7 @@ export const COMMANDS = {
   },
   "dag search": {
     "word": "search",
-    "prog": "pf dag search",
+    "prog": "dag search",
     "description": null,
     "positionals": [
       {
@@ -1367,7 +1404,7 @@ export const COMMANDS = {
   },
   "dag open": {
     "word": "open",
-    "prog": "pf dag open",
+    "prog": "dag open",
     "description": null,
     "positionals": [
       {
@@ -1392,7 +1429,7 @@ export const COMMANDS = {
   },
   "dag validate": {
     "word": "validate",
-    "prog": "pf dag validate",
+    "prog": "dag validate",
     "description": null,
     "positionals": [],
     "options": [
@@ -1410,7 +1447,7 @@ export const COMMANDS = {
   },
   "dag help": {
     "word": "help",
-    "prog": "pf dag help",
+    "prog": "dag help",
     "description": null,
     "positionals": [],
     "options": [
@@ -1428,7 +1465,7 @@ export const COMMANDS = {
   },
   "config list": {
     "word": "list",
-    "prog": "pf config list",
+    "prog": "config list",
     "description": null,
     "positionals": [],
     "options": [
@@ -1470,7 +1507,7 @@ export const COMMANDS = {
   },
   "config get": {
     "word": "get",
-    "prog": "pf config get",
+    "prog": "config get",
     "description": null,
     "positionals": [
       {
@@ -1528,7 +1565,7 @@ export const COMMANDS = {
   },
   "config set": {
     "word": "set",
-    "prog": "pf config set",
+    "prog": "config set",
     "description": null,
     "positionals": [
       {
@@ -1605,7 +1642,7 @@ export const COMMANDS = {
   },
   "config unset": {
     "word": "unset",
-    "prog": "pf config unset",
+    "prog": "config unset",
     "description": null,
     "positionals": [
       {
@@ -1677,7 +1714,7 @@ export const COMMANDS = {
   },
   "instruction add": {
     "word": "add",
-    "prog": "pf instruction add",
+    "prog": "instruction add",
     "description": null,
     "positionals": [],
     "options": [
@@ -1769,7 +1806,7 @@ export const COMMANDS = {
   },
   "instruction list": {
     "word": "list",
-    "prog": "pf instruction list",
+    "prog": "instruction list",
     "description": "This is how an instruction reaches a session: run it among your first commands\nand read the answer. The default output is computed from WHERE the pipeline\nstands -- global entries always, a cycle entry while its cycle is the current\none, a node entry while its node is the one in hand, and anything it cannot\njudge -- as plain sentences, with ids and bookkeeping folded away. `--json` is\nthe same answer for a machine (an empty array when there is nothing). `--all`,\n`--live` and `--scope` ask for the ACCOUNT instead: the raw rows, retired\nentries included when `--all` says so.",
     "positionals": [],
     "options": [
@@ -1837,7 +1874,7 @@ export const COMMANDS = {
   },
   "instruction resolve": {
     "word": "resolve",
-    "prog": "pf instruction resolve",
+    "prog": "instruction resolve",
     "description": null,
     "positionals": [
       {
@@ -1889,7 +1926,7 @@ export const COMMANDS = {
   },
   "instruction rm": {
     "word": "rm",
-    "prog": "pf instruction rm",
+    "prog": "instruction rm",
     "description": "The owner takes an entry away: the sentence is printed first, then the entry\nand its text leave the account. What stays is the id and the moment -- the\ntrace the ledger merge holds the removal on, so a pull from a machine that\nstill has the entry does not bring it back, and so the id is never handed out\nagain. No view of the account shows a trace, and this is not a third state.\n`resolve` is the other move: an archived entry keeps its sentence and stops\nbeing read.",
     "positionals": [
       {
@@ -1921,7 +1958,7 @@ export const COMMANDS = {
   },
   "instruction revive": {
     "word": "revive",
-    "prog": "pf instruction revive",
+    "prog": "instruction revive",
     "description": "The owner undoes an archive: the entry goes back to `live`, and the moment the\narchive wrote is cleared back to the shape an added entry has, so the merged\nrecord stays one act. An entry that is already live is refused, and so is an\nid the account does not have: a removed entry is off the account for good, and\nputting one back is not how a removal is undone.",
     "positionals": [
       {
@@ -1953,7 +1990,7 @@ export const COMMANDS = {
   },
   "session show": {
     "word": "show",
-    "prog": "pf session show",
+    "prog": "session show",
     "description": null,
     "positionals": [
       {
@@ -1993,7 +2030,7 @@ export const COMMANDS = {
   },
   "session list": {
     "word": "list",
-    "prog": "pf session list",
+    "prog": "session list",
     "description": null,
     "positionals": [],
     "options": [
@@ -2029,13 +2066,13 @@ export const COMMANDS = {
 export const GROUPS = {
   "cycle": {
     "word": "cycle",
-    "prog": "pf cycle",
+    "prog": "cycle",
     "description": "A cycle is one line of work: it picks ONE DAG node at a time, hands it to a session, and records the step when that session reports back. This group owns the line itself -- its identity, whether it is in service, its policies, which nodes it is holding, and the path it has walked.",
     "metavar": "{create,start,rename,status,policy,list,current,show,hold,close,retry}",
     "commands": [
       {
         "word": "create",
-        "prog": "pf cycle create",
+        "prog": "cycle create",
         "description": null,
         "positionals": [
           {
@@ -2082,7 +2119,7 @@ export const GROUPS = {
       },
       {
         "word": "start",
-        "prog": "pf cycle start",
+        "prog": "cycle start",
         "description": null,
         "positionals": [
           {
@@ -2137,7 +2174,7 @@ export const GROUPS = {
       },
       {
         "word": "rename",
-        "prog": "pf cycle rename",
+        "prog": "cycle rename",
         "description": null,
         "positionals": [
           {
@@ -2170,7 +2207,7 @@ export const GROUPS = {
       },
       {
         "word": "status",
-        "prog": "pf cycle status",
+        "prog": "cycle status",
         "description": null,
         "positionals": [
           {
@@ -2204,7 +2241,7 @@ export const GROUPS = {
       },
       {
         "word": "policy",
-        "prog": "pf cycle policy",
+        "prog": "cycle policy",
         "description": null,
         "positionals": [
           {
@@ -2231,7 +2268,7 @@ export const GROUPS = {
             "name": "value",
             "metavar": "value",
             "required": true,
-            "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; spawner: dsh | zcode -- which spawner opens this line's sessions (words only, never a path: the cycle record merges across machines). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `pf config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `pf config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
+            "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; spawner: dsh | zcode -- which spawner opens this line's sessions (words only, never a path: the cycle record merges across machines). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
           }
         ],
         "options": [
@@ -2245,11 +2282,11 @@ export const GROUPS = {
           }
         ],
         "group": "cycle",
-        "summary": "Write one policy on this line's own record (the effective set is echoed back; a core setting is `pf config set`'s, not this line's)"
+        "summary": "Write one policy on this line's own record (the effective set is echoed back; a core setting is `config set`'s, not this line's)"
       },
       {
         "word": "list",
-        "prog": "pf cycle list",
+        "prog": "cycle list",
         "description": null,
         "positionals": [],
         "options": [
@@ -2267,7 +2304,7 @@ export const GROUPS = {
       },
       {
         "word": "current",
-        "prog": "pf cycle current",
+        "prog": "cycle current",
         "description": null,
         "positionals": [],
         "options": [
@@ -2285,7 +2322,7 @@ export const GROUPS = {
       },
       {
         "word": "show",
-        "prog": "pf cycle show",
+        "prog": "cycle show",
         "description": null,
         "positionals": [
           {
@@ -2314,7 +2351,7 @@ export const GROUPS = {
       },
       {
         "word": "hold",
-        "prog": "pf cycle hold",
+        "prog": "cycle hold",
         "description": null,
         "positionals": [
           {
@@ -2343,7 +2380,7 @@ export const GROUPS = {
       },
       {
         "word": "close",
-        "prog": "pf cycle close",
+        "prog": "cycle close",
         "description": null,
         "positionals": [
           {
@@ -2386,7 +2423,7 @@ export const GROUPS = {
       },
       {
         "word": "retry",
-        "prog": "pf cycle retry",
+        "prog": "cycle retry",
         "description": null,
         "positionals": [
           {
@@ -2432,13 +2469,13 @@ export const GROUPS = {
   },
   "dag": {
     "word": "dag",
-    "prog": "pf dag",
+    "prog": "dag",
     "description": "Manage a dependency graph (DAG) of project ideas/plugins.",
     "metavar": "<command>",
     "commands": [
       {
         "word": "add",
-        "prog": "pf dag add",
+        "prog": "dag add",
         "description": null,
         "positionals": [
           {
@@ -2519,7 +2556,7 @@ export const GROUPS = {
       },
       {
         "word": "rm",
-        "prog": "pf dag rm",
+        "prog": "dag rm",
         "description": null,
         "positionals": [
           {
@@ -2551,7 +2588,7 @@ export const GROUPS = {
       },
       {
         "word": "update",
-        "prog": "pf dag update",
+        "prog": "dag update",
         "description": null,
         "positionals": [
           {
@@ -2632,7 +2669,7 @@ export const GROUPS = {
       },
       {
         "word": "depend",
-        "prog": "pf dag depend",
+        "prog": "dag depend",
         "description": null,
         "positionals": [
           {
@@ -2666,7 +2703,7 @@ export const GROUPS = {
       },
       {
         "word": "undepend",
-        "prog": "pf dag undepend",
+        "prog": "dag undepend",
         "description": null,
         "positionals": [
           {
@@ -2705,7 +2742,7 @@ export const GROUPS = {
       },
       {
         "word": "status",
-        "prog": "pf dag status",
+        "prog": "dag status",
         "description": null,
         "positionals": [
           {
@@ -2741,7 +2778,7 @@ export const GROUPS = {
       },
       {
         "word": "approve",
-        "prog": "pf dag approve",
+        "prog": "dag approve",
         "description": null,
         "positionals": [
           {
@@ -2774,7 +2811,7 @@ export const GROUPS = {
       },
       {
         "word": "revive",
-        "prog": "pf dag revive",
+        "prog": "dag revive",
         "description": null,
         "positionals": [
           {
@@ -2799,7 +2836,7 @@ export const GROUPS = {
       },
       {
         "word": "list",
-        "prog": "pf dag list",
+        "prog": "dag list",
         "description": null,
         "positionals": [],
         "options": [
@@ -2863,7 +2900,7 @@ export const GROUPS = {
       },
       {
         "word": "info",
-        "prog": "pf dag info",
+        "prog": "dag info",
         "description": null,
         "positionals": [
           {
@@ -2895,7 +2932,7 @@ export const GROUPS = {
       },
       {
         "word": "context",
-        "prog": "pf dag context",
+        "prog": "dag context",
         "description": null,
         "positionals": [
           {
@@ -2920,7 +2957,7 @@ export const GROUPS = {
       },
       {
         "word": "search",
-        "prog": "pf dag search",
+        "prog": "dag search",
         "description": null,
         "positionals": [
           {
@@ -2961,7 +2998,7 @@ export const GROUPS = {
       },
       {
         "word": "open",
-        "prog": "pf dag open",
+        "prog": "dag open",
         "description": null,
         "positionals": [
           {
@@ -2986,7 +3023,7 @@ export const GROUPS = {
       },
       {
         "word": "validate",
-        "prog": "pf dag validate",
+        "prog": "dag validate",
         "description": null,
         "positionals": [],
         "options": [
@@ -3004,7 +3041,7 @@ export const GROUPS = {
       },
       {
         "word": "help",
-        "prog": "pf dag help",
+        "prog": "dag help",
         "description": null,
         "positionals": [],
         "options": [
@@ -3024,13 +3061,13 @@ export const GROUPS = {
   },
   "config": {
     "word": "config",
-    "prog": "pf config",
-    "description": "Every setting is a knob with a kind, and one chain: this node -> this line -> this project -> this machine -> factory default. Narrower layers cover wider ones, and the same name may be stated on several layers at once: the resolution is deterministic, and `list` / `get` always say which layer the value in force came from. The table is the built-in settings plus every knob the installed plugins declare -- `list` prints it, and a name nobody declares is refused. Not every knob takes every layer: a core setting takes the project and global layers, a plugin's knob takes all four (`set` names the layers a knob takes when it refuses one). The line's own policies -- `parallel`, `when_shelved`, `spawner` -- are not settings and are not here: they live on the line record, written by `pf cycle policy`. The two file layers are `~/.pf/config.json` (global: travels with the person and the machine, never generated for you) and `<project>/.pf/config.json` (travels with the project; `init` puts an empty `{}` there); the two narrow ones ride on the cycle record and on one node's own `config.json`. `set` stores a value and `unset` drops that one layer's entry -- a switch is turned off by setting `off`, while dropping its entry is `unset` (the same split `pf cycle policy` explains). `set` / `unset` write exactly one layer: the project layer unless --global / --cycle / --node says otherwise.",
+    "prog": "config",
+    "description": "Every setting is a knob with a kind, and one chain: this node -> this line -> this project -> this machine -> factory default. Narrower layers cover wider ones, and the same name may be stated on several layers at once: the resolution is deterministic, and `list` / `get` always say which layer the value in force came from. The table is the built-in settings plus every knob the installed plugins declare -- `list` prints it, and a name nobody declares is refused. Not every knob takes every layer: a core setting takes the project and global layers, a plugin's knob takes all four (`set` names the layers a knob takes when it refuses one). The line's own policies -- `parallel`, `when_shelved`, `spawner` -- are not settings and are not here: they live on the line record, written by `cycle policy`. The two file layers are `~/.pf/config.json` (global: travels with the person and the machine, never generated for you) and `<project>/.pf/config.json` (travels with the project; `init` puts an empty `{}` there); the two narrow ones ride on the cycle record and on one node's own `config.json`. `set` stores a value and `unset` drops that one layer's entry -- a switch is turned off by setting `off`, while dropping its entry is `unset` (the same split `cycle policy` explains). `set` / `unset` write exactly one layer: the project layer unless --global / --cycle / --node says otherwise.",
     "metavar": "{list,get,set,unset}",
     "commands": [
       {
         "word": "list",
-        "prog": "pf config list",
+        "prog": "config list",
         "description": null,
         "positionals": [],
         "options": [
@@ -3072,7 +3109,7 @@ export const GROUPS = {
       },
       {
         "word": "get",
-        "prog": "pf config get",
+        "prog": "config get",
         "description": null,
         "positionals": [
           {
@@ -3130,7 +3167,7 @@ export const GROUPS = {
       },
       {
         "word": "set",
-        "prog": "pf config set",
+        "prog": "config set",
         "description": null,
         "positionals": [
           {
@@ -3207,7 +3244,7 @@ export const GROUPS = {
       },
       {
         "word": "unset",
-        "prog": "pf config unset",
+        "prog": "config unset",
         "description": null,
         "positionals": [
           {
@@ -3281,13 +3318,13 @@ export const GROUPS = {
   },
   "instruction": {
     "word": "instruction",
-    "prog": "pf instruction",
+    "prog": "instruction",
     "description": "Three scopes. Whether an entry can be read is decided by WHERE it was\nrecorded, not by anyone remembering to resolve it: global = readable anywhere,\nby every session and in every cycle; cycle = readable while the cycle it was\nrecorded in is active, and unreadable once that cycle ends; node = readable\nwhile the node it was recorded in is unfinished. `add` binds the cycle/node\nfrom the state, or takes the binding from `--cycle` / `--node` when the state\ncannot name one (two active cycles side by side); a cycle/node entry with\nnothing to bind to is refused, because an unbound entry is read as visible\neverywhere and never goes out of sight. Nothing is injected into a dispatch\nprompt: `list` is how a session reads the account, and running it among its\nfirst commands is what makes an instruction reach it. The account has two\nstates -- in force and archived -- and only the owner moves an entry off it:\n`resolve` archives one (the sentence stays on the account and stops being\nread), `rm` takes one away text and all, and `revive` puts an archived one\nback. An entry whose scope has run out goes out of sight on its own, with\nnothing to write.",
     "metavar": "{add,list,resolve,rm,revive}",
     "commands": [
       {
         "word": "add",
-        "prog": "pf instruction add",
+        "prog": "instruction add",
         "description": null,
         "positionals": [],
         "options": [
@@ -3379,7 +3416,7 @@ export const GROUPS = {
       },
       {
         "word": "list",
-        "prog": "pf instruction list",
+        "prog": "instruction list",
         "description": "This is how an instruction reaches a session: run it among your first commands\nand read the answer. The default output is computed from WHERE the pipeline\nstands -- global entries always, a cycle entry while its cycle is the current\none, a node entry while its node is the one in hand, and anything it cannot\njudge -- as plain sentences, with ids and bookkeeping folded away. `--json` is\nthe same answer for a machine (an empty array when there is nothing). `--all`,\n`--live` and `--scope` ask for the ACCOUNT instead: the raw rows, retired\nentries included when `--all` says so.",
         "positionals": [],
         "options": [
@@ -3447,7 +3484,7 @@ export const GROUPS = {
       },
       {
         "word": "resolve",
-        "prog": "pf instruction resolve",
+        "prog": "instruction resolve",
         "description": null,
         "positionals": [
           {
@@ -3499,7 +3536,7 @@ export const GROUPS = {
       },
       {
         "word": "rm",
-        "prog": "pf instruction rm",
+        "prog": "instruction rm",
         "description": "The owner takes an entry away: the sentence is printed first, then the entry\nand its text leave the account. What stays is the id and the moment -- the\ntrace the ledger merge holds the removal on, so a pull from a machine that\nstill has the entry does not bring it back, and so the id is never handed out\nagain. No view of the account shows a trace, and this is not a third state.\n`resolve` is the other move: an archived entry keeps its sentence and stops\nbeing read.",
         "positionals": [
           {
@@ -3531,7 +3568,7 @@ export const GROUPS = {
       },
       {
         "word": "revive",
-        "prog": "pf instruction revive",
+        "prog": "instruction revive",
         "description": "The owner undoes an archive: the entry goes back to `live`, and the moment the\narchive wrote is cleared back to the shape an added entry has, so the merged\nrecord stays one act. An entry that is already live is refused, and so is an\nid the account does not have: a removed entry is off the account for good, and\nputting one back is not how a removal is undone.",
         "positionals": [
           {
@@ -3565,13 +3602,13 @@ export const GROUPS = {
   },
   "session": {
     "word": "session",
-    "prog": "pf session",
+    "prog": "session",
     "description": "A session id is machine-local -- a conversation lives on the machine that opened it -- so the ids live in `.pf/meta/sessions/<node id>.json` instead of on the record: guaranteed dead on another machine, and impossible to tell apart from \"that session was deleted here\". `show` reads one node's note, `list` reads every note this machine holds (keyed by node id, for a panel), and `import` folds the older `dsh_session` field into notes once per machine -- writing notes and nothing else.",
     "metavar": "{show,list}",
     "commands": [
       {
         "word": "show",
-        "prog": "pf session show",
+        "prog": "session show",
         "description": null,
         "positionals": [
           {
@@ -3611,7 +3648,7 @@ export const GROUPS = {
       },
       {
         "word": "list",
-        "prog": "pf session list",
+        "prog": "session list",
         "description": null,
         "positionals": [],
         "options": [

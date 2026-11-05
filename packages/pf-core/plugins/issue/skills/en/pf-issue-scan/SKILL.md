@@ -18,8 +18,8 @@ works on it).
 
 The pool's tools and conventions are in [`../pf-issue-repair/pool.md`](../pf-issue-repair/pool.md).
 
-The pipeline's words are one table with two doors: run them on the `pf` command line, or
-call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
+The pipeline's words are one table with one door: call the `pathfinder` tool — a `word`, its
+`args`, and `help` for that word's page.
 
 ## Prepare
 
@@ -37,7 +37,7 @@ to land in a file), and each surface watches one copy only. The dimensions: repe
 responsibility crossing its line / a structural problem. When there are only one or two modules,
 use your own judgement on whether to merge the dimensions.
 
-Once the surfaces are cut, take them in batches by the in-flight cap: `pf config get max_agents` is
+Once the surfaces are cut, take them in batches by the in-flight cap: `config get max_agents` is
 the cap, and **one subagent can carry several surfaces** — merging them and batching them go by
 that cap too.
 

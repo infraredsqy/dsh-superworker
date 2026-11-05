@@ -92,8 +92,8 @@ export const en: Readonly<Record<WordKey, string>> = {
   'cycle.stopped': 'Stopped',
   'node.open': 'Open session',
   /* The stranded dispatch: the claim is on disk, the session is gone. The sentence names the two
-   * record words the remedy names, and the exact command, so it can be followed as it is read. */
-  'cell.stranded': 'This cell still has its dispatch claim on disk, but its session is gone: run pf cycle retry {cycle} {node} --drop to clear the claim, then pf next --cycle {cycle} --spawn --json to open this round again.',
+   * record words the remedy names, and the exact word line, so it can be followed as it is read. */
+  'cell.stranded': 'This cell still has its dispatch claim on disk, but its session is gone: ask for `cycle retry {cycle} {node} --drop` to clear the claim, then `next --cycle {cycle} --spawn --json` to open this round again.',
 
   /* ── The instruction ledger ───────────────────────────────────────────────────────────────── */
   'notes.scroll.aria': 'User instructions',

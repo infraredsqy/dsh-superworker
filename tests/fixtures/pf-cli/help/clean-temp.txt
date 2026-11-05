@@ -1,9 +1,0 @@
-usage: pf clean-temp [-h] [--project PROJECT] [--node NODE] [--yes] [--force]
-
-options:
-  -h, --help         show this help message and exit
-  --project PROJECT  Project root (default: current directory)
-  --node NODE        Only this node id (prefix is enough)
-  --yes              Actually delete; without it, only list
-  --force            Also clear a node a cycle is holding right now (its
-                     session is gone and the claim was never released)

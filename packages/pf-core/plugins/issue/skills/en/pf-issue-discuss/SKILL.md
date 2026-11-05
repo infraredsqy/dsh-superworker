@@ -13,8 +13,8 @@ disable-model-invocation: true
 
 Tools and conventions are in [`../pf-issue-repair/pool.md`](../pf-issue-repair/pool.md).
 
-The pipeline's words are one table with two doors: run them on the `pf` command line, or
-call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
+The pipeline's words are one table with one door: call the `pathfinder` tool — a `word`, its
+`args`, and `help` for that word's page.
 
 ## Read the intent at the door
 

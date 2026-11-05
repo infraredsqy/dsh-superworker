@@ -1,3 +1,0 @@
-# Records do not go through EOL conversion: the tool writes CRLF on Windows, and the drill pastes
-# these bytes over its copy as they were captured. Same rule as the record dir's own `.gitattributes`.
-** -text

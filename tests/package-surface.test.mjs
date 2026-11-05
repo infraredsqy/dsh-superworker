@@ -92,23 +92,19 @@ test('包面：engines.dsh 写着一段非空的范围', () => {
 })
 
 /*
- * The command and the engine travel together.
+ * No command travels with this package.
  *
- * Installing the line installs a `pf` too, and that `pf` runs outside this checkout: it has no
- * `node_modules` to walk up to. So the artifact carries `bin/` (the command, its table, the help
- * surface — a bin field pointing at a file the package does not carry is an install that puts
- * nothing on the PATH) and the engine's built product beside it, which `prepack` has to build or the
- * pack ships a stale one or none at all.
+ * The pipeline answers in-process: the `pathfinder` tool inside a session, the panel's endpoints, and
+ * git's merge driver. Nothing in this artifact is meant to be typed at a shell, so the manifest names
+ * no command and the artifact carries no `bin/`.
  */
-test('包面：`bin` 交出 `pf` 那条命令，落点有 shebang，且整份 bin/ 都进包', () => {
-  assert.equal(manifest.bin?.pf, 'bin/pf.mjs', `bin 字段没交出 pf：${JSON.stringify(manifest.bin)}`)
-  const entry = fileURLToPath(new URL('../bin/pf.mjs', import.meta.url))
-  assert.ok(existsSync(entry), 'bin/pf.mjs 不在盘上：bin 字段指着一个不存在的文件')
-  assert.match(readFileSync(entry, 'utf8').split('\n')[0], /^#!/u, 'bin/pf.mjs 的头一行不是 shebang，装成命令跑不起来')
+test('包面：这份包不交任何命令，`bin` 字段与 `files` 里都没有 `bin/`', () => {
+  assert.equal(manifest.bin, undefined, `清单还在交命令：${JSON.stringify(manifest.bin)}`)
   const files = manifest.files ?? []
-  for (const rel of ['bin/pf.mjs', 'bin/lib/cli.mjs', 'bin/lib/engine.mjs']) {
-    assert.ok(files.some((pattern) => covered(pattern, rel)), `${rel} 没被 files 盖住：装出去的 pf 缺文件`)
+  for (const pattern of files) {
+    assert.ok(!pattern.startsWith('bin/'), `files 还在收 bin/：${pattern}`)
   }
+  assert.equal(existsSync(fileURLToPath(new URL('../bin', import.meta.url))), false, 'bin/ 还在盘上')
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml', 'profile 里那一行的挂载点动了')
 })
 

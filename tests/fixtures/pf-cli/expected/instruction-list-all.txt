@@ -1,3 +1,0 @@
-● i-0001  [global/visible while working]  always run the fast suite first
-● i-0002  [cycle/visible while working]  keep this line to coding work
-● i-0003  [node/visible while working]  this node keeps its own diff small

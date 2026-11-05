@@ -2,7 +2,7 @@
   "action": "stop_pipeline",
   "cycle": "c1",
   "node_id": null,
-  "reason": "This cycle has no ready node left in its filter set ['writing'], but the graph still has 1 ready node(s), only hidden outside by their tags:\n  - drawing (@node-a@) tags=['art']\nOne line has finished its work; whether and when another line starts is yours to decide.\nOpen another cycle to take it: pf cycle start <slug> --tags art",
+  "reason": "This cycle has no ready node left in its filter set ['writing'], but the graph still has 1 ready node(s), only hidden outside by their tags:\n  - drawing (@node-a@) tags=['art']\nOne line has finished its work; whether and when another line starts is yours to decide.\nOpen another cycle to take it: cycle start <slug> --tags art",
   "note": "cycle parked; nothing more to do without a human",
   "attention": [],
   "settling": true

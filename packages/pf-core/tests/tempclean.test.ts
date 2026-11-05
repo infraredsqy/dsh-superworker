@@ -15,7 +15,7 @@ import { cleanTemp } from '../src/tempclean.ts';
 import { rejection } from './helpers/rejection.ts';
 
 /**
- * Leftover cleanup: list and delete each node's `temp/` dir (the `pf clean-temp` rule).
+ * Leftover cleanup: list and delete each node's `temp/` dir (the `clean-temp` rule).
  *
  * One place is swept: the main tree's `nodes/<id>/temp/`. Only that cell is touched; a node a cycle
  * holds (the `holding` in `state.json`) is skipped unless `force`; a list-only run changes not one

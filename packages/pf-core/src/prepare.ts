@@ -24,7 +24,7 @@ import type { CycleRecord, InstructionRecord, NodeRecord } from './types';
  *   (`/pf-conduct <node id> [pipeline]`, spelled byte for byte). Nothing comes after that line, and
  *   nothing may be padded in front of it: the node's mode, title and spec path are read by the session
  *   itself from the node record, the closing command and the ticket shape belong to the skill being
- *   called, and the standing instructions are read by the session itself with `pf instruction list` —
+ *   called, and the standing instructions are read by the session itself with `instruction list` —
  *   none of that is in the prompt. It lands in the matching
  *   `<pf>/meta/launch/<line>/<node>/prompt.txt`, atomic write, whole file overwritten (idempotent).
  * - **The run doc**: this round's run document, landing in the node directory
@@ -39,8 +39,8 @@ import type { CycleRecord, InstructionRecord, NodeRecord } from './types';
  *   produce a second one.
  * - **The handoff template**: what this line wants, and which verdict words there are. The fields and
  *   verdict words follow the fixed shape (`handoff --form` prints: `deliverable` / `acceptance` /
- *   `touched`, verdicts `completed | failed | stopped`); the CLI that precedes this library prints it on a
- *   command line and this library has no command line, so the template is a piece of text handed back with the
+ *   `touched`, verdicts `completed | failed | stopped`); nothing here prints a command line (this
+ *   library has none), so the template is a piece of text handed back with the
  *   rest of the material and not landed on disk.
  * - **Only dispatch plans are accepted**: preparation reads a read-only plan first; when what the plan
  *   hands back is not a dispatch (the line has no node to pin, the sessions were all opened already, the
@@ -130,9 +130,9 @@ function instructionLine(entry: InstructionRecord, index: number): string {
  * The handoff template: the fields this line wants and the verdict words, as one block of text.
  *
  * The fields and verdict words follow the shape `handoff --form` prints, word for word (the three cells
- * `deliverable` / `acceptance` / `touched`, the verdicts `completed | failed | stopped`); the CLI that
- * precedes this library prints it on a command line, and that spelling has no counterpart in this library
- * (the engine has no command line), so the same sheet is written as text here from the library's three
+ * `deliverable` / `acceptance` / `touched`, the verdicts `completed | failed | stopped`); nothing in
+ * this library prints a command line (the engine has none), so the same sheet is written as text here
+ * from the library's three
  * inputs (the verdict, a one-line account, the outputs object). `readings` are the cells this line is
  * configured to measure (a plugin-declared reading with `source: ticket`, where `when_knob` has a value
  * in force on the chain); when there are any, one more

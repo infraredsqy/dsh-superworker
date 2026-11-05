@@ -11,7 +11,7 @@
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm --filter pf-core build   # packages/pf-core/dist/**（引擎的产物，`pf` 命令带的那一份）
+pnpm --filter pf-core build   # packages/pf-core/dist/**（引擎的产物：并入宿主半身的那份代码，外加 git 合并驱动的入口）
 npm run types                 # lib/types/**（宿主入口的类型）
 npm run bundle                # lib/host/index.js（宿主半身）
 npm run bundle:client         # lib/client.js（浏览器半身）
@@ -20,7 +20,7 @@ npm run bundle:client         # lib/client.js（浏览器半身）
 这四条绑在 `prepack` 上（引擎排头，后面三样跟着），`npm pack` 与 `npm publish` 会自己跑一遍。
 
 `package.json` 的 `files` 只收这几样：两个运行时入口、`lib/types/**/*.d.ts`、`locale/*.json`、
-`cordis.patch.yml`、`bin/**/*`（`pf` 那条命令）、`packages/pf-core/dist/**/*`（它身边那一份引擎），
+`cordis.patch.yml`、`packages/pf-core/dist/**/*`（引擎的产物：并入宿主半身的那份代码，加上 git 合并驱动要跑的入口），
 以及 `packages/pf-core/plugins/**/*`——插件目录整个进包，随插件装与卸的那几套技能
 就在里面（一个技能指向同目录的兄弟文件，半个文件夹装出去就是引用的文件不在），技能文本与引擎因此落在
 同一份发布件里。于是 `npm pack` 出的那一个 `.tgz` 就是分发件本身（`lib/client-body.js` 是浏览器
@@ -198,40 +198,28 @@ dsh plugin --profile <名字> remove dsh-pathfinder      # 撤销：依赖与那
 被卸下来时按那份清单摘净，别人的技能一个不碰。那个根里已经有别人的同名副本时，这一行的技能就不装
 （面板照常起来），拒绝里点名两处——这一行的那份与占名的那份——一个字节都不写。
 
-## 装一个运行时（`pf` 那条命令与它带的引擎）
+## 发布件里没有命令，只有一个可执行入口
 
-装插件装的是面板；`pf` 这条命令是另一份安装，装的是同一个 `.tgz`。**运行时装在仓外**：命令与引擎都从
-发布件落进 npm 的全局前缀，一份检出从此退到「读过它」的位置，命令与引擎都由那一次安装供给。
+装插件装的是面板。这个包里没有一条要给人在 shell 里敲的命令：每个词都在进程内作答——会话里是
+`pathfinder` 工具，面板里是那几手端点，两边走同一份 `answer()`。字段上也看得出来：`package.json`
+没有 `bin`，`files` 里没有 `bin/`。
 
-```sh
-npm install --global --omit=peer --no-audit --no-fund <那份 .tgz 的绝对路径>
-```
+唯一会被别的进程启动的文件是 git 的合并驱动，它在引擎产物里：
 
-- 载荷落 `<npm 全局前缀>/node_modules/dsh-pathfinder`（Windows 上是 `%APPDATA%\npm\node_modules\dsh-pathfinder`）：
-  `bin/` 与 `packages/pf-core/dist/` 并排在那里。命令先按包名取引擎，取不到就直接加载身边这一份
-  （`bin/lib/engine.mjs`），所以装到哪儿都不需要仓、也不需要 `node_modules`
-- `pf` / `pf.cmd` / `pf.ps1` 三个 shim 落全局前缀本身（它排在 PATH 上）。装上之后 `where.exe pf` 与
-  `Get-Command pf` 指的就是它，PATH 上更早的那一份被它压过
-- `pf version` 印的就是这份装机目录：`pf <号> at <前缀>/node_modules/dsh-pathfinder/bin (tools: <前缀>/node_modules/dsh-pathfinder)`。
-  在一个没有 `.pf` 的目录里（比如 `~`）与在项目根里印的是同一份，仓外跑得起来就是装对了
-- 面板的写入在宿主半身里就地作答：走的是同一份词面（引擎的 `answer()`，agent 那条 `pathfinder`
-  工具也走它），不起命令、不问 PATH、不经过 shell；带用户原话的那次把那句话原样接在那一行末尾，
-  一个参数，不拼字符串。写记录因此不需要 `bin/`，发布件里没有它也写得成
+- `<装机目录>/packages/pf-core/dist/merge-ledger.mjs`。git 按 `merge.pf.driver` 这条字符串起进程，
+  参数是 `%O %A %B %P`；登记在承载记录的那个仓库的 git config 里，`init` 顺带写、`register` 重写。
+- 登记有三种写法：PATH 上有 `pf` 时写 `pf merge-ledger %O %A %B %P`（旧装机的命令还能用），只有
+  `pf-merge-ledger` 时写那一条，两条都没有时写绝对形——两个带引号的路径，解释器加这个文件。
+  绝对形只指向发布件里自己的文件，不回到仓、也不要 `node_modules`，所以装到哪儿都答得起来。
+- `doctor` 的 `merge-driver` 那一格认这三种写法，并判断它在这台机器上真的跑不跑得起来。
 
-核一遍，都在仓外跑：`pf version`，然后进一个有记录的项目根跑 `pf doctor`。`doctor` 的 `plugins` 那一格读的是
-**这份运行时自带的插件**（`<装机目录>/packages/pf-core/plugins`，与引擎的产物并排）；项目根下的 `plugins/`
-留给引擎自己的缺省，这条命令不经过它。于是没有 `plugins/` 的项目也读得到自带的插件，插件词（`pf issue …`）
-与两道收尾守卫（`issue_pool_weight_limit` / `test_seconds_limit`）在任何项目里都答得上。优先级一行：用户的
-`PF_PLUGINS_DIR` 压过这份自带的插件（指哪儿扫哪儿），这也是把扫描指回项目文件夹的唯一出口。引擎里那条
-`<项目根>/plugins` 的缺省因此不经这条命令生效：这条命令一律读自带的插件，项目根下那份 `plugins/` 留给引擎自己的缺省。
-
-### 卸掉就是回滚
+卸掉插件：
 
 ```sh
-npm uninstall --global dsh-pathfinder
+dsh plugin --profile <名> remove dsh-pathfinder
 ```
 
-卸掉之后命令回落到 PATH 上更早的那一份；再装上同一个 `.tgz` 就回到新的这份。技能那一半也由发布件供给：`issue` 与 `test-audit` 两个插件带的四条
+面板那一行从 profile 的 `dsh.profile.bundles` 里消失；再装上同一个 `.tgz` 就回到新的这份。技能那一半也由发布件供给：`issue` 与 `test-audit` 两个插件带的四条
 （`pf-issue-scan` / `pf-issue-repair` / `pf-issue-discuss` / `pf-test-audit`），加上 `pipeline` 插件带的三条核心技能
 （`pf-conduct` / `pf-route` / `pf-instruct`，每份把它正文指向的 `shared/pf/` 单页带在自己目录里）。
 都落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的同哈希，根序 rank 400）。派发的第一行

@@ -10,7 +10,7 @@
       "cycle": "c1",
       "node_id": "@node-a@",
       "node_title": "slips",
-      "hint": "pf dag revive @node-a@ puts it back to todo (shelved → todo), or handle it by hand and restart the cycle"
+      "hint": "dag revive @node-a@ puts it back to todo (shelved → todo), or handle it by hand and restart the cycle"
     }
   ],
   "settling": true

@@ -1,3 +1,0 @@
-● c1 — Line one  [active]  tags: coding,writing
-  Policy: when_shelved=stop, parallel=1  Steps walked: 0
-  Node: 4d29abb8-df2b-45b9-82b9-b3963655c84b  (since 2026-11-04T02:46:09Z)

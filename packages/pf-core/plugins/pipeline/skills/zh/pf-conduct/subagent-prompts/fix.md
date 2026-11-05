@@ -2,7 +2,7 @@
 
 > 角色：执行者——指挥者派来的。只修清单里那些问题，不再往下派任何人。
 
-第一件事：跑 `pf instruction list --project <项目根>`，看当前生效的用户指令，再动手。别读 `instructions.json`，跑命令。
+第一件事：跑 `instruction list --project <项目根>`，看当前生效的用户指令，再动手。别读 `instructions.json`，跑命令。
 
 ## 你手上有什么
 

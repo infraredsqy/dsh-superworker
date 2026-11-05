@@ -16,8 +16,8 @@ There is one place to draw material from: the pool. Tools and conventions are in
 node's spec, the few lines of "why it was inserted", or the user's sentence: whoever called you in
 sets it, and you do not widen it to everything yourself. Once the criterion is passed, stop.
 
-The pipeline's words are one table with two doors: run them on the `pf` command line, or
-call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
+The pipeline's words are one table with one door: call the `pathfinder` tool — a `word`, its
+`args`, and `help` for that word's page.
 
 ## How one entry is disposed of
 
@@ -45,7 +45,7 @@ Two hard rules:
 ## Drawing the material
 
 1. First read **the standard**: what the spec's "completion rule" says — one metric's reading
-   (`pf issue weight -v`), or "this batch of entries all reaching a terminal status"
+   (`issue weight -v`), or "this batch of entries all reaching a terminal status"
 2. Take out the entries this round will touch: **actionable** (the three grades' conventions are
    in pool.md; adding only `--status open` misses the deferred ones) **and `decision=autofix`**,
    ordered by severity (to narrow it, add `--severity` / `--module`)
@@ -64,7 +64,7 @@ second time here. This flow adds three things only:
   module form one batch; a change family that truly has to cross modules is declared explicitly as
   a whole batch. The same verification covers the changes inside a batch. Each batch's Fix plus
   Review is 2 in flight, so before dispatching several batches together, count once against
-  `pf config get max_agents`
+  `config get max_agents`
 - **Fix → Review per batch**: Fix uses `subagent-prompts/fix.md` under the pf-conduct skill
   directory (by default `~/.dsh/skills/pf-conduct/`), and Review the `review.md` in the same
   directory (read-only); the prompt follows pf-conduct's "Fix" section
@@ -86,9 +86,9 @@ cancel that number.
 Settle one entry at a time, leaving nothing half open:
 
 ```pwsh
-pf issue resolve <id> --reason "<where it was fixed, the verification reading>"
-pf issue update  <id> --decision external --reason "<the two roads and their costs>"
-pf issue reject  <id> --reason "<why it is not fixed>"
+issue resolve <id> --reason "<where it was fixed, the verification reading>"
+issue update  <id> --decision external --reason "<the two roads and their costs>"
+issue reject  <id> --reason "<why it is not fixed>"
 ```
 
 **What only the user can call, you may not call for a single one of them**: write each into the

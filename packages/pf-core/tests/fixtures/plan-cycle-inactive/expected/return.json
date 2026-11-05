@@ -9,5 +9,5 @@
   "known_cycles": [
     "c1"
   ],
-  "hint": "pf cycle status c1 active"
+  "hint": "cycle status c1 active"
 }

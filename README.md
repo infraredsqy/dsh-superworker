@@ -27,7 +27,7 @@ The `.pf/` record it draws is early and moving fast: expect breaking changes in 
 
 Prerequisites: a DSH install with a profile to install into, and a workspace that holds a `.pf/`
 pipeline record. The panel's writes are answered in place by its host half (the engine's own words
-layer), so it needs no `pf` on your `PATH`; a `PATH` entry is only for running `pf` by hand. The panel
+layer), so there is no command to install and no `PATH` entry to arrange. The panel
 reads the workspace of the session you have selected; with no session selected it says so.
 
 Download the `.tgz` from this repo's [Releases](https://github.com/infraredsqy/dsh-pathfinder/releases)

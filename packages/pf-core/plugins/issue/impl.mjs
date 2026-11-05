@@ -74,9 +74,9 @@ const PROSE = {
   issue_pool_weight: {
     unit: '',
     subject: "the issue pool's weighted sum",
-    where: '`pf issue weight` (the issue tool computes it itself; it does not go into a note)',
+    where: '`issue weight` (the issue tool computes it itself; it does not go into a note)',
     criterion: "the pool's weighted sum the tool computes at the next close must be **below**",
-    remedy: 'run `pf issue weight -v` to see how this number adds up, '
+    remedy: 'run `issue weight -v` to see how this number adds up, '
       + 'and confirm it is back under the line',
   },
 };
@@ -260,7 +260,7 @@ function offerOf(ctx, cycle, hit, specOf) {
     + 'and the inserted node is not pinned: which node the next dispatch picks is the usual '
     + "ranking's call (on a line that fills several slots, this same close may have pinned "
     + 'the rest of its fill). After committing and pushing: '
-    + `\`pf next --cycle ${cycle.id} --spawn --json\`.`;
+    + `\`next --cycle ${cycle.id} --spawn --json\`.`;
   return {
     title: hit.title,
     tags: [hit.tag, ...lineTags(cycle)],
@@ -280,7 +280,7 @@ function titleOf(hit) {
 
 /** What the next judgement of this debt reads: the issue tool computes the pool's number itself, so it does not go into the note where nobody would use it. */
 function closingReading(hit) {
-  return '- the issue tool computes this metric itself (`pf issue weight`); the note does '
+  return '- the issue tool computes this metric itself (`issue weight`); the note does '
     + 'not carry it:\n'
     + '  at the next close, a number the tool computes below'
     + ` ${shown(hit.at, hit.unit)} counts as back under the line.\n`;

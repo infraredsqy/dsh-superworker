@@ -13,7 +13,7 @@ disable-model-invocation: true
 
 取材只有一处：池子。工具与口径见 [`./pool.md`](./pool.md)。**范围不归你定**——管线节点的 spec、「为什么被插进来」那几行、或用户那句话，谁叫你来的谁定；别自己扩到全库。判据过了就停手。
 
-管线这些词是一张表两个入口：命令行走 `pf`，模型侧走 `pathfinder` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
+管线这些词是一张表一个入口：走 `pathfinder` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
 
 ## 一条条目怎么处置
 
@@ -34,7 +34,7 @@ disable-model-invocation: true
 
 ## 取材
 
-1. 先读**标准**：spec 的「完成判定」写的是什么——一个度量的读数（`pf issue weight -v`），还是「这批条目全部走到终态」
+1. 先读**标准**：spec 的「完成判定」写的是什么——一个度量的读数（`issue weight -v`），还是「这批条目全部走到终态」
 2. 取出这一轮要动的条目：**actionable**（三档口径见 pool.md；只加 `--status open` 会把押后的漏掉）**且 `decision=autofix`**，按严重度排（要收窄就加 `--severity` / `--module`）
 3. 处置还没定的先定：`decision` 还是 `unknown` 的当场定——能修的改判 `autofix` 并排进这一轮；取舍在用户的改判 `external`。`decision=external` 的不修
 4. `reason` / `suggestion` 已经写清怎么修的照它做，不重新讨论；挂 `plan_path` 的先 read 计划
@@ -43,7 +43,7 @@ disable-model-invocation: true
 
 循环与指挥者那几条不做，照 `/pf-conduct` 走，这里不抄第二份。本流程只多三条：
 
-- **分批按改动域，批宽受进行中上限管**：同一模块的条目成一批；确需跨模块的改动族整批显式声明。批内的改动能被同一次验证覆盖。每批 Fix 加 Review 是 2 个进行中，几批一起派之前先按 `pf config get max_agents` 数一遍
+- **分批按改动域，批宽受进行中上限管**：同一模块的条目成一批；确需跨模块的改动族整批显式声明。批内的改动能被同一次验证覆盖。每批 Fix 加 Review 是 2 个进行中，几批一起派之前先按 `config get max_agents` 数一遍
 - **每批 Fix → Review**：Fix 用 pf-conduct 技能目录下的 `subagent-prompts/fix.md`（默认在 `~/.dsh/skills/pf-conduct/`），Review 用同目录的 `review.md`（只读）；prompt 照 pf-conduct「Fix」那一节给
 - **批过即 commit**：整批判 no issue 才提交。不在管线里跑时没有节点收尾那一步，提交就落在这里
 
@@ -56,9 +56,9 @@ disable-model-invocation: true
 一条一条落定，不留半开：
 
 ```pwsh
-pf issue resolve <id> --reason "<改在哪、验证读数>"
-pf issue update  <id> --decision external --reason "<两条路与代价>"
-pf issue reject  <id> --reason "<为什么不修>"
+issue resolve <id> --reason "<改在哪、验证读数>"
+issue update  <id> --decision external --reason "<两条路与代价>"
+issue reject  <id> --reason "<为什么不修>"
 ```
 
 **只有用户能拍的**，一条都不许自己定：逐条写进汇报的「留给人」一节，连同两条路与代价。

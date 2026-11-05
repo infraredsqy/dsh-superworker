@@ -6,9 +6,9 @@
 
 ## 只走工具
 
-动池子之前先问这个词自己：`pf issue --help` 给出它那一页；agent 侧的门是 `pathfinder` 工具——给它 `word`、该词的 `args` 跑一条，`help` 取它那一页。
+动池子之前先问这个词自己：`issue --help` 给出它那一页；门是 `pathfinder` 工具——给它 `word`、该词的 `args` 跑一条，`help` 取它那一页。
 
-- 与池子的**一切**读写只走 `issue` 这个词——两个入口都算。**禁止直接 read `.pf/issues/issues.json`**：巨型 JSON，烧上下文，还绕过工具自己的统计口径。
+- 与池子的**一切**读写只走 `issue` 这个词。**禁止直接 read `.pf/issues/issues.json`**：巨型 JSON，烧上下文，还绕过工具自己的统计口径。
 
 ## 口径
 

@@ -66,7 +66,7 @@ export function readPool(
     const severity = text(entry.severity)
     const decision = text(entry.decision)
     const id = text(entry.id) ?? ''
-    /* Whether it weighs on the line is the verdict's own call: issues judged `external` drop out of the weighted sum — counted in, they would be a floor nobody could move and the threshold could never dip below, which is exactly how the pool's canonical reading `pf issue weight` treats them. The count follows a different measure (the tool's `status`): still on the books, still standing, just not weighing on the line. */
+    /* Whether it weighs on the line is the verdict's own call: issues judged `external` drop out of the weighted sum — counted in, they would be a floor nobody could move and the threshold could never dip below, which is exactly how the pool's canonical reading `issue weight` treats them. The count follows a different measure (the tool's `status`): still on the books, still standing, just not weighing on the line. */
     const payable = decision !== 'external'
     rows.push({
       id,

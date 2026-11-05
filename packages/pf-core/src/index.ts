@@ -7,7 +7,7 @@ export { open } from './open';
 export type { Pf, PfOpenOptions } from './open';
 export { SimulatedExecutor } from './executor';
 /* The words layer: the one table, its parser and printer, the verbs that read engine answers into
-   lines, and the two entries a caller answers through — `answer(argv, io)` (one command line in, the
+   lines, and the two entries a caller answers through — `answer(argv, io)` (one line of words in, the
    two streams and the exit code out) and `describe()` (the static index of the words). The transport
    in front of the engine and the agent-facing tool both read this layer; the words about this
    *process* (doctor, version, the merge driver's hand-off) stay with the transport. */

@@ -7,7 +7,7 @@ import { readJsonFile } from './jsonio.ts';
 import { nodeTempDir, type PfPaths } from './paths.ts';
 
 /**
- * The temp sweep (the piece `pf clean-temp` runs): list or delete each node's process-artifact
+ * The temp sweep (the piece `clean-temp` runs): list or delete each node's process-artifact
  * directory `nodes/<id>/temp/`.
  *
  * One place is swept, and only this one: the nodes dir of the record tree handed in. The worktrees
@@ -25,11 +25,11 @@ import { nodeTempDir, type PfPaths } from './paths.ts';
 
 /** The options of `cleanTemp`. */
 export interface CleanTempOptions {
-  /** Scan only this node: the full id or a prefix of it (the command line's `--node`). */
+  /** Scan only this node: the full id or a prefix of it (the word's `--node`). */
   readonly node?: string;
-  /** Really delete (the command line's `--yes`); by default it only lists, touching not one byte. */
+  /** Really delete (the word's `--yes`); by default it only lists, touching not one byte. */
   readonly remove?: boolean;
-  /** Clean the nodes a line holds (`holding` in `state.json`) too (the command line's `--force`). */
+  /** Clean the nodes a line holds (`holding` in `state.json`) too (the word's `--force`). */
   readonly force?: boolean;
 }
 

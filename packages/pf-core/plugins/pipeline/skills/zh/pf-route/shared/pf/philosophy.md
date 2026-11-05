@@ -34,9 +34,9 @@
 
 ### 完成的节点不删
 
-做完的节点标 `completed`，节点目录留在原地——文件系统里不会残留无人维护的孤立 MD 文件。想法本身作废、用户要它出图时，才用 `pf dag rm` 真删。
+做完的节点标 `completed`，节点目录留在原地——文件系统里不会残留无人维护的孤立 MD 文件。想法本身作废、用户要它出图时，才用 `dag rm` 真删。
 
-实际操作中 `pf dag list` 默认全量显示但按 urgency×importance 排序，completed 节点排在末尾（不显示 score）。如果其他节点的 `deps` 中出现你没见过的 UUID，那很可能指向一个 completed 节点——用 `pf dag list --status completed` 确认，不要直接判定为 dangling ref。
+实际操作中 `dag list` 默认全量显示但按 urgency×importance 排序，completed 节点排在末尾（不显示 score）。如果其他节点的 `deps` 中出现你没见过的 UUID，那很可能指向一个 completed 节点——用 `dag list --status completed` 确认，不要直接判定为 dangling ref。
 
 ### Ground truth 纯净
 

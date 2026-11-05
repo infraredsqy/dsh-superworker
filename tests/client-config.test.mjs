@@ -2,7 +2,7 @@
  * described, which category each row falls under, and how the page's sections come out.
  *
  * The tool is the single source of truth for config keys; this side never declares "which keys the
- * tool has": rows grow out of `pf config list` readings, registered keys render per the table, and
+ * tool has": rows grow out of `config list` readings, registered keys render per the table, and
  * unregistered ones fall back to raw key name + text input. No UI snapshots are locked; instead a
  * few things that could silently drift are: a key present in the reading losing its row, a
  * dropdown settling on its first option when the reading has no value, and out-of-table candidate

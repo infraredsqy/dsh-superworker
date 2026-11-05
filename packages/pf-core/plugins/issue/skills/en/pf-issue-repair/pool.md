@@ -9,11 +9,11 @@ passing), `conduct` (run into by a working session).
 
 ## Go through the tool only
 
-Before touching the pool, ask the word itself: `pf issue --help` gives its page, and the agent-side
+Before touching the pool, ask the word itself: `issue --help` gives its page, and the
 door is the `pathfinder` tool — a `word` plus its `args` to run one, and `help` for that word's
 page.
 
-- **Every** read and write of the pool goes through the `issue` word only — either door. **Reading
+- **Every** read and write of the pool goes through the `issue` word only. **Reading
   `.pf/issues/issues.json` directly is forbidden**: a giant JSON, it burns context and it bypasses
   the tool's own counting conventions too.
 

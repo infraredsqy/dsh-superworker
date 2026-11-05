@@ -51,32 +51,32 @@ read the started claim -> the plugin dispatch gate -> the material (landed only 
   stays in service.
 - That order has a cost: the moment the claim is on disk the plan counts this cell as in flight and never dispatches
   it twice. So "ask whether it can open at all, and only then land the claim" is the opening side's own guarantee —
-  the command line's side is the next section.
+  the side with no opener is the next section.
 
-## 3. The command line: with no opener, write nothing
+## 3. No opener: write nothing
 
 The two verbs in the engine's words layer (`answer()`) read the same one thing: **whether this call has a seam for opening a session**
-(`io.openerAvailable`, filled by the command-line adapter from `sessionOpenerAvailable()`, true under the drill switch alone).
+(`io.openerAvailable`, filled in by the caller from `sessionOpenerAvailable()`, true under the drill switch alone).
 
-- `pf dispatch <cycle>`: it reads the pair of disk facts first, node by node — a `started` on disk counts as "already
+- `dispatch <cycle>`: it reads the pair of disk facts first, node by node — a `started` on disk counts as "already
   opened"; without one it requires the prompt on disk (and refuses when it is absent, saying which step writes that
   prompt). Having read them and confirmed this process has no opener, **it refuses before the engine is reached**:
   exit code 2, not one byte written, and the sentence names the panel (寻路中心) and the path of every prompt, then
   gives the two ways a person finishes this cell by hand (dispatch it in the panel, or open a new session and paste
   that line in). When no node is left to dispatch there is another sentence: a node already opened is not dispatched
   again.
-- `pf next --spawn`: the plan still prints and the material still lands (the pinning step lands the prompt anyway),
+- `next --spawn`: the plan still prints and the material still lands (the pinning step lands the prompt anyway),
   and the spawn step only writes `spawn_error` into the answer, claiming no node at all — the call never reaches the
   engine. That is what "claim nothing" means: a placeholder opener that refused after the claim would leave the cell
   "already open, with no session behind it".
-- `pf next --after <node>` lands the material and opens nothing (the skill's command carries no `--spawn`). That
+- `next --after <node>` lands the material and opens nothing (the skill's command carries no `--spawn`). That
   is the division of labour behind the skill's two commands (first `next --after`, then `dispatch`): the second
   reads the prompt the first wrote.
 
 **The drill.** When `DSH_CONDUCT_SPAWN_DRY_RUN` holds anything outside `''` / `0` / `false` / `False`, `engine.mjs`
 hands the engine a `SimulatedExecutor`: the call walks the whole way, the session id is `sess-N`, and the `started`
 claim lands as usual — it rehearses **the whole chain**. So a cell rehearsed that way and really dispatched again
-afterwards needs `pf cycle retry <cycle> <node> --drop` first, to take the claim away.
+afterwards needs `cycle retry <cycle> <node> --drop` first, to take the claim away.
 
 **The host side honours the same switch.** In a drill the native opener creates no agent and answers a receipt
 whose host is `drill`, carrying no session id — which is also why the relay never takes it for one of its own
@@ -93,11 +93,11 @@ sessions. The claim still lands, and it comes away the same way.
   claim is the thing to write first; at that moment a prompt is on disk with no claim beside it, and the next
   dispatch would open again — either land the claim as that sentence says, or take it all back and start over.
 - **The session died, the claim is still there.** `started` is the only "already opened" evidence, so the plan never
-  dispatches that cell again. There is one way to reopen it: `pf cycle retry <cycle> <node> --drop` (the claim and the
-  old ticket go together), then `pf cycle hold <cycle> <node>`, then `pf next --cycle <cycle> --spawn --json`.
+  dispatches that cell again. There is one way to reopen it: `cycle retry <cycle> <node> --drop` (the claim and the
+  old ticket go together), then `cycle hold <cycle> <node>`, then `next --cycle <cycle> --spawn --json`.
 - **Two lines side by side.** The waking line may be running git on the same tree, and a write hitting `index.lock`
   is a momentary collision: wait a few seconds and re-run the same command, and when two or three tries still do not
   free it, stop and hand it to the user; the lock file belongs to a live process and must not be deleted.
 - **The troubleshooting order.** A session missing from the panel: see which workspace it was attached to. The button
-  refused: read the `detail` it answered. The command line refused: this process has no opener — it never opens
+  refused: read the `detail` it answered. A call refused for lack of an opener: this process has no opener — it never opens
   sessions, and there is no configuration behind it.

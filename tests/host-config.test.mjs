@@ -24,7 +24,7 @@ const home = mkdtempSync(join(tmpdir(), 'pf-host-config-home-'))
 process.env.PF_HOME_DIR = home
 after(() => rmSync(home, { recursive: true, force: true }))
 
-/** The four lines printed by a local `pf config list`, verbatim. */
+/** The four lines printed by a local `config list`, verbatim. */
 const LISTED = [
   'max_agents    = 1（项目 .pf/config.json）',
   'test_tier     = full（项目 .pf/config.json）',

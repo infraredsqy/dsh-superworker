@@ -50,7 +50,7 @@ import type { CycleRecord } from './types';
  *
  * There are only four kinds: `number` (a positive numeric value), `integer` (a positive integer), `word` (a
  * word from a vocabulary), `switch` (on / off). The read side and the write side go through the same
- * `parseConfigValue` — a JSON value read from disk and a string handed in from the command line pass the
+ * `parseConfigValue` — a JSON value read from disk and a string handed in by a word pass the
  * same gate, so the boundary of a kind is written once. The write side has two extra rules: number /
  * integer take positive values only (0 would put every reading over the bound); `off` is a value for a
  * switch; for a non-switch kind, writing `off` is refused just like writing any other word outside the

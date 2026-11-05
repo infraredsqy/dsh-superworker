@@ -1,2 +1,0 @@
-CONFIG: test_tier = minimal (written to project .pf/config.json)
-CONFIG: effective test_tier = minimal (from project .pf/config.json)

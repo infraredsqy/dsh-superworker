@@ -191,7 +191,7 @@ const poolTails = new Map();
 /**
  * Run one pool "read → change → write" exclusively inside this process.
  *
- * One process runs commands side by side (a session's `pf issue add` while a close-time pass reads
+ * One process runs commands side by side (a session's `issue add` while a close-time pass reads
  * the pool, a batch import beside a mark), and two bodies that both took their snapshot before
  * either landed would let the later snapshot drop the earlier write — the pool would come back
  * missing an issue without a word. The bodies therefore queue on the pool's resolved path: each one

@@ -1,5 +1,5 @@
 /**
- * The command line in front of the engine: an argv parser and the help printer, both grown from one
+ * The line of words in front of the engine: an argv parser and the help printer, both grown from one
  * table row per word.
  *
  * The geometry: a 78-column body (the terminal width minus the two columns a printer takes off, fixed
@@ -256,7 +256,7 @@ export function destOf(flags: readonly string[]): string {
 }
 
 /**
- * Parse one command line against one table row.
+ * Parse one line of words against one table row.
  *
  * Returns `{ help: true }` for a help word, `{ error }` for a line the row refuses, and `{ values,
  * positionals }` otherwise. Options are matched by their flags; a value-taking option takes the next

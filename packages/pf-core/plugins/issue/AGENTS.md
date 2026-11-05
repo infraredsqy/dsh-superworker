@@ -4,5 +4,5 @@
 
 - `plugin.json` — 声明：旋钮、读数、度量、命令面与自带的文件。唯一权威，先读它
 - `impl.mjs` — 实现入口：收尾那一步读池子、判越线、交一条插入 offer
-- `tools/` — `pf issue` 的命令面与池子存储（`.pf/issues/issues.json`）
+- `tools/` — `issue` 的命令面与池子存储（`.pf/issues/issues.json`）
 - `skills/` — 随插件装与卸的技能，zh / en 各一套：scan 扫、discuss 和用户裁定、repair 修到线下

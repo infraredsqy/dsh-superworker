@@ -13,7 +13,7 @@ disable-model-invocation: true
 
 工具与口径见 [`../pf-issue-repair/pool.md`](../pf-issue-repair/pool.md)。
 
-管线这些词是一张表两个入口：命令行走 `pf`，模型侧走 `pathfinder` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
+管线这些词是一张表一个入口：走 `pathfinder` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
 
 ## 进门先认意图
 

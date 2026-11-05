@@ -71,11 +71,11 @@ switch). When the docs are not enough, dispatch a subagent to sound it out.
 
 The number of scan subagents follows the number of files: 1 covering everything by default, split
 only when there are so many files that one list cannot be scanned by one. **The cap is not here**
-— before dispatching, count what is in flight against `pf config get max_agents`, and when it
+— before dispatching, count what is in flight against `config get max_agents`, and when it
 cannot be crossed, merge or batch.
 
-The pipeline's words are one table with two doors: run them on the `pf` command line, or
-call the `pathfinder` tool — a `word`, its `args`, and `help` for that word's page.
+The pipeline's words are one table with one door: call the `pathfinder` tool — a `word`, its
+`args`, and `help` for that word's page.
 
 Every scan subagent's prompt has to carry:
 

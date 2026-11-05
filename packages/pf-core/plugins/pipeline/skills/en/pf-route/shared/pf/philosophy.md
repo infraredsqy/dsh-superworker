@@ -52,12 +52,12 @@ a DAG), and it is the ground on which an agent helps the user judge which nodes 
 
 A node that is done is marked `completed` and its node directory stays where it is — no
 unmaintained, orphaned MD file is left lying in the filesystem. Only when the idea itself is
-scrapped and the user wants it out of the graph does `pf dag rm` really delete it.
+scrapped and the user wants it out of the graph does `dag rm` really delete it.
 
-In practice `pf dag list` shows everything by default but sorts by urgency×importance, with the
+In practice `dag list` shows everything by default but sorts by urgency×importance, with the
 completed nodes at the end (and no score shown). When a UUID you have never seen shows up in
 another node's `deps`, it most likely points at a completed node — confirm with
-`pf dag list --status completed`, and do not rule it a dangling ref straight away.
+`dag list --status completed`, and do not rule it a dangling ref straight away.
 
 ### Ground truth stays clean
 

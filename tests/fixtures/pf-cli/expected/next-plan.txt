@@ -1,5 +1,0 @@
-action: wait
-cycle:  c1
-note:     The note for 4d29abb8 is already on disk, but this node has not been closed out yet -- do not poll, and do not move the state yourself. Closing it out is one command: pf next --after 4d29abb8-df2b-45b9-82b9-b3963655c84b --json (the tool reads this node's note, closes it, and then tells you whether the next slot is `dispatch` or `stop_pipeline`). Dispatch comes after this run's commit and push: `pf dispatch c1`.
-close_with: pf next --after 4d29abb8-df2b-45b9-82b9-b3963655c84b --json
-node:     (4d29abb8-df2b-45b9-82b9-b3963655c84b)

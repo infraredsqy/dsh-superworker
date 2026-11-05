@@ -2,5 +2,5 @@
   "action": "wait",
   "cycle": "c1",
   "node_id": "@node-a@",
-  "note": "@short-a@: their sessions are already open (the `started` stamp is on disk) -- there is nothing to dispatch, so wait for their notes and never poll. Their own closes: pf next --after <node id> --json."
+  "note": "@short-a@: their sessions are already open (the `started` stamp is on disk) -- there is nothing to dispatch, so wait for their notes and never poll. Their own closes: next --after <node id> --json."
 }

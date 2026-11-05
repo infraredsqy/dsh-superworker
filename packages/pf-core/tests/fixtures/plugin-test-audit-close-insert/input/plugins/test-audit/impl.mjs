@@ -236,7 +236,7 @@ function offerText(ctx, cycle, hit) {
     `and the inserted node is not pinned: which node the next dispatch picks is the usual ` +
     `ranking's call (on a line that fills several slots, this same close may have pinned ` +
     `the rest of its fill). After committing and pushing: ` +
-    `\`pf next --cycle ${cycle.id} --spawn --json\`.`;
+    `\`next --cycle ${cycle.id} --spawn --json\`.`;
   return {
     title: hit.title,
     tags: [hit.tag, ...lineTags(cycle)],

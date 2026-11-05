@@ -356,7 +356,7 @@ function crossLineReason(tags: readonly string[], blocked: readonly ReadyRow[]):
   const tail =
     'One line has finished its work; whether and when another line starts is yours to ' +
     'decide.\n' +
-    `Open another cycle to take it: pf cycle start <slug> --tags ${need.join(',')}`;
+    `Open another cycle to take it: cycle start <slug> --tags ${need.join(',')}`;
   return [head, ...tagBlockedLines(blocked), tail].join('\n');
 }
 
@@ -546,7 +546,7 @@ function attentionItems(
     node_id: uid,
     node_title: nodes[uid]?.title ?? '',
     hint:
-      `pf dag revive ${uid} puts it back to todo (shelved → todo), or handle it by hand ` +
+      `dag revive ${uid} puts it back to todo (shelved → todo), or handle it by hand ` +
       'and restart the cycle',
   }));
 }
@@ -579,13 +579,13 @@ function noLineAction(cycles: readonly CycleRecord[]): NextPlan {
       requested: only,
       candidates: idle,
       known_cycles: idle,
-      hint: `pf cycle status ${only} active`,
+      hint: `cycle status ${only} active`,
     });
   }
   return askAction(`no cycle is active right now; these lines are all out of service: ${pyList(idle)}`, {
     candidates: idle,
     known_cycles: idle,
-    hint: 'pf cycle status <cycle> active',
+    hint: 'cycle status <cycle> active',
   });
 }
 
@@ -681,7 +681,7 @@ function openAction(cycle: CycleRecord, chosen: readonly ReadyRow[]): OpenNodePl
  * on the same tree.
  */
 function ticketWait(cycle: CycleRecord, nodeId: string, holding: readonly string[]): WaitPlan {
-  const closeWith = `pf next --after ${nodeId} --json`;
+  const closeWith = `next --after ${nodeId} --json`;
   const others = holding.filter((id) => id !== nodeId);
   const tail =
     others.length > 0
@@ -700,7 +700,7 @@ function ticketWait(cycle: CycleRecord, nodeId: string, holding: readonly string
       'closes it, and then tells you whether the next slot is `dispatch` or ' +
       '`stop_pipeline`).' +
       `${tail} Dispatch comes after this run's commit and push: ` +
-      `\`pf dispatch ${cycle.id}\`.`,
+      `\`dispatch ${cycle.id}\`.`,
   };
 }
 
@@ -719,7 +719,7 @@ function sessionsWait(cycle: CycleRecord, nodeIds: readonly string[], holding: r
     note:
       `${names}: their sessions are already open (the \`started\` stamp is on disk) -- ` +
       'there is nothing to dispatch, so wait for their notes and never poll. ' +
-      `Their own closes: pf next --after <node id> --json.${tail}`,
+      `Their own closes: next --after <node id> --json.${tail}`,
   };
 }
 
@@ -737,8 +737,8 @@ function retryWait(cycle: CycleRecord, nodeId: string, holding: readonly string[
     note:
       `The note for ${short(nodeId)} is still pending (no verdict yet, or somebody ` +
       'cleared the note to retry); do not poll. Three commands unwind it: ' +
-      `pf cycle retry ${cycle.id} ${nodeId} --drop --summary "retry", then ` +
-      `pf cycle hold ${cycle.id} ${nodeId}, then pf next --spawn --json.` +
+      `cycle retry ${cycle.id} ${nodeId} --drop --summary "retry", then ` +
+      `cycle hold ${cycle.id} ${nodeId}, then next --spawn --json.` +
       `${tail}`,
   };
 }
@@ -998,7 +998,7 @@ async function settleAnswers(
       `line only records -- it closes ${short(nodeId)} and marks the DAG, picks no next ` +
       'node and dispatches nothing; the line keeps the status it was given.';
     if (spokenName !== null) reason += ` The named node ${spokenName} was not opened.`;
-    reason += ` To carry on: pf cycle status ${cycle.id} active`;
+    reason += ` To carry on: cycle status ${cycle.id} active`;
     // The line is not in service: only the recording happens. Not one character of the line's status is written
     // (parkLine=false) and no slot is filled either.
     return {
@@ -1035,8 +1035,8 @@ async function settleAnswers(
       // "continue" would still have to be guessed at.
       if (normalizeMode(nodes[nodeId]?.mode) === 'checkpoint') {
         reason +=
-          `; to carry on: pf cycle status ${cycle.id} active, ` +
-          `then pf next --cycle ${cycle.id} --spawn --json`;
+          `; to carry on: cycle status ${cycle.id} active, ` +
+          `then next --cycle ${cycle.id} --spawn --json`;
       }
     } else if (named !== null) {
       reason = `the node ${named} named by the instruction is not a ready node; stopping here`;
@@ -1057,7 +1057,7 @@ async function settleAnswers(
       if (others.length > 0) {
         reason =
           `${short(nodeId)} is closed; still holding ${others.map(short).join(', ')}, their ` +
-          'notes are collected as they arrive (pf next --after <node id> --json) -- ' +
+          'notes are collected as they arrive (next --after <node id> --json) -- ' +
           'this line stays in service, and on its own close that slot fills and ' +
           'dispatches.';
       } else {
@@ -1217,7 +1217,7 @@ export async function planNext(root: string, query: NextQuery = {}): Promise<Nex
       {
         requested: String(cycle.id),
         candidates: [String(cycle.id)],
-        hint: `pf cycle status ${cycle.id} active`,
+        hint: `cycle status ${cycle.id} active`,
       },
     );
   }

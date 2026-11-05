@@ -40,10 +40,10 @@ them in `run.md`'s "Facts checked".
 | Mode | `manual` / `checkpoint` / `auto` | `info` | whether it stops, and whether it asks a human (see "Mode") |
 | Look at the weight first | `light` / absent = `standard` | `info`'s `weight` | who does the work at the execute step (see "Look at the weight first") |
 | Method | the `method: <skill name>` line in the spec; absent = none | read `spec.md` | who runs this node this run, and under which skill (see "Method") |
-| Test tier and verification | `full` / `minimal` | `pf config get test_tier` | what each step verifies, and whether tests get written (see "Test tier and verification") |
-| worktree mode | `off` / `fork` / `reuse` | `pf config get worktree_mode` | the two steps, prepare's fork and the close's merge-back (see "Parallel: worktree") |
-| The subagent cap | a positive integer | `pf config get max_agents` | how the dispatched work is batched (see [`shared/pf/subagents.md`](shared/pf/subagents.md)) |
-| Parallel setting | how many nodes this line itself opened | the `Policy:` line of `pf cycle current` | how many nodes this run runs at once (see "Parallel: worktree") |
+| Test tier and verification | `full` / `minimal` | `config get test_tier` | what each step verifies, and whether tests get written (see "Test tier and verification") |
+| worktree mode | `off` / `fork` / `reuse` | `config get worktree_mode` | the two steps, prepare's fork and the close's merge-back (see "Parallel: worktree") |
+| The subagent cap | a positive integer | `config get max_agents` | how the dispatched work is batched (see [`shared/pf/subagents.md`](shared/pf/subagents.md)) |
+| Parallel setting | how many nodes this line itself opened | the `Policy:` line of `cycle current` | how many nodes this run runs at once (see "Parallel: worktree") |
 | Node tag | `writing` / `coding` / `art` | on the graph, written down by pf-route | it only affects who this line picks (this flow only reads it) |
 
 The `.pf/` flavour is written on disk by itself, with no second record: if the project repo tracks
@@ -66,7 +66,7 @@ mode is the node's own property, written down by pf-route through `--mode`; you 
 For which step each of the three has its human confirmation point on, and why it is fixed that
 way, see `docs/conduct-state.md` "conclusions and stopping".
 
-- A node whose mode is `checkpoint` / `auto` (read it with `pf dag info`) may never call
+- A node whose mode is `checkpoint` / `auto` (read it with `dag info`) may never call
   `ask_user_question` at any point: when unsure, pick the one option closest to the intent
   yourself, and write the choice and the reason into `run.md`'s "Autonomous decisions" — that is
   the user's way in to double-check. `manual` is not bound by this: it is in the conversation all
@@ -113,10 +113,10 @@ runs this run follows that skill.
 
 ### Test tier and verification
 
-`pf config get test_tier` prints how this project is verified (`full` / `minimal`, factory default
+`config get test_tier` prints how this project is verified (`full` / `minimal`, factory default
 `full`): read it at prepare step 2 and pass it on to Execute / Review / Fix in the dispatch
 supplement; on a light node you follow it yourself. It is a project-level setting and does not go
-into the spec; to change it, use `pf config set test_tier <value>`.
+into the spec; to change it, use `config set test_tier <value>`.
 
 | | `full`, the whole suite | `minimal`, everything pared down |
 |---|---|---|
@@ -130,7 +130,7 @@ are taken from the project docs (the `slow` marker, the two entries, and with no
 full run — projects differ in shape), so do not copy another project's wording; the `minimal`
 tier is exactly the few checks that project names, and **no suite gets built for it**; when the
 fast lane gets too slow to bear, that is a matter of tiers or compression and belongs to the
-test-hygiene path (run `pf doctor`: the listing says which installed plugin watches this metric, and
+test-hygiene path (run `doctor`: the listing says which installed plugin watches this metric, and
 which method skill that plugin names) — do not dodge it by running the full run more often or less. Reports carry the
 actual commands and counts, and the `full` tier also carries **the suite's actual measured
 seconds**; without the evidence it counts as never run.
@@ -138,8 +138,8 @@ seconds**; without the evidence it counts as never run.
 When neither the spec nor the project docs names a verification command, stop and ask the user to
 fill it in through pf-route — that is pf-route's debt. When the project says `minimal` and this line
 carries a reading that asks for the full suite's wall clock, report the contradiction to the user,
-together with the command that turns it off (`pf cycle policy <cycle> <that key> off` — the key is a
-**knob name**, read off `pf doctor`'s plugin listing: under the plugin that owns the reading it
+together with the command that turns it off (`cycle policy <cycle> <that key> off` — the key is a
+**knob name**, read off `doctor`'s plugin listing: under the plugin that owns the reading it
 prints the knobs that plugin declares, one per line, each with its own summary sentence — the
 reading's slot name is not a key and is rejected).
 
@@ -175,7 +175,7 @@ never changes them.
 
 The concurrency cap has three layers, outside in: the graph's dependency edges (who blocks whom)
 decide which nodes **may** sit side by side; this line's `parallel` (the `Policy:` line of
-`pf cycle current`) decides how many nodes the line **holds** at once; `pf config get max_agents`
+`cycle current`) decides how many nodes the line **holds** at once; `config get max_agents`
 (see [`shared/pf/subagents.md`](shared/pf/subagents.md)) decides how many subagents this
 session has **in flight** at once. The third layer is the outermost: every node you hold may have
 its own children open at the same time, and together they may not cross it.
@@ -189,14 +189,14 @@ its own children open at the same time, and together they may not cross it.
 | The user typed `/pf-conduct <node id or keyword>` | the node in the argument; with none, locate it with `search`, and when several hit, lay them out for the user to pick | report the result to the user, run no close commands |
 | A pipeline dispatch (the call line carries `[pipeline]`) | the node id on the call line | the chain under "Close out" |
 
-**Then, which node to start from** — take one look with `pf cycle list`:
+**Then, which node to start from** — take one look with `cycle list`:
 
 | Input | Where it goes |
 |---|---|
 | `/pf-conduct status` | `cycle list` + `cycle current`, read only, no advance |
 | `/pf-conduct`, exactly one active cycle | carry on: `next --spawn --json` (a bare `next` follows this one active line) |
 | `/pf-conduct`, several active cycles | a bare `next` gets refused, and the error lists the candidate lines and points at `--cycle` — read the candidates out to the user, and whichever one they name is the one: `next --cycle <cycle id> --spawn --json` (it pins the node and lands the prompt, one way or the other; the host opens the next session as this run ends — see "The dispatch path") |
-| `/pf-conduct`, the lines are all there, just none `active` | `cycle status <id> active` puts it back in service, then carry on. A line not in service cannot be driven by naming it either (`next` answers `ask_user` and gives you that command as it stands), but the node it pins can still be closed — recorded, not dispatched; to redo a `shelved` node, first `pf dag revive <node_id>`. With several candidates, read them out and let the user name one — do not pick for him; that decision belongs in pf-route, settled together with the nodes, and coming straight from there the line should already be `active` — take the row above |
+| `/pf-conduct`, the lines are all there, just none `active` | `cycle status <id> active` puts it back in service, then carry on. A line not in service cannot be driven by naming it either (`next` answers `ask_user` and gives you that command as it stands), but the node it pins can still be closed — recorded, not dispatched; to redo a `shelved` node, first `dag revive <node_id>`. With several candidates, read them out and let the user name one — do not pick for him; that decision belongs in pf-route, settled together with the nodes, and coming straight from there the line should already be `active` — take the row above |
 | `/pf-conduct`, no cycle yet | take "Start-up" below |
 | The user just says what they want done, no cycle yet | take "Start-up", with `--title` set to that sentence |
 
@@ -204,8 +204,8 @@ its own children open at the same time, and together they may not cross it.
 the graph should be designed through pf-route first):
 
 ```pwsh
-pf cycle start <slug> --title "<the user's own words>" --tags coding,writing
-pf next --spawn --json
+cycle start <slug> --title "<the user's own words>" --tags coding,writing
+next --spawn --json
 ```
 
 With an active cycle already there, `cycle start` gets refused, and only `--force` lets it through
@@ -214,9 +214,10 @@ call without it, and you write it even when the graph has just one line. `--titl
 user's own words; it goes into the cycle's name and into no prompt.
 
 `next --spawn` pins what this line should open next (one node by default) and lands the material
-(each prompt and this round's run doc). The spawn step answers by door: through the agent-side tool
-the host opens the session then and there, and the answer carries `spawned` with `opened_node`; on
-the command line this process has no opener, so it answers one `spawn_error` line naming the panel.
+(each prompt and this round's run doc). The spawn step answers by whether this call can open a
+session: with an opener the host opens the session then and there, and the answer carries `spawned`
+with `opened_node`; without one this process has no opener, and it answers one `spawn_error` line
+naming the panel.
 Either way **your run ends here — do not wait on it here**: the next round is the host's to open
 (the panel's cell, or the relay firing on `turn/end`); when the host opens nothing, hand the user
 the prompt path and the line in it. Before stopping, tell the user how far you will push; in full
@@ -235,14 +236,12 @@ human writes that, see `docs/conduct-state.md` "the two ways in").
 
 First confirm the current workspace sits at the project root (the parent of `.pf/`); when it does
 not, tell the user to open a session in the right workspace. When the project has not been
-init-ed (`.pf/` is missing `.gitignore` and `.gitattributes`), run `pf init` once first — once
+init-ed (`.pf/` is missing `.gitignore` and `.gitattributes`), run `init` once first — once
 per project, and it settles whether this project is the commit or the local flavour; any other
 command meeting an uninit-ed `.pf/` refuses outright and hands you this command.
 
-The pipeline's words are one table with two doors: call the `pathfinder` tool — a `word`, its
-`args`, and `help` for that word's page — or run them on the `pf` command line, spelled the same
-way. Every `pf <…>` line in this sheet is a row of that table: use the tool when the session has
-it, and the two doors ask the same table.
+The pipeline's words are one table with one door: call the `pathfinder` tool — a `word`, its
+`args`, and `help` for that word's page. Every word line in this sheet is a row of that table.
 
 **0 | Sync**: first look at the `.pf/` flavour — if `git ls-files .pf` has output it is the commit
 flavour, and one `git pull --rebase` brings the other machine's graph, conclusions and commits
@@ -255,7 +254,7 @@ fork-mode close the cwd sits in the worktree, where that `.pf/` is either a stal
 there at all.
 
 A collision comes in two kinds: the few files under `.pf/` (graph / cycle / instructions / the
-note) are merged automatically by `pf`'s merge driver; when the driver reports a conflict, or a
+note) are merged automatically by the merge driver; when the driver reports a conflict, or a
 code file collides, stop and hand it to the user — do not merge by hand. When the collision is
 halfway through a rebase, first `git rebase --abort` to put the workspace back and then report
 (for the ledger commit's collision, `git -C .pf rebase --abort`). Being blocked by uncommitted
@@ -266,7 +265,7 @@ it still fails, stop and ask the user.
 passage does not go into a prompt.
 
 ```pwsh
-pf instruction list --project <absolute path to the project root>
+instruction list --project <absolute path to the project root>
 ```
 
 - `--project` takes **the absolute path to the project root**; leaving it out reads the current
@@ -284,12 +283,12 @@ pf instruction list --project <absolute path to the project root>
   archive an instruction, and only the user can put it back; a session does not touch that
   record.
 - **This line's own policies** (`when_shelved`, the two debt lines, `spawner`) are on
-  the `Policy:` line of `pf cycle current`; write them with
+  the `Policy:` line of `cycle current`; write them with
   `cycle policy <cycle> <key> <value>`, and cancel a numeric one with `off`.
 
 **2 | Read**, in one go before touching anything:
 
-1. `pf dag --help` to confirm the full set of commands
+1. `dag --help` to confirm the full set of commands
 2. `info <id> --verbose` for the node's detail and its direct dependencies, `context <id>` for the
    full up- and downstream
 3. `open <id>` for the `spec.md` path, and read it; a missing file means this node has no
@@ -300,9 +299,9 @@ pf instruction list --project <absolute path to the project root>
 5. read the files named under the spec's "References" and "Up- and downstream" sections (those are
    this node's real inputs)
 6. read the project's CLAUDE.md and the docs under docs/ that bear on this node
-7. read `pf config get test_tier`, `pf config get worktree_mode` and `pf config get max_agents`, and record
+7. read `config get test_tier`, `config get worktree_mode` and `config get max_agents`, and record
    them in `run.md`'s "Facts checked"; which nodes this line holds at once, and what `parallel`
-   is, are in the readings of `pf cycle current` (one `Node:` line per node, `parallel` on the
+   is, are in the readings of `cycle current` (one `Node:` line per node, `parallel` on the
    `Policy:` line)
 
 **3 | Clear the spec** — until this gate is fully cleared, this node does not open:
@@ -330,7 +329,7 @@ pf instruction list --project <absolute path to the project root>
   before work starts.
 
 A problem run into along the way that is not this node's to fix goes to a subagent to record. Where
-it is recorded, and how it is written, is the installed plugin's own business: run `pf doctor` to
+it is recorded, and how it is written, is the installed plugin's own business: run `doctor` to
 see which plugins this checkout has, and follow the skill that plugin's folder carries. Recording
 it is the whole of it; that is not this node's scope.
 
@@ -549,17 +548,17 @@ end (why the order is nailed down, see `docs/conduct-state.md` "how a session is
 out").
 
 Coming in through a pipeline dispatch, run these three in order. `<cycle>` is **the line that
-holds this node**: recognize it in the readings of `pf cycle current` by node id (one `Node:`
+holds this node**: recognize it in the readings of `cycle current` by node id (one `Node:`
 line per node); `<node>` is the id on the call line.
 
 ```pwsh
-pf handoff --form <cycle>   # what this line wants, and what the note looks like: fill it in as printed
-pf handoff <cycle> <node> completed -s "<one-line summary>" -o '<fill in from the line above>'
-pf next --after <node> --json
+handoff --form <cycle>   # what this line wants, and what the note looks like: fill it in as printed
+handoff <cycle> <node> completed -s "<one-line summary>" -o '<fill in from the line above>'
+next --after <node> --json
 ```
 
 The `--form` one only prints the shape and moves no state; the
-`pf handoff <cycle> <node> completed -o …` one **writes the note only** — it closes no node and
+`handoff <cycle> <node> completed -o …` one **writes the note only** — it closes no node and
 spawns no session; the `next --after` one **closes this node**, then settles the next one and
 writes its prompt to disk (the path is given by the command itself) — when a threshold is crossed
 it answers `insert_node` instead, which only puts nodes into the graph and has no prompt to write.
@@ -600,7 +599,7 @@ When `git push` is refused (another machine, or another line on this machine pus
 `git pull --rebase` and push again; when it stops on a conflict, hand it to the user. **Every
 commit that should be pushed** goes through successfully before the next step. If it is truly
 stuck, stop and report to the user, giving them the `prompt` path: once the push is fixed,
-`pf dispatch <cycle>` re-sends it — the node is already closed, and does not need closing again.
+`dispatch <cycle>` re-sends it — the node is already closed, and does not need closing again.
 
 Once the push succeeds, go by the `action` the `next --after` gave — it carries the commands to
 run and the words to say:
@@ -608,11 +607,11 @@ run and the words to say:
 - `dispatch`: **hand in the ticket and stop** — the handoff is on disk and the node is closed, and
   the host opens the next round itself (the panel's auto-relay, on by default); this session ends
   here, and no dispatch command is run. Only when the relay is switched off, or the next round
-  fails to appear, does a person finish that cell in the panel: the command-line
-  `pf dispatch <cycle>` has no opener in this process and only refuses, reading out the panel and
+  fails to appear, does a person finish that cell in the panel: a `dispatch <cycle>` with no
+  opener behind it only refuses, reading out the panel and
   the prompt path (see "The dispatch path")
 - `insert_node`: nodes have just been put into the graph, **nothing was pinned** and there is no
-  prompt — commit and push as usual, then run `pf next --cycle <cycle> --spawn --json`: the picking
+  prompt — commit and push as usual, then run `next --cycle <cycle> --spawn --json`: the picking
   rules pick them out and land each prompt, and the host opens their sessions as this run ends
   (with no panel and no relay, hand the user those prompt paths and their lines; this is where a
   debt node comes from, see "Debt nodes" below)
@@ -623,9 +622,9 @@ run and the words to say:
 
 `node_shelved` inside `attention` = this node did not deliver, is out of play waiting for a human
 (it is marked `shelved` on the graph and its downstream is parked): to redo it,
-`pf dag revive <node_id>` puts it back to `todo`.
+`dag revive <node_id>` puts it back to `todo`.
 
-**The `pf handoff` output needs no reading** (it is only a receipt); the `next --after` output is
+**The `handoff` output needs no reading** (it is only a receipt); the `next --after` output is
 walked by its `action`, reading the `note` / `close_with` / `reason` / `attention` / `prompt` /
 `spec` it carries. Beyond that, run no other command and hand-write no state file.
 
@@ -640,8 +639,8 @@ this round handed over and where the record landed, then wait for their answer �
 continue, run in order:
 
 ```pwsh
-pf cycle status <cycle> active
-pf next --spawn --json
+cycle status <cycle> active
+next --spawn --json
 ```
 
 Stopping turns the line `inactive` as always, so putting it back in service cannot be skipped;
@@ -656,10 +655,10 @@ have settled — a session change along the way does not matter, the record is o
 spec landed, plus `note` — **no prompt, and nothing was pinned**, so the line's holding does not
 move. **It can carry more than one node** (when more than one debt is over its line; see "the
 maintenance channel" in `docs/conduct-state.md`). Commit and push as usual, then run
-`pf next --cycle <cycle> --spawn --json`: the picking rules pick them out and land each prompt, and
+`next --cycle <cycle> --spawn --json`: the picking rules pick them out and land each prompt, and
 once the sessions the host opens take over, each walks like any other node. They go when they are
 done, and stopping to wait for someone's answer is not among their options. **Every node's spec
-carries a `method: ` line** (which method it names is the declaration's to write, and `pf doctor`
+carries a `method: ` line** (which method it names is the declaration's to write, and `doctor`
 prints it): when prepare reads it, run that skill
 yourself — batching, dispatching and settling are all in your hands, and the loop is still this
 flow's "Execute" section; the scope is set by the spec that inserted it, so do not widen it to
@@ -672,9 +671,9 @@ into `-s` in full, and nothing hangs waiting. That status makes the close mark t
 
 ## Parallel: worktree
 
-**worktree follows the mode, read from `pf config get worktree_mode`** (for the default and each
+**worktree follows the mode, read from `config get worktree_mode`** (for the default and each
 mode's design, see `docs/conduct-state.md` "the two ways in"; to change it,
-`pf config set worktree_mode <value>`):
+`config set worktree_mode <value>`):
 
 | mode | Behaviour |
 |---|---|
@@ -773,8 +772,8 @@ report the numbers.
 
 ## The note and its readings
 
-The note is that JSON string passed to `pf handoff -o`. **Its shape is whatever
-`pf handoff --form <cycle>` prints right now** — a reading this line does not look at is not
+The note is that JSON string passed to `handoff -o`. **Its shape is whatever
+`handoff --form <cycle>` prints right now** — a reading this line does not look at is not
 printed. The keys are `deliverable` / `acceptance` / `touched`, and a line with a reading set
 has one more, `reading`. Paths use forward slashes: that JSON string sits in PowerShell single
 quotes, so a backslash needs one more layer of escaping.
@@ -784,14 +783,14 @@ quotes, so a backslash needs one more layer of escaping.
   close.
 - `acceptance` carries 1~3 items, written at the level of "what would be missing had this node not
   run".
-- A reading is reported only when `pf handoff --form` prints its slot, and it carries what that
+- A reading is reported only when `handoff --form` prints its slot, and it carries what that
   slot's own question asks for (the suite's wall clock: this run's measured seconds, taken with the
   set of commands the project docs name). **A reading you did not measure has its key deleted whole**
   — a missing number reads as "not known this run", and a 0 reads as "already measured at zero",
   which makes a real debt look paid off.
 - A reading whose declaration draws on a source other than the ticket is computed by whatever owns
   that source, so it never appears on the form and you never fill it in; which plugins are
-  installed, and what each one reads, is what `pf doctor` lists.
+  installed, and what each one reads, is what `doctor` lists.
 
 ## The dispatch path
 
@@ -802,12 +801,12 @@ prompt is not on disk yet) and writes the `started` claim only once a session is
 that claim on disk, this cell is never dispatched a second time. For who calls it, and where to look
 when it breaks, see `docs/conduct-dsh-dispatch.md`.
 
-**The `pf` command's own process has no seam for opening a session**: `pf dispatch <cycle>` reads
+**A process with no opener has no seam for opening a session**: `dispatch <cycle>` reads
 the `started` claim and the prompt on disk, then refuses outright — exit code 2, not one byte
-written, naming the panel (寻路中心) and the path of every prompt; `pf next --spawn` prints the plan
+written, naming the panel (寻路中心) and the path of every prompt; `next --spawn` prints the plan
 and lands the material as usual, and its spawn step answers `spawn_error` only, claiming no node at
 all. A rehearsal runs under `DSH_CONDUCT_SPAWN_DRY_RUN=1`: the call walks the whole way and the claim
-lands too, so take it away with `pf cycle retry <cycle> <node> --drop` before dispatching for real.
+lands too, so take it away with `cycle retry <cycle> <node> --drop` before dispatching for real.
 The tool blocks a double dispatch itself, so on seeing a refusal first check whether that node
 already has a session running — do not force your way in.
 
@@ -819,7 +818,7 @@ reading (`docs/conduct-state.md` sits under this skill's `docs/`).
 - The contract and the design: `docs/conduct-state.md` — the full set of `next`'s actions, the
   close's two ways in and the invariants are all in it (`holding` is a set of nodes, `parallel`
   is this line's cap)
-- Which plugins are installed, and each one's tools and conventions: `pf doctor` lists what is
+- Which plugins are installed, and each one's tools and conventions: `doctor` lists what is
   installed, and the skills each declaration ships state their own tools and conventions
 - Method skills: `~/.dsh/skills/<name>/SKILL.md` — named by the spec's `method: ` line; this is
   the only place a name turns into a path (a deployment that pins `DSH_HOME` keeps that root under
