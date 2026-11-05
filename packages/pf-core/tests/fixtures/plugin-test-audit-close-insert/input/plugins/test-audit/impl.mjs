@@ -302,7 +302,8 @@ function spec(hit, specPath) {
     '\n' +
     '## How to do it\n' +
     '\n' +
-    `- \`method: ${hit.method}\` (how to run it: \`~/.agents/skills/${hit.method}/SKILL.md\`; ` +
+    `- \`method: ${hit.method}\` (how to run it: \`<dshHome>/skills/${hit.method}/SKILL.md\`, the ` +
+    `skill root this tree places into, \`~/.dsh/skills\` unless the deployment pins \`DSH_HOME\`; ` +
     'that skill declares who runs it, and this spec only points at it)\n' +
     '\n' +
     '## Completion rule (mechanically judgeable)\n' +

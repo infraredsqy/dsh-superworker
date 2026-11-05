@@ -95,7 +95,7 @@ under "Autonomous decisions"; **the downgrade in the other direction is not your
 
 ### Method
 
-When the spec carries a `method: <skill name>` line, read `~/.agents/skills/<name>/SKILL.md` (you
+When the spec carries a `method: <skill name>` line, read `~/.dsh/skills/<name>/SKILL.md` (you
 expand `~` yourself; when it is going to a subagent, write the absolute path) — how this node
 runs this run follows that skill.
 
@@ -286,7 +286,7 @@ pf instruction list --project <absolute path to the project root>
 3. `open <id>` for the `spec.md` path, and read it; a missing file means this node has no
    requirements written yet — stop and ask the user to write the spec through pf-route, since
    filling in requirements is not this flow's job
-4. a `method: <skill name>` line in the spec → read `~/.agents/skills/<name>/SKILL.md`, and the
+4. a `method: <skill name>` line in the spec → read `~/.dsh/skills/<name>/SKILL.md`, and the
    "Method" section settles who runs this node
 5. read the files named under the spec's "References" and "Up- and downstream" sections (those are
    this node's real inputs)
@@ -822,13 +822,13 @@ checkout root prints it), not under the current project's `docs/`.
   is this line's cap)
 - Which plugins are installed, and each one's tools and conventions: `pf doctor` lists what is
   installed, and the skills each declaration ships state their own tools and conventions
-- Method skills: `~/.agents/skills/<name>/SKILL.md` — named by the spec's `method: ` line; this is
+- Method skills: `~/.dsh/skills/<name>/SKILL.md` — named by the spec's `method: ` line; this is
   the only place a name turns into a path
 - Dispatch and authentication: `docs/conduct-dsh-dispatch.md`
 - The filter semantics for node tags: `docs/conduct-node-tags.md`
 - Role cards: `<this skill's directory>/subagent-prompts/` (execute / review / fix / doc-sync)
 - Write paths out as full absolute paths: a subagent gets no `~` expansion and has none of your
-  current `./`. Get this skill's directory once (`cd ~/.agents/skills/pf-conduct/ && pwd`)
+  current `./`. Get this skill's directory once (`cd ~/.dsh/skills/pf-conduct/ && pwd`)
 
 ## Anti-patterns
 
