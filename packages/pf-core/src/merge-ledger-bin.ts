@@ -17,8 +17,8 @@
  *   off writes still queued in stdout / stderr (git hands the driver pipes, and a verdict lost to a
  *   cut pipe is a conflict the human never sees). The shell sets `process.exitCode` instead and
  *   falls off the end: the event loop drains, the queued writes reach their pipes whole, and the
- *   process leaves with the same exit code it always carried (0 / 1 / 2, the table in
- *   docs/merge.md).
+ *   process leaves with the same exit code it always carried (0 / 1 / 2: merged, needs a human,
+ *   usage or read error).
  *
  * The product built from this file is the package's single executable entry (see `package.json`);
  * the build banner puts the node shebang line on its first line, which is the shape npm's shims

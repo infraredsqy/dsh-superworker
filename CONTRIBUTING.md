@@ -16,8 +16,6 @@ lands by review, and an answer may take a while.
   to hold in a test; the readings that need a real `.pf/` are walked by hand on the list in
   [docs/publish.md](docs/publish.md).
 
-The README's Development section runs the suite and the style check.
-
 ## Commits
 
 `<type>: <description>` -- English, present tense, lowercase, no period. The types in use: `feat`,
@@ -25,5 +23,5 @@ The README's Development section runs the suite and the style check.
 
 ## The contract docs
 
-`docs/` carries the rules this repo runs under, and it is Chinese for now; the README pair is
-English and Chinese.
+`docs/` carries the rules this repo runs under, and it is Chinese; the README pair is English and
+Chinese.

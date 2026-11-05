@@ -53,7 +53,7 @@ usageError
 `answer(argv, io)` 是词面（words layer）的唯一应答口：一行命令进来，交回
 `{ code, stdout, stderr }`——两个流已是命令面会写出的字节（非空、以换行收尾）。`io` 是本次调用的
 接缝（`WordsIO { root; executor?; git?; homeDir?; pluginsDir?; openerAvailable? }`）：`root`
-替代「进程当前目录」这个隐含依赖（28/44 个词不接受 `--project`，它们读的就是它），`executor` /
+替代「进程当前目录」这个隐含依赖（不接受 `--project` 的词读的就是它），`executor` /
 `git` 注入，`openerAvailable` 说出本调用能否真开会话（`next` 的开场开关与 `dispatch` 据此照实回
 答，不认领节点）。本进程自己的三个词（checkout 的 doctor、version、合并驱动的进程交接）归命令面
 的适配器答，词面不路由。`describe()` 交出词表的静态索引数据（`WordsIndex`：形状说明、三个
@@ -468,7 +468,7 @@ id，写口认的是节点已有的那个目录。
 
 ## 运行时开关
 
-六个环境变量，读在**每次调用**上，不在 import 时缓存。显式选项永远压过它，它压过出厂缺省；一个都
+环境变量，读在**每次调用**上，不在 import 时缓存。显式选项永远压过它，它压过出厂缺省；一个都
 没设时，行为与没有这些开关时一字不差。
 
 | 开关 | 读在哪 | 语义 |

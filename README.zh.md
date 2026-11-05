@@ -21,7 +21,7 @@
 
 ## 安装
 
-前提：装了 `dsh`，手里有一个装得进插件的 profile；要看的工作区里有一份 `.pf/` 管线记录。面板走本包自带的命令入口，PATH 上不需要有 `pf`；`pf` 在 PATH 上只管你自己手敲命令。
+前提：装了 `dsh`，手里有一个装得进插件的 profile；要看的工作区里有一份 `.pf/` 管线记录。面板的写入由宿主半身在原地作答（走引擎自己的词面），PATH 上不需要有 `pf`；`pf` 在 PATH 上只管你自己手敲命令。
 面板按「当前选中的会话」定工作区——没选中会话时它自己会说明。
 
 从本仓的 [Releases](https://github.com/infraredsqy/dsh-pathfinder/releases) 下载那个 `.tgz`，把 DSH
@@ -46,15 +46,13 @@ dsh plugin --profile <名字> add dsh-pathfinder               # 同一份产物
 
 ```sh
 pnpm install --frozen-lockfile
-npm test                  # 单测：先把 lib/client.js 与引擎包构建出来，再跑两套测试
+npm test                  # 单测：先把两份产物构建出来，再跑两套测试
 node tools/css-check.mjs  # 样式层的规矩
 npm pack                  # 打出分发件
 ```
 
-`npm test` 管到五块：模型层、宿主半身、构建出来的浏览器半身，引擎包（`packages/pf-core/`）自己那一套，
-还有 `bin/` 里那条 `pf` 命令——浏览器半身那块把 `lib/client.js` 挂到一份内存里的记录上、逐格走一遍，
-控制台里出现一条 error 就算失败。它管不到的那些（真实例里的读数、面板的文案、布局）在
-[docs/publish.md](docs/publish.md) 有一张手动单子；`tools/testbed/` 能起一个隔离的 DSH 实例来走它。
+`npm test` 先把两份产物构建出来，再跑两套测试（本插件与引擎包各一套）。每个文件锁什么、什么只能手走，
+在 [tests/AGENTS.md](tests/AGENTS.md)；手动单子与 `tools/testbed/` 在 [docs/publish.md](docs/publish.md)。
 
 仓库的路牌与规矩在 [AGENTS.md](AGENTS.md)。改界面前先读
 [docs/design-principles.md](docs/design-principles.md)，发一版前看

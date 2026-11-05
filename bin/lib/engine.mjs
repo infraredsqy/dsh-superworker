@@ -3,7 +3,7 @@
  * this process owns (git and the executor), and the words for a refusal.
  *
  * The engine is reached through its package export only: `open` from `pf-core`, whose product is the
- * frozen interface (`packages/pf-core/docs/api.md`). Nothing here imports the engine's source, and a
+ * frozen interface. Nothing here imports the engine's source, and a
  * runtime installed outside the repository reads that same export out of the copy shipped beside
  * `bin/` (`packages/pf-core/dist/`) rather than out of a checkout it does not have.
  */

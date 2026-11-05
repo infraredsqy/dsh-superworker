@@ -3,7 +3,7 @@
  * the handle.
  *
  * These three literals live in src/client/nodes.ts — pure functions, loadable in Node; how a card
- * and a row pair the name with the handle is a rendering concern, walked by hand (docs/publish.md),
+ * and a row pair the name with the handle is a rendering concern, walked by hand,
  * while this file locks the criteria themselves: the long/short bounds of truncation, missing vs
  * empty-string titles, and both hover outcomes.
  *

@@ -7,7 +7,7 @@
 - `open.ts` `index.ts` `ledger.ts` — 句柄的装配、四个命名空间与包的出口
 - `dag.ts` `graph.ts` `cycles.ts` `instruct.ts` — 记录动作面：图、线、指令
 - `planner.ts` `conductor.ts` `prepare.ts` — 推线：只读规划、派发准备、收尾结算，以及交接单形状与插件命令词的路由
-- `config.ts` `sessions.ts` `env.ts` `clock.ts` `tempclean.ts` — 设置解析链、会话档、六个运行期开关、时刻、临时清理
+- `config.ts` `sessions.ts` `env.ts` `clock.ts` `tempclean.ts` — 设置解析链、会话档、运行期开关、时刻、临时清理
 - `paths.ts` `jsonio.ts` `ledgerlock.ts` `errors.ts` `fs-helpers.ts` — 记录 IO 底座：落点、读写、锁、错误码
 - `initledger.ts` `git.ts` `executor.ts` — 立起 `.pf` 并接上 git、git 接缝、执行者接缝
 - `types.ts` `node-runtime.d.ts` — 冻结的记录类型与 Node 内置面声明

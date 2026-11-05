@@ -15,8 +15,8 @@ what you did in the panel. One report per problem is enough.
 
 ## In scope
 
-- `src/host/` — the host half reads the workspace's `.pf/` and serves it behind a gateway; the write
-  side runs `pf` with an argv built from what the panel sent
+- `src/host/` — the host half reads the workspace's `.pf/` and serves it behind a gateway; the panel's
+  writes are answered there through the engine's words layer, with no command spawned
 - `src/client/` — the browser half, and what it draws from that data
 - `lib/host/index.js`, `lib/client.js` — the artifacts the package ships, built from `src/`
 - `cordis.patch.yml` — the line this package mounts into a profile

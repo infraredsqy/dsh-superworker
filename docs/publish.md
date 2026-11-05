@@ -24,7 +24,7 @@ npm run bundle:client         # lib/client.js（浏览器半身）
 以及 `packages/pf-core/plugins/**/*`——插件目录整个进包，随插件装与卸的那几套技能
 就在里面（一个技能指向同目录的兄弟文件，半个文件夹装出去就是引用的文件不在），技能文本与引擎因此落在
 同一份发布件里。于是 `npm pack` 出的那一个 `.tgz` 就是分发件本身（`lib/client-body.js` 是浏览器
-那一步的中间件，构建脚本用完当场删掉，不进包）。三个口子：
+那一步的中间件，构建脚本用完当场删掉，不进包）。三个运行时口子：
 
 | 口子 | 落点 | 谁用 |
 |---|---|---|
@@ -44,7 +44,7 @@ npm run bundle:client         # lib/client.js（浏览器半身）
 
 **这两行都不能摘**：外壳照启动名册先送达 `connection` 那条客户端插件，再应用本包的面板，浏览器半身
 那条取数口子才接得上。摘掉之后面板应用得早，中央栏那一格正文里没有记录的数，摆的是「该部署未连接
-寻路记录服务，无法读取记录。」（宿主那一侧的端点 `/api/pathfinder/read` 照旧是好的）。
+寻路记录服务，无法读取记录。」（宿主那一侧的端点 `pathfinder/read` 照旧是好的）。
 `locale` 那条管的是语言：不声明它，面板照样画得出来（语言端口会退回包里那份中文对照表），但跟随 DSH
 设置切换语言这一条就接不上了。
 
@@ -109,18 +109,16 @@ git push origin <分支> && git push origin v<version>
 # 5. 盯这次 run，别只看 push 成功
 gh run list --workflow publish.yml
 gh run watch
-# 6. 核验 registry 上那个号，不是 exit code
+# 6. 核 registry 上那个号，不是 exit code
 npm view dsh-pathfinder version --registry=https://registry.npmjs.org
-#    再看两处：dist-tags 里的 latest 指着真版本；dist.shasum 等于本地 `npm pack` 那份的 shasum
-#    —— 两处都对，才算发出去的是同一份产物
 ```
 
-CI 会自己跑 `npm test` 与 `node tools/css-check.mjs`；`prepack` 也在 CI 上现跑一遍引擎构建 + types + bundle +
-bundle:client，所以装出去的就是这份预构建产物。`tools/testbed/` 那条要一个真实 DSH 实例，留在本机手动跑。
+`prepack` 也在 CI 上现跑一遍引擎构建 + types + bundle + bundle:client，所以装出去的就是这份预构建产物。
+`tools/testbed/` 那条要一个真实 DSH 实例，留在本机手动跑。
 
 新包名第一次发布会先落一个**公开的占位版本** `0.0.0-stage`：它一直留在 `versions` 列表里，真版本随后就公开；
 它只是这个新名字落地时的一枚印记，`npm stage list` 列不到它属正常。`publishConfig.tag` 在的话 `latest` 会自己
-指到真版本；发完照第 6 步核一遍。
+指到真版本。
 
 ### 发完要核（每一次）
 
@@ -129,10 +127,10 @@ bundle:client，所以装出去的就是这份预构建产物。`tools/testbed/`
 1. **workflow 真被触发了**：`gh run list --workflow publish.yml` 里有一条对得上这个标签的 run，再用
    `gh run watch` 看它跑完。
 2. **runner 上的两道闸过了**：CI 里的 `npm test` 与 `node tools/css-check.mjs` 都绿。本地绿不等于那边绿——
-   runner 是 linux、node 26、pnpm 11.22.0 这套组合。
+   runner 是 linux，node 与 pnpm 的版本照 `.github/workflows/publish.yml` 里那套。
 3. **OIDC 认得上**：这是可信发布配置**唯一的验证时机**（它只有跟着一次真发布才算验过）。报 `ENEEDAUTH` 就是
    那三个字段与实情对不上；配置建好后 2 天不跑一次就过期，所以"建配置"与"发那一次"要挨着做。
-4. **registry 上真换了**：版本号、`dist-tags` 的 `latest`、`dist.shasum` 三项照「日常发版」第 6 步核一遍。
+4. **registry 上真换了**：版本号、`dist-tags` 的 `latest`、`dist.shasum` 三项都对，才算发出去的是同一份产物。
 5. **provenance 在**：OIDC 发出去的那一版会在包页面带上 attestation（public 仓 + public 包才会生成）；看不到
    它，说明这一趟没走 OIDC。
 6. **本机不留长期秘密**：首次手动发布留下的那条登录 token 与 `_authToken` 行，等 CI 这条路跑通之后按需撤掉。
@@ -222,7 +220,7 @@ npm install --global --omit=peer --no-audit --no-fund <那份 .tgz 的绝对路�
 
 核一遍，都在仓外跑：`pf version`，然后进一个有记录的项目根跑 `pf doctor`。`doctor` 的 `plugins` 那一格读的是
 **这份运行时自带的插件**（`<装机目录>/packages/pf-core/plugins`，与引擎的产物并排）；项目根下的 `plugins/`
-留给引擎自己的缺省，这条命令不经过它。于是没有 `plugins/` 的项目照样读到 `3 installed`，插件词（`pf issue …`）
+留给引擎自己的缺省，这条命令不经过它。于是没有 `plugins/` 的项目也读得到自带的插件，插件词（`pf issue …`）
 与两道收尾守卫（`issue_pool_weight_limit` / `test_seconds_limit`）在任何项目里都答得上。优先级一行：用户的
 `PF_PLUGINS_DIR` 压过这份自带的插件（指哪儿扫哪儿），这也是把扫描指回项目文件夹的唯一出口。引擎里那条
 `<项目根>/plugins` 的缺省因此不经这条命令生效：这条命令一律读自带的插件，项目根下那份 `plugins/` 留给引擎自己的缺省。
@@ -235,7 +233,7 @@ npm uninstall --global dsh-pathfinder
 
 卸掉之后命令回落到 PATH 上更早的那一份；再装上同一个 `.tgz` 就回到新的这份。技能那一半也由发布件供给：`issue` 与 `test-audit` 两个插件带的四条
 （`pf-issue-scan` / `pf-issue-repair` / `pf-issue-discuss` / `pf-test-audit`），加上 `pipeline` 插件带的三条核心技能
-（`pf-conduct` / `pf-route` / `pf-instruct`，每份把它正文指向的 `shared/pf/` 单页带在自己目录里），一共七条。
+（`pf-conduct` / `pf-route` / `pf-instruct`，每份把它正文指向的 `shared/pf/` 单页带在自己目录里）。
 都落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的同哈希，根序 rank 400）。派发的第一行
 `/pf-conduct <节点 id>` 因此在干净机器上也读得到；DSH 自己的 `~\.agents\skills` 是 rank 500 的那一根，
 同一个名字在它面前读的是 `$DSH_HOME/skills` 这一份。
@@ -257,9 +255,8 @@ npm uninstall --global dsh-pathfinder
 
 自动的那三样，各跑一次：
 
-- `npm test` —— 模型层、宿主半身、构建出来的浏览器半身，引擎包（`packages/pf-core/`）自己那一套，
-  以及 `bin/` 里那条 `pf` 命令；浏览器半身那块把 `lib/client.js` 挂到一份**四份来源都有内容**的内存
-  记录上、逐格画一遍，控制台里出现一条 error 就算失败。面板**说什么**故意不在这里量。
+- `npm test` —— 本插件与引擎包两套单测都过；浏览器半身把那几态挂到内存记录上逐格画一遍，控制台里出现
+  一条 error 就算失败。面板**说什么**故意不在这里量。
 - `node tools/css-check.mjs` —— 样式层的规矩。
 - `tools/testbed/testbed.ps1 up|check|down` —— 真实例：这一行装得上、启动清单里列了它、宿主半身答得上话。
 

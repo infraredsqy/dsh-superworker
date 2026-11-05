@@ -5,7 +5,7 @@
  * no `pf` command and no fixture of its own: the panel reads through a port. What the panel *says*
  * about a record is deliberately not measured here — the copy and the layout move far more often
  * than the three things below, and a test pinning them costs an edit per change; the readings that
- * do need a record are walked by hand (docs/publish.md).
+ * do need a record are walked by hand.
  *
  * Needs `lib/client.js`; `npm test` builds it first. Run `node --test tests/` without that build and
  * this file skips itself, saying so.
