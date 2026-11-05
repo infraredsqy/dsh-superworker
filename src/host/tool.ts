@@ -60,22 +60,44 @@ export interface PathfinderToolDefinition {
   execute(args: PathfinderToolArgs, exec: PathfinderToolExecution): Promise<unknown>
 }
 
-/** The description the tool registers with, generated from the engine's own index data. */
+/**
+ * The description the tool registers with, generated from the engine's own index data.
+ *
+ * This is layer 0: the one text an agent has in context on every turn, so it has to teach the
+ * recursion in the order the caller needs it — the index, a word's own page, the page of an
+ * exact call (a word plus its args), and running that call. One word is named, as the example;
+ * the index itself is not repeated here. The 400-byte lock (`tests/host-tool-answer.test.mjs`)
+ * is the ceiling on how much teaching fits.
+ */
 export function toolDescriptionOf(): string {
   const index = describe()
   const what = index.shape.split('\n')[0] ?? 'pf — the pipeline words'
   return (
-    `${what}. The words answer from this session's workspace: ` +
-    'call with help:true for the full word index; with help:true plus a word for that ' +
-    "word's own page; or with a word and its args to run it."
+    `${what}. The words answer from this session's workspace. ` +
+    'help:true gives the word index; help:true plus a word gives that word\'s own page; ' +
+    'help:true plus a word and its args gives that exact call\'s page (word:"dag", args:["list"] ' +
+    'asks dag list --help). A word with args and no help runs it.'
   )
 }
 
-/** The argv one tool call spells, in the words layer's own vocabulary. */
+/**
+ * The argv one tool call spells, in the words layer's own vocabulary.
+ *
+ * `help: true` composes with `args` instead of throwing them away: it asks the page of the exact
+ * call the caller spelled, so `word: "issue", args: ["status"]` asks `issue status --help`, not
+ * the group page. The trailing `--help` is the cell the words layer reads as the help request —
+ * a `--help` anywhere else in the line is not one (a group word drops a mid-line one while it
+ * looks for its verb) — so the appended flag is what makes the composed call a page, and a
+ * caller who already ended the line with `--help` keeps their own spelling rather than getting
+ * a second one.
+ */
 export function argvOf(args: PathfinderToolArgs): string[] {
   const word = typeof args.word === 'string' && args.word !== '' ? args.word : undefined
   const rest = Array.isArray(args.args) ? args.args.filter((item): item is string => typeof item === 'string') : []
-  if (args.help === true) return word === undefined ? ['help'] : [word, '--help']
+  if (args.help === true) {
+    if (word === undefined) return ['help']
+    return rest[rest.length - 1] === '--help' ? [word, ...rest] : [word, ...rest, '--help']
+  }
   if (word === undefined) return ['help']
   return [word, ...rest]
 }
@@ -102,7 +124,7 @@ export function definePathfinderTool(host: PathfinderToolHost): PathfinderToolDe
       properties: {
         word: { type: 'string', description: 'the word to answer or run ("help" answers the index)' },
         args: { type: 'array', items: { type: 'string' }, description: "the rest of the line for a word that takes one" },
-        help: { type: 'boolean', description: 'true: answer the index (no word) or that word\'s own page (with a word) instead of running it' },
+        help: { type: 'boolean', description: 'true: answer the index (no word), that word\'s own page (word only), or that exact call\'s page (word plus args), instead of running it' },
       },
       additionalProperties: false,
     },

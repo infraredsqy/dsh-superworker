@@ -165,10 +165,21 @@ test('工具的形状：名字、描述字节数、参数与输出都是声明�
   assert.deepEqual(Object.keys(tool.output.schema.properties ?? {}), ['code', 'stdout', 'stderr'])
 })
 
-test('工具的三层帮助：argv 由 word / args / help 拼出，词面自己应答', async () => {
+test('工具的四层帮助：argv 由 word / args / help 拼出，help 与 args 相加，词面自己应答', async () => {
+  // 空手问，答的是整张索引；help 与没有词落在同一个词上。
   assert.deepEqual(argvOf({}), ['help'])
   assert.deepEqual(argvOf({ help: true }), ['help'])
+  // 光有词、不要帮助：就是运行它。
+  assert.deepEqual(argvOf({ word: 'next' }), ['next'])
+  // 词 + help：这个词自己的那一页。
   assert.deepEqual(argvOf({ help: true, word: 'next' }), ['next', '--help'])
+  // 词 + args + help：这一次调用的那一页 —— args 被带上，不是被丢掉。
+  assert.deepEqual(argvOf({ help: true, word: 'dag', args: ['list'] }), ['dag', 'list', '--help'])
+  // args 已经以 --help 收尾：沿用调用者的拼法，不追加第二个。
+  assert.deepEqual(argvOf({ help: true, word: 'issue', args: ['status', '--help'] }), ['issue', 'status', '--help'])
+  // --help 不在末尾：原位不动，末尾再补一个 —— 词层只把末尾那个读作求助，组词找动词时中间那个不算。
+  assert.deepEqual(argvOf({ help: true, word: 'dag', args: ['--help', 'list'] }), ['dag', '--help', 'list', '--help'])
+  // 没有 help：词 + args 就是运行这一次调用。
   assert.deepEqual(argvOf({ word: 'dag', args: ['list'] }), ['dag', 'list'])
 
   const { ctx } = fakeContext()

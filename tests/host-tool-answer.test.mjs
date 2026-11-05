@@ -1,6 +1,7 @@
 /* The tool's answering contracts (L2): the four byte locks, help in a project with no
- * records, `dag list` byte parity with the command line, the long-answer pointer, and
- * the invariant that every write the panel can do has a word in the table.
+ * records, `dag list` byte parity with the command line, the composed help page's byte
+ * parity with the engine's own answer (help does not drop args), the long-answer pointer,
+ * and the invariant that every write the panel can do has a word in the table.
  *
  *   node --test tests/
  */
@@ -11,8 +12,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { open } from 'pf-core'
+import { open, answer } from 'pf-core'
 import { apply } from '../src/host/index.ts'
+import { shippedPluginsDir } from '../src/host/skills.ts'
 import { PATHFINDER_TOOL_NAME, toolDescriptionOf, wakeAgent } from '../src/host/tool.ts'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
@@ -152,6 +154,40 @@ test('有 .pf 的项目里，工具的 dag list 与命令行逐字节同形', as
     const answer = await tool.execute({ word: 'dag', args: ['list'] }, { agent: { id: 'agent-tool' } })
     assert.equal(answer.code, 0, answer.stderr)
     assert.equal(answer.stdout, cli.stdout, '工具的应答与命令行印出的字节一致')
+  } finally {
+    stage.done()
+  }
+})
+
+test('help 叠上 args：工具的应答与引擎按同一 argv 的应答逐字节同形，不是组页', async () => {
+  const stage = await projectWith(['alpha node', 'beta node', 'gamma node'])
+  try {
+    const tool = toolOver(stage.root)
+    // The engine reads the same plugin folder the tool registers with: one words layer, one answer.
+    const io = { root: stage.root, pluginsDir: shippedPluginsDir() }
+    for (const [call, argv] of [
+      [{ help: true, word: 'dag', args: ['list'] }, ['dag', 'list', '--help']],
+      [{ help: true, word: 'issue', args: ['status'] }, ['issue', 'status', '--help']],
+    ]) {
+      const composed = await tool.execute(call, { agent: { id: 'agent-tool' } })
+      const engine = await answer(argv, io)
+      assert.deepEqual(
+        { code: composed.code, stdout: composed.stdout, stderr: composed.stderr },
+        { code: engine.code, stdout: engine.stdout, stderr: engine.stderr },
+        `${JSON.stringify(argv)}: 工具的应答就是引擎按同一行的应答，逐字节一致`,
+      )
+    }
+
+    // The composed line is the call's own page, not the group page the old spelling asked.
+    // `dag list --help` is a real page: the lock below is not vacuous.
+    const group = await answer(['dag', '--help'], io)
+    const composed = await tool.execute({ help: true, word: 'dag', args: ['list'] }, { agent: { id: 'agent-tool' } })
+    assert.match(composed.stdout, /usage: pf dag list/u)
+    assert.notEqual(composed.stdout, group.stdout, 'help + args 问的不是组页')
+
+    // `issue` is a plugin word: what its sub-verb `--help` answers is that plugin's command
+    // surface, not this layer's (today that plugin refuses the flag). The lock is the parity —
+    // whatever the engine answers for that line, the tool answers the same bytes.
   } finally {
     stage.done()
   }
