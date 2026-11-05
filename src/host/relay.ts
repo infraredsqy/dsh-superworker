@@ -105,6 +105,11 @@ function relayOn(): boolean {
  * — the engine then writes no claim and hands the reason back as the
  * dispatch's own refusal detail. The words layer's tool opens sessions through
  * this same seam, which is why it is exported.
+ *
+ * A request that carries `dryRun` is a drill: the call is answered with a
+ * receipt that says so and nothing is opened here — no agent, no note. The
+ * receipt carries no session id, which is also what keeps the relay's
+ * tracking table from treating a rehearsal as one of its own live sessions.
  */
 export function executorOf(ctx: Context, sessionId: SessionId, workspaceRoot: string): Executor {
   return {
@@ -114,6 +119,7 @@ export function executorOf(ctx: Context, sessionId: SessionId, workspaceRoot: st
       if (cycle.length === 0 || node.length === 0) {
         throw new Error('the dispatch request named no cell (cycle and node are both required here)')
       }
+      if (request.dryRun === true) return { host: 'drill' }
       const outcome = await openNodeSession(ctx, sessionId, workspaceRoot, cycle, node)
       if (!outcome.ok) throw new Error(outcome.detail ?? outcome.code)
       return { sessionId: outcome.session, host: 'dsh' }

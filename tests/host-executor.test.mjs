@@ -8,6 +8,9 @@
  * missing agent registry is refused with the piece named, and two opens aimed at one workspace
  * create their sessions one after another.
  *
+ * The dispatch seam is judged here too: a request carrying `dryRun` answers a drill receipt and
+ * opens nothing at all, while the same request without it still opens one session.
+ *
  * The note lands on real disk (a temporary directory per case), because the write is the engine's
  * own fs action; the prompt is read through the port stand-in the other host tests share.
  *
@@ -19,6 +22,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openNodeSession } from '../src/host/executor.ts'
+import { executorOf } from '../src/host/relay.ts'
 import { fakeWorkspaceFiles } from './helpers/workspace-files-port.mjs'
 
 /* Opening a session also reads the placement record under the DSH home to confirm the skills the
@@ -462,6 +466,37 @@ test('部署里没有默认模型选择：agentOptions 不带，由循环自己�
   rigging.agents.created[0].whenIdle.resolve()
   await pending
   assert.equal(rigging.agents.created[0].options.agentOptions, undefined)
+})
+
+/* ---- the dispatch seam's drill switch ---- */
+
+test('派发接缝的演练档：请求带 dryRun 时只回演练回执，登记里一个代理都没建', async () => {
+  const rigging = rig()
+  const executor = executorOf(rigging.ctx, 's1', rigging.root)
+  const receipt = await executor.dispatch({
+    cycle: rigging.cycle,
+    node: rigging.node,
+    prompt: PROMPT,
+    dryRun: true,
+  })
+  assert.deepEqual(receipt, { host: 'drill' }, '演练回执只说这是一次演练，不带会话身份')
+  assert.equal(rigging.agents.created.length, 0, '演练扫不到任何开会话的调用')
+  assert.ok(
+    !existsSync(join(rigging.root, '.pf', 'meta', 'sessions', `${rigging.node}.json`)),
+    '演练也不写会话档',
+  )
+})
+
+test('派发接缝的演练档：请求不带 dryRun 时照常开会话，回执带着会话身份', async () => {
+  const rigging = rig()
+  const executor = executorOf(rigging.ctx, 's1', rigging.root)
+  const pending = executor.dispatch({ cycle: rigging.cycle, node: rigging.node, prompt: PROMPT })
+  await flush()
+  assert.equal(rigging.agents.created.length, 1, '普通派发照常进 create')
+  rigging.agents.created[0].whenIdle.resolve()
+  const receipt = await pending
+  assert.equal(receipt.host, 'dsh')
+  assert.equal(receipt.sessionId, rigging.agents.created[0].options.sessionId)
 })
 
 /* ---- the session-side diagnostic of the placed skills (K4) ---- */

@@ -1,18 +1,20 @@
 /* The tool's answering contracts (L2): the four byte locks, help in a project with no
  * records, `dag list` byte parity with the command line, the composed help page's byte
  * parity with the engine's own answer (help does not drop args), the long-answer pointer,
- * and the invariant that every write the panel can do has a word in the table.
+ * the invariant that every write the panel can do has a word in the table, and a whole
+ * dispatch carried by the words layer alone — the call the tool itself makes, with a
+ * simulated opener and no command line behind it.
  *
  *   node --test tests/
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { open, answer } from 'pf-core'
+import { answer, open, SimulatedExecutor } from 'pf-core'
 import { apply } from '../src/host/index.ts'
 import { shippedPluginsDir } from '../src/host/skills.ts'
 import { PATHFINDER_TOOL_NAME, toolDescriptionOf, wakeAgent } from '../src/host/tool.ts'
@@ -20,6 +22,7 @@ import { PATHFINDER_TOOL_NAME, toolDescriptionOf, wakeAgent } from '../src/host/
 const repo = fileURLToPath(new URL('..', import.meta.url))
 const entry = join(repo, 'bin', 'pf.mjs')
 const shippedPlugins = join(repo, 'packages', 'pf-core', 'plugins')
+const fixture = join(repo, 'tests', 'fixtures', 'pf-cli')
 
 /** A stand-in host context whose sessions resolve nowhere, so the tool reads the sandbox root. */
 function fakeContext(workspaceRoot) {
@@ -59,6 +62,31 @@ async function projectWith(titles) {
     root,
     done() {
       rmSync(root, { recursive: true, force: true })
+    },
+  }
+}
+
+/**
+ * A temp copy of the drill project with its `c1` line left clean and empty: the held node unpinned
+ * and that node's ticket taken off the record, so the next call has to pin one by the ranking and
+ * open its session. `picked` is the node the ranking picks for that empty line.
+ */
+function emptyLine() {
+  const work = mkdtempSync(join(tmpdir(), 'pf-tool-spawn-'))
+  const root = join(work, 'project')
+  cpSync(join(fixture, 'project'), root, { recursive: true })
+  cpSync(join(fixture, 'overlay'), root, { recursive: true })
+  const ids = JSON.parse(readFileSync(join(fixture, 'ids.json'), 'utf8'))
+  const statePath = join(root, '.pf', 'state.json')
+  const state = JSON.parse(readFileSync(statePath, 'utf8'))
+  state.cycles.find((cycle) => cycle.id === 'c1').holding = []
+  writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+  rmSync(join(root, '.pf', 'signals', 'c1', `${ids.A}.json`))
+  return {
+    root,
+    picked: ids.A,
+    done() {
+      rmSync(work, { recursive: true, force: true })
     },
   }
 }
@@ -218,6 +246,53 @@ test('面板能做的每个写动作，词表里都有对应的词', async () =>
   const { PathfinderRecordsGateway } = await import('../src/host/gateway.ts')
   for (const [endpoint] of writes) {
     assert.equal(typeof PathfinderRecordsGateway.prototype[endpoint], 'function', `${endpoint} 在网关上`)
+  }
+})
+
+test('词面自己走完一条派发：next --spawn 钉住、落材料、开一场会话，答案是 spawned', async () => {
+  const typed = emptyLine()
+  try {
+    const answered = await answer(['next', '--spawn', '--json'], {
+      root: typed.root,
+      executor: new SimulatedExecutor(),
+      openerAvailable: true,
+      pluginsDir: shippedPlugins,
+    })
+    assert.equal(answered.code, 0, answered.stderr)
+    const plan = JSON.parse(answered.stdout)
+    assert.equal(plan.action, 'dispatch')
+    assert.equal(plan.cycle, 'c1')
+    assert.equal(plan.spawned, 'sess-1', '开的就是模拟执行者那一场')
+    const node = plan.opened_node
+    assert.equal(node, typed.picked, 'opened_node 说的是排名挑中的那一格')
+    assert.deepEqual(plan.did, [
+      `pf: pinned ${node} on c1`,
+      `pf: opened a session for ${node} on c1`,
+    ])
+    const launch = join(typed.root, '.pf', 'meta', 'launch', 'c1', node)
+    assert.equal(existsSync(join(launch, 'started')), true, '盘上落着 started：这一格已经出去')
+    assert.equal(
+      readFileSync(join(launch, 'prompt.txt'), 'utf8').replace(/\r\n/gu, '\n'),
+      `/pf-conduct ${node} [pipeline]\n`,
+      'prompt 就在 started 旁边，第一行就是这一格',
+    )
+  } finally {
+    typed.done()
+  }
+
+  // The prose face carries the same fact: a reader who did not ask for JSON still sees the session.
+  const prose = emptyLine()
+  try {
+    const answered = await answer(['next', '--spawn'], {
+      root: prose.root,
+      executor: new SimulatedExecutor(),
+      openerAvailable: true,
+      pluginsDir: shippedPlugins,
+    })
+    assert.equal(answered.code, 0, answered.stderr)
+    assert.match(answered.stdout, /^spawned: sess-1$/mu)
+  } finally {
+    prose.done()
   }
 })
 
