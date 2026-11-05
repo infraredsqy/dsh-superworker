@@ -204,24 +204,35 @@ test('归组与挂接：宿主没有工作区服务时照旧开成，只留一�
 })
 
 test('归组与挂接：会话挂不上时拒绝为 open-failed，说清哪一格开着而没挂上', async () => {
+  const lines = []
   const workspaceRegistry = {
     async create() {
       return {
         async attachSession() {
-          throw new Error('attach blew up')
+          /* 真实宿主的拒绝句里带着会话身份，这个替身照它那样带：拒绝句本身不许把身份递给读者。 */
+          throw new Error('cannot attach session \'session-abc\' to workspace \'ws-1\'')
         },
       }
     },
   }
   const rigging = rig({ workspaceRegistry })
-  const outcome = await openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
+  const ctx = {
+    ...rigging.ctx,
+    logger: {
+      info: (line) => lines.push(`info: ${line}`),
+      warn: (line) => lines.push(`warn: ${line}`),
+    },
+  }
+  const outcome = await openNodeSession(ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   assert.equal(outcome.ok, false)
   assert.equal(outcome.code, 'open-failed')
   const detail = outcome.detail ?? ''
   assert.ok(detail.includes(`${rigging.cycle}/${rigging.node}`), '拒绝句点名的是格子')
   assert.ok(detail.includes('not attached'), '拒绝句说清会话没挂上')
-  assert.ok(detail.includes('attach blew up'), '拒绝句带着挂接报的原话')
+  assert.ok(!detail.includes('attach blew up'), '宿主那句原话不原样递给读者')
   assert.ok(!detail.includes(rigging.agents.created[0].options.sessionId), '会话身份留在 outcome 的地址位上')
+  assert.equal(lines.length, 1, `原话进日志：${lines.join(' / ')}`)
+  assert.ok(lines[0].includes('session-abc'), '日志里留着宿主说的原因')
   assert.ok(
     !existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')),
     '没挂上的会话不落档',

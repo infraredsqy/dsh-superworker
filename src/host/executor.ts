@@ -281,9 +281,10 @@ export async function openNodeSession(
           await workspace.attachSession(opened)
         }
       } catch (error) {
-        /* The agent is alive already: say which cell is open un-attached instead of letting the next open run a second session on it. */
+        /* The agent is alive already: say which cell is open un-attached instead of letting the next open run a second session on it. The host's own sentence names the session id it refused, which is an address for navigation and not a word a reader is shown (docs/design-principles.md §三), so the reason goes to the log and the refusal carries this side's own words. */
+        logLine(ctx, `could not attach the session opened for ${cycle}/${node} to the workspace at ${workspaceRoot}: ${messageOf(error)}`)
         throw new Error(
-          `${cycle}/${node} is open but was not attached to the workspace at ${workspaceRoot}: ${messageOf(error)}`,
+          `${cycle}/${node} is open but was not attached to the workspace at ${workspaceRoot}: the host refused the attach`,
         )
       }
       const armed = armSettlement(ctx, handle.agent, opened)

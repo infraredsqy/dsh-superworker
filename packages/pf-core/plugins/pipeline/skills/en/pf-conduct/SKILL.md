@@ -822,12 +822,14 @@ checkout root prints it), not under the current project's `docs/`.
 - Which plugins are installed, and each one's tools and conventions: `pf doctor` lists what is
   installed, and the skills each declaration ships state their own tools and conventions
 - Method skills: `~/.dsh/skills/<name>/SKILL.md` — named by the spec's `method: ` line; this is
-  the only place a name turns into a path
+  the only place a name turns into a path (a deployment that pins `DSH_HOME` keeps that root under
+  `$DSH_HOME/skills` instead, so read the variable before reaching for the path)
 - Dispatch and authentication: `docs/conduct-dsh-dispatch.md`
 - The filter semantics for node tags: `docs/conduct-node-tags.md`
 - Role cards: `<this skill's directory>/subagent-prompts/` (execute / review / fix / doc-sync)
 - Write paths out as full absolute paths: a subagent gets no `~` expansion and has none of your
-  current `./`. Get this skill's directory once (`cd ~/.dsh/skills/pf-conduct/ && pwd`)
+  current `./`. Get this skill's directory once (`cd ~/.dsh/skills/pf-conduct/ && pwd`; with a
+  pinned `DSH_HOME`, `$DSH_HOME/skills/pf-conduct/`)
 
 ## Anti-patterns
 

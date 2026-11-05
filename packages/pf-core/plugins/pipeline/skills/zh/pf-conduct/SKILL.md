@@ -442,11 +442,11 @@ $rec | ConvertTo-Json | Set-Content -Encoding utf8 .pf/meta/FORK-<节点短id>.j
 
 - 契约与设计：`docs/conduct-state.md`——`next` 的动作全集、收尾两个入口、不变量都在里面（`holding` 是一组节点、`parallel` 是这条线的上限）
 - 装了哪些插件、各自的工具与口径：`pf doctor` 列出装了什么，每份声明自带的技能里写着它自己的工具与口径
-- 方法技能：`~/.dsh/skills/<名>/SKILL.md`——spec 的 `method: ` 行点名；由名字推路径只有这一处
+- 方法技能：`~/.dsh/skills/<名>/SKILL.md`——spec 的 `method: ` 行点名；由名字推路径只有这一处（`DSH_HOME` 被钉住时，这个根在 `$DSH_HOME/skills` 下，读之前先看一眼环境变量）
 - 派发与鉴权：`docs/conduct-dsh-dispatch.md`
 - 节点 tag 的过滤语义：`docs/conduct-node-tags.md`
 - 角色卡：`<本 skill 目录>/subagent-prompts/`（execute / review / fix / doc-sync）
-- 路径写完整绝对路径：subagent 拿不到 `~` 展开，也没有你当前的 `./`。本 skill 目录取一次（`cd ~/.dsh/skills/pf-conduct/ && pwd`）
+- 路径写完整绝对路径：subagent 拿不到 `~` 展开，也没有你当前的 `./`。本 skill 目录取一次（`cd ~/.dsh/skills/pf-conduct/ && pwd`；`DSH_HOME` 被钉住时换成 `$DSH_HOME/skills/pf-conduct/`）
 
 ## 反模式
 
