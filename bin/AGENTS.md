@@ -3,7 +3,7 @@
 > This file is a signpost, capped at 15 lines: one line per entry — only what this layer holds and when to read it.
 
 - `pf.mjs` — The entry: one Node script (`#!/usr/bin/env node`), no platform branch, no shell-specific host. It hands the rest of the line to `lib/cli.mjs`
-- `lib/table.mjs` — The command table: one row per word, every cell read off the `--help` output this layer reproduces (usage shapes, section listings, option invocations and senses). The parser, the printer and the router all read it
+- `lib/table.mjs` — The command table: one row per word, every cell stating that word's shape (usage shapes, section listings, option invocations and senses). The parser, the printer and the router all read it
 - `lib/spec.mjs` — The bridge: a row becomes the action list the printer and the parser walk, plus the positional names a refusal prints
 - `lib/argparse.mjs` — The parser and the help printer: the 78-column body, the word column, the sense column, the usage wrapping, the two-section listing
 - `lib/engine.mjs` — The handle, the working project, the plugin folder the engine scans (this runtime's own bundled set unless `PF_PLUGINS_DIR` names one), and this process's two outward seams (git, the session executor)

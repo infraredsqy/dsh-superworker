@@ -813,8 +813,8 @@ refusal first check whether that node already has a session running — do not f
 
 ## References
 
-The `docs/*.md` referenced here all live in the tool checkout (running `pf version` at the
-checkout root prints it), not under the current project's `docs/`.
+The `docs/*.md` referenced here do not ship with this skill, and are not under the current
+project's `docs/`.
 
 - The contract and the design: `docs/conduct-state.md` — the full set of `next`'s actions, the
   close's two ways in and the invariants are all in it (`holding` is a set of nodes, `parallel`

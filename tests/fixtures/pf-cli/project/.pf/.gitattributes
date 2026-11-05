@@ -2,8 +2,8 @@
 # core.autocrlf should rewrite that.
 ** -text
 
-# Records merge entry-wise, not line by line; the driver lives in tools/conduct/ledger-merge.py,
-# and the command is registered in each machine's git config (pf register).
+# Records merge entry-wise, not line by line; the driver is `pf-merge-ledger`, and the command is
+# registered in each machine's git config (`pf register`).
 ideas.json merge=pf
 state.json merge=pf
 instructions.json merge=pf

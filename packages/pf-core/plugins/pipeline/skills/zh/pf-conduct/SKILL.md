@@ -438,7 +438,7 @@ $rec | ConvertTo-Json | Set-Content -Encoding utf8 .pf/meta/FORK-<节点短id>.j
 
 ## 参照
 
-这里引到的 `docs/*.md` 都在工具 checkout 里（checkout 根跑 `pf version` 就印出来），不在当前项目的 `docs/` 下。
+这里引到的 `docs/*.md` 不随这份技能装出去，也不在当前项目的 `docs/` 下。
 
 - 契约与设计：`docs/conduct-state.md`——`next` 的动作全集、收尾两个入口、不变量都在里面（`holding` 是一组节点、`parallel` 是这条线的上限）
 - 装了哪些插件、各自的工具与口径：`pf doctor` 列出装了什么，每份声明自带的技能里写着它自己的工具与口径

@@ -228,7 +228,7 @@ whether the acceptance needs something only the user can provide.
 | a real meeting, the user clicking through the interface, his feel and his ear | `manual` |
 
 For which step each of the three has its human confirmation point on, and why it is fixed that
-way, see `docs/conduct-state.md` "conclusions and stopping" in the tool checkout.
+way, see "conclusions and stopping" in `docs/conduct-state.md`.
 
 Work whose product is itself the delivery (an inventory, a technology choice, a setting document)
 runs as usual, with the acceptance written as "the product is the delivery". An acceptance that
