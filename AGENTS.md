@@ -1,4 +1,4 @@
-# dsh-pathfinder — Port the agent-pathfinder pipeline into DSH as a work panel the user can see
+# dsh-pathfinder — the `.pf/` pipeline record as a work panel in the DSH Web UI
 
 > This file is a signpost, capped at 15 lines: one line per entry — only what this layer holds and when to read it.
 

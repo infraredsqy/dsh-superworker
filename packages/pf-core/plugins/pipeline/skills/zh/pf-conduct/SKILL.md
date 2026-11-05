@@ -167,7 +167,7 @@ pf instruction list --project <项目根绝对路径>
 2. `info <id> --verbose` 看节点详情与直接依赖，`context <id>` 看完整上下游
 3. `open <id>` 拿 `spec.md` 路径，read；文件不存在说明该节点还没写过需求——停下来，请用户去 pf-route 写 spec，补需求不是本流程的活
 4. spec 里有 `method: <技能名>` 一行 → read `~/.dsh/skills/<名>/SKILL.md`，按「方法」那一节定这个节点谁跑
-5. 读 spec 里「参照」「上下游」两节点名的文件（那是这个节点真正的输入）
+5. 读 spec 里「参考」「上下游」两节点名的文件（那是这个节点真正的输入）
 6. 读项目 CLAUDE.md、docs/ 里与本节点相关的文档
 7. 读 `pf config get test_tier`、`pf config get worktree_mode`、`pf config get max_agents`，记进 `run.md` 的「已核事实」；这条线同时握着哪几个节点、`parallel` 是多少，在 `pf cycle current` 的读数里（每个节点一行 `Node:`，`Policy:` 行有 `parallel`）
 
@@ -388,7 +388,7 @@ git worktree add .pf/worktrees/<节点短id> -b pf/<节点短id>
 
 **这两道检查就是为手滑准备的，别凭「我知道主树是干净的」跳过去**；被拒就照上面停下，不许硬 fork。
 
-建好工作树，再自己把 FORK 记录写下来（`at` 与参照实现同一个形状：UTC、秒、字面 `Z`）：
+建好工作树，再自己把 FORK 记录写下来（`at` 就是这个形状：UTC、秒、字面 `Z`）：
 
 ```pwsh
 $rec = [ordered]@{

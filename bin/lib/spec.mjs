@@ -3,19 +3,19 @@
  * (`argparse.mjs`). It turns a row into the action list both read, so nothing has to be restated: the
  * usage line, the two section listings, the defaults and the routing all come off the same row.
  *
- * The help word is the row's own `-h, --help` entry for a leaf; a group's row was captured without it
+ * The help word is the row's own `-h, --help` entry for a leaf; a group's row does not carry it
  * (the group's listing prints it as its only option), so it is added here.
  */
 import { COMMANDS, GROUPS } from './table.mjs';
 
-/** The help cell every command carries, spelled as the reference's own listings spell it. */
+/** The help cell every command carries, spelled as the leaf listings spell it. */
 const HELP_OPTION = {
   flags: ['-h', '--help'],
   help: 'show this help message and exit',
   kind: 'help',
 };
 
-/** One table row's options, with `next`'s own help cell kept as it was captured. */
+/** One table row's options, with `next`'s own help cell kept as its row carries it. */
 function optionsOf(row) {
   const options = [];
   for (const [index, cell] of (row.options ?? []).entries()) {
@@ -93,9 +93,9 @@ const POSITIONAL_NAMES = {
 };
 
 /**
- * The name a group's refusal prints for its sub-command. The reference's parser carries a `dest` per
- * group, and its error lines use that name rather than the listing's metavar: `dag` spelled its dest
- * with the angle brackets still on, the other four without.
+ * The name a group's refusal prints for its sub-command. The parser carries a `dest` per group, and
+ * a refusal uses that name rather than the listing's metavar: `dag` spells its dest with the angle
+ * brackets still on, the other four without.
  */
 const GROUP_DESTS = {
   cycle: 'cycle_command',
@@ -106,9 +106,9 @@ const GROUP_DESTS = {
 };
 
 /**
- * The settings verbs whose one positional is the knob name. The reference prints the list it accepts at
- * run time, out of the settings table in force — the core settings plus whatever an installed plugin
- * declares — so a table captured with a plugin installed must not be printed in a project without it.
+ * The settings verbs whose one positional is the knob name. The list a settings verb accepts is read
+ * at run time, out of the settings table in force — the core settings plus whatever an installed
+ * plugin declares — so a table built with a plugin installed must not be printed in a project without it.
  */
 const CONFIG_KEY_WORDS = new Set(['config get', 'config set', 'config unset']);
 

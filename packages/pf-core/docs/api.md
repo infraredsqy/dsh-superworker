@@ -1,6 +1,6 @@
 # pf-core 接口面
 
-这份文件是本包接口面的唯一参照。名字与签名已经冻结，不另行改名；改动要先过指挥者。
+这份文件是本包接口面的唯一参考。名字与签名已经冻结，不另行改名；改动要先过指挥者。
 
 - `open(root, options?)` 交回一个 `pf` 句柄，里面是 `ledger` / `conductor` / `config` /
   `sessions` 四个命名空间；`options` 的形状是 `PfOpenOptions`。

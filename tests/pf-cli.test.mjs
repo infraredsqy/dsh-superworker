@@ -8,13 +8,13 @@
  *   branch: the command is the same one on every platform because it asks the platform nothing;
  * - the help listing covers every word the router walks, and a group's listing covers that group's
  *   verbs — one table feeds both, so a word cannot be routable and unprintable;
- * - the rows of the verbs / groups listing, and the whole of a leaf's help, are the reference tool's
- *   own bytes (the three sheets in `fixtures/pf-cli/help/`), which is what makes the surface the same
- *   one a skill already talks to.
+ * - the rows of the verbs / groups listing, and the whole of a leaf's help, are the bytes in the
+ *   three sheets under `fixtures/pf-cli/help/`, which is what makes the surface the same one a skill
+ *   talks to.
  *
  * The project-root cases run against throwaway copies of the drill project: one command's answer is
- * the reference tool's own answer in the same directory (a subdirectory reads its own, empty records;
- * a linked worktree's checkout root reads the main tree's).
+ * the answer read from the directory it runs in (a subdirectory reads its own, empty records; a
+ * linked worktree's checkout root reads the main tree's).
  *
  *   node --test tests/
  */
@@ -69,8 +69,8 @@ function snapshot(dir) {
   return out;
 }
 
-/** A throwaway copy of the drill project (the reference tool's own records, and the ones it keeps out
- * of git), plus its machine home. */
+/** A throwaway copy of the drill project (its records, and the ones it keeps out of git), plus its
+ * machine home. */
 function scratchProject() {
   const work = mkdtempSync(join(tmpdir(), 'pf-cli-'));
   const project = join(work, 'project');
@@ -160,7 +160,7 @@ test('帮助面：抽查两条，与捕获下来的清单逐字节一致', async
 });
 
 test('拒绝：不认识的词、以及这一层不做的词，都回「没有这条命令」且退出码 2', () => {
-  for (const argv of [['nope'], ['migra' + 'te'], ['fork-worktree']]) {
+  for (const argv of [['nope'], ['migrate'], ['fork-worktree']]) {
     const answer = run(argv);
     assert.equal(answer.code, 2, `${argv.join(' ')}: ${answer.stderr}`);
     assert.match(answer.stderr, /does not recognize/u);
@@ -189,8 +189,8 @@ test('项目根：子目录就是项目根，不落进父项目（与外部工�
   try {
     const sub = join(scratch.project, 'tools');
     mkdirSync(sub, { recursive: true });
-    // The reference tool, asked in this same directory, answers "No cycles found.": the project root
-    // is `cwd`, and `cwd` holds no records of its own. The parent's line must not show through.
+    // Asked in this same directory, the command answers "No cycles found.": the project root is
+    // `cwd`, and `cwd` holds no records of its own. The parent's line must not show through.
     const answer = run(['cycle', 'list'], { cwd: sub, plugins, home: scratch.home });
     assert.equal(answer.code, 0, answer.stderr);
     assert.equal(answer.stdout, 'No cycles found.\n');
@@ -223,7 +223,7 @@ test('项目根：链接工作树的 checkout 根回到主树，工作在 main �
 test('解析器：裸词 help 照常当一个位置参数读（标题、查询都收它）', () => {
   const scratch = scratchProject();
   try {
-    // A node whose title is `help` is really created (the reference prints `Node created: <id>`).
+    // A node whose title is `help` is really created (the command prints `Node created: <id>`).
     const added = run(['dag', 'add', 'help'], { cwd: scratch.project, plugins, home: scratch.home });
     assert.equal(added.code, 0, added.stderr);
     assert.match(added.stdout, /^Node created: /u);
@@ -276,8 +276,8 @@ test('插件的词：命令自带那套插件——项目里没有 plugins/ 也�
   const scratch = scratchProject();
   try {
     // Nothing here but the records: no `plugins/` folder, and no PF_PLUGINS_DIR in this run. The
-    // reference implementation scanned its own tree, so the plugin words worked in any project; the
-    // command supplies its bundled set for the same reason, and that is what this leg pins.
+    // command supplies its own bundled plugin set, so the plugin words work in any project; that is
+    // what this leg pins.
     assert.equal(existsSync(join(scratch.project, 'plugins')), false);
     const answer = run(['issue', 'list'], { cwd: scratch.project, home: scratch.home });
     assert.equal(answer.code, 0, answer.stderr);
@@ -371,7 +371,7 @@ test('合并驱动：init 印的就是 git 里真写下的；已经能跑的注�
     assert.equal(git(scratch.project, ['config', '--local', 'merge.pf.driver', dead]).code, 0);
     const repaired = run(['register', '--project', '.'], { cwd: scratch.project, plugins, home: scratch.home });
     assert.equal(repaired.code, 0, repaired.stderr);
-    // `register` prints the driver string and nothing around it (the reference tool's line).
+    // `register` prints the driver string and nothing around it (the registration line).
     const repairedLine = repaired.stdout.trim();
     assert.doesNotMatch(repairedLine, /Merge driver registered/u);
     assert.notEqual(repairedLine, dead);
@@ -471,7 +471,7 @@ test('dispatch：线手里那个节点还没有 prompt 时零写入、回外部�
       '`next` that picks the node up.';
 
     // The drill project's own hand: `c1` is in service and holds A, whose ticket is still on disk, so
-    // the plan is not a dispatch. The reference refuses here before it writes anything: same sentence,
+    // the plan is not a dispatch. The command refuses here before it writes anything: same sentence,
     // same exit code, and the records stay exactly as they were.
     const before = snapshot(pfDir);
     const waiting = run(['dispatch', 'c1'], options);
@@ -525,8 +525,8 @@ test('dispatch：cycle start 之后直接派发被拒；材料由 next --spawn �
       return answer;
     };
     // The state this tier is about: a line that holds a node, the prompt not yet on disk. `cycle start`
-    // is the reference's own way to build it (its `work7` in review-3): out of service, a fresh line
-    // with a tag, which pins by the usual ranking.
+    // is the way to build it (the `work7` state of review 3): out of service, a fresh line with a tag,
+    // which pins by the usual ranking.
     ok(['cycle', 'status', 'c1', 'inactive']);
     ok(['cycle', 'start', 'c9', '--tags', 'coding']);
     const node = JSON.parse(readFileSync(join(pfDir, 'state.json'), 'utf8'))

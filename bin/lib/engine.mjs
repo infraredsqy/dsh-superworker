@@ -34,12 +34,10 @@ export const BUNDLED_PLUGINS = join(REPO_ROOT, 'packages', 'pf-core', 'plugins')
 
 /**
  * The plugin folder the engine scans for this command, in one line of precedence: the user's
- * `PF_PLUGINS_DIR` when it names one, else the plugins this runtime bundles. The command layer
- * supplies its own set because the reference implementation scanned its own tree — that is what
- * kept `pf issue …` and the two closing guards (`issue_pool_weight_limit`, `test_seconds_limit`)
+ * `PF_PLUGINS_DIR` when it names one, else the plugins this runtime bundles. The bundled set is what
+ * keeps `pf issue …` and the two closing guards (`issue_pool_weight_limit`, `test_seconds_limit`)
  * answering in any project. The engine's own default (`<project root>/plugins`) is therefore not
- * reachable through this command: a project's own `plugins/` folder is no longer consulted here, and
- * that is the deliberate alignment on the reference, not an oversight.
+ * reachable through this command: a project's own `plugins/` folder is not consulted here.
  */
 function useBundledPlugins() {
   const stated = process.env.PF_PLUGINS_DIR;

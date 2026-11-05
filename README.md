@@ -3,8 +3,7 @@
 English | [中文](README.zh.md)
 
 `dsh-pathfinder` is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin
-that renders an [agent-pathfinder](https://github.com/infraredsqy/agent-pathfinder) record as a
-panel in the DSH Web UI.
+that renders a `.pf/` pipeline record as a panel in the DSH Web UI.
 
 The host half reads the record (`.pf/`) of the current session's workspace and serves it behind a
 gateway; the browser half draws it as the **Pathfinder Center** panel in the sidebar. Everything on screen —
@@ -18,13 +17,12 @@ refuses to install or boot the plugin outside that range (`incompatible-version`
 exemption command). The range follows DSH's breaking line: any rc within 0.2.x is admitted, and it
 moves when DSH moves to 0.3.
 
-The record it draws comes from [agent-pathfinder](https://github.com/infraredsqy/agent-pathfinder),
-which is early and moving fast too: expect breaking changes on that side.
+The `.pf/` record it draws is early and moving fast: expect breaking changes in its shape.
 
 ## Install
 
-Prerequisites: a DSH install with a profile to install into, and a workspace that holds an
-agent-pathfinder record (`.pf/`). The panel writes through the command entry this package ships,
+Prerequisites: a DSH install with a profile to install into, and a workspace that holds a `.pf/`
+pipeline record. The panel writes through the command entry this package ships,
 so it needs no `pf` on your `PATH`; a `PATH` entry is only for running `pf` by hand. The panel
 reads the workspace of the session you have selected; with no session selected it says so.
 

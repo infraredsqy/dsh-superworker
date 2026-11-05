@@ -21,12 +21,12 @@ path, and adding, changing, dropping and connecting each have their own command.
 # bad: 5 calls
 search merge
 search integration
-search relocation
+search migration
 search consolidate
 search main-project
 
 # good: 1 call
-search 'merge|integration|relocation|consolidate|main-project'
+search 'merge|integration|migration|consolidate|main-project'
 ```
 
 In the same way, `info` / `open` / `context` cannot be merged, but **one call gets enough

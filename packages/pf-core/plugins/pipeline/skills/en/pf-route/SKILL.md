@@ -314,7 +314,7 @@ carries the judgements and the conventions only.
 
 **The "what is not done" section is optional.** Write it only when the discussion really rejected a
 practice: one line each — the rejected practice, one reason, and where it came from (the user's
-call / an exemplar implementation / a hard boundary). This section has no quota: with nothing
+call / the existing code / a hard boundary). This section has no quota: with nothing
 rejected, do not write it, and do not invent entries to fill it. Nor does it carry what later nodes
 are about. A call often equals an exclusion, and exclusion is the half the discussion drops most
 easily: when it really happened, write it down.

@@ -8,11 +8,10 @@ import { open } from '../src/open';
 
 /**
  * Byte-for-byte comparison: the same sequence (add ×4 / depend / status ×2 / revive / rm) is run in
- * a reproducing project root outside the trailhead worktree (such as `%TEMP%`), and the expected
- * bytes of `ideas.json` at each step are fixed into tests/fixtures/ (node ids and timestamps become
- * @node-a@…@node-d@ and @t1@…@t8@, the stamps allocated in ascending value order, exactly the
- * k-th write); this implementation runs the same sequence and compares byte for byte after
- * generalising.
+ * a project root of its own (such as `%TEMP%`), and the bytes of `ideas.json` at each step are fixed
+ * into tests/fixtures/ (node ids and timestamps become @node-a@…@node-d@ and @t1@…@t8@, the stamps
+ * allocated in ascending value order, exactly the k-th write); the test runs the same sequence and
+ * compares byte for byte after generalising.
  *
  * The on-disk order of node keys follows the real uuids and differs on every run — so the
  * generalisation has two steps: first parse and swap node keys and dependency members for tokens of

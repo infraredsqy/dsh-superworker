@@ -3,9 +3,9 @@
  * reads. No record is ever written here — every write goes through the engine handle — and no word
  * has a second implementation elsewhere.
  *
- * The conventions the lines follow are the reference tool's: the same field order in a JSON reading,
- * the same two-space indent, the same short id (the first eight characters) when a longer one would
- * only make the line longer.
+ * The conventions the lines follow: the same field order in a JSON reading, the same two-space
+ * indent, the same short id (the first eight characters) when a longer one would only make the line
+ * longer.
  */
 import { join } from 'node:path';
 import { BIN_DIR, REPO_ROOT, gitRunner, handleOf, messageOf, projectRoot, version } from './engine.mjs';
@@ -42,7 +42,7 @@ export const initVerb = guarded(async ({ values }) => {
   const pf = await handleOf(root);
   const layout = values.commit === true ? 'in-repo' : 'own-repo';
   // The record directory gets a repository of its own in the own-repo layout, unless the line said
-  // `--no-own-repo`: that is the reference tool's default, and its one flag on the other side.
+  // `--no-own-repo`: that is the default, and `--own-repo` is the flag on the other side.
   const ownRepoAsked = layout === 'own-repo' && values.no_own_repo !== true;
   const report = await pf.ledger.init({ layout, ownRepo: ownRepoAsked, git: gitRunner });
   const lines = [];
@@ -66,7 +66,7 @@ export const initVerb = guarded(async ({ values }) => {
     failed: 'the ignore line could not be written',
   }[report.exclude];
   if (exclude !== undefined) lines.push(exclude);
-  // The two own-repo sentences the reference prints when a repository was asked for (and the two
+  // The two own-repo sentences printed when a repository was asked for (and the two
   // nothing is printed for: `--no-own-repo`, and the in-repo layout, which never creates one).
   const ownRepo = ownRepoAsked
     ? {
@@ -454,7 +454,7 @@ export const dagUpdateVerb = guarded(async ({ values, positionals }) => {
   return {};
 }, 1);
 
-/** `dag depend` / `dag undepend`: the edge edits, silent on success like the reference's. */
+/** `dag depend` / `dag undepend`: the edge edits, silent on success. */
 export const dagDependVerb = guarded(async ({ values, positionals }) => {
   const id = positionals[0][0];
   const { pf } = await project(values.project);
@@ -498,7 +498,7 @@ export const dagReviveVerb = guarded(async ({ positionals }) => {
   return { stdout: `REVIVED: ${node.title ?? ''} -> todo` };
 }, 1);
 
-/** `dag list`: the rows as one JSON line (the reference's own compact spelling). */
+/** `dag list`: the rows as one JSON line (the compact spelling). */
 export const dagListVerb = guarded(async ({ values }) => {
   const { pf } = await project(values.project);
   const filter = {};
@@ -510,7 +510,7 @@ export const dagListVerb = guarded(async ({ values }) => {
   return { stdout: pyCompact(values.verbose === true ? await verboseList(pf, rows) : rows) };
 }, 1);
 
-/** `dag list --verbose`: each row grows its two dependency lists, spelled as the reference does. */
+/** `dag list --verbose`: each row grows its two dependency lists, spelled the same way. */
 async function verboseList(pf, rows) {
   const out = [];
   for (const row of rows) {
@@ -713,7 +713,7 @@ export const instructionAddVerb = guarded(async ({ values }) => {
 /**
  * The two sentences a project with no entries at all reads: the account is absent, and that state is
  * an answer rather than a failure. The same pair is printed by the reader's view and the account
- * views — the reference tool says "no record" in both places, so a reader cannot mistake it for
+ * views — both places say "no record", so a reader cannot mistake it for
  * "there is a record and you are not seeing it".
  */
 const NO_RECORD_LINES = [

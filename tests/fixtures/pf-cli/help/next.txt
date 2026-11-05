@@ -1,7 +1,6 @@
-usage: state-manage.py next [-h] [--cycle CYCLE] [--project PROJECT] [--plan]
-                            [--json] [--continue | --stop] [--node NODE]
-                            [--note NOTE] [--after NODE_ID] [--spawn]
-                            [--spawner KIND|PATH]
+usage: pf next [-h] [--cycle CYCLE] [--project PROJECT] [--plan] [--json]
+               [--continue | --stop] [--node NODE] [--note NOTE]
+               [--after NODE_ID] [--spawn] [--spawner KIND|PATH]
 
 The one entry point. plan: read-only, writes nothing. apply (no --plan): drive the pipeline to its next stable action -- consume a finished node's signal, do the bookkeeping, stop at the first thing a caller can act on. The actions a caller may have to act on are `dispatch` (spawn this node), `insert_node` (a node was just put into the graph and nothing was opened: commit and push, then run `next --spawn` again and the pick decides), `wait` (read its note / close_with and run that one command), `ask_user`, `stop_pipeline`, `no_cycle` (there is no cycle yet: opening one takes a human's intent). An `open_node` never reaches you -- it is the tool pinning the next node itself, and what you read is that slot's `dispatch`. The returned action NEVER carries commands to run: the tool runs them.
 

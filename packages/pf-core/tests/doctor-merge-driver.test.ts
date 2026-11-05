@@ -221,7 +221,7 @@ describe('the merge-driver cell', () => {
   });
 
   it('registered in the command form this tree routes (`pf merge-ledger …`) with pf on PATH: green', async () => {
-    // The form the reference tool writes, and the one this tree answers through its own `pf` command:
+    // The command form this tree answers through its own `pf` command:
     // a real registration in a drill area is this string, so the cell must not call it dead.
     await git(root, 'init', '-b', 'master');
     await git(root, 'config', '--local', 'merge.pf.name', 'pf ledger three-way merge');

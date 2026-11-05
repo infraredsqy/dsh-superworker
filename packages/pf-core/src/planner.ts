@@ -546,7 +546,7 @@ function attentionItems(
     node_id: uid,
     node_title: nodes[uid]?.title ?? '',
     hint:
-      `dag-manage revive ${uid} puts it back to todo (shelved → todo), or handle it by hand ` +
+      `pf dag revive ${uid} puts it back to todo (shelved → todo), or handle it by hand ` +
       'and restart the cycle',
   }));
 }

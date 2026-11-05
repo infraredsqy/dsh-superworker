@@ -365,7 +365,7 @@ describe('what is asked of git, and what happens when it will not answer', () =>
     }
   });
 
-  it('with pf on PATH the registered string is the command form the reference writes', async () => {
+  it('with pf on PATH the registered string is the command form', async () => {
     const shimDir = mkdtempSync(join(tmpdir(), 'pf-shim-'));
     const before = process.env['PATH'] ?? '';
     try {

@@ -3,7 +3,7 @@
 [English](README.md) | 中文
 
 `dsh-pathfinder` 是一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件：把
-[agent-pathfinder](https://github.com/infraredsqy/agent-pathfinder) 的那份记录画成 DSH Web UI 里的一块面板。
+`.pf/` 那份管线记录画成 DSH Web UI 里的一块面板。
 
 宿主半身按当前会话的工作区读那份记录（`.pf/`），经网关交出去；浏览器半身把它画成侧栏里的「寻路中心」。
 屏上的一切——指令、节点明细、谁欠谁的那张地图、问题池——都从那份记录上来，面板里的写回也进同一条路。
@@ -14,13 +14,11 @@
 （报 `incompatible-version`，并给出豁免的命令）。范围按 DSH 的破坏边界画：0.2.x 之内出多少个 rc 都放行，
 0.3 换线时才动。
 
-它画的记录出自 [agent-pathfinder](https://github.com/infraredsqy/agent-pathfinder)，那边同样早、动得同样
-快：那边也会有破坏性变更。
+它画的那份 `.pf/` 记录同样早、动得同样快：记录的形状也会有破坏性变更。
 
 ## 安装
 
-前提：装了 `dsh`，手里有一个装得进插件的 profile；要看的工作区里有一份 agent-pathfinder 的记录
-（`.pf/`）。面板走本包自带的命令入口，PATH 上不需要有 `pf`；`pf` 在 PATH 上只管你自己手敲命令。
+前提：装了 `dsh`，手里有一个装得进插件的 profile；要看的工作区里有一份 `.pf/` 管线记录。面板走本包自带的命令入口，PATH 上不需要有 `pf`；`pf` 在 PATH 上只管你自己手敲命令。
 面板按「当前选中的会话」定工作区——没选中会话时它自己会说明。
 
 从本仓的 [Releases](https://github.com/infraredsqy/dsh-pathfinder/releases) 下载那个 `.tgz`，把 DSH

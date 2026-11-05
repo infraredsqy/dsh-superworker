@@ -25,8 +25,6 @@ what you did in the panel. One report per problem is enough.
 ## Out of scope
 
 - DSH itself: that is the DeepSeek Harness project's report.
-- `agent-pathfinder` and the `.pf/` records: the tool tree has its own
-  [SECURITY.md](https://github.com/infraredsqy/agent-pathfinder/blob/main/SECURITY.md).
 - A record you control anyway: the panel writes into your workspace's `.pf/` through `pf`, and
   hand-editing that is yours to do.
 

@@ -1,9 +1,9 @@
-/* The drill: every command the transport layer prints, run against a project whose records are the
- * reference tool's own, with the reference's own output beside it.
+/* The drill: every command the transport layer prints, run against a project that has records of
+ * its own, with the answer fixed beside it.
  *
- * None of this needs that tool: the fixture project under `fixtures/pf-cli/project` is a copy of the
- * records the reference tool wrote, and every `expected/*.txt` is a copy of what it printed for the
- * argv in `cases.json`. A case therefore passes when this checkout's command answers the same bytes.
+ * The fixture project under `fixtures/pf-cli/project` carries those records, and every
+ * `expected/*.txt` is the stdout that argv has for them. A case therefore passes when this
+ * checkout's command answers the same bytes.
  *
  * `fixtures/pf-cli/overlay` carries the bytes a real project keeps out of git -- its session files and
  * the temp files a node left behind -- and is pasted over each case's copy: a checkout only ever

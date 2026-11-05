@@ -216,16 +216,16 @@ npm install --global --omit=peer --no-audit --no-fund <那份 .tgz 的绝对路�
   `Get-Command pf` 指的就是它，PATH 上更早的那一份被它压过
 - `pf version` 印的就是这份装机目录：`pf <号> at <前缀>/node_modules/dsh-pathfinder/bin (tools: <前缀>/node_modules/dsh-pathfinder)`。
   在一个没有 `.pf` 的目录里（比如 `~`）与在项目根里印的是同一份，仓外跑得起来就是装对了
-- 面板的写入交给 `pf`：不带用户原话的那些走 PATH 上解析到的那个（装了这份之后就是它的三个 shim）；
-  带用户原话的那次不走 PATH，也不经 shell——它直接跑发布件里那条命令入口（`<装机目录>/bin/pf.mjs`），
-  由跑宿主半身的那个 node 起，不经过 Python 或任何解释器
+- 面板的写入一律交给本包自带的命令入口：不走 PATH，也不经 shell——跑的是发布件里那条命令入口
+  （`<装机目录>/bin/pf.mjs`），由跑宿主半身的那个 node 起，argv 直接交给子进程口子；带用户原话的那次
+  把那句话原样接在 argv 末尾，一个参数，不拼字符串
 
 核一遍，都在仓外跑：`pf version`，然后进一个有记录的项目根跑 `pf doctor`。`doctor` 的 `plugins` 那一格读的是
 **这份运行时自带的插件**（`<装机目录>/packages/pf-core/plugins`，与引擎的产物并排）；项目根下的 `plugins/`
 留给引擎自己的缺省，这条命令不经过它。于是没有 `plugins/` 的项目照样读到 `3 installed`，插件词（`pf issue …`）
 与两道收尾守卫（`issue_pool_weight_limit` / `test_seconds_limit`）在任何项目里都答得上。优先级一行：用户的
 `PF_PLUGINS_DIR` 压过这份自带的插件（指哪儿扫哪儿），这也是把扫描指回项目文件夹的唯一出口。引擎里那条
-`<项目根>/plugins` 的缺省因此不经这条命令生效——这是照参考实现（旧 CLI 扫自己那棵树）对齐后定下的口径。
+`<项目根>/plugins` 的缺省因此不经这条命令生效：这条命令一律读自带的插件，项目根下那份 `plugins/` 留给引擎自己的缺省。
 
 ### 卸掉就是回滚
 
@@ -233,28 +233,23 @@ npm install --global --omit=peer --no-audit --no-fund <那份 .tgz 的绝对路�
 npm uninstall --global dsh-pathfinder
 ```
 
-卸掉之后命令回落到 PATH 上更早的那一份；再装上同一个 `.tgz` 就回到新的这份。**旧的 Python 树只作只读参照**：
-它是这份效应的对照实现，盘上原样留着；切过去之后，本仓与它之间没有命令解析、也没有插件来源的依赖，只剩下
-「读过它」这一句来路说明。技能那一半也由发布件供给：`issue` 与 `test-audit` 两个插件带的四条
+卸掉之后命令回落到 PATH 上更早的那一份；再装上同一个 `.tgz` 就回到新的这份。技能那一半也由发布件供给：`issue` 与 `test-audit` 两个插件带的四条
 （`pf-issue-scan` / `pf-issue-repair` / `pf-issue-discuss` / `pf-test-audit`），加上 `pipeline` 插件带的三条核心技能
 （`pf-conduct` / `pf-route` / `pf-instruct`，每份把它正文指向的 `shared/pf/` 单页带在自己目录里），一共七条。
-都落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的同哈希，根序 rank 400 压过 `~\.agents\skills` 下那几份
-rank 500 的旧手抄副本）。派发的第一行 `/pf-conduct <节点 id>` 因此在干净机器上也读得到；`~\.agents\skills` 的
-junction 只作对照，摘不摘都不影响这一行读哪一份。
+都落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的同哈希，根序 rank 400）。派发的第一行
+`/pf-conduct <节点 id>` 因此在干净机器上也读得到；DSH 自己的 `~\.agents\skills` 是 rank 500 的那一根，
+同一个名字在它面前读的是 `$DSH_HOME/skills` 这一份。
 
-### 与旧实现共用记录时的锁
+### 盘上留着一个常驻 `ledger.lock` 时
 
-`.pf/meta/ledger.lock` 在两边是两个协议，互不兼容：
+`.pf/meta/ledger.lock` 在引擎这一侧是**文件存在即互斥**：以排他方式建文件，建不上就等，等满 10 秒报 busy，
+记录一个字不改。写完就删，所以它不是常驻文件。
 
-- 旧实现：**常驻文件 + 操作系统字节锁**——文件一直在盘上，锁的是文件内容，靠操作系统判忙；
-- 引擎：**文件存在即互斥**——以排他方式建文件，建不上就等，等满 10 秒报 busy，记录一个字不改。
+别的读法把锁当成常驻文件（文件一直在盘上，锁的是文件内容），于是在盘上留下一个 0 字节的 `ledger.lock`：
 
-于是同一个项目在两套运行时之间来回一次就会卡住：
-
-- 被旧实现写过的项目，盘上留着那个 0 字节文件 → 引擎的任何写命令等满 10 秒后报 busy；
-- 切到引擎这一套之前，先把它备份到别处再删掉，引擎的写就正常了；
-- 引擎这一套自己不建常驻锁文件（写完就删），所以删过之后不会再出现；
-- 旧实现此后不再对记录写入；万一它又写过一次，文件会重新出现，照上面再删一次。
+- 留着它 → 引擎的任何写命令等满 10 秒后报 busy；
+- 先把它备份到别处再删掉，引擎的写就正常了；
+- 引擎自己不建常驻锁文件（写完就删），所以删过之后不会再出现；若它又出现，照上面再删一次。
 
 引擎侧一个字不改（那是它的协议）。这条互操作记在问题池 `engine-lock-file-interop`。
 

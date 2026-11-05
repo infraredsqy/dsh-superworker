@@ -16,12 +16,12 @@
 # 坏：5 次调用
 search 合并
 search 集成
-search 搬迁
+search 迁移
 search 整合
 search 主项目
 
 # 好：1 次调用
-search '合并|集成|搬迁|整合|主项目'
+search '合并|集成|迁移|整合|主项目'
 ```
 
 同理，`info` / `open` / `context` 虽不能合并，但**一次调用获取足够信息**，避免多次往返。

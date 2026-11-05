@@ -167,7 +167,7 @@ export interface LedgerInitOptions {
   /**
    * Whether `.pf` should have a repository of its own: one `git init --quiet` in the record
    * directory, run through the injected runner, when it has none yet and the layout is `own-repo`.
-   * The default is yes (the reference tool's default); `in-repo` never creates one, and an existing
+   * The default is yes; `in-repo` never creates one, and an existing
    * one is never touched.
    */
   readonly ownRepo?: boolean;

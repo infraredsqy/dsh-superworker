@@ -399,7 +399,7 @@ const PLUGIN_LOAD_NOTE =
  *   as the receipt and land the claim (`started`), after which the plan treats this cell as in flight
  *   and never dispatches it a second time. The preparation is skipped for a cell whose prompt is
  *   **already on disk**: that prompt is the one the pinning step landed, and a prompt on disk with no
- *   `started` stamp is a dispatch of its own (the reference's gate), even while the plan is still
+ *   `started` stamp is a dispatch of its own (the dispatch gate), even while the plan is still
  *   waiting on the ticket — nothing is left to land, so no second prompt and no run doc are written.
  *   An executor that throws means no session was opened: no marker lands and no record moves. A claim
  *   that cannot be written is **not** a warning: the session is out and nothing on disk says so, so
@@ -794,8 +794,8 @@ export function createConductorNamespace(
       // The material this dispatch hands over. The prompt is the one line the step that pinned this node
       // lands; when it is **already on disk** there is nothing left to land, and this call writes only
       // the `started` claim below. That pair of disk facts — prompt there, no `started` stamp — is the
-      // reference's own dispatch gate, so a landed prompt is a dispatch even while the plan is still
-      // waiting on the ticket (a prompt another implementation or an earlier round left behind).
+      // dispatch gate, so a landed prompt is a dispatch even while the plan is still
+      // waiting on the ticket (a prompt an earlier round left behind).
       // A cell with no prompt goes through the preparation, which lands the prompt, sets up the run doc,
       // and says on its own spot when the plan hands back something other than a dispatch.
       const promptPath = launchPromptPath(paths, cycleId, nodeId);

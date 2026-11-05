@@ -1,7 +1,6 @@
 /**
  * The small shared cells every verb's lines are built from: the short id, the path spelling, the two
- * scalar spellings the reference tool's f-strings print, the project handle, and the one shape of a
- * refusal.
+ * scalar spellings the lines print, the project handle, and the one shape of a refusal.
  */
 import { handleOf, messageOf, projectRoot } from './engine.mjs';
 
@@ -11,12 +10,12 @@ export const short = (id) => String(id).slice(0, 8);
 /** A path the way the listings spell it: forward slashes, on every platform. */
 export const posix = (path) => String(path).split('\\').join('/');
 
-/** The reference's list spelling: `['coding', 'writing']`. */
+/** The list spelling: `['coding', 'writing']`. */
 export function pyList(words) {
   return `[${words.map((word) => `'${word}'`).join(', ')}]`;
 }
 
-/** The reference's scalar spelling (what an f-string prints): booleans spell `True` / `False`. */
+/** The scalar spelling: booleans spell `True` / `False`. */
 export function pyScalar(value) {
   if (value === true) return 'True';
   if (value === false) return 'False';
@@ -24,7 +23,7 @@ export function pyScalar(value) {
   return String(value);
 }
 
-/** One refusal: the sentence on stderr, and the exit code the reference's door answers with. */
+/** One refusal: the sentence on stderr, and the exit code a refusal answers with. */
 export function refuse(message, code = 1) {
   return { code, stderr: `Error: ${message}` };
 }

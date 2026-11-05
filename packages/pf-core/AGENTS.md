@@ -1,4 +1,4 @@
-# pf-core — 纯 TypeScript 的 pf 引擎：记录、线、设置与推线；暂作 pipeline 的暂存区，终将并入寻路中心的 host 半端
+# pf-core — 纯 TypeScript 的 pf 引擎：记录、线、设置与推线；`pf` 命令与寻路中心的宿主半端都从这一份读
 
 > 本文件是路牌，上限 15 行：一行一条——只说这一层有什么、什么时候看。
 
@@ -11,5 +11,3 @@
 - `package.json` `tsconfig.json` `tsdown.config.ts` `vitest.config.ts` — 包的形状（私有、唯一进程入口）与构建、测试口径。改发布面或构建时看
 - `.pf/` — 这个包自己不立记录目录：引擎操作一律在临时目录做，管线的记录在仓根那一份（见仓根的 `.pf/AGENTS.md`）
 - `.tmp/` — 临时产物，随时可删，不进版本库
-
-来源说明：本库由参考实现（Python 工具树）向 TypeScript 移植而来，仅此一句，别处不再提。

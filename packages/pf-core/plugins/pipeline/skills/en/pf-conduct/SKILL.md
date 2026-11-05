@@ -704,8 +704,7 @@ git worktree add .pf/worktrees/<node short id> -b pf/<node short id>
 **Those two checks exist for the fat-fingered case — do not skip them on "I know the main tree is
 clean"**; when refused, stop as above and never fork anyway.
 
-Once the worktree is made, write the FORK record down yourself (`at` in the same shape as the
-reference: UTC, seconds, a literal `Z`):
+Once the worktree is made, write the FORK record down yourself (`at`: UTC, seconds, a literal `Z`):
 
 ```pwsh
 $rec = [ordered]@{

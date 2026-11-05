@@ -139,7 +139,7 @@ test('仓外运行时：`merge-ledger` 的手交到自己身边那份驱动上',
     const said = `${stdout}${stderr}`
     assert.equal(code, 2, `merge-ledger 的退出码不是驱动那格的 2：${JSON.stringify({ code, said })}`)
     assert.ok(
-      !/^usage: ledger-merge/mu.test(said),
+      !/^usage: pf merge-ledger/mu.test(said),
       `命令自己的解析器先拒了，驱动根本没接手：${JSON.stringify(said.slice(0, 400))}`,
     )
     assert.match(said, /not a ledger file|not touching it/u, `驱动没跑起来：${JSON.stringify(said.slice(0, 400))}`)

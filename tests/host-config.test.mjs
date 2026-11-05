@@ -109,7 +109,7 @@ test('readConfig 认 options 上的取消信号：递进来的那条原样到进
 })
 
 test('读那一趟没成：如实说它没成，一行都不编', async () => {
-  const subprocess = fakeSubprocess({ exitCode: 1, stderr: 'pf: python not found on PATH' })
+  const subprocess = fakeSubprocess({ exitCode: 1, stderr: 'pf: this folder has no .pf record' })
   const gateway = new PathfinderRecordsGateway(fakeContext({ subprocess }))
   const reading = await gateway.readConfig('s1', '')
 
@@ -118,7 +118,7 @@ test('读那一趟没成：如实说它没成，一行都不编', async () => {
   assert.equal(reading.ok, false)
   assert.equal(reading.text, '', '没成的时候不往 text 里塞话——那句话没有语言')
   assert.equal(reading.refusal?.code, 'tool-refused')
-  assert.match(reading.refusal?.detail ?? '', /python not found/u)
+  assert.match(reading.refusal?.detail ?? '', /no \.pf record/u)
   assert.deepEqual(reading.entries, {})
 })
 

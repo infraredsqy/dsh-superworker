@@ -1,5 +1,4 @@
-usage: state-manage.py clean-temp [-h] [--project PROJECT] [--node NODE]
-                                  [--yes] [--force]
+usage: pf clean-temp [-h] [--project PROJECT] [--node NODE] [--yes] [--force]
 
 options:
   -h, --help         show this help message and exit

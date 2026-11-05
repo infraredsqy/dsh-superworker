@@ -2,14 +2,14 @@
  * The command line in front of the engine: an argv parser and the help printer, both grown from one
  * table row per word.
  *
- * The geometry is the one the reference tool's own listings printed: a 78-column body (the terminal
- * width minus the two columns the reference's printer takes off, fixed here so the same line of output
- * is the same file on any machine), the word column at two spaces, the sense column at most 24, and
+ * The geometry: a 78-column body (the terminal width minus the two columns a printer takes off, fixed
+ * here so the same line of output is the same file on any machine), the word column at two spaces, the
+ * sense column at most 24, and
  * senses wrapped in what is left. The rules are written once, in `usageBlock` / `sectionBlock`, so the
  * parser's usage, the printed help and the router's words cannot come apart.
  */
 
-/** The printed body's width: the reference tool's listings wrap here with no terminal to ask. */
+/** The printed body's width: listings wrap here with no terminal to ask. */
 export const WIDTH = 78;
 /** The widest the sense column may open. */
 export const MAX_HELP_POSITION = 24;
@@ -22,8 +22,8 @@ const SECTION_TITLES = { positional: 'positional arguments:', option: 'options:'
 
 /**
  * One text as the lines it prints in `width` columns: greedy, whitespace-split, and a chunk that is
- * wider than the whole column goes on a line of its own rather than being cut (the reference's own
- * wrapper never cuts a word it printed).
+ * wider than the whole column goes on a line of its own rather than being cut (the wrapper never cuts
+ * a word it printed).
  */
 export function wrap(text, width) {
   const words = String(text).replace(/\s+/gu, ' ').trim().split(' ').filter((word) => word !== '');
@@ -134,7 +134,7 @@ export function usageBlock(spec) {
 
 // ── the sections ────────────────────────────────────────────────────────────
 
-/** The invocation printed in the word column: flags, then the metavar, exactly as the reference prints it. */
+/** The invocation printed in the word column: flags, then the metavar, as the listing spells it. */
 export function invocationOf(action) {
   if (action.kind === 'positional') return action.metavar;
   if (action.kind === 'exclusive') return action.actions.map(invocationOf).join(' | ');
@@ -216,8 +216,8 @@ export function helpText(spec) {
     .map((action) => ({ invocation: invocationOf(action), sense: action.help, indent: MARGIN }));
   for (const row of optionRows) widest.push(row);
 
-  // One column for both sections: the widest word in the whole parser, which is how the reference's
-  // printer lays a command's two listings out.
+  // One column for both sections: the widest word in the whole parser, so a command's two listings
+  // line up under one sense column.
   const column = senseColumnOf(widest);
   if (positionalRows.length > 0) {
     blocks.push(sectionBlock(SECTION_TITLES.positional, positionalRows, column).join('\n'));
@@ -398,7 +398,7 @@ export function parse(spec, argv) {
   return { values, positionals };
 }
 
-/** The usage error the reference's parser prints for a refused line, with the program's own name. */
+/** The usage error a refused line prints, with the program's own name. */
 export function usageError(spec, message) {
   return `${usageBlock(spec)}\n${spec.prog}: error: ${message}\n`;
 }

@@ -6,7 +6,7 @@
 
 - `corpus.test.ts` `fixtures/` — 黄金语料：逐字节对拍的用例，一个用例一个目录
 - `helpers/` — 共享替身与语料重放器：铺台、token 规则与比对尺子都在 `corpus.ts`
-- `guard.test.ts` — 硬边界、包的形状与来源词守卫
+- `guard.test.ts` — 硬边界与包的形状守卫
 - `api-docs.test.ts` `surface.test.ts` — `docs/api.md` 与包出口、冻结面对拍
 - `dag-*` `cycles-commands` `instructions-commands` `records` `record-io` `format` — 记录与它的动作面
 - `ledger-*` `layout` `atomic-write` `pf-dir-hash` `merge-ledger-bin` — 立起记录目录、布局、写入底座与合并驱动的进程入口

@@ -18,7 +18,7 @@ import { pyScalar, refuse, short } from './out.mjs';
 const CLOSING_CELLS = ['continue', 'stop', 'node', 'note'];
 
 /**
- * One plan as the caller reads it, in the reference's own spelling: the action, then every cell a
+ * One plan as the caller reads it: the action, then every cell a
  * reader has to act on. Key order is that reading's order, not the bag's.
  */
 export function actionText(action) {
@@ -290,7 +290,7 @@ export async function nextVerb({ values }) {
 /**
  * The bookkeeping cells an applied action carries: what the tool did on the caller's behalf. They are
  * the tool's own words — the runs are this process's calls, not a command list — and the caller reads
- * `action` and acts on that alone. Key order follows the reference's applied shape: the action's own
+ * `action` and acts on that alone. Key order follows the applied shape: the action's own
  * cells, then `commands` (a dispatch carries the empty list: the mechanical steps have run), then
  * `applied`, `opened_node`, `did`, and — on a dispatch — the note that says what it opened.
  */
@@ -372,7 +372,7 @@ function launchPromptPath(root, cycleId, nodeId) {
   return join(root, '.pf', 'meta', 'launch', String(cycleId), String(nodeId), 'prompt.txt');
 }
 
-/** The claim of one dispatch: `<pf>/meta/launch/<cycle>/<node>/started`, the reference's only "already open" evidence. */
+/** The claim of one dispatch: `<pf>/meta/launch/<cycle>/<node>/started`, the one "already open" evidence. */
 function launchStartedPath(root, cycleId, nodeId) {
   return join(root, '.pf', 'meta', 'launch', String(cycleId), String(nodeId), 'started');
 }
@@ -391,7 +391,7 @@ function noOpenerSentence(root, cycleId, nodeIds) {
   );
 }
 
-/** The reference's refusal for a node whose prompt is not on disk: where it should be, and the command that writes it. */
+/** The refusal for a node whose prompt is not on disk: where it should be, and the command that writes it. */
 function noPromptRefusal(prompt, nodeId) {
   return refuse(
     `no prompt file at ${prompt}. That file is written by the step that pinned this node: usually ` +
@@ -445,7 +445,7 @@ export async function dispatchVerb({ values, positionals }) {
       );
     }
     // The gate this verb asks before it opens anything is the pair of disk facts, node by node and in
-    // the reference's order. The `started` claim comes first: it is the evidence that a session is out
+    // this order. The `started` claim comes first: it is the evidence that a session is out
     // already, and a second session on the same node never pays for itself. Then the prompt file the
     // step that pinned the node wrote. A node with neither is where this verb stops, having written
     // nothing; a node with the prompt and no claim is a dispatch — the line may still be waiting on

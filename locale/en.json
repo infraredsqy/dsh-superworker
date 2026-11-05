@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "dsh-pathfinder",
-    "description": "Brings the agent-pathfinder pipeline into DSH: the host half reads that record from the workspace the session belongs to, and the browser half draws the readings as a work panel."
+    "description": "The `.pf/` pipeline record as a work panel in DSH: the host half reads that record from the workspace the session belongs to, and the browser half draws the readings as a work panel."
   }
 }

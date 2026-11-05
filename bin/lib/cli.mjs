@@ -31,7 +31,7 @@ const SELF_VERBS = [
 ];
 
 /**
- * The verbs: word → the row found in the table (its flags and values are the reference tool's own)
+ * The verbs: word → the row found in the table (its flags and values come off that one table)
  * plus the handler that answers it. This is the `pf <verb>` layer; a group's verbs live one level in.
  */
 const VERB_ROUTES = {
@@ -188,12 +188,12 @@ export async function topHelp() {
   return (
     text +
     "\n\n  Run `pf <verb> --help` for the verb's own flags and values, or `pf <group> --help`\n" +
-    // The listing closes on one blank line, as the reference tool's own parser does.
+    // The listing closes on one blank line.
     "  for a group's verbs.\n\n"
   );
 }
 
-/** One verb's one-line sense: the sentence the reference's own table carries for that word. */
+/** One verb's one-line sense: the sentence the table carries for that word. */
 function verbSense(word) {
   return VERB_SENSE[word] ?? '';
 }
@@ -249,7 +249,7 @@ async function runRow(spec, parsed) {
   });
 }
 
-/** The name a group's refusal prints for its sub-command: the group's own `dest`, as the reference's parser has it. */
+/** The name a group's refusal prints for its sub-command: the group's own `dest`, spelled per group. */
 function groupDestOf(subparsers) {
   return subparsers.dest ?? subparsers.cellName;
 }
@@ -329,7 +329,7 @@ export async function main(argv) {
       useConfigKnobs(await configKeys());
     } catch {
       // A folder with no `.pf` of its own still answers its help page, and with the names that folder
-      // can really be asked for. The plugin knobs a captured table carries are refused here, so they
+      // can really be asked for. The plugin knobs a table from another project carries are refused here, so they
       // have no place in this page.
       useConfigKnobs(CORE_CONFIG_KEYS);
     }
@@ -379,8 +379,8 @@ async function pluginWord(word) {
  * One plugin word: the rest of the line goes to the plugin that declares it, in this process, through
  * the plugin contract. Whatever the plugin answers comes back as it answered it — the text, and the
  * exit code a plugin that says how its run ended hands back (`main` may answer a number). A plugin
- * that cannot be run is one sentence on stderr naming the plugin, with the non-zero code the
- * reference's own door answers with; the plugin's own streams went out from this same process, so
+ * that cannot be run is one sentence on stderr naming the plugin, with the non-zero code a failure
+ * answers with; the plugin's own streams went out from this same process, so
  * nothing of its stderr is swallowed here.
  */
 async function runPluginWord(entry, word, rest) {
