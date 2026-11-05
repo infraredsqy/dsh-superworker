@@ -270,7 +270,7 @@ describe('the verdict reaches stderr whole: the real product on real pipes', () 
         );
       }
       const closing = verdict[verdict.length - 1]!;
-      expect(closing.startsWith(`pf: ${CONFLICT_NODES} places need a human decision; `)).toBe(true);
+      expect(closing.startsWith(`merge-ledger: ${CONFLICT_NODES} places need a human decision; `)).toBe(true);
       expect(closing.endsWith('carry on.')).toBe(true);
       // A conflict writes nothing and says nothing on stdout: the verdict is stderr's alone.
       expect(run.stdout).toBe('');
