@@ -4,13 +4,15 @@
 
 - `open(root, options?)` 交回一个 `pf` 句柄，里面是 `ledger` / `conductor` / `config` /
   `sessions` 四个命名空间；`options` 的形状是 `PfOpenOptions`。
-- `PfOpenOptions { executor?: Executor; homeDir?: string }` —— `executor` 是执行的唯一注入点；不传执行者时，`conductor.dispatch`
+- `PfOpenOptions { executor?: Executor; homeDir?: string; pluginsDir?: string }` —— `executor` 是执行的唯一注入点；不传执行者时，`conductor.dispatch`
   直接抛错，记录一个字节都不动。git 不走这里：`ledger.init`、`ledger.register` 与 `conductor.doctor`
   每次调用自带一个 `git`（形状就是 `src/git.ts` 里的 `GitRunner`），句柄上不存 git；哪一次调用不传，
   那一次问 git 的部分就不问（doctor 的合并驱动一格只说没问，不判红）。`homeDir` 是机器层设置的 home
   （`<home>/.pf/config.json`）：句柄把它交给每一个读这一层的命名空间——`ledger`（`dag.info` 的会话档）、
   `config` 的 global 层、`sessions` 的宿主解析，以及 `conductor` 的派发准备与插件上下文；同一个句柄只
-  有一套机器层。不传时按 `PF_HOME_DIR`，再缺省到本机 home。
+  有一套机器层。不传时按 `PF_HOME_DIR`，再缺省到本机 home。`pluginsDir` 是这个句柄扫描的插件目录
+  （设置声明的并入、插件命令、doctor 与两道时机门读的都是它）：点名优先于 `PF_PLUGINS_DIR`，两者都压过
+  缺省的 `<root>/plugins`；不点名时读法照旧。
 - `Pf { root: string; ledger; conductor; config; sessions }` —— `root` 是打开时给的项目根，原样保存。
 - `pf.ledger.dag` 十五动词、`pf.ledger.cycles` 十三动词、`pf.ledger.instructions` 五动词、
   `pf.config` 五动词、`ledger.init` / `ledger.register` / `ledger.cleanTemp`、`pf.sessions` 三动词与

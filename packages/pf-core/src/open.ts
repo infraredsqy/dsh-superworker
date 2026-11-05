@@ -22,6 +22,13 @@ export interface PfOpenOptions {
    * user's home.
    */
   readonly homeDir?: string;
+  /**
+   * The plugin directory this handle scans: the option the call hands in wins over `PF_PLUGINS_DIR`,
+   * and both win over the default `<root>/plugins` (one folder per plugin). Left out, the reading is
+   * the one it has always been — the switch, then the project's own folder — so a caller that names
+   * nothing changes nothing.
+   */
+  readonly pluginsDir?: string;
 }
 
 /** The pf handle: the project root plus four namespaces. */
@@ -56,11 +63,14 @@ export function open(root: string, options: PfOpenOptions = {}): Pf {
   const pf: Pf = {
     root,
     ledger: createLedgerNamespace(root, { homeDir: options.homeDir }),
-    conductor: createConductorNamespace(root, options.executor, { homeDir: options.homeDir }),
+    conductor: createConductorNamespace(root, options.executor, {
+      homeDir: options.homeDir,
+      pluginsDir: options.pluginsDir,
+    }),
     // Each call makes its own assembly: the folder on disk is the answer every time.
     config: createConfigNamespace(root, {
       homeDir: options.homeDir,
-      declaredKnobsOf: (dir) => pluginAssemblyOf(dir).knobs(),
+      declaredKnobsOf: (dir) => pluginAssemblyOf(dir, options.pluginsDir).knobs(),
     }),
     sessions: createSessionsNamespace(root, { homeDir: options.homeDir }),
   };

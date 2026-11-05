@@ -36,6 +36,7 @@ import { open, type Executor } from 'pf-core'
 import { openNodeSession, type SessionOpenOutcome } from './executor.ts'
 import type { PfRefusalCode } from './failure.ts'
 import { PANEL_PREF_FIELDS } from './settings-fields.ts'
+import { shippedPluginsDir } from './skills.ts'
 
 /** The one refusal this layer adds: the engine (or the opener inside it) said no. */
 export type DispatchRefusalCode = PfRefusalCode | 'dispatch-refused'
@@ -128,7 +129,10 @@ async function runDispatch(
   node: string,
 ): Promise<DispatchOutcome> {
   try {
-    const pf = open(workspaceRoot, { executor: executorOf(ctx, sessionId, workspaceRoot) })
+    /* The handle names the plugin folder this package ships, so the shipped plugin set (the `issue`
+     * command surface and the two closing guards) answers here too — the same set the skills
+     * placement reads. A project's own `plugins/` folder is not consulted through this path. */
+    const pf = open(workspaceRoot, { executor: executorOf(ctx, sessionId, workspaceRoot), pluginsDir: shippedPluginsDir() })
     const receipt = await pf.conductor.dispatch({ cycle, node })
     if (receipt.action === 'opened' && receipt.session?.sessionId !== undefined) {
       tracked.set(receipt.session.sessionId, workspaceRoot)
@@ -174,7 +178,7 @@ export function dispatchCell(
  */
 async function judge(ctx: Context, sessionId: SessionId, workspaceRoot: string): Promise<void> {
   if (!relayOn()) return
-  const plan = await open(workspaceRoot, { executor: executorOf(ctx, sessionId, workspaceRoot) })
+  const plan = await open(workspaceRoot, { executor: executorOf(ctx, sessionId, workspaceRoot), pluginsDir: shippedPluginsDir() })
     .conductor.next({ plan: true })
   if (plan.action !== 'dispatch') return
   const outcome = await dispatchCell(ctx, sessionId, workspaceRoot, plan.cycle, plan.node_id)
