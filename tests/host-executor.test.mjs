@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openNodeSession } from '../src/host/executor.ts'
 import { executorOf } from '../src/host/relay.ts'
+import { PATHFINDER_TOOL_NAME } from '../src/host/tool.ts'
 import { fakeWorkspaceFiles } from './helpers/workspace-files-port.mjs'
 
 /* Opening a session also reads the placement record under the DSH home to confirm the skills the
@@ -70,12 +71,24 @@ function fakeAgents({ withWhenIdle = true, gate, idleRefusal } = {}) {
     created,
     registry: {
       create(options) {
-        const record = { options, followups: [], whenIdle: defer() }
+        const record = { options, followups: [], registered: [], sequence: [], whenIdle: defer() }
         created.push(record)
         const agent = {
           id: options.sessionId,
           status: 'idle',
-          followup(message) { record.followups.push(message) },
+          ctx: {
+            tools: {
+              register(definition) {
+                record.registered.push(definition)
+                record.sequence.push('register')
+                return () => {}
+              },
+            },
+          },
+          followup(message) {
+            record.sequence.push('followup')
+            record.followups.push(message)
+          },
           ...(idleRefusal !== undefined
             ? { whenIdle: () => Promise.reject(idleRefusal) }
             : withWhenIdle
@@ -91,7 +104,7 @@ function fakeAgents({ withWhenIdle = true, gate, idleRefusal } = {}) {
 }
 
 /** The host context stand-in: services by name, the port as a property, and an event bus with `on`/`emit`. `sessions` is passed as-is: the store is an inject requirement, and a stand-in that omits it still opens. */
-function fakeContext({ files, agents, sessions, defaultModel, workspaceRegistry } = {}) {
+function fakeContext({ files, agents, sessions, defaultModel, workspaceRegistry, agentPresets } = {}) {
   const listeners = new Map()
   const bus = {
     on(name, listener) {
@@ -111,6 +124,7 @@ function fakeContext({ files, agents, sessions, defaultModel, workspaceRegistry 
       if (name === 'agents') return agents
       if (name === 'agentDefaultModel') return defaultModel
       if (name === 'workspaceRegistry') return workspaceRegistry
+      if (name === 'agentPresets') return agentPresets
       return undefined
     },
     on: bus.on,
@@ -466,6 +480,99 @@ test('部署里没有默认模型选择：agentOptions 不带，由循环自己�
   rigging.agents.created[0].whenIdle.resolve()
   await pending
   assert.equal(rigging.agents.created[0].options.agentOptions, undefined)
+})
+
+/* ---- the standing preset the open composes through ---- */
+
+test('构图：宿主带着 preset 名册时，会话按在册默认 preset 合成，挂载随 setup 进 create', async () => {
+  const mounted = []
+  const agentPresets = {
+    async resolve() { return { id: 'standard-persona' } },
+    async mount(_agentCtx, id) { mounted.push(id) },
+  }
+  const rigging = rig({ agentPresets })
+  const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
+  await flush()
+  rigging.agents.created[0].whenIdle.resolve()
+  const outcome = await pending
+  assert.equal(outcome.ok, true, JSON.stringify(outcome))
+  const record = rigging.agents.created[0]
+  assert.equal(record.options.meta.agentPreset, 'standard-persona', '在册 preset 的身份落进会话元数据')
+  assert.equal(typeof record.options.setup, 'function', 'create 带着 composition setup')
+  await record.options.setup({}, record.agent)
+  assert.deepEqual(mounted, ['standard-persona'], 'setup 挂的是 resolve 出来的那一个 id')
+})
+
+test('构图：宿主没有 preset 名册时照旧开成，不带 setup 也不写 agentPreset', async () => {
+  const rigging = rig()
+  const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
+  await flush()
+  rigging.agents.created[0].whenIdle.resolve()
+  const outcome = await pending
+  assert.equal(outcome.ok, true, JSON.stringify(outcome))
+  const record = rigging.agents.created[0]
+  assert.equal(record.options.setup, undefined, '没有名册就没有 setup')
+  assert.equal(record.options.meta.agentPreset, undefined, '没有名册就不写 preset 身份')
+})
+
+test('构图：preset 解析拒了，open 按 open-failed 落地带原因，什么都没建', async () => {
+  const agentPresets = {
+    async resolve() { throw new Error('roster blew up') },
+    async mount() { throw new Error('mount must not be reached') },
+  }
+  const rigging = rig({ agentPresets })
+  const outcome = await openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
+  assert.equal(outcome.ok, false)
+  assert.equal(outcome.code, 'open-failed')
+  assert.ok((outcome.detail ?? '').includes('roster blew up'), '拒绝句带着名册报的原话')
+  assert.equal(rigging.agents.created.length, 0, '解析失败的 open 一个代理都不建')
+  assert.ok(
+    !existsSync(join(rigging.root, '.pf', 'meta', 'sessions', `${rigging.node}.json`)),
+    '没有会话就没有会话档',
+  )
+})
+
+/* ---- the session's own tool, armed by the opener ---- */
+
+test('唤醒：open 出的会话在首条指令进箱前就被装上 pathfinder 工具，恰好一次', async () => {
+  const rigging = rig()
+  const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
+  await flush()
+  rigging.agents.created[0].whenIdle.resolve()
+  const outcome = await pending
+  assert.equal(outcome.ok, true, JSON.stringify(outcome))
+  const record = rigging.agents.created[0]
+  assert.equal(record.registered.length, 1, '注册恰好一次')
+  assert.equal(record.registered[0].name, PATHFINDER_TOOL_NAME, '注册的就是 pathfinder 这一个工具')
+  assert.deepEqual(record.sequence, ['register', 'followup'], '工具先进 scope，首条指令后进')
+})
+
+test('唤醒：会话没有可注册的工具面时，open 照常开成（wake 按契约沉默）', async () => {
+  // bespoke: an agent whose ctx has no tools service
+  mkdirSync(join(tmpdir(), 'pf-executor-'), { recursive: true })
+  const root = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-'))
+  let made
+  const bareAgents = {
+    create(options) {
+      const record = { options, followups: [], whenIdle: defer() }
+      made = record
+      const agent = {
+        id: options.sessionId,
+        status: 'idle',
+        ctx: {},
+        followup(message) { record.followups.push(message) },
+        whenIdle: () => record.whenIdle.promise,
+      }
+      record.agent = agent
+      return Promise.resolve({ agent, dispose: async () => {} })
+    },
+  }
+  const { ctx } = fakeContext({ files: { [promptPath('c1', 'n1')]: PROMPT }, agents: bareAgents, sessions: {} })
+  const pending = openNodeSession(ctx, 's1', root, 'c1', 'n1')
+  await flush()
+  made.whenIdle.resolve()
+  const outcome = await pending
+  assert.equal(outcome.ok, true, JSON.stringify(outcome))
 })
 
 /* ---- the dispatch seam's drill switch ---- */

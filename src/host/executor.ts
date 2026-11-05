@@ -11,11 +11,15 @@
  * 2. read the plan's launch prompt for this cell out of the record store —
  *    the first instruction is exactly that line, so it agrees with the plan
  *    by construction;
- * 3. create the agent and its session under the workspace root, attach the
+ * 3. create the agent and its session under the workspace root, composed
+ *    through the standing agent preset when the host carries a roster (the
+ *    preset's mount is what gives the session its scoped world — tools and
+ *    skills; without a roster the bare open stands, as before), attach the
  *    session to that workspace when the host carries a workspace service
- *    (`cwd` alone joins nothing), arm the opening round's listeners, hand the
- *    prompt over as the first instruction, and note the session through the
- *    engine's writer — this side only names the entry;
+ *    (`cwd` alone joins nothing), arm the session's `pathfinder` tool, arm the
+ *    opening round's listeners, hand the prompt over as the first instruction,
+ *    and note the session through the engine's writer — this side only names
+ *    the entry;
  * 4. settle the opening round: hosts whose agents expose the wait interface
  *    get `whenIdle()`; older ones get the idle notification plus the
  *    turn-end events, resolved together.
@@ -33,7 +37,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 /* The declaration merges for `agents` and the agent events live on the package entries; type-only, nothing enters the runtime. */
 import type {} from '@deepseek-ai/dsh-agent'
-import type { Agent, AgentOptions, AgentRegistry } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentOptions, AgentRegistry, AgentSetup } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createUserMessage } from '@deepseek-ai/dsh-llm/message'
 import { RECORD_DIR } from './contract.ts'
@@ -41,6 +45,7 @@ import type { PfFailure, PfRefusalCode } from './failure.ts'
 import { isAbsent, readWholeFile, type PathfinderScope } from './records.ts'
 import { noteOpenedSession } from './session-note.ts'
 import { confirmSkillsForWorkspace, reportSkillView } from './skills.ts'
+import { wakeAgent } from './tool.ts'
 import type { SkillCatalogPort, SkillHostContext } from './skills.ts'
 
 /** What one open brought back: the session now working this node. The id is an address for the panel's navigation, not a word a reader is shown. */
@@ -72,6 +77,37 @@ function segmentFailure(value: string): PfFailure | undefined {
 /** Which pieces of the host's session side this open needs, fetched on the spot. */
 interface SessionSide {
   readonly agents: AgentRegistry
+}
+
+/**
+ * The preset side of one open, as a narrow local face. The session-controller composes its own
+ * sessions through the standing agent preset — the mount is what gives a session its scoped
+ * world (tools, skills, the lot). This line opens the sessions that work nodes, so it composes
+ * them the same way: resolve the standing preset and hand the mount in as creation-time setup.
+ * The service is fetched by name and anything answering another shape counts as absent: a
+ * headless composition without the roster keeps the bare open it always had.
+ */
+interface PresetPort {
+  resolve(presetId?: string): Promise<{ readonly id: string }>
+  mount(agentCtx: Context, id: string): Promise<void>
+}
+
+/** The preset roster this context carries, when it answers the shape above. */
+function presetPortOf(ctx: Context): PresetPort | undefined {
+  const read = (ctx as { get?: (name: string) => unknown }).get
+  const held = typeof read === 'function' ? read.call(ctx, 'agentPresets') : undefined
+  if (held === null || typeof held !== 'object') return undefined
+  const resolve = (held as { resolve?: unknown }).resolve
+  const mount = (held as { mount?: unknown }).mount
+  if (typeof resolve !== 'function' || typeof mount !== 'function') return undefined
+  return {
+    async resolve(presetId?: string): Promise<{ readonly id: string }> {
+      return (await (resolve as (presetId?: string) => Promise<unknown>).call(held, presetId)) as { readonly id: string }
+    },
+    async mount(agentCtx: Context, id: string): Promise<void> {
+      await (mount as (agentCtx: Context, id: string) => Promise<unknown>).call(held, agentCtx, id)
+    },
+  }
 }
 
 /**
@@ -254,14 +290,31 @@ export async function openNodeSession(
   const opened = `session-${randomUUID()}` as SessionId
   const selection = modelSelectionOf(ctx)
 
+  /* The standing preset this open composes through: the mount is what gives the session its
+   * scoped world (tools, skills). A roster that cannot resolve its own default is an open
+   * refusal naming the reason, not a bare session that can do nothing. */
+  const presets = presetPortOf(ctx)
+  let standing: { readonly id: string } | undefined
+  let mount: AgentSetup | undefined
+  if (presets !== undefined) {
+    try {
+      standing = await presets.resolve(undefined)
+    } catch (error) {
+      return openFailure(messageOf(error))
+    }
+    const id = standing.id
+    mount = (agentCtx) => presets.mount(agentCtx, id)
+  }
+
   /* The workspace-touching stretch, queued: create the session under the root, join it to that one workspace, arm the round's listeners, hand the prompt over, then note the session while the line still holds. */
   let settlement: Settlement
   try {
     settlement = await inLine(workspaceRoot, async () => {
       const handle = await side.agents.create({
         sessionId: opened,
-        meta: { cwd: workspaceRoot },
+        meta: { cwd: workspaceRoot, ...(standing === undefined ? {} : { agentPreset: standing.id }) },
         ...(selection === undefined ? {} : { agentOptions: selection }),
+        ...(mount === undefined ? {} : { setup: mount }),
       })
       /* A host with a workspace layer owns the grouping: the session is attached to the entity of the root, which is the call that puts it in that workspace. A composition without the layer keeps the cwd-only open. */
       const registry = workspaceRegistryOf(ctx)
@@ -288,6 +341,12 @@ export async function openNodeSession(
         )
       }
       const armed = armSettlement(ctx, handle.agent, opened)
+      /* Arm the session's own tool before the first instruction goes in: the wake's event
+       * paths cannot see a dispatched session — `agent/pre-step` carries no agent in its
+       * payload, and the pipeline skills are not model-invocable, so no skill-tool load can
+       * ever carry them. The opener knows the agent it just minted, so it arms it here,
+       * before the first step's tool set resolves. */
+      wakeAgent(handle.agent, { ctx })
       try {
         handle.agent.followup(createUserMessage({
           content: [{ type: 'text', text: prompt }],
