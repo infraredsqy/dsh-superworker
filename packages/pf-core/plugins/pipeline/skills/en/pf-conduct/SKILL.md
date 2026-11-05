@@ -170,7 +170,7 @@ never changes them.
   holds and how many sessions it opens), and the two debt thresholds; write them with
   `cycle policy`, read them from the `Policy:` line of `cycle current`. Lines are coupled in no
   other way: two lines run side by side, each holding its own few nodes
-- **The node**: mode, weight, tags, spec, report set, FORK record — they travel with the graph and
+- **The node**: mode, weight, tags, spec, report set — they travel with the graph and
   the node directory, one place per node
 
 The concurrency cap has three layers, outside in: the graph's dependency edges (who blocks whom)
@@ -195,7 +195,7 @@ its own children open at the same time, and together they may not cross it.
 |---|---|
 | `/pf-conduct status` | `cycle list` + `cycle current`, read only, no advance |
 | `/pf-conduct`, exactly one active cycle | carry on: `next --spawn --json` (a bare `next` follows this one active line) |
-| `/pf-conduct`, several active cycles | a bare `next` gets refused, and the error lists the candidate lines and points at `--cycle` — read the candidates out to the user, and whichever one they name is the one: `next --cycle <cycle id> --spawn --json` (without `--spawn` it only pins the node and writes the prompt, with no session to take over) |
+| `/pf-conduct`, several active cycles | a bare `next` gets refused, and the error lists the candidate lines and points at `--cycle` — read the candidates out to the user, and whichever one they name is the one: `next --cycle <cycle id> --spawn --json` (it pins the node and lands the prompt, one way or the other; the host opens the next session as this run ends — see "The dispatch path") |
 | `/pf-conduct`, the lines are all there, just none `active` | `cycle status <id> active` puts it back in service, then carry on. A line not in service cannot be driven by naming it either (`next` answers `ask_user` and gives you that command as it stands), but the node it pins can still be closed — recorded, not dispatched; to redo a `shelved` node, first `pf dag revive <node_id>`. With several candidates, read them out and let the user name one — do not pick for him; that decision belongs in pf-route, settled together with the nodes, and coming straight from there the line should already be `active` — take the row above |
 | `/pf-conduct`, no cycle yet | take "Start-up" below |
 | The user just says what they want done, no cycle yet | take "Start-up", with `--title` set to that sentence |
@@ -213,11 +213,15 @@ With an active cycle already there, `cycle start` gets refused, and only `--forc
 call without it, and you write it even when the graph has just one line. `--title` takes only the
 user's own words; it goes into the cycle's name and into no prompt.
 
-That one `next --spawn` command spawns the execution session of every node in this line's hand
-(one by default), and **your run ends here — do not wait on it here**: either this session stops
-outright, or it carries on through a `[pipeline]` call line. When it is done, tell the user how
-far you will push; in full auto, say: "Full auto is on; I will keep pushing until the graph has
-no ready node left, or some instruction says stop."
+That one `next --spawn` command pins what this line should open next (one node by default) and
+lands the material (each prompt and this round's run doc), while its spawn step answers one
+`spawn_error` line naming the panel — **this process opens no session**; the host opens the next
+round itself as this run ends (the panel's cell, or the relay firing on `turn/end`). So **your run
+ends here — do not wait on it here**: either this session stops outright, or it carries on through
+a `[pipeline]` call line; with no panel and no relay to open it, hand the user the prompt path that
+`spawn_error` names and the line in it. Before stopping, tell the user how far you will push; in
+full auto, say: "Full auto is on; I will keep pushing until the graph has no ready node left, or
+some instruction says stop."
 
 **How far this line runs depends on the node's own mode alone**: a `checkpoint` node stops at its
 close and hands over to a human; a `manual` node lives in the conversation throughout, and once
@@ -603,9 +607,10 @@ run and the words to say:
   `pf dispatch <cycle>` has no opener in this process and only refuses, reading out the panel and
   the prompt path (see "The dispatch path")
 - `insert_node`: nodes have just been put into the graph, **nothing was pinned** and there is no
-  prompt — commit and push as usual, then run `pf next --cycle <cycle> --spawn --json` and let the
-  picking rules dispatch them (this is where a debt node comes from, see "Debt nodes"
-  below)
+  prompt — commit and push as usual, then run `pf next --cycle <cycle> --spawn --json`: the picking
+  rules pick them out and land each prompt, and the host opens their sessions as this run ends
+  (with no panel and no relay, hand the user those prompt paths and their lines; this is where a
+  debt node comes from, see "Debt nodes" below)
 - `stop_pipeline`: say `reason` to the user as it stands (read `attention` out too when it has
   content), then stop — it does not stop this line while other nodes are still in flight, and
   `reason` will say so
@@ -635,8 +640,9 @@ pf next --spawn --json
 ```
 
 Stopping turns the line `inactive` as always, so putting it back in service cannot be skipped;
-what `next --spawn` spawns is already the next node's session, and this session stops here.
-Commit and push still come before spawning the next node, not a byte skipped. The time between
+`next --spawn` pins the next node and lands its prompt, the host opens that session as this run
+ends, and this session stops here.
+Commit and push still come before that next session opens, not a byte skipped. The time between
 the node finishing and your answer coming back may be long, and by then that node and its record
 have settled — a session change along the way does not matter, the record is on disk.
 
@@ -645,10 +651,11 @@ have settled — a session change along the way does not matter, the record is o
 spec landed, plus `note` — **no prompt, and nothing was pinned**, so the line's holding does not
 move. **It can carry more than one node** (when more than one debt is over its line; see "the
 maintenance channel" in `docs/conduct-state.md`). Commit and push as usual, then run
-`pf next --cycle <cycle> --spawn --json` and let the picking rules dispatch them; from there each
-walks like any other node. They go when they are done, and stopping to wait for someone's answer is
-not among their options. **Every node's spec carries a `method: ` line** (which method it names is
-the declaration's to write, and `pf doctor` prints it): when prepare reads it, run that skill
+`pf next --cycle <cycle> --spawn --json`: the picking rules pick them out and land each prompt, and
+once the sessions the host opens take over, each walks like any other node. They go when they are
+done, and stopping to wait for someone's answer is not among their options. **Every node's spec
+carries a `method: ` line** (which method it names is the declaration's to write, and `pf doctor`
+prints it): when prepare reads it, run that skill
 yourself — batching, dispatching and settling are all in your hands, and the loop is still this
 flow's "Execute" section; the scope is set by the spec that inserted it, so do not widen it to
 everything yourself. Close out as usual when it is done, then go on to the next.
@@ -668,11 +675,11 @@ mode's design, see `docs/conduct-state.md` "the two ways in"; to change it,
 |---|---|
 | `off` | work straight in the main tree, with no fork and no merge-back steps. There is no isolation, so a project with several lines side by side, or `parallel` > 1, does not use this mode |
 | `fork` (the default) | a fresh worktree per node, deleted clean once the close's merge-back is done — everything below this line is this mode |
-| `reuse` | not supported by the tool: on reading this mode, stop and hand it to the user — change the mode, or have the tool grow a standing set of worktrees first. Do not patch it up with your own `git worktree add`: the close's check, which reads the FORK record, will not pass |
+| `reuse` | not supported by the tool: on reading this mode, stop and hand it to the user — change the mode, or have the tool grow a standing set of worktrees first. Do not patch it up with your own `git worktree add`: this mode waits for the tool's pool, and one hand-made worktree stands in for none of it |
 
 **Before work starts, prepare's last step is the fork** — you read the two checks yourself, and once
-they pass you type the git that makes the worktree and the branch; the tool knows only the FORK
-record under `.pf/meta/`, and it does not do this work for you:
+they pass you type the git that makes the worktree and the branch; this is work the tool does not
+do for you (it knows a worktree by the `gitdir:` line in `.git`, and by no record):
 
 ```pwsh
 # 1. is the main tree clean: tracked changes only, untracked plumbing does not count
@@ -703,22 +710,11 @@ git worktree add .pf/worktrees/<node short id> -b pf/<node short id>
 **Those two checks exist for the fat-fingered case — do not skip them on "I know the main tree is
 clean"**; when refused, stop as above and never fork anyway.
 
-Once the worktree is made, write the FORK record down yourself (`at`: UTC, seconds, a literal `Z`):
-
-```pwsh
-$rec = [ordered]@{
-  node   = '<node id>'
-  branch = (git rev-parse --abbrev-ref HEAD)   # exit branch = the branch the main tree was on at fork time
-  head   = (git rev-parse HEAD)                # HEAD at fork time
-  at     = '{0:yyyy-MM-ddTHH:mm:ss}Z' -f [DateTime]::UtcNow
-}
-New-Item -ItemType Directory -Force -Path .pf/meta | Out-Null
-$rec | ConvertTo-Json | Set-Content -Encoding utf8 .pf/meta/FORK-<node short id>.json
-```
-
-**The exit branch = the branch the main tree was on at fork time**; it is the `branch` in the FORK
-record (and recorded again under `run.md`'s "Facts checked") — which branch to merge back into
-follows the record.
+**The exit branch = the branch the main tree was on at fork time** (what `git rev-parse
+--abbrev-ref HEAD` said then), and that goes into `run.md`'s "Facts checked" as before. Git keeps
+this branch and this worktree itself: the checkout at `.pf/worktrees/<node short id>`, its
+`gitdir:` pointer into `.git/worktrees/<node short id>`, and the branch as `pf/<node short id>` —
+`git worktree list` answers all of it. Which branch to merge back into follows the `run.md` line.
 
 The work:
 
@@ -759,9 +755,8 @@ steps run on the main tree**, `-C` points at the worktree, and nothing needs mov
 3. the full run runs on the main tree (so it is the merged content that gets verified), and once
    it passes, `git worktree remove .pf/worktrees/<node short id>` and
    `git branch -D pf/<node short id>`, then on to handoff → commit the record → push → dispatch.
-   When the worktree and the branch are not cleaned away, `next --after` refuses to settle this
-   node (it reads the FORK record) — when refused, go back and finish this step before trying
-   again
+   Clear the worktree and the branch away right here rather than leaving them for the next node —
+   a taken short id stops the next fork and hands it to the user
 
 When the main tree is not on the exit branch, or the squash still collides (another line merged
 one more commit after you refreshed): stop and hand it to the user.

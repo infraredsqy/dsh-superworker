@@ -103,7 +103,7 @@ tag 说清一个节点属于哪条线：`writing`（文案）、`coding`（代�
 
 - **工作区**：依赖图与它上面的维护节点判定、状态文件的写互斥——这些由工具管，你照本子里那几条命令走就行，不用为并发加任何东西。**代码的合流不归它**：每个节点的 worktree 与合回这几步你自己敲，工具只管记录与命名（见「并行：worktree」）
 - **线（cycle）**：`tags`（挑谁）、`when_shelved`、`parallel`（同时握几个节点、开几个会话）、两条维护阈值；写它们用 `cycle policy`，读它们用 `cycle current` 的 `Policy:` 行。线之间没有别的耦合：两条线并排跑，各自握各自的那几个节点
-- **节点**：mode、weight、tags、spec、报告集、FORK 记录——随图与节点目录走，一个节点一处
+- **节点**：mode、weight、tags、spec、报告集——随图与节点目录走，一个节点一处
 
 并发上限从外到内分三层：图上的依赖边（谁挡着谁）决定哪些节点**可以**并排；这条线的 `parallel`（`pf cycle current` 的 `Policy:` 行）决定这条线同时**握**几个节点；`pf config get max_agents`（见 [`shared/pf/subagents.md`](shared/pf/subagents.md)）决定这个会话同时**进行中**几个子 agent。第三层在最外面：握着的每一个节点都可能同时开着自己的孩子，它们加起来不许越过它。
 
@@ -122,7 +122,7 @@ tag 说清一个节点属于哪条线：`writing`（文案）、`coding`（代�
 |---|---|
 | `/pf-conduct status` | `cycle list` + `cycle current`，只看不推进 |
 | `/pf-conduct`，恰好一条 active cycle | 接着跑：`next --spawn --json`（裸 `next` 跟的就是这条唯一 active 的线） |
-| `/pf-conduct`，多条 active cycle | 裸 `next` 会被拒，报错列出候选线并指 `--cycle` —— 把候选念给用户，他点名哪条就走哪条：`next --cycle <cycle id> --spawn --json`（少了 `--spawn` 只会钉住节点、写好 prompt，没有会话接手） |
+| `/pf-conduct`，多条 active cycle | 裸 `next` 会被拒，报错列出候选线并指 `--cycle` —— 把候选念给用户，他点名哪条就走哪条：`next --cycle <cycle id> --spawn --json`（这一条钉住节点、落好 prompt，下一个会话由宿主在本趟收手时开出来，见「派发通路」） |
 | `/pf-conduct`，线都在、只是没一条 `active` | `cycle status <id> active` 把它放回服务，再接着跑。不在服务中的线点名也驱动不动（`next` 回 `ask_user`，把那条命令原文给你），但它钉着的那个节点照样收得掉——只登记、不派发；要重做 `shelved` 的节点，先 `pf dag revive <node_id>`。多条候选摆出来让用户点名，别替他挑——这个决定本该在 pf-route 里就跟节点一起定掉；刚从那儿过来的，线应该已经是 `active` 的，直接走上一行 |
 | `/pf-conduct`，还没有 cycle | 走下面「开机」 |
 | 用户直接说要做的事，还没有 cycle | 走「开机」，`--title` 用他那句话 |
@@ -136,7 +136,7 @@ pf next --spawn --json
 
 已有 active cycle 时 `cycle start` 会被拒，`--force` 才放行——先想清楚为什么同时有两个。`--tags` **必给**：工具拒收没有它的调用；图里只有一条线也照样写。`--title` 只放用户原话，它进的是 cycle 的名字，不进任何 prompt。
 
-`next --spawn` 那一条命令就把这条线手里每一个节点的执行会话都拉起来（默认只开一个），**你这一趟到此结束，别在这里等**：要么本会话直接收手，要么用 `[pipeline]` 调用行继续。开完告诉用户你会推到哪儿；全自动就说：「已进入全自动，会一直推到图里没有就绪节点、或某条指令说停。」
+`next --spawn` 那一条命令钉住这条线手里要开的节点、把材料落盘（prompt 与本轮 run 文档），spawn 那一步只回一句 `spawn_error` 并点名面板——**会话不由这个进程开**，本趟收手时由宿主自己开下一棒（面板那一格，或接力在 `turn/end` 上开）。所以**你这一趟到此结束，别在这里等**：要么本会话直接收手，要么用 `[pipeline]` 调用行继续；没有面板也没有接力时，把 `spawn_error` 里那份 prompt 路径和它那一行交给用户。收手前告诉用户你会推到哪儿；全自动就说：「已进入全自动，会一直推到图里没有就绪节点、或某条指令说停。」
 
 **这条线跑多远，只看节点自己的 mode**：`checkpoint` 的节点收尾就停下交人；`manual` 的节点整个活在对话里，用户明确放行（「标成完成，继续」）之后线照 `auto` 一样接着走；`auto` 的节点干完自己开下一个。线停下来就是 `cycle status <cycle> inactive`，收尾命令自己写；人用 `cycle status <cycle> active` 把它放回服务，它才会接着挑下一个节点（为什么放回服务只有人能写，见 `docs/conduct-state.md`「两个入口」）。
 
@@ -330,7 +330,7 @@ git -C .pf push                # 这份仓库有远端才推
 推送成功后，按 `next --after` 那条给的 `action` 走——它自己带着该跑的命令和该说的话：
 
 - `dispatch`：**交票即止**——交接单已落盘、节点已关，下一棒由宿主自己开出来（面板设置里的自动接力，默认开），本会话到此收手，不要再跑任何派发命令；接力被关掉、或下一棒迟迟没有开出来时，才由人在面板上补那一格：命令行这条 `pf dispatch <cycle>` 在这个进程里没有 opener，它只会拒，并把面板与 prompt 路径念给你（见「派发通路」）
-- `insert_node`：刚往图里插了节点，**什么都没钉**，也没有 prompt —— 照常提交、推送，然后 `pf next --cycle <cycle> --spawn --json`，由挑选按正常规则把它们派出去（越线时插的维护节点就是这么来的，见下面「维护节点」）
+- `insert_node`：刚往图里插了节点，**什么都没钉**，也没有 prompt —— 照常提交、推送，然后 `pf next --cycle <cycle> --spawn --json`：挑选按正常规则把它们挑出来、落好各自那份 prompt，会话由宿主在本趟收手时开出来（没有面板也没有接力时，把那几份 prompt 与它们那一行交给用户；越线时插的维护节点就是这么来的，见下面「维护节点」）
 - `stop_pipeline`：把 `reason` 照原话说给用户（`attention` 有内容就一起念），然后停手 —— 线里还有别的节点进行中时它不停这条线，`reason` 会说
 - `wait`：读它的 `note` / `close_with`，照那条命令做，**绝不轮询**
 
@@ -347,9 +347,9 @@ pf cycle status <cycle> active
 pf next --spawn --json
 ```
 
-停手照旧把线转成 `inactive`，所以放回服务那一条不能省；`next --spawn` 派出去的已经是下一个节点的会话，本会话到这里收手。提交与推送照旧排在派生下一个节点之前，一个字节都不省。节点跑完到收到你的答复之间可能隔很久，那个节点和它的记录都已经落定——中途换过会话也没关系，记录在盘上。
+停手照旧把线转成 `inactive`，所以放回服务那一条不能省；`next --spawn` 钉住下一个节点、落好它的 prompt，会话由宿主在本趟收手时开出来，本会话到这里收手。提交与推送照旧排在派生下一个节点之前，一个字节都不省。节点跑完到收到你的答复之间可能隔很久，那个节点和它的记录都已经落定——中途换过会话也没关系，记录在盘上。
 
-**维护节点**：收尾那一次越过了这条线的维护阈值时，`next --after` 回的动作是 `insert_node`：它带着这一次插进来的节点（各自那份 spec 落在哪儿）和 `note`，**没有 prompt，也什么都没钉** —— 线的持有没动。**它可以带不止一个节点**（越线的债不只一条时，见 `docs/conduct-state.md` 的「维护通道」一节）。照常提交、推送，然后跑 `pf next --cycle <cycle> --spawn --json`，由挑选按正常规则把它们派出去，派出去之后每个都走普通节点那一套。它们干完就走，停下来等人回话不在它们的选项里。**每个节点的 spec 里都带着 `method: ` 一行**（点名的是哪个方法由装进来的插件声明写，`pf doctor` 印得出来）：准备那一步读到它就照那个技能自己跑——分批、派人、落定全在你手里，循环还是本流程的「执行」那一节；范围由插入它的 spec 定，别自己扩到全库。干完照常收尾，接着走下一个。
+**维护节点**：收尾那一次越过了这条线的维护阈值时，`next --after` 回的动作是 `insert_node`：它带着这一次插进来的节点（各自那份 spec 落在哪儿）和 `note`，**没有 prompt，也什么都没钉** —— 线的持有没动。**它可以带不止一个节点**（越线的债不只一条时，见 `docs/conduct-state.md` 的「维护通道」一节）。照常提交、推送，然后跑 `pf next --cycle <cycle> --spawn --json`：挑选按正常规则把它们挑出来、落好各自那份 prompt，宿主开出来的会话接手之后，每个都走普通节点那一套。它们干完就走，停下来等人回话不在它们的选项里。**每个节点的 spec 里都带着 `method: ` 一行**（点名的是哪个方法由装进来的插件声明写，`pf doctor` 印得出来）：准备那一步读到它就照那个技能自己跑——分批、派人、落定全在你手里，循环还是本流程的「执行」那一节；范围由插入它的 spec 定，别自己扩到全库。干完照常收尾，接着走下一个。
 
 需求做不到、或 spec 自相矛盾：`completed` 换成 `failed`；活是自己主动停手不做的，换 `stopped`。两种都在 `-s` 里写清原因，不挂起等待。这个判决会让收尾把节点标成 `shelved`（出局等人），不用你自己动手标。
 
@@ -361,9 +361,9 @@ pf next --spawn --json
 |---|---|
 | `off` | 主树直做，没有 fork 也没有合回这两个步骤。没有隔离，多线并排或 `parallel` > 1 的项目别用这一档 |
 | `fork`（缺省） | 每个节点一个新 worktree，收尾合回后删干净——本节以下写的都是这一档 |
-| `reuse` | 工具未支持：读到这一档停下来交用户——改档，或先给工具补池子。不许自己 `git worktree add` 凑数：认 FORK 记录的那道收尾检查过不去 |
+| `reuse` | 工具未支持：读到这一档停下来交用户——改档，或先给工具补池子。不许自己 `git worktree add` 凑数：这一档等工具补出一个池子，手开一条工作树顶替不了它 |
 
-**开工前，准备的最后一步 fork**——两道检查你自己看一眼，过了自己敲 git 建工作树与分支；工具只认 `.pf/meta/` 里那条 FORK 记录，这活它不代你干：
+**开工前，准备的最后一步 fork**——两道检查你自己看一眼，过了自己敲 git 建工作树与分支；这活工具不代你干（它认 worktree 靠 `.git` 文件里那行 `gitdir:`，不靠哪份记录）：
 
 ```pwsh
 # 1. 主树干净吗：只算已跟踪的改动，未跟踪的排场不算
@@ -388,20 +388,7 @@ git worktree add .pf/worktrees/<节点短id> -b pf/<节点短id>
 
 **这两道检查就是为手滑准备的，别凭「我知道主树是干净的」跳过去**；被拒就照上面停下，不许硬 fork。
 
-建好工作树，再自己把 FORK 记录写下来（`at` 就是这个形状：UTC、秒、字面 `Z`）：
-
-```pwsh
-$rec = [ordered]@{
-  node   = '<节点id>'
-  branch = (git rev-parse --abbrev-ref HEAD)   # 出口分支 = fork 时主树所在的分支
-  head   = (git rev-parse HEAD)                # fork 时的 HEAD
-  at     = '{0:yyyy-MM-ddTHH:mm:ss}Z' -f [DateTime]::UtcNow
-}
-New-Item -ItemType Directory -Force -Path .pf/meta | Out-Null
-$rec | ConvertTo-Json | Set-Content -Encoding utf8 .pf/meta/FORK-<节点短id>.json
-```
-
-**出口分支 = fork 时主树所在的分支**，它就是 FORK 记录里的 `branch`（`run.md` 的「已核事实」也照记一份）——合回哪条，照记录走。
+**出口分支 = fork 时主树所在的分支**（`git rev-parse --abbrev-ref HEAD` 那一下的读数），它照记进 `run.md` 的「已核事实」。这条分支和这棵工作树 git 自己都记着：worktree 的位置 `.pf/worktrees/<节点短id>`、它的 `gitdir:` 指针进 `.git/worktrees/<节点短id>`，分支名为 `pf/<节点短id>`，`git worktree list` 一问就有。合回哪条，照 `run.md` 那一行走。
 
 干活：
 
@@ -415,7 +402,7 @@ $rec | ConvertTo-Json | Set-Content -Encoding utf8 .pf/meta/FORK-<节点短id>.j
 
 1. worktree 里把这个节点提成一次提交（代码、文档，提交档还有 run.md 与报告集）：`git -C .pf/worktrees/<节点短id> add -A` 与 `git -C .pf/worktrees/<节点短id> commit -m "feat: <这个节点做了什么>"`，再把主树的最新合进来：`git -C .pf/worktrees/<节点短id> merge <出口分支>`——撞车在 worktree 里解，解完重跑快档
 2. 主树上 `git merge --squash pf/<节点短id>`，再 `git commit -m "feat: <同上那一行>"` 发这个节点的 `feat:` commit：一个节点在主树上就是一次提交，历史形状不变
-3. 全量在主树上跑（对的就是合并后的内容），过了就 `git worktree remove .pf/worktrees/<节点短id>` 与 `git branch -D pf/<节点短id>`，再接着 handoff → 提交记录 → push → 派发。worktree 与分支没删干净时，`next --after` 会拒绝结算这个节点（它认 FORK 记录）——被拒就回头把本步清完再来
+3. 全量在主树上跑（对的就是合并后的内容），过了就 `git worktree remove .pf/worktrees/<节点短id>` 与 `git branch -D pf/<节点短id>`，再接着 handoff → 提交记录 → push → 派发。worktree 与分支就在这里清干净，别留给下一个节点——短 id 被占时下一趟 fork 会停手交人
 
 主树不在出口分支上、或 squash 仍撞（别的线在你刷新之后又合了一次提交）：停手交用户。
 

@@ -1135,7 +1135,7 @@ export const COMMANDS = {
   },
   "dag approve": {
     "word": "approve",
-    "prog": "pf approve",
+    "prog": "pf dag approve",
     "description": null,
     "positionals": [
       {
@@ -2729,7 +2729,7 @@ export const GROUPS = {
       },
       {
         "word": "approve",
-        "prog": "pf approve",
+        "prog": "pf dag approve",
         "description": null,
         "positionals": [
           {

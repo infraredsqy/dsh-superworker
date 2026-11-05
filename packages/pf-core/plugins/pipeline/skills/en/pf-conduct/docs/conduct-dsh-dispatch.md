@@ -1,7 +1,7 @@
 # The DSH dispatch chain (for the conduct pipeline)
 
 > The half a session reads is this skill's own "The dispatch path" section ([`../SKILL.md`](../SKILL.md)): who calls it, and where to look when it breaks.
-> This half carries **why it is written this way** and **how not to write it** — for troubleshooting and for anyone moving the line. The chain has three names:
+> This half carries **why it is written this way** and **how not to write it** — for troubleshooting. The chain has three names:
 > the panel's relay (`src/host/relay.ts`), the native opener (`src/host/executor.ts`), and the engine's dispatch
 > (`packages/pf-core/src/conductor.ts`). There is no spawner script, and no step anywhere assembles an argv.
 

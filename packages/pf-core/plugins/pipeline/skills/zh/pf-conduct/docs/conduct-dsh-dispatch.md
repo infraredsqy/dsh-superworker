@@ -1,7 +1,7 @@
 # DSH 派发链（conduct 管线用）
 
 > 给会话看的那一半是同一份技能（[`../SKILL.md`](../SKILL.md)）的「派发通路」一节：谁调它、断了看哪儿。
-> 这份放**为什么这么写**、**别怎么写** —— 供排障与搬迁时对照。这条链上只有三个名字：
+> 这份放**为什么这么写**、**别怎么写** —— 供排障时对照。这条链上只有三个名字：
 > 面板的接力（`src/host/relay.ts`）、原生 opener（`src/host/executor.ts`）、引擎的 dispatch
 > （`packages/pf-core/src/conductor.ts`）。没有 spawner 脚本，也没有任何一步去拼一份 argv。
 
