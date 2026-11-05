@@ -20,7 +20,8 @@
 ## 安装
 
 前提：装了 `dsh`，手里有一个装得进插件的 profile；要看的工作区里有一份 agent-pathfinder 的记录
-（`.pf/`，`pf` 命令在 PATH 上）。面板按「当前选中的会话」定工作区——没选中会话时它自己会说明。
+（`.pf/`）。面板走本包自带的命令入口，PATH 上不需要有 `pf`；`pf` 在 PATH 上只管你自己手敲命令。
+面板按「当前选中的会话」定工作区——没选中会话时它自己会说明。
 
 从本仓的 [Releases](https://github.com/infraredsqy/dsh-pathfinder/releases) 下载那个 `.tgz`，把 DSH
 指到这个文件：

@@ -2,13 +2,11 @@
  *
  * This layer never touches the records themselves — every write rides on the command line handed
  * outward, so that command line is what gets locked: which `pf` command each of the six endpoints
- * spawns, what inputs the argument gate keeps out, and how the command line is assembled on Windows.
- *
- * "Add an instruction" carries the user's verbatim words, which cannot pass that gate, so it has
- * its own argv: this package's own command entry (`bin/pf.mjs`, beside the host half in the
- * artifact) run by the same node that runs the host, the whole sentence passed as a single
- * argument — `&` and quotes stay themselves there, and PATH is never asked where the command is,
- * which is why these tests lock it separately.
+ * spawns, what inputs the argument gate keeps out, and that every one of them runs this package's
+ * own command entry (`bin/pf.mjs`, beside the host half in the artifact) under the same node that
+ * runs the host, argv handed over directly. No shell sees the argv, so `&` and quotes stay
+ * themselves even in the user's verbatim sentence, and PATH is never asked where the command is —
+ * which is why these tests pin the entry rather than a resolved executable.
  *
  *   node --test tests/
  */
@@ -160,25 +158,20 @@ test('宿主没有进程通道：如实说这次写入没法落笔', async () =>
   assert.deepEqual(outcome, { ok: false, code: 'no-subprocess' }, '没有进程通道就没有写入，报的是这个码')
 })
 
-test('Windows 上那条命令行：解释器 + 一条命令，`pf` 那条路径不带引号', { skip: process.platform !== 'win32' }, async () => {
+test('普通的一次写入：起的也是本包的命令入口，同一个 node 直接跑，不问 PATH', async () => {
   const subprocess = fakeSubprocess()
-  const gateway = new PathfinderRecordsGateway(fakeContext({ subprocess }))
-  await gateway.reviveInstruction('s1', '', 'i-0007')
-  const spec = subprocess.specs[0]
-
-  assert.deepEqual(spec.argv.slice(0, 4), [process.env['ComSpec'] ?? 'cmd.exe', '/d', '/s', '/c'])
-  assert.match(spec.argv[4], /^C:\\tools\\bin\\pf\.cmd instruction revive i-0007$/u)
-})
-
-test('Windows 上路径带空格：宁可不落笔，不硬拼一条会被 cmd 认错的命令行', { skip: process.platform !== 'win32' }, async () => {
-  const subprocess = fakeSubprocess({ executable: 'C:\\Program Files\\pf\\pf.cmd' })
+  subprocess.resolveExecutable = async () => {
+    throw new Error('普通写入不应当向 PATH 问命令')
+  }
   const gateway = new PathfinderRecordsGateway(fakeContext({ subprocess }))
   const outcome = await gateway.reviveInstruction('s1', '', 'i-0007')
+  const argv = subprocess.specs[0].argv
 
-  assert.deepEqual(
-    outcome,
-    { ok: false, code: 'pf-path-unsafe', detail: 'C:\\Program Files\\pf\\pf.cmd' },
-    '拼不出一条 cmd 认得的命令行时，把那条路径原样报出来',
-  )
-  assert.deepEqual(subprocess.specs, [])
+  assert.equal(outcome.ok, true, '问 PATH 的假替身会抛，写入成了就说明没问')
+  assert.equal(subprocess.specs.length, 1)
+  assert.equal(argv[0], process.execPath, '起的必须是跑宿主半身的那个 node')
+  assert.equal(resolve(argv[1]), resolve(ENTRY), '入口必须是本包 bin/pf.mjs 那一份')
+  assert.equal(existsSync(ENTRY), true, `入口不在盘上：${ENTRY}`)
+  assert.ok(!argv.some((arg) => arg.toLowerCase().endsWith('.py')), `argv 里还有 .py：${JSON.stringify(argv)}`)
+  assert.deepEqual(argv.slice(2), ['instruction', 'revive', 'i-0007'], '命令原样接在入口后面')
 })

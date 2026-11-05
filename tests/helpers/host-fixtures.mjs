@@ -5,16 +5,13 @@
 
 /**
  * A subprocess stand-in: every spawn's spec lands on `specs`, and each run answers with the given
- * exit code and streams. `resolveExecutable` answers with `executable` for every command — pass a
- * different one to move the command that PATH would hand back.
+ * exit code and streams. It carries no `resolveExecutable`: the write path names this package's
+ * own command entry, so nothing here is ever asked where the command lives.
  */
-export function fakeSubprocess({ executable = 'C:\\tools\\bin\\pf.cmd', exitCode = 0, stdout = '', stderr = '' } = {}) {
+export function fakeSubprocess({ exitCode = 0, stdout = '', stderr = '' } = {}) {
   const specs = []
   return {
     specs,
-    async resolveExecutable() {
-      return executable
-    },
     spawn(spec) {
       specs.push(spec)
       return {
@@ -38,7 +35,7 @@ export function fakeContext({ subprocess, workspaceRoot = 'C:\\workspace' } = {}
   }
 }
 
-/** The tool's own words on a recorded command line: everything after the command's name. */
+/** The tool's own words on a recorded argv: everything after the node and this package's entry. */
 export function wordsOf(spec) {
-  return spec.argv[spec.argv.length - 1].split(' ').slice(1)
+  return spec.argv.slice(2)
 }

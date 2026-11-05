@@ -24,8 +24,9 @@ which is early and moving fast too: expect breaking changes on that side.
 ## Install
 
 Prerequisites: a DSH install with a profile to install into, and a workspace that holds an
-agent-pathfinder record (`.pf/`, with `pf` on your `PATH`). The panel reads the workspace of the
-session you have selected; with no session selected it says so.
+agent-pathfinder record (`.pf/`). The panel writes through the command entry this package ships,
+so it needs no `pf` on your `PATH`; a `PATH` entry is only for running `pf` by hand. The panel
+reads the workspace of the session you have selected; with no session selected it says so.
 
 Download the `.tgz` from this repo's [Releases](https://github.com/infraredsqy/dsh-pathfinder/releases)
 and point DSH at the file:

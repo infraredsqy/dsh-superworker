@@ -295,8 +295,6 @@ function failureIn(error: unknown): Failure {
 const KNOWN_CODES = {
   'arg-not-allowed': true,
   'no-subprocess': true,
-  'pf-missing': true,
-  'pf-path-unsafe': true,
   'tool-refused': true,
   'spawn-failed': true,
   'scope-unknown': true,

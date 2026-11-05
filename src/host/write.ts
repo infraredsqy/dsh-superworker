@@ -4,22 +4,20 @@
  *
  * No JSON is assembled here and nothing under `.pf` is touched; a command is
  * handed out, its output collected, and the tool prints its own reasons for
- * refusal. Commands never go through shell interpretation: every argument
- * passes a character gate first, then goes to `ctx.subprocess`.
- *
- * The user's verbatim sentence is the only thing that cannot pass that gate —
- * it may be any sentence, with spaces and punctuation. On Windows such a
- * sentence cannot travel the cmd command line (see `launchArgs`), so the run
- * that carries it gets its own argv: this package's own command entry, run by
- * the very node that runs this host half.
+ * refusal. Every run takes the same route: this package's own command entry
+ * (`bin/pf.mjs`), run by the very node that runs this host half, argv handed to
+ * `ctx.subprocess` directly. No shell sees the arguments, and no PATH is asked
+ * where the command is. The user's verbatim sentence may be any sentence, with
+ * spaces, quotes and `&`; it is the one value that travels outside the argument
+ * gate, and it arrives as one argument.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { fileURLToPath } from 'node:url'
 /* The subprocess gateway lives on the `@deepseek-ai/dsh-subprocess` package entry, only to attach `subprocess` to the Context: a type-only import, nothing enters the runtime. */
 import type {} from '@deepseek-ai/dsh-subprocess'
-import type { PfFailure, PfOutcome } from './failure.ts'
+import type { PfOutcome } from './failure.ts'
 
-/** The argument gate: commands, subcommands, ids, key names, and values are all combinations of just these characters; the verbatim sentence stays outside the gate, see `runPf`. */
+/** The argument gate: commands, subcommands, ids, key names, and values are all combinations of just these characters; the verbatim sentence is the one value outside it, see `runPf`. */
 const SAFE_ARG = /^[A-Za-z0-9_.:+-]{1,200}$/
 
 /** How long a single write may take at most. Each of these tool commands reads a small JSON and writes it back. */
@@ -30,7 +28,7 @@ const MAX_BYTES = 64 * 1024
 
 /**
  * Run a `pf` command and collect its output.
- * @param said - The user's verbatim sentence, appended to the end of the command as-is; when given, a shell-free argv is used instead.
+ * @param said - The user's verbatim sentence, appended to the end of the argv as one argument, as-is.
  */
 export async function runPf(
   ctx: Context,
@@ -42,15 +40,14 @@ export async function runPf(
   const unsafe = args.find((arg) => !SAFE_ARG.test(arg))
   if (unsafe !== undefined) return { ok: false, code: 'arg-not-allowed', detail: unsafe }
 
-  const subprocess = ctx.get('subprocess')
+  const subprocess: Spawner | undefined = ctx.get('subprocess')
   if (subprocess === undefined) return { ok: false, code: 'no-subprocess' }
 
-  const launched = await launchArgs(subprocess, args, signal, said)
-  if (!launched.ok) return launched
+  const argv = launchArgs(args, said)
 
   try {
     const handle = subprocess.spawn({
-      argv: launched.argv,
+      argv,
       cwd: workspaceRoot,
       stdio: {
         stdin: 'ignore',
@@ -73,9 +70,8 @@ export async function runPf(
   }
 }
 
-/** The minimal shape the subprocess side needs: this layer uses only `resolveExecutable` and `spawn`. */
+/** The one thing this layer asks of the subprocess side: `spawn`. */
 interface Spawner {
-  resolveExecutable(command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal): Promise<string>
   spawn(spec: {
     argv: readonly string[]
     cwd: string
@@ -90,64 +86,29 @@ interface Spawner {
 }
 
 /**
- * What the launcher produced: the argv to run, or why it could not be built.
+ * The argv for one write: this package's command entry, run by the node that
+ * runs this host.
  *
- * A refusal that a person can act on (the command is missing, its path cannot be handed to cmd)
- * is an ordinary answer here, not an exception: throwing would make the reason travel as a
- * message string, which is exactly the shape this layer is getting out of.
+ * The entry ships inside this package already — `bin/pf.mjs`, at the package
+ * root beside `lib/host/` in the artifact — so a run names that file rather
+ * than asking PATH for `pf`: an install that puts this package into a DSH
+ * profile lands its `bin` under that profile's `node_modules`, and what PATH
+ * answers there is a package manager's shim, or nothing at all. No interpreter
+ * is guessed at, since the entry is this package's own file and the node
+ * running this host is known.
+ *
+ * No command line is built and no shell is involved: cmd would split a
+ * sentence on spaces and would execute an `&` inside it (measured: `--text a &
+ * echo x` really runs the second command). Handing the argv over directly
+ * means the user's verbatim sentence arrives as one argument, quotes and
+ * `&` intact, and an install path with spaces needs no gate: it is one argv
+ * entry, and nothing splits it.
  */
-type Launch = { readonly ok: true; readonly argv: readonly string[] } | PfFailure
-
-/**
- * The argv for one write.
- *
- * The executable's absolute path is resolved by the gateway itself; this
- * layer hard-codes no machine's path. On Windows `pf` lands on `pf.cmd`, and
- * `.cmd` can only be launched by `cmd.exe` (spawned directly, Node rejects it
- * with `EINVAL`), so that branch becomes `cmd.exe` plus one command line.
- *
- * Paths in that command line must not be quoted: on Windows Node rebuilds the
- * command line per the C runtime's rules, and the added quotes become `\"`,
- * which cmd cannot recognize as the program (measured: bare path exits 0,
- * quoted path exits 1). If the path truly contains spaces or cmd
- * metacharacters, this write cannot happen — say so plainly instead of
- * forcing it.
- *
- * The run carrying the verbatim sentence does not take that command line:
- * cmd would split the sentence on spaces and would execute an `&` inside it
- * (measured: `--text a & echo x` really runs the second command). It does not
- * ask PATH for the command either: after the runtime moved out of a checkout,
- * what PATH answers is a package manager's shim, and what sits beside that shim
- * is the shim's own business, not this package's. The command entry ships
- * inside this package already — `bin/pf.mjs`, at the package root beside
- * `lib/host/` in the artifact — so that run is `process.execPath` plus that
- * entry, argv handed over directly. No shell, so the whole sentence arrives as
- * one argument; and no interpreter is guessed at, because the entry is this
- * package's own file and the node running this host is known.
- */
-async function launchArgs(
-  subprocess: Spawner,
-  args: readonly string[],
-  signal: AbortSignal,
-  said: string | undefined,
-): Promise<Launch> {
-  if (said !== undefined) return { ok: true, argv: [process.execPath, PF_ENTRY, ...args, said] }
-
-  let pf: string
-  try {
-    pf = await subprocess.resolveExecutable('pf', undefined, signal)
-  } catch (error) {
-    /* "The command does not exist on this machine" and the failure below ("it exists, but its path cannot enter cmd") are two different things, kept as two separate codes: merged into one, the reader would go reinstall an already-installed command on the first one's advice. */
-    return { ok: false, code: 'pf-missing', detail: messageOf(error) }
-  }
-  if (process.platform !== 'win32') return { ok: true, argv: [pf, ...args] }
-  if (!CMD_SAFE_PATH.test(pf)) return { ok: false, code: 'pf-path-unsafe', detail: pf }
-  const comspec = process.env['ComSpec'] ?? 'cmd.exe'
-  return { ok: true, argv: [comspec, '/d', '/s', '/c', `${pf} ${args.join(' ')}`] }
+function launchArgs(args: readonly string[], said: string | undefined): readonly string[] {
+  const argv = [process.execPath, PF_ENTRY, ...args]
+  if (said !== undefined) argv.push(said)
+  return argv
 }
-
-/** Only these characters are allowed in the path; commas, spaces, quotes, and cmd's metacharacters all stay outside the gate. */
-const CMD_SAFE_PATH = /^[A-Za-z0-9_.:\\/-]+$/
 
 /**
  * The shipped command entry, named from this file's own location rather than

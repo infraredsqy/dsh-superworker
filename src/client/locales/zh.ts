@@ -221,8 +221,6 @@ export const zh = {
    * them in a language it does not speak; `failure.unstated` stands in when they said nothing. */
   'failure.arg-not-allowed': '该参数不能进入命令：{detail}',
   'failure.no-subprocess': '该宿主没有可用的进程通道，无法执行这次写入。',
-  'failure.pf-missing': '未找到 pf 命令：{detail}',
-  'failure.pf-path-unsafe': 'pf 命令的路径中含有 cmd 无法处理的字符（{detail}），无法执行这次写入。',
   'failure.tool-refused': '{detail}',
   'failure.spawn-failed': '{detail}',
   'failure.scope-unknown': '无法识别的范围：{detail}',

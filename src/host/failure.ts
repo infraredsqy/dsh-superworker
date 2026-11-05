@@ -6,9 +6,9 @@
  * method is called per request without one. So a refusal crosses the boundary as a code, and the
  * panel spells the sentence (`src/client/words.ts`).
  *
- * `detail` carries what no dictionary on this side owns: the offending argument, a resolved path,
- * or another program's own output. A refusal whose words come from a program we do not own says so
- * by carrying them here rather than inventing a translation for them.
+ * `detail` carries what no dictionary on this side owns: the offending argument, the name of what
+ * is missing, or another program's own output. A refusal whose words come from a program we do not
+ * own says so by carrying them here rather than inventing a translation for them.
  */
 
 /** Every reason this half can refuse an operation. */
@@ -17,10 +17,6 @@ export type PfRefusalCode =
   | 'arg-not-allowed'
   /** The host exposes no subprocess gateway, so no command can run. */
   | 'no-subprocess'
-  /** The `pf` command does not resolve on this machine. */
-  | 'pf-missing'
-  /** `pf` resolves to a path cmd cannot be handed. */
-  | 'pf-path-unsafe'
   /** The tool ran and exited non-zero; `detail` is its own output. */
   | 'tool-refused'
   /** Spawning or collecting the command failed outright. */
