@@ -27,8 +27,29 @@ search main-project
 search 'merge|integration|migration|consolidate|main-project'
 ```
 
-In the same way, `info` / `open` / `context` cannot be merged, but **one call gets enough
-information**, so avoid several round trips.
+In the same way, `info` / `open` / `context` cannot share one line, but lines that do not depend on
+each other can go in **one message** — the tool runs them in the order you gave, one after another,
+and the answers come back together. One line, then waiting for its answer before sending the next,
+is where the extra round trips come from.
+
+### One action over N records: use the word's own batch shape
+
+Sending the same word once per record turns one write into N writes. The word surface already
+carries the batch shapes; use them when they fit:
+
+- creating nodes: `dag add --from-file <rows file>` — one node per row, a row may carry a `ref` that
+  another row's `depends_on` names; the whole batch is one graph write.
+- edges: `dag depend <node> --on a,b,c`, one write.
+- into the pool: `issue add --from-file <rows file>`.
+- changing the pool: `issue update --from-file <rows file>` — one `id` per row plus the fields it
+  changes.
+- closing the pool: `issue resolve <id…> --reason "<one verification reading>"`, and likewise
+  `reject` / `acknowledge` / `remove`.
+
+Rows files go in `.pf/meta/batch/` (`meta/` is kept out of the repository); delete them once the
+batch has run. These words write the whole batch at once: one bad row (an unknown field, a missing
+id, a bad value) refuses all of it and not a byte is written; in the `resolve` column one id that is
+not in the pool refuses it the same way.
 
 ### Prefer a targeted query; list is the last resort
 

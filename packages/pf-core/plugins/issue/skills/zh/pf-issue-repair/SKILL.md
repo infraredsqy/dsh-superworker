@@ -53,13 +53,15 @@ disable-model-invocation: true
 
 ## 落定
 
-一条一条落定，不留半开：
+落定，不留半开：
 
 ```pwsh
-issue resolve <id> --reason "<改在哪、验证读数>"
-issue update  <id> --decision external --reason "<两条路与代价>"
-issue reject  <id> --reason "<为什么不修>"
+issue resolve <id…> --reason "<改在哪、验证读数>"
+issue update  <id…> --decision external --reason "<两条路与代价>"
+issue reject  <id…> --reason "<为什么不修>"
 ```
+
+同一发提交、同一句验证读数收掉的一批，用一个 `<id…>` 一次写完；每条 reason 不同的裁定走 `update --from-file <行文件>`。
 
 **只有用户能拍的**，一条都不许自己定：逐条写进汇报的「留给人」一节，连同两条路与代价。
 

@@ -10,6 +10,18 @@
 
 - 与池子的**一切**读写只走 `issue` 这个词。**禁止直接 read `.pf/issues/issues.json`**：巨型 JSON，烧上下文，还绕过工具自己的统计口径。
 
+## 批量
+
+同一种动作套在 N 条上时，用词自己的批量形状，别一条一条发：
+
+- 建池：`add --from-file <行文件>`——每行一个条目，`--auto-id` 可以省掉 id。
+- 改池：`update --from-file <行文件>`——每行 `id` 加要改的字段；每条 reason 不同的裁定走这条。
+- 结池：`resolve <id…> --reason "<同一句验证读数>"`；`reject` / `acknowledge` / `remove` 同理，`mark <id…>` 早就是批量的。
+
+行文件放 `.pf/meta/batch/`，跑完删掉。坏行（不认得的字段、缺 id、坏值）拒整批，一个字节不写；
+`update` / `resolve` / `reject` / `acknowledge` / `remove` 里有一个 id 不在，也拒整批；
+`add` 的重复 id 与 `mark` 的未知 id 是已知事实，逐行点名，不算坏行。N=1 与单条完全一样。
+
 ## 口径
 
 - 状态：`open` / `acknowledged` / `resolving` 三档算 actionable，`resolved` / `rejected` 不算。

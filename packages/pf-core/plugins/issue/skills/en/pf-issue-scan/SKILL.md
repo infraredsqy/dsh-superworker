@@ -59,8 +59,10 @@ Only once the whole batch is back do you go on.
 2. **Dedup and merge**: when `files` overlap **and** (`functions` overlap, or the descriptions are
    close in meaning) → merge them into one entry, keep the more detailed description, and absorb
    the other's `files` / `functions`
-3. `add --from-file <the merged>.json --auto-id`; for the kind that spans several files or needs a
-   new component designed, also carry `--plan-path .pf/issues/specs/<id>.md`
+3. `add --from-file <the merged>.json --auto-id` (the row shape is in
+   [`../pf-issue-repair/pool.md`](../pf-issue-repair/pool.md)'s "Batching" section; one pass into
+   the pool, not one `add` per entry); for the kind that spans several files or needs a new
+   component designed, also carry `--plan-path .pf/issues/specs/<id>.md`
 4. **Liveness check**: round up the scans' `alive_ids` → `mark <ids>` (it only adds to check_count
    and reports candidates, and **never changes a status**). Settling an entry goes through
    `resolve <id> --reason` one entry at a time, and only when that entry has a scan's explicit

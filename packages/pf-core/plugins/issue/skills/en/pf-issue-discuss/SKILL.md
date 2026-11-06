@@ -33,10 +33,9 @@ about the file or the module, fill in `--module` / `--files` / `--description` i
 
 ### 1. Review first; put no fake external up
 
-Go through the entries with `decision=external` one at a time: when the suggestion is already
-clear enough that no trade-off is needed →
-`update <id> --decision autofix --reason "no discussion needed: <the one-line fix>"`. What is left
-over is what really needs the user's call.
+Go through the entries with `decision=external`: when the suggestion is already clear enough that
+no trade-off is needed, put the re-ruling into a rows file (`id` + `decision` + `reason`) and close
+the whole set with one `update --from-file`. What is left over is what really needs the user's call.
 
 ### 2. Discuss batch by batch, at most 4 decisions at a time
 
@@ -46,7 +45,9 @@ More burns the judgement, so what is over goes into the next batch.
   roads there are, and what each of them costs. Function names / variable names / line numbers /
   call chains stay with the entry itself — that is the machine language for whoever does the work.
   The two languages live side by side and do not stand in for each other.
-- Once the user has settled it, settle each entry:
+- Once the user has settled it, settle each entry; one batch sharing one reason can close with
+  `update <id…>` / `reject <id…>` in one call, and rulings whose reason differs per entry go
+  through `update --from-file`:
   - **A simple problem** (extracting a single function, replacing a constant, about 5 changed
     lines) → `update <id> --decision autofix --status open --reason "<the settled call>"`
   - **A complex problem** (spanning several files, needing a new interface designed) → first write

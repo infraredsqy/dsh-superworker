@@ -42,7 +42,7 @@ disable-model-invocation: true
 
 1. read 所有 `.pf/meta/scan/*.json`
 2. **去重合并**：`files` 有交集，且（`functions` 有交集，或 description 语义相近）→ 合成一条，留描述更详细的那份，吸收另一份的 `files` / `functions`
-3. `add --from-file <合并后的>.json --auto-id`；跨多文件、要设计新组件的那类另挂 `--plan-path .pf/issues/specs/<id>.md`
+3. `add --from-file <合并后的>.json --auto-id`（行格式见 [`../pf-issue-repair/pool.md`](../pf-issue-repair/pool.md) 的「批量」一节；一次入池，不要一条一条 `add`）；跨多文件、要设计新组件的那类另挂 `--plan-path .pf/issues/specs/<id>.md`
 4. **存活核对**：汇总各 scan 的 `alive_ids` → `mark <ids>`（只累加 check_count 并报 candidates，**永不改状态**）。结掉一条只走逐条 `resolve <id> --reason`，且只在该条有 scan 明确的「三层定位找不到」报告时动手；刚入库的条目不在名单里是正常的
 5. 清掉 `.pf/meta/scan/` 下的临时文件
 6. 汇报：新增 N 条（按严重度分档）、核对结果、candidates 名单

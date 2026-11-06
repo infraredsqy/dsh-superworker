@@ -289,7 +289,8 @@ Commands, options and values follow `dag --help` (already read once in step 1); 
 carries the judgements and the conventions only.
 
 The pipeline's words are one table with one door: call the `pathfinder` tool — a `word`, its
-`args`, and `help` for that word's page.
+`args`, and `help` for that word's page. Lines that do not depend on each other can share one
+message; they run in the order you gave and come back together.
 
 **Adding a node:**
 
@@ -298,9 +299,14 @@ The pipeline's words are one table with one door: call the `pathfinder` tool —
 2. mode and weight are settled by "The four questions to ask before writing it down", and written
    in with the node
 3. Edges: first sweep for who should depend on it, connecting both up- and downstream, then check
-   the full up- and downstream once; an empty downstream is an orphan, so go back and fill it in
-4. Writing it down: the tool prints the spec path for you, and that file does not exist yet —
-   write it directly, do not read it first. Check yourself once: a scope written with a single
+   the full up- and downstream once; an empty downstream is an orphan, so go back and fill it in.
+   Edges among this batch go in the rows file's `depends_on` (naming a `ref` from the same batch);
+   an edge onto a node already on the graph takes `dag depend <node> --on a,b,c`, one write
+4. Writing it down: put the batch in a rows file (`title` / `description` / `mode` / `weight` /
+   `tags` / `depends_on`, optionally a `ref`) and run one `dag add --from-file` — it prints each
+   node's id and spec path per row. Then write each spec.md by id: the file does not exist yet, so
+   write it directly and do not read it first; rows that do not depend on each other can go in one
+   message. Check yourself once: a scope written with a single
    referent, a size one round can carry, a completion rule in one section (an executable command /
    script / probe); when the discussion really rejected a practice, add the "what is not done"
    section as well; the debt-clearing kind adds one `method: ` line (the name comes from

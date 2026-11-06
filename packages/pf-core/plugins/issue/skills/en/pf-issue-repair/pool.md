@@ -17,6 +17,23 @@ page.
   `.pf/issues/issues.json` directly is forbidden**: a giant JSON, it burns context and it bypasses
   the tool's own counting conventions too.
 
+## Batching
+
+When one action applies to N records, use the word's own batch shape instead of sending it once
+per record:
+
+- into the pool: `add --from-file <rows file>` — one entry per row, `--auto-id` saves the ids.
+- changing the pool: `update --from-file <rows file>` — one `id` per row plus the fields it
+  changes; rulings whose reason differs per entry go this way.
+- closing the pool: `resolve <id…> --reason "<one verification reading>"`; likewise `reject` /
+  `acknowledge` / `remove`, and `mark <id…>` was already batched.
+
+Rows files go in `.pf/meta/batch/` and are deleted once the batch has run. A bad row (an unknown
+field, a missing id, a bad value) refuses the whole batch and not a byte is written; an id that is
+not in the pool refuses `update` / `resolve` / `reject` / `acknowledge` / `remove` the same way. A
+duplicate id in `add` or an unknown id in `mark` is a known fact named per row, not a bad row. N=1
+behaves exactly like the single form.
+
 ## The conventions
 
 - Status: `open` / `acknowledged` / `resolving` are the three that count as actionable; `resolved`

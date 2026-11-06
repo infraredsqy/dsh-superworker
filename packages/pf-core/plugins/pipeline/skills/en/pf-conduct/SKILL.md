@@ -244,6 +244,8 @@ command meeting an uninit-ed `.pf/` refuses outright and hands you this command.
 
 The pipeline's words are one table with one door: call the `pathfinder` tool — a `word`, its
 `args`, and `help` for that word's page. Every word line in this sheet is a row of that table.
+Lines that do not depend on each other can go in one message; they run in the order you gave and
+their answers come back together.
 
 **0 | Sync**: first look at the `.pf/` flavour — if `git ls-files .pf` has output it is the commit
 flavour, and one `git pull --rebase` brings the other machine's graph, conclusions and commits

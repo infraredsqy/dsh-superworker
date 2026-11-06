@@ -83,13 +83,16 @@ cancel that number.
 
 ## Settling
 
-Settle one entry at a time, leaving nothing half open:
+Settle, leaving nothing half open:
 
 ```pwsh
-issue resolve <id> --reason "<where it was fixed, the verification reading>"
-issue update  <id> --decision external --reason "<the two roads and their costs>"
-issue reject  <id> --reason "<why it is not fixed>"
+issue resolve <id…> --reason "<where it was fixed, the verification reading>"
+issue update  <id…> --decision external --reason "<the two roads and their costs>"
+issue reject  <id…> --reason "<why it is not fixed>"
 ```
+
+A batch closed by one commit and one verification reading takes one `<id…>` and one write; rulings
+whose reason differs per entry go through `update --from-file <rows file>`.
 
 **What only the user can call, you may not call for a single one of them**: write each into the
 report's "left for a human" section, with the two roads and their costs.
