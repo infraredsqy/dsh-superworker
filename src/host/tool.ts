@@ -3,10 +3,11 @@
  *
  * The words themselves live in the engine (`answer` / `describe`); this file is the
  * registration half: the tool's face (name, description, parameters, output), and the
- * one wake function that puts it in front of exactly the agents whose session touched a
- * pipeline skill — the `skill` tool's call result, or a user `/pf-*` invocation — and
- * never in front of anyone else. No trigger, no tool: an unrelated session's request
- * header stays exactly as it would be without this plugin.
+ * one wake function that puts it in front of exactly the agents whose workspace holds a
+ * pipeline record, or whose session touched a pipeline skill — a `.pf/` workspace at the
+ * step's start, the `skill` tool's call result, or a user `/pf-*` invocation — and never
+ * in front of anyone else. No trigger, no tool: an unrelated session's request header
+ * stays exactly as it would be without this plugin.
  *
  * Three names are pinned in one place ({@link PATHFINDER_TOOL_NAME},
  * {@link SKILL_TOOL_NAME}, {@link SKILL_NAME_PREFIX}); the registration, the skill-body
@@ -17,6 +18,8 @@
  * The disposer hangs on the agent's own effect, so an agent that goes away takes its
  * tool with it and the wake's memory cannot leak.
  */
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { answer, describe, longResultPointerOf } from 'pf-core'
@@ -31,6 +34,8 @@ export const PATHFINDER_TOOL_NAME = 'pathfinder'
 export const SKILL_TOOL_NAME = 'skill'
 /** The prefix the pipeline's skills are named with, in the catalog and as `/pf-*`. */
 export const SKILL_NAME_PREFIX = 'pf-'
+/** The record's directory at a workspace root: the fact that says this workspace has a pipeline. */
+export const PIPELINE_DIR = '.pf'
 
 /** The tool's parameters, as the model spells them (the words are never enumerated here). */
 export interface PathfinderToolArgs {
@@ -210,6 +215,57 @@ function isPipelineSkillSource(source: unknown): boolean {
   return held.kind === 'skill-invocation' && typeof held.name === 'string' && held.name.startsWith(SKILL_NAME_PREFIX)
 }
 
+/** Whether this agent already carries the tool: one agent, one registration, one wake. */
+export function isAwake(agent: object): boolean {
+  return awake.has(agent)
+}
+
+/**
+ * The workspace root one agent sits in, as far as the wake reads it: the live session's
+ * own cwd, else the root the sandbox policy records.
+ *
+ * The same order the gateway's `workspaceRootOf` reads, minus the persisted header — a
+ * live agent always has one — and synchronous on purpose: this runs inside a step
+ * proposal, before the request is assembled, not in a tool body that may await.
+ */
+function workspaceOf(ctx: Context, agentId: string): string | undefined {
+  const sessions = (ctx as unknown as { sessions?: { get?: (id: string) => unknown } }).sessions
+  const live = typeof sessions?.get === 'function'
+    ? (sessions.get(agentId) as { header?: { cwd?: unknown } } | undefined)
+    : undefined
+  const cwd = live?.header?.cwd
+  if (typeof cwd === 'string' && cwd.length > 0) return cwd
+  const fallback = (ctx as unknown as { sandboxPolicy?: { workspaceRoot?: unknown } }).sandboxPolicy?.workspaceRoot
+  return typeof fallback === 'string' && fallback.length > 0 ? fallback : undefined
+}
+
+/** Whether this workspace carries a pipeline record — the fact that arms a session. */
+export function hasPipelineRecord(root: string | undefined): boolean {
+  if (root === undefined) return false
+  try {
+    return existsSync(join(root, PIPELINE_DIR))
+  } catch {
+    /* An unreadable root is not a record: the session stays as it would be without us. */
+    return false
+  }
+}
+
+/**
+ * Wake one agent whose workspace holds a pipeline record.
+ *
+ * The third trigger, and the one that makes the tool self-serve: a session sitting in a
+ * `.pf/` workspace sees the tool from its first request, with no skill loaded and no
+ * guess about the conversation. Every other workspace keeps exactly the header it would
+ * have had without this plugin — the answer is a fact on disk, not a judgement.
+ */
+export function wakeIfPipeline(agent: object, host: PathfinderToolHost): void {
+  if (isAwake(agent)) return
+  const id = (agent as { id?: unknown }).id
+  if (typeof id !== 'string' || id.length === 0) return
+  if (!hasPipelineRecord(workspaceOf(host.ctx, id))) return
+  wakeAgent(agent, host)
+}
+
 /** Whether one settled tool call was this session loading a skill successfully. */
 function isSkillLoad(exec: { name?: unknown; agent?: unknown }, result: { isError?: unknown }): boolean {
   return exec.name === SKILL_TOOL_NAME && result.isError === false && typeof exec.agent === 'object' && exec.agent !== null
@@ -236,14 +292,20 @@ export function installToolWake(ctx: Context): () => void {
     return pending
   })
   const offStep = bus.on('agent/pre-step', (payload: unknown, next: () => Promise<unknown>) => {
+    /* The fact trigger runs before the proposal settles: registering here lands the tool
+     * in the request this very step assembles, which is what makes a `.pf/` workspace
+     * see it from its first step. The other two triggers ride the same step for a
+     * session that started anywhere else. */
+    const proposed = (payload as { agent?: unknown } | undefined)?.agent
+    const agent = typeof proposed === 'object' && proposed !== null ? proposed : undefined
+    if (agent !== undefined) wakeIfPipeline(agent, host)
     const decision = next() as Promise<{ kind?: unknown; messages?: unknown } | undefined>
     return decision.then((settled) => {
       const messages = Array.isArray(settled?.messages) ? settled.messages : []
       for (const message of messages) {
         const source = (message as { source?: unknown } | undefined)?.source
         if (!isPipelineSkillSource(source)) continue
-        const agent = (payload as { agent?: unknown } | undefined)?.agent
-        if (typeof agent === 'object' && agent !== null) wakeAgent(agent, host)
+        if (agent !== undefined) wakeAgent(agent, host)
       }
       return settled
     })
