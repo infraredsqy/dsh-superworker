@@ -102,7 +102,7 @@ const handoff: HandoffRecord = {
 const sessionNote: SessionNoteRecord = {
   v: 1,
   discussion: [{ session: 's-1', host: 'dsh', at: '2026-01-01T00:00:00Z' }],
-  run: [{ session: 'sess_abc', host: 'zcode', at: null, source: 'ledger' }],
+  run: [{ session: 'sess_abc', host: 'dsh', at: null, source: 'ledger' }],
 };
 
 describe('key sets of the six frozen record kinds', () => {
@@ -169,9 +169,10 @@ describe('frozen value vocabularies', () => {
     expect(['scan', 'manual', 'conduct']).toContain(issue.source);
     expect(['open', 'acknowledged', 'resolving', 'resolved', 'rejected']).toContain(issue.status);
   });
-  it('host words and version number of a session note', () => {
+  it('host word and version number of a session note', () => {
     expect(sessionNote.v).toBe(1);
-    expect(['dsh', 'zcode']).toContain(sessionNote.discussion[0]!.host);
-    expect(['dsh', 'zcode']).toContain(sessionNote.run[0]!.host);
+    // One host word: this engine opens DSH sessions and nothing else.
+    expect(sessionNote.discussion[0]!.host).toBe('dsh');
+    expect(sessionNote.run[0]!.host).toBe('dsh');
   });
 });

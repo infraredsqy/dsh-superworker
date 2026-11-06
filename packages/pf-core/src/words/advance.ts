@@ -34,7 +34,7 @@ function receiptText(receipt: Record<string, any>, spawnError?: string): string 
   return lines.join('\n');
 }
 
-/** `advance [--cycle <id>] [--spawner <k>] [--model <route>] [--json]`: carry the line one step. */
+/** `advance [--cycle <id>] [--model <route>] [--json]`: carry the line one step. */
 export async function advanceVerb(call: VerbCall) {
   const { values, io } = call;
   const root = projectRootOf(values.project, io.root);
@@ -42,7 +42,6 @@ export async function advanceVerb(call: VerbCall) {
   const asJson = values.json === true;
   const named = {
     ...(values.cycle === undefined ? {} : { cycle: values.cycle }),
-    ...(values.spawner === undefined ? {} : { spawner: values.spawner }),
     ...(values.model === undefined ? {} : { model: values.model }),
   };
   try {
@@ -128,7 +127,7 @@ function alreadyStartedRefusal(cycleId: string, ids: readonly string[]) {
   );
 }
 
-/** `dispatch <cycle> [--spawner <k>] [--model <route>] [--json]`: open the sessions of the cells this line holds. */
+/** `dispatch <cycle> [--model <route>] [--json]`: open the sessions of the cells this line holds. */
 export async function dispatchVerb(call: VerbCall) {
   const { values, io, positionals } = call;
   const cycleId: string = positionals[0]![0]!;
@@ -175,7 +174,6 @@ export async function dispatchVerb(call: VerbCall) {
     // with the same non-zero code the real refusal would; the opener is not asked for anything.
     if (values.dry_run === true) {
       const named = {
-        ...(values.spawner === undefined ? {} : { spawner: values.spawner }),
         ...(values.model === undefined ? {} : { model: values.model }),
       };
       const cells = [];
@@ -198,7 +196,6 @@ export async function dispatchVerb(call: VerbCall) {
       const lines = ['dry run: nothing was opened, nothing was written'];
       for (const cell of cells) {
         const route = [
-          cell.spawner === undefined ? '' : `via ${cell.spawner}`,
           cell.model === undefined ? '' : `(model ${cell.model})`,
         ].filter((part) => part !== '').join(' ');
         lines.push(
@@ -233,7 +230,6 @@ export async function dispatchVerb(call: VerbCall) {
       const receipt = await pf.conductor.dispatch({
         cycle: cycleId,
         node: nodeId,
-        ...(values.spawner === undefined ? {} : { spawner: values.spawner }),
         ...(values.model === undefined ? {} : { model: values.model }),
       });
       if (receipt.action === 'already_open') continue;

@@ -19,7 +19,7 @@ import {
   verifyPlugins,
 } from './plugins/registry';
 import type { DispatchRequest, Executor, OpenedSession } from './executor';
-import { envModel, envSpawnDryRun, envSpawner, zcodeDataDir } from './env';
+import { envModel, envSpawnDryRun } from './env';
 import { PfError } from './errors';
 import type { GitResult, GitRunner } from './git';
 import { atomicWriteBytes, atomicWriteJson, EOL, jsonOptionsForRecord, readJsonFile } from './jsonio';
@@ -64,23 +64,20 @@ export interface ConductorTarget {
 }
 
 /**
- * What one dispatch names on the call itself: the line, the node, the spawner and the model route. Both
- * words resolve the most specific answer first: the call's own name beats the line's policy (`spawner`,
- * `model`), which beats the machine's switch (`DSH_CONDUCT_SPAWNER`, `DSH_CONDUCT_MODEL`); left out, the
- * executor's own default opens the session. The spawner is a bare word (`dsh` / `zcode`) or a path; the
- * model is the ecosystem's route spelling (`provider/model`), carried whole.
+ * What one dispatch names on the call itself: the line, the node and the model route. The route
+ * resolves the most specific answer first: the call's own name beats the line's `model` policy, which
+ * beats the machine's switch (`DSH_CONDUCT_MODEL`); left out, the executor's own default opens the
+ * session. The model is the ecosystem's route spelling (`provider/model`), carried whole.
  */
 export interface ConductorDispatchInput extends ConductorTarget {
-  spawner?: string;
   model?: string;
 }
 
 /**
  * What one advance names on the call itself: which line, and — handed down to every session it opens — the
- * spawner and the model route. The line defaults to the one active line, as every verb of this namespace does.
+ * model route. The line defaults to the one active line, as every verb of this namespace does.
  */
 export interface ConductorAdvanceInput extends ConductorTarget {
-  spawner?: string;
   model?: string;
   /**
    * Whether this step opens sessions. alse claims the free slots and lands their material only — what a
@@ -145,7 +142,6 @@ export interface DispatchPreview {
   /** The one line that file holds (or would hold). */
   readonly prompt_text: string;
   readonly material: 'on_disk' | 'to_land';
-  readonly spawner?: string;
   readonly model?: string;
   readonly blocked: readonly string[];
   readonly warnings: readonly string[];
@@ -412,7 +408,7 @@ export interface ConductorNamespace {
   dispatch(input?: ConductorDispatchInput): Promise<DispatchReceipt>;
   /**
    * The rehearsal of one dispatch: the cell as the executor would receive it — the material's spot and whether it
-   * is already on disk, the spawner and the model route, and the lines a dispatch-time gate would refuse with.
+   * is already on disk, the model route, and the lines a dispatch-time gate would refuse with.
    * Nothing is written, nothing claims the cell, and the opener is not asked for a session.
    */
   dispatchPreview(input?: ConductorDispatchInput): Promise<DispatchPreview>;
@@ -789,18 +785,6 @@ export function createConductorNamespace(
   }
 
   /**
-   * Which spawner opens this dispatch: the call's own name > the line's `spawner` policy > the machine's switch,
-   * and nothing named leaves the executor's own default in force. The write and its rehearsal ask this one
-   * function, so a dry run can never name a different opener than the dispatch it is rehearsing.
-   */
-  function spawnerOf(line: CycleRecord, named: string | undefined): string | undefined {
-    if (named !== undefined && named !== '') return named;
-    const policy = cyclePolicy(line).spawner;
-    if (typeof policy === 'string' && policy !== '') return policy;
-    return envSpawner();
-  }
-
-  /**
    * The mechanical steps behind a plan, in one place: claim the nodes the line has free slots for, hand the
    * cells in hand to the executor, and park a line that stopped with nothing left to run.
    *
@@ -817,7 +801,6 @@ export function createConductorNamespace(
     cycleId: string,
     options: {
       openSessions: boolean;
-      spawner?: string;
       model?: string;
       dispatch?: (nodeId: string) => Promise<DispatchReceipt>;
     },
@@ -994,9 +977,8 @@ export function createConductorNamespace(
       // The request goes to the executor: the line's and the node's identity are carried as they are, role is
       // carried by the request, and the prompt is the one line the material holds. What comes back is a
       // receipt, not a result: the session is open, and the result will arrive as a ticket from the worker.
-      // Which spawner opens this session, and which model route it opens on, are the two resolution chains
-      // (`spawnerOf` / `modelOf`); the drill switch and the ZCode host's data root ride along the same seam.
-      const spawner = spawnerOf(cycle, input?.spawner);
+      // Which model route this session opens on is one resolution chain (`modelOf`); the drill switch rides
+      // along the same seam.
       const model = modelOf(cycle, input?.model);
       const dryRun = envSpawnDryRun();
       const request: DispatchRequest = {
@@ -1004,9 +986,7 @@ export function createConductorNamespace(
         node: nodeId,
         role: 'execute',
         prompt: material.prompt_text,
-        ...(spawner === undefined ? {} : { spawner }),
         ...(model === undefined ? {} : { model }),
-        ...(spawner === 'zcode' ? { zcodeDataDir: zcodeDataDir() } : {}),
         ...(dryRun ? { dryRun: true } : {}),
       };
       const session = await executor.dispatch(request);
@@ -1053,7 +1033,6 @@ export function createConductorNamespace(
       // would join them, instead of the refusal's exception.
       const blocked = await collectGates('dispatch', ctx, folders, warnings, true);
       const prompt = launchPromptPath(paths, cycleId, nodeId);
-      const spawner = spawnerOf(cycle, input?.spawner);
       const model = modelOf(cycle, input?.model);
       return {
         action: 'dispatch' as const,
@@ -1064,7 +1043,6 @@ export function createConductorNamespace(
         prompt,
         prompt_text: promptTextOf(nodeId),
         material: (existsSync(prompt) ? 'on_disk' : 'to_land') as 'on_disk' | 'to_land',
-        ...(spawner === undefined ? {} : { spawner }),
         ...(model === undefined ? {} : { model }),
         blocked,
         warnings,
@@ -1243,7 +1221,6 @@ export function createConductorNamespace(
     const cycle = await resolveCycle(input?.cycle);
     const cycleId = String(cycle.id ?? '');
     const shared = {
-      ...(input?.spawner === undefined ? {} : { spawner: input.spawner }),
       ...(input?.model === undefined ? {} : { model: input.model }),
     };
     return applySteps(cycleId, {

@@ -78,8 +78,6 @@ export interface CyclePolicies {
   when_shelved?: 'stop' | 'continue';
   /** How many nodes this line claims at once and how many sessions it opens; 1 by default. It is a ceiling: whether they can run in parallel is up to the graph. */
   parallel?: number;
-  /** Which host opens this line's sessions (a word only, not a path). */
-  spawner?: 'dsh' | 'zcode';
   /** Knobs a plugin declares and that are allowed to be declared on the line layer. */
   [key: string]: unknown;
 }
@@ -199,13 +197,17 @@ export interface HandoffRecord {
 
 // ── session file ─────────────────────────────────────────────────────────────
 
-/** The host that opens sessions (the pipeline's own two words); the closed set is the whole vocabulary, and another word is refused rather than guessed at. */
-export type SessionHost = 'dsh' | 'zcode';
+/** The host that opens sessions: this engine opens DSH sessions and nothing else, so the vocabulary is this one word. */
+export type SessionHost = 'dsh';
 
 /** One entry of a session file: which session, which host opened it, when (null when unknown, no timestamp is made up). */
 export interface SessionNoteEntry {
   session: string;
-  /** The host the writer wrote down; a missing one means the DSH host, and a word outside the closed set stops the reading (see `src/sessions.ts`). */
+  /**
+   * The host this engine opens sessions with. A note may still carry an older word (another
+   * implementation writes those records too): it stays on disk as written, and reading it is never
+   * an error — every entry reads and shows as the DSH host (see `src/sessions.ts`).
+   */
   host: SessionHost;
   at: SecondsTimestamp | null;
   /** Marks where the value came from when it was taken over from an older field. */

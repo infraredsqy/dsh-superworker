@@ -161,7 +161,7 @@ instruction list --project <项目根绝对路径>
 - **别读 `instructions.json`，跑命令**：那份文件里的内部字段会把注意力引到登记与标记上。
 - 加条目只有 `/pf-instruct` 一个入口——用户敲了由那个 skill 落笔；他没敲，随口说的话就不记，当轮本来就在上下文里。
 - 指令只有两态：生效中、已归档。`scope: global` 的照做即可，它一直在生效中，**不必核销**——条目还能不能读到，是每次现读现算的，不靠会话替它画句号。把一条指令归档只有用户能做，放回来也只有用户能做，会话别去动这笔记录。
-- **这条线自己的策略**（`when_shelved`、两条维护线、`spawner`）在 `cycle current` 的 `Policy:` 行里；写它用 `cycle policy <cycle> <键> <值>`，数值型那条用 `off` 取消。
+- **这条线自己的策略**（`when_shelved`、两条维护线、`model`）在 `cycle current` 的 `Policy:` 行里；写它用 `cycle policy <cycle> <键> <值>`，数值型那条用 `off` 取消。
 
 **2｜读**，一口气读完再动手：
 

@@ -28,11 +28,11 @@ describe('one verb, one operation: the flow verbs carry shaping options only', (
   });
 
   it('advance composes claim, material and session: it is shaped by where and how only', () => {
-    expect(FLAGS('advance')).toEqual(['--cycle', '--help', '--json', '--model', '--project', '--spawner', '-h']);
+    expect(FLAGS('advance')).toEqual(['--cycle', '--help', '--json', '--model', '--project', '-h']);
   });
 
   it('dispatch opens sessions: it claims nothing, and it can be rehearsed', () => {
-    expect(FLAGS('dispatch')).toEqual(['--dry-run', '--help', '--json', '--model', '--project', '--spawner', '-h']);
+    expect(FLAGS('dispatch')).toEqual(['--dry-run', '--help', '--json', '--model', '--project', '-h']);
   });
 
   it('handoff writes the ticket: the shape, the summary and the readings, nothing else', () => {

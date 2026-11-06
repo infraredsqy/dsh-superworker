@@ -10,7 +10,7 @@
 
 - 节点：@short-a@（mode=checkpoint，weight=light，tags=['writing']）
 - spec: @root@/.pf/nodes/@node-a@/spec.md
-- 线 c1：active，tags=['writing']，Policy: when_shelved=continue, parallel=2, spawner=dsh，holding=['@short-a@']
+- 线 c1：active，tags=['writing']，Policy: when_shelved=continue, parallel=2，holding=['@short-a@']
 - test_tier=full
 - worktree_mode=off
 - max_agents=3

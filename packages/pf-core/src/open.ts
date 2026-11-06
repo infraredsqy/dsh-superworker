@@ -15,11 +15,9 @@ export interface PfOpenOptions {
   readonly executor?: Executor;
   /**
    * The home of the machine layer (the one `<home>/.pf/config.json` lives in), handed to every
-   * namespace that reads that layer: `ledger.dag.info` reads this machine's session notes through
-   * it, `sessions` resolves the written host through it, `config` reads its global layer there, and
-   * `conductor` reads the same home in dispatch preparation and in the plugin context. One handle
-   * answers from one machine layer. Nothing given here falls back to `PF_HOME_DIR`, then to this
-   * user's home.
+   * namespace that reads that layer: `config` reads its global layer there, and `conductor` reads the
+   * same home in dispatch preparation and in the plugin context. One handle answers from one machine
+   * layer. Nothing given here falls back to `PF_HOME_DIR`, then to this user's home.
    */
   readonly homeDir?: string;
   /**
@@ -62,7 +60,7 @@ export function open(root: string, options: PfOpenOptions = {}): Pf {
   }
   const pf: Pf = {
     root,
-    ledger: createLedgerNamespace(root, { homeDir: options.homeDir }),
+    ledger: createLedgerNamespace(root),
     conductor: createConductorNamespace(root, options.executor, {
       homeDir: options.homeDir,
       pluginsDir: options.pluginsDir,
@@ -72,7 +70,7 @@ export function open(root: string, options: PfOpenOptions = {}): Pf {
       homeDir: options.homeDir,
       declaredKnobsOf: (dir) => pluginAssemblyOf(dir, options.pluginsDir).knobs(),
     }),
-    sessions: createSessionsNamespace(root, { homeDir: options.homeDir }),
+    sessions: createSessionsNamespace(root),
   };
   executors.set(pf, options.executor);
   return pf;

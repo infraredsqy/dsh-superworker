@@ -397,28 +397,15 @@ export interface LedgerNamespace {
 // ── assembly ─────────────────────────────────────────────────────────────────
 
 /**
- * The own options of the ledger namespace when it is assembled: where the machine layer's home is.
- * It is handed down to the sub-namespace that reads that layer (the node detail's session lists),
- * the same way `sessions` / `conductor` take their own `homeDir`.
- */
-export interface LedgerNamespaceOptions {
-  /** The home of the machine layer (`<home>/.pf/config.json`); this machine's user home directory by default, which tests shut into a temporary directory. */
-  readonly homeDir?: string;
-}
-
-/**
  * Assemble the ledger namespace: init, register, the temp sweep and the three blocks of graph, lines
  * and instructions (the locations come from the caller's project root).
  */
-export function createLedgerNamespace(
-  root: string,
-  options: LedgerNamespaceOptions = {},
-): LedgerNamespace {
+export function createLedgerNamespace(root: string): LedgerNamespace {
   return {
     init: (initOptions) => initLedger(root, initOptions),
     register: (registerOptions) => registerLedger(root, registerOptions),
     cleanTemp: (cleanOptions) => cleanTemp(pfPaths(root), cleanOptions),
-    dag: createDagNamespace(root, { homeDir: options.homeDir }),
+    dag: createDagNamespace(root),
     cycles: createCyclesNamespace(root),
     instructions: createInstructionsNamespace(root),
   };

@@ -128,22 +128,9 @@ function specPathOf(paths: PfPaths, uid: string): string {
   return nodeSpecPath(paths, uid);
 }
 
-/**
- * The own options of the dag namespace when it is assembled (not on the per-call options): where the
- * machine layer's home is. The node detail's session lists are read through that layer, so the home
- * travels with the handle; `DagInfoOptions` stays the one call's own question (`verbose`) and never
- * carries a second home.
- */
-export interface DagNamespaceOptions {
-  /** The home of the machine layer (`<home>/.pf/config.json`); this machine's user home directory by default (`PF_HOME_DIR` when set), which tests shut into a temporary directory. */
-  readonly homeDir?: string;
-}
-
 /** Build the dag namespace: one per project root. */
-export function createDagNamespace(root: string, options: DagNamespaceOptions = {}): DagNamespace {
+export function createDagNamespace(root: string): DagNamespace {
   const paths = pfPaths(root);
-  // The handle's answer, kept out of the per-call options' name: `info(id, options)` shadows it there.
-  const machineHome = options.homeDir;
 
   async function readIdeas(): Promise<IdeasLedger> {
     const read = await readJsonFile(paths.ideasJson, 'ideas.json');
@@ -484,9 +471,9 @@ export function createDagNamespace(root: string, options: DagNamespaceOptions = 
         info.created_at = node.created_at ?? '';
         info.updated_at = node.updated_at ?? '';
       }
-      // The machine layer's home rides on the handle (see `DagNamespaceOptions`); the per-call options
-      // say nothing about it.
-      const note = await readSessionNote(root, uid, { homeDir: machineHome });
+      // The session note is read off the record itself: the host column is this engine's own host,
+      // and there is no machine layer to consult for it.
+      const note = await readSessionNote(root, uid);
       if (note.discussion.length > 0 || note.run.length > 0) {
         info.sessions = { discussion: note.discussion, run: note.run };
       }

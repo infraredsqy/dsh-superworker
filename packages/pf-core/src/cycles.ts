@@ -67,7 +67,6 @@ const CYCLE_TAGS_VOCABULARY = ['writing', 'coding', 'art'] as const;
 const LINE_POLICIES = {
   when_shelved: { kind: 'word', values: ['stop', 'continue'], default: 'stop' },
   parallel: { kind: 'integer', default: 1 },
-  spawner: { kind: 'word', values: ['dsh', 'zcode'], default: null },
   model: { kind: 'text', default: null },
 } as const;
 
@@ -78,7 +77,6 @@ type PolicyTable = Record<string, PolicySpec>;
 const POLICY_TABLE: PolicyTable = {
   when_shelved: LINE_POLICIES.when_shelved,
   parallel: LINE_POLICIES.parallel,
-  spawner: LINE_POLICIES.spawner,
   model: LINE_POLICIES.model,
 };
 

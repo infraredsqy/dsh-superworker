@@ -137,12 +137,12 @@ describe('the detail: the record plus both edge directions', () => {
     writeFileSync(sessionNotePath(pfPaths(root), a), JSON.stringify({
       v: 1,
       discussion: [{ session: 'session-d1', host: 'dsh', at: '2026-01-01T00:00:00Z' }],
-      run: [{ session: 'sess_r1', host: 'zcode', at: null }],
+      run: [{ session: 'sess_r1', host: 'dsh', at: null }],
     }, null, 2));
     const info = await pf.ledger.dag.info(a);
     expect(info.sessions).toEqual({
       discussion: [{ session: 'session-d1', host: 'dsh', at: '2026-01-01T00:00:00Z' }],
-      run: [{ session: 'sess_r1', host: 'zcode', at: null }],
+      run: [{ session: 'sess_r1', host: 'dsh', at: null }],
     });
   });
 
@@ -164,36 +164,6 @@ describe('the detail: the record plus both edge directions', () => {
     const verbose = await pf.ledger.dag.info(a, { verbose: true });
     expect(verbose.created_at).toBe('');
     expect(verbose.updated_at).toBe('');
-  });
-
-  it('the machine layer is shut in by the handle homeDir: session entries read the override settings that home holds', async () => {
-    const { a } = await plantGraph();
-    mkdirSync(join(root, '.pf', 'meta', 'sessions'), { recursive: true });
-    writeFileSync(sessionNotePath(pfPaths(root), a), JSON.stringify({
-      v: 1,
-      discussion: [],
-      run: [{ session: 'sess_r1', host: 'zcode', at: null }],
-    }, null, 2));
-    const quiet = join(root, '_home-quiet');
-    const loud = join(root, '_home-loud');
-    mkdirSync(join(quiet, '.pf'), { recursive: true });
-    mkdirSync(join(loud, '.pf'), { recursive: true });
-    writeFileSync(join(loud, '.pf', 'config.json'), JSON.stringify({ session_host_override: 'on' }, null, 2));
-
-    // The switch underneath: the same project read through a home that stores nothing.
-    const before = process.env.PF_HOME_DIR;
-    try {
-      process.env.PF_HOME_DIR = quiet;
-      const plain = await open(root).ledger.dag.info(a);
-      expect(plain.sessions!.run[0]!.host).toBe('zcode');
-      // The option on the handle wins over the switch, and it is what the detail reads through: the
-      // override stored in the loud home is in force, so the written word is not read at all.
-      const sealed = await open(root, { homeDir: loud }).ledger.dag.info(a);
-      expect(sealed.sessions!.run[0]!.host).toBe('dsh');
-    } finally {
-      if (before === undefined) delete process.env.PF_HOME_DIR;
-      else process.env.PF_HOME_DIR = before;
-    }
   });
 
   it('the id accepts the full form and a unique prefix; a node that is not there stops the call', async () => {

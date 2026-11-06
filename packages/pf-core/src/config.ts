@@ -57,13 +57,12 @@ import type { CycleRecord } from './types';
  * vocabulary — taking a layer off is the job of `unset`.
  *
  * Which layers each knob accepts is stated in its own cell: a built-in setting governs the whole project
- * or the whole machine, so it takes only the project / global layers (the override switch is even
- * narrower and takes the global layer alone); a knob a plugin declares is read by the host along the
- * whole chain, taking all four layers by default, and a declaration that narrows it is followed.
- * `set` / `unset` refuse a layer the knob does not take, naming the layers it does take, and `get`
- * refuses the same way; `list` has no key to refuse, so it shows the chain up to the named layer — a
- * knob that does not take that layer is shown from the layer below it. The three line-level policy keys
- * (parallel / when_shelved / spawner) live on the line record and are written by
+ * or the whole machine, so it takes only the project / global layers; a knob a plugin declares is read by
+ * the host along the whole chain, taking all four layers by default, and a declaration that narrows it is
+ * followed. `set` / `unset` refuse a layer the knob does not take, naming the layers it does take, and
+ * `get` refuses the same way; `list` has no key to refuse, so it shows the chain up to the named layer — a
+ * knob that does not take that layer is shown from the layer below it. The line-level policy keys
+ * (parallel / when_shelved / model) live on the line record and are written by
  * `ledger.cycles.setPolicy`; this module does not know them.
  *
  * Defaults: every setting the engine declares carries one — a literal, or a function of the project root
@@ -176,12 +175,6 @@ export const CHAIN_LAYERS: readonly ConfigLayerName[] = ['node', 'cycle', 'proje
 /** The layers a built-in setting accepts: a setting governs the whole project or the whole machine, and the two narrow layers have no reader. */
 export const SETTING_LAYERS: readonly ConfigLayerName[] = ['project', 'global'];
 
-/** The layers of the one setting that rides on the machine alone: the session host override is a decision about this machine, not about one project. */
-export const MACHINE_LAYERS: readonly ConfigLayerName[] = ['global'];
-
-/** The setting that makes every session entry read as the DSH host, whatever the session file says. */
-export const SESSION_HOST_OVERRIDE = 'session_host_override';
-
 /** The settings the core itself reads. Vocabulary and defaults are in the table below. */
 export const BUILTIN_KNOBS: Readonly<Record<string, KnobSpec>> = {
   max_agents: {
@@ -204,12 +197,6 @@ export const BUILTIN_KNOBS: Readonly<Record<string, KnobSpec>> = {
     default: (root: string) => (existsSync(join(root, '.git')) ? 'fork' : 'off'),
     layers: SETTING_LAYERS,
     summary: 'whether a node gets a worktree of its own: fork by default in a git project, off otherwise',
-  },
-  [SESSION_HOST_OVERRIDE]: {
-    kind: 'switch',
-    default: 'off',
-    layers: MACHINE_LAYERS,
-    summary: 'on: a session file\'s written host is ignored and every session reads as dsh; off: the written host is trusted',
   },
 };
 

@@ -6,10 +6,13 @@ import { open } from '../src/open';
 import { pfPaths, sessionNotePath } from '../src/paths';
 
 /**
- * One handle, one machine layer: `PfOpenOptions.homeDir` names the home every namespace of the handle
- * reads that layer through — the node detail's session lists, `sessions` when it resolves the written
- * host, and `config`'s global layer. The switch stays underneath the option, so a handle that names no
- * home answers from `PF_HOME_DIR`; either way the three faces agree on the same reading.
+ * One handle, one machine layer: `PfOpenOptions.homeDir` names the home the namespaces that read
+ * that layer go through — `config`'s global layer, and `conductor`'s dispatch preparation and plugin
+ * context. The switch stays underneath the option, so a handle that names no home answers from
+ * `PF_HOME_DIR`; either way those faces agree on the same reading.
+ *
+ * The session note is not one of them any more: the host column is this engine's own host, read off
+ * the record and never off a setting, so the same note reads the same under either home.
  */
 
 let root: string;
@@ -27,9 +30,9 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'pf-handle-home-'));
   homeA = join(root, '_home-a');
   homeB = join(root, '_home-b');
-  // Two machine layers that answer every face differently: the knob value and the host override.
+  // Two machine layers that answer the knob differently.
   writeHome(homeA, { max_agents: 5 });
-  writeHome(homeB, { max_agents: 9, session_host_override: 'on' });
+  writeHome(homeB, { max_agents: 9 });
   savedHome = process.env.PF_HOME_DIR;
   process.env.PF_HOME_DIR = homeB;
 });
@@ -41,7 +44,7 @@ afterEach(() => {
   root = undefined!;
 });
 
-/** One node with a session note that names the ZCode host: the page whose host column the machine layer decides. */
+/** One node with a session note naming another implementation's host word: the page's host column must not follow a setting. */
 async function plant(): Promise<string> {
   const pf = open(root);
   await pf.ledger.init();
@@ -55,18 +58,19 @@ async function plant(): Promise<string> {
   return node;
 }
 
-describe('the handle homeDir: one machine layer for every face', () => {
-  it('config, sessions and the node detail answer from the home the handle names, not from the switch', async () => {
+describe('the handle homeDir: one machine layer for the settings faces', () => {
+  it('config answers from the home the handle names, not from the switch', async () => {
     const node = await plant();
     const pf = open(root, { homeDir: homeA });
 
     expect(await pf.config.get('max_agents')).toEqual({ value: 5, source: 'global' });
-    expect((await pf.sessions.show(node)).run[0]!.host).toBe('zcode');
-    expect((await pf.sessions.list())[0]!.note.run[0]!.host).toBe('zcode');
-    expect((await pf.ledger.dag.info(node)).sessions!.run[0]!.host).toBe('zcode');
+    // The session lists read off the record: the written word is data, and the host is this engine's own.
+    expect((await pf.sessions.show(node)).run[0]!.host).toBe('dsh');
+    expect((await pf.sessions.list())[0]!.note.run[0]!.host).toBe('dsh');
+    expect((await pf.ledger.dag.info(node)).sessions!.run[0]!.host).toBe('dsh');
   });
 
-  it('with no home named the switch speaks, and the same three faces agree', async () => {
+  it('with no home named the switch speaks, and the session faces answer the same way', async () => {
     const node = await plant();
     const pf = open(root);
 

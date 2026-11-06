@@ -12,7 +12,7 @@
   "run": [
     {
       "session": "sess_r1",
-      "host": "zcode",
+      "host": "dsh",
       "at": "@t2@"
     }
   ]

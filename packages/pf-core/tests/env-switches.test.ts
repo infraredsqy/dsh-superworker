@@ -10,24 +10,22 @@ import { pluginAssemblyOf } from '../src/plugins/assembly';
 import { pluginsDirOf } from '../src/plugins/registry';
 
 /**
- * The seven runtime switches: each one is read on the call that needs it, and an explicit option on
+ * The five runtime switches: each one is read on the call that needs it, and an explicit option on
  * that call always wins over the environment. One case per switch pins the reading; the cases
  * together also pin the rule that matters when nothing is set — the behaviour is the one it had
  * before these switches existed (no word on the dispatch request, the default home and plugin
  * folder, no session note).
  *
- * Every case clears all seven names first and puts the machine's own values back afterwards, so the
+ * Every case clears all five names first and puts the machine's own values back afterwards, so the
  * suite never depends on what the machine happened to export.
  */
 
 const NAMES = [
   'PF_HOME_DIR',
   'PF_PLUGINS_DIR',
-  'DSH_CONDUCT_SPAWNER',
   'DSH_CONDUCT_SPAWN_DRY_RUN',
   'DSH_CONDUCT_MODEL',
   'DSH_SESSION_ID',
-  'ZCODE_DATA_BASE_DIR',
 ] as const;
 
 let saved: Record<string, string | undefined> = {};
@@ -161,49 +159,6 @@ describe('PF_PLUGINS_DIR: the plugin folder', () => {
   });
 });
 
-describe('DSH_CONDUCT_SPAWNER: which spawner opens the next session', () => {
-  it('names the spawner on the dispatch request; the call and the line policy both beat it', async () => {
-    process.env.DSH_CONDUCT_SPAWNER = 'zcode';
-    process.env.ZCODE_DATA_BASE_DIR = join(root, '_zcode-env');
-
-    // The switch alone: the request carries the word and the ZCode data root.
-    const first = await station();
-    const sim = new SimulatedExecutor();
-    await open(first.root, { executor: sim }).conductor.dispatch({ cycle: 'main' });
-    expect(sim.dispatched[0]).toEqual(expect.objectContaining({
-      cycle: 'main',
-      node: first.node,
-      spawner: 'zcode',
-      zcodeDataDir: join(root, '_zcode-env', '.zcode'),
-    }));
-
-    // The call's own name is the most specific answer for this one dispatch.
-    const second = await station();
-    const simCall = new SimulatedExecutor();
-    await open(second.root, { executor: simCall })
-      .conductor.dispatch({ cycle: 'main', spawner: 'dsh' });
-    expect(simCall.dispatched[0]!.spawner).toBe('dsh');
-    expect('zcodeDataDir' in simCall.dispatched[0]!).toBe(false);
-
-    // The line's policy beats the machine's switch too.
-    const third = await station();
-    process.env.DSH_CONDUCT_SPAWNER = 'dsh';
-    await open(third.root).ledger.cycles.setPolicy('main', 'spawner', 'zcode');
-    const simLine = new SimulatedExecutor();
-    await open(third.root, { executor: simLine }).conductor.dispatch({ cycle: 'main' });
-    expect(simLine.dispatched[0]!.spawner).toBe('zcode');
-  });
-
-  it('with nothing said the request carries no spawner word at all', async () => {
-    const { root: dir } = await station();
-    const sim = new SimulatedExecutor();
-    await open(dir, { executor: sim }).conductor.dispatch({ cycle: 'main' });
-    const request = sim.dispatched[0]!;
-    expect('spawner' in request).toBe(false);
-    expect('zcodeDataDir' in request).toBe(false);
-  });
-});
-
 describe('DSH_CONDUCT_MODEL: the model route the next session opens with', () => {
   it('rides on the dispatch request as one word; the call and the line policy both beat it', async () => {
     process.env.DSH_CONDUCT_MODEL = 'deepseek/deepseek-v4.1-flash';
@@ -288,30 +243,5 @@ describe('DSH_SESSION_ID: the session this process runs in', () => {
     delete process.env.DSH_SESSION_ID;
     const bare = (await pf.ledger.dag.add({ title: '没会话的' })).id;
     expect((await pf.sessions.show(bare)).discussion).toEqual([]);
-  });
-});
-
-describe('ZCODE_DATA_BASE_DIR: the ZCode host data root', () => {
-  it('is `.zcode` under the named root, and it rides only on a ZCode dispatch', async () => {
-    process.env.ZCODE_DATA_BASE_DIR = join(root, '_zcode');
-    process.env.DSH_CONDUCT_SPAWNER = 'zcode';
-    const first = await station();
-    const sim = new SimulatedExecutor();
-    await open(first.root, { executor: sim }).conductor.dispatch({ cycle: 'main' });
-    expect(sim.dispatched[0]!.zcodeDataDir).toBe(join(root, '_zcode', '.zcode'));
-
-    // A DSH dispatch never carries the ZCode root, whatever the switch says.
-    const second = await station();
-    const simDsh = new SimulatedExecutor();
-    await open(second.root, { executor: simDsh })
-      .conductor.dispatch({ cycle: 'main', spawner: 'dsh' });
-    expect('zcodeDataDir' in simDsh.dispatched[0]!).toBe(false);
-
-    // The default root: this machine's home, then `.zcode`.
-    delete process.env.ZCODE_DATA_BASE_DIR;
-    const third = await station();
-    const simDefault = new SimulatedExecutor();
-    await open(third.root, { executor: simDefault }).conductor.dispatch({ cycle: 'main' });
-    expect(simDefault.dispatched[0]!.zcodeDataDir).toBe(join(homedir(), '.zcode'));
   });
 });

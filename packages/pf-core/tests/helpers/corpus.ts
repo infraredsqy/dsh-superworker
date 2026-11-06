@@ -8,7 +8,6 @@ import { createConfigNamespace } from '../../src/config';
 import { createConductorNamespace } from '../../src/conductor';
 import { SimulatedExecutor } from '../../src/executor';
 import { open } from '../../src/open';
-import { createSessionsNamespace } from '../../src/sessions';
 
 /**
  * Golden corpus replayer: one set of input records + one operation → byte-for-byte comparison of
@@ -537,7 +536,7 @@ export async function replayCase(caseDir: string, run?: CorpusRunner): Promise<R
     // The action path is the API path: walk down from the handle and spread the args by position.
     // When a runner is given (for a transitional shape the corpus cannot reach) it takes the call,
     // everything else the same.
-    // The config, conductor and sessions namespaces close "home" into the temporary project root
+    // The config and conductor namespaces close "home" into the temporary project root
     // (<root>/_home): machine-wide reads and writes never touch the real machine's ~/.pf, and the
     // generation side uses the same convention (PF_HOME_DIR=<sandbox>/_home).
     // The conductor's plugin directory uses the default (<root>/plugins) and is provided by the
@@ -548,7 +547,6 @@ export async function replayCase(caseDir: string, run?: CorpusRunner): Promise<R
     const pf = {
       ...open(root),
       config: createConfigNamespace(root, { homeDir: home }),
-      sessions: createSessionsNamespace(root, { homeDir: home }),
       conductor: createConductorNamespace(
         root,
         new SimulatedExecutor(),

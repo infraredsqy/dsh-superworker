@@ -284,7 +284,7 @@ instruction list --project <absolute path to the project root>
   fresh each time, rather than a session settling it on the entry's behalf. Only the user can
   archive an instruction, and only the user can put it back; a session does not touch that
   record.
-- **This line's own policies** (`when_shelved`, the two debt lines, `spawner`) are on
+- **This line's own policies** (`when_shelved`, the two debt lines, `model`) are on
   the `Policy:` line of `cycle current`; write them with
   `cycle policy <cycle> <key> <value>`, and cancel a numeric one with `off`.
 

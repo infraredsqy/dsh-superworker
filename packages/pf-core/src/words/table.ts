@@ -297,14 +297,6 @@ export const COMMANDS = {
       },
       {
         "flags": [
-          "--spawner"
-        ],
-        "metavar": "KIND|PATH",
-        "help": "Which spawner opens these sessions: `dsh`, `zcode`, or a path. Default: the line''s own `spawner` policy, then the machine''s switch, then whichever host this shell runs under.",
-        "invocation": "--spawner KIND|PATH"
-      },
-      {
-        "flags": [
           "--model"
         ],
         "metavar": "ROUTE",
@@ -324,7 +316,7 @@ export const COMMANDS = {
   "dispatch": {
     "word": "dispatch",
     "prog": "dispatch",
-    "description": "Open the sessions of the nodes this cycle holds, and nothing else: land each cell''s material when it is not on disk yet (the prompt at .pf/meta/launch/<cycle>/<node>/prompt.txt, the run doc), hand it to the executor, and stamp the cell `started`. It never claims a node -- that is `hold` -- and it never settles one; that makes \"commit and push first, then open the next session\" expressible as two commands. `--dry-run` is the same gates with the effect shaped away: it reports the cells it would hand over, where each material stands, the spawner and the model route, and the lines a dispatch-time gate would refuse with -- writing nothing, claiming nothing and opening nothing (so a process without an opener can rehearse too). DSH_CONDUCT_SPAWN_DRY_RUN=1 is the machine-wide drill of the same call: it goes through the executor, which answers it without opening a session.",
+    "description": "Open the sessions of the nodes this cycle holds, and nothing else: land each cell''s material when it is not on disk yet (the prompt at .pf/meta/launch/<cycle>/<node>/prompt.txt, the run doc), hand it to the executor, and stamp the cell `started`. It never claims a node -- that is `hold` -- and it never settles one; that makes \"commit and push first, then open the next session\" expressible as two commands. `--dry-run` is the same gates with the effect shaped away: it reports the cells it would hand over, where each material stands, the model route, and the lines a dispatch-time gate would refuse with -- writing nothing, claiming nothing and opening nothing (so a process without an opener can rehearse too). DSH_CONDUCT_SPAWN_DRY_RUN=1 is the machine-wide drill of the same call: it goes through the executor, which answers it without opening a session.",
     "positionals": [
       {
         "name": "id",
@@ -363,14 +355,6 @@ export const COMMANDS = {
         ],
         "help": "Rehearse it: the cells, their material and route, and the lines a dispatch-time gate would refuse with -- nothing written, nothing claimed, no session opened",
         "invocation": "--dry-run"
-      },
-      {
-        "flags": [
-          "--spawner"
-        ],
-        "metavar": "KIND|PATH",
-        "help": "Which spawner opens that session: `dsh`, `zcode`, or a path. Default: the line's own `spawner` policy, then the machine's switch, then whichever host this shell runs under.",
-        "invocation": "--spawner KIND|PATH"
       },
       {
         "flags": [
@@ -765,8 +749,8 @@ export const COMMANDS = {
         "required": true
       },
       {
-        "name": "{issue_pool,issue_pool_weight_limit,model,parallel,spawner,test_audit,test_seconds_limit,when_shelved}",
-        "metavar": "{issue_pool,issue_pool_weight_limit,model,parallel,spawner,test_audit,test_seconds_limit,when_shelved}",
+        "name": "{issue_pool,issue_pool_weight_limit,model,parallel,test_audit,test_seconds_limit,when_shelved}",
+        "metavar": "{issue_pool,issue_pool_weight_limit,model,parallel,test_audit,test_seconds_limit,when_shelved}",
         "required": true,
         "help": "",
         "choices": [
@@ -774,7 +758,6 @@ export const COMMANDS = {
           "issue_pool_weight_limit",
           "model",
           "parallel",
-          "spawner",
           "test_audit",
           "test_seconds_limit",
           "when_shelved"
@@ -784,7 +767,7 @@ export const COMMANDS = {
         "name": "value",
         "metavar": "value",
         "required": true,
-        "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; spawner: dsh | zcode -- which spawner opens this line's sessions (words only, never a path: the cycle record merges across machines); model: a route word -- which model the sessions this line opens use (`provider/model`, carried whole to the opener; a call's own --model wins over it). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
+        "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; model: a route word -- which model the sessions this line opens use (`provider/model`, carried whole to the opener; a call's own --model wins over it). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
       }
     ],
     "options": [
@@ -2323,16 +2306,15 @@ export const GROUPS = {
             "required": true
           },
           {
-            "name": "{issue_pool,issue_pool_weight_limit,model,parallel,spawner,test_audit,test_seconds_limit,when_shelved}",
-            "metavar": "{issue_pool,issue_pool_weight_limit,model,parallel,spawner,test_audit,test_seconds_limit,when_shelved}",
+            "name": "{issue_pool,issue_pool_weight_limit,model,parallel,test_audit,test_seconds_limit,when_shelved}",
+            "metavar": "{issue_pool,issue_pool_weight_limit,model,parallel,test_audit,test_seconds_limit,when_shelved}",
             "required": true,
             "help": "",
             "choices": [
               "issue_pool",
               "issue_pool_weight_limit",
-          "model",
+              "model",
               "parallel",
-              "spawner",
               "test_audit",
               "test_seconds_limit",
               "when_shelved"
@@ -2342,7 +2324,7 @@ export const GROUPS = {
             "name": "value",
             "metavar": "value",
             "required": true,
-            "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; spawner: dsh | zcode -- which spawner opens this line's sessions (words only, never a path: the cycle record merges across machines); model: a route word -- which model the sessions this line opens use (`provider/model`, carried whole to the opener; a call's own --model wins over it). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
+            "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; model: a route word -- which model the sessions this line opens use (`provider/model`, carried whole to the opener; a call's own --model wins over it). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
           }
         ],
         "options": [
@@ -3107,7 +3089,7 @@ export const GROUPS = {
   "config": {
     "word": "config",
     "prog": "config",
-    "description": "Every setting is a knob with a kind, and one chain: this node -> this line -> this project -> this machine -> factory default. Narrower layers cover wider ones, and the same name may be stated on several layers at once: the resolution is deterministic, and `list` / `get` always say which layer the value in force came from. The table is the built-in settings plus every knob the installed plugins declare -- `list` prints it, and a name nobody declares is refused. Not every knob takes every layer: a core setting takes the project and global layers, a plugin's knob takes all four (`set` names the layers a knob takes when it refuses one). The line's own policies -- `parallel`, `when_shelved`, `spawner` -- are not settings and are not here: they live on the line record, written by `cycle policy`. The two file layers are `~/.pf/config.json` (global: travels with the person and the machine, never generated for you) and `<project>/.pf/config.json` (travels with the project; `init` puts an empty `{}` there); the two narrow ones ride on the cycle record and on one node's own `config.json`. `set` stores a value and `unset` drops that one layer's entry -- a switch is turned off by setting `off`, while dropping its entry is `unset` (the same split `cycle policy` explains). `set` / `unset` write exactly one layer: the project layer unless --global / --cycle / --node says otherwise.",
+    "description": "Every setting is a knob with a kind, and one chain: this node -> this line -> this project -> this machine -> factory default. Narrower layers cover wider ones, and the same name may be stated on several layers at once: the resolution is deterministic, and `list` / `get` always say which layer the value in force came from. The table is the built-in settings plus every knob the installed plugins declare -- `list` prints it, and a name nobody declares is refused. Not every knob takes every layer: a core setting takes the project and global layers, a plugin's knob takes all four (`set` names the layers a knob takes when it refuses one). The line's own policies -- `parallel`, `when_shelved`, `model` -- are not settings and are not here: they live on the line record, written by `cycle policy`. The two file layers are `~/.pf/config.json` (global: travels with the person and the machine, never generated for you) and `<project>/.pf/config.json` (travels with the project; `init` puts an empty `{}` there); the two narrow ones ride on the cycle record and on one node's own `config.json`. `set` stores a value and `unset` drops that one layer's entry -- a switch is turned off by setting `off`, while dropping its entry is `unset` (the same split `cycle policy` explains). `set` / `unset` write exactly one layer: the project layer unless --global / --cycle / --node says otherwise.",
     "metavar": "{list,get,set,unset}",
     "commands": [
       {

@@ -340,20 +340,42 @@ describe('policy: the cycle\'s own policies', () => {
       when_shelved: 'stop',
       parallel: 3,
     });
-    expect(await pf.ledger.cycles.setPolicy('main', 'spawner', 'zcode')).toEqual({
+    expect(await pf.ledger.cycles.setPolicy('main', 'when_shelved', 'continue')).toEqual({
+      when_shelved: 'continue',
+      parallel: 3,
+    });
+    const shown = await pf.ledger.cycles.show('main');
+    expect(shown.policies).toEqual({ parallel: 3, when_shelved: 'continue' });
+  });
+
+  it('a policy key this engine does not know is skipped as an unknown key: the line still reads, and the word is in no effective set', async () => {
+    // A record another implementation wrote carries a word of its own in the same `policies` slot.
+    // It stays on disk as data; the reading neither throws nor leaves it out of the line record.
+    await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
+    const statePath = join(root, '.pf', 'state.json');
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    state.cycles[0].policies = { parallel: 2, spawner: 'zcode' };
+    writeFileSync(statePath, JSON.stringify(state, null, 2));
+
+    expect(await pf.ledger.cycles.policies('main')).toEqual({ when_shelved: 'stop', parallel: 2 });
+    expect((await pf.ledger.cycles.current())!.policies).toEqual({ parallel: 2, spawner: 'zcode' });
+    // Writing one key of the effective set goes through the same tolerant read: the old word is not
+    // carried into the set it echoes back, and it is still there on the record, untouched.
+    expect(await pf.ledger.cycles.setPolicy('main', 'parallel', 3)).toEqual({
       when_shelved: 'stop',
+      parallel: 3,
+    });
+    expect(JSON.parse(readFileSync(statePath, 'utf8')).cycles[0].policies).toEqual({
       parallel: 3,
       spawner: 'zcode',
     });
-    const shown = await pf.ledger.cycles.show('main');
-    expect(shown.policies).toEqual({ parallel: 3, spawner: 'zcode' });
   });
 
   it('the write side checks: a word outside the vocabulary, a value that fails its kind, and a key with no name are all refused', async () => {
     await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     await expect(pf.ledger.cycles.setPolicy('main', 'when_shelved', 'pause')).rejects.toThrow('must be one of');
     await expect(pf.ledger.cycles.setPolicy('main', 'parallel', 'many')).rejects.toThrow('positive integer');
-    await expect(pf.ledger.cycles.setPolicy('main', 'spawner', '/usr/bin/spawn')).rejects.toThrow('must be one of');
+    await expect(pf.ledger.cycles.setPolicy('main', 'spawner', 'dsh')).rejects.toThrow('unknown policy');
     await expect(pf.ledger.cycles.setPolicy('main', 'max_agents', 2)).rejects.toThrow('unknown policy');
   });
 

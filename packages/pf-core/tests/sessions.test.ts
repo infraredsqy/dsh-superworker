@@ -1,9 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createConfigNamespace, SESSION_HOST_OVERRIDE } from '../src/config';
-import { isPfError, type PfError } from '../src/errors';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { open } from '../src/open';
 import { sessionNotePath, pfPaths } from '../src/paths';
 import { createSessionsNamespace, type SessionShow, type SessionsNamespace } from '../src/sessions';
@@ -15,36 +13,13 @@ import type { SessionNoteRecord } from '../src/types';
  * the stage here follows the on-disk shape: only the reading is pinned — what can be read, what
  * comes back when it cannot, and what the host column says.
  *
- * The host rule is a closed set of two words and nothing is guessed: the written host is trusted, a
- * missing one means the DSH host, and any other word stops the reading of that page and names the
- * word (in the listing, only that page is left out). The one
- * way to overrule the written host is the machine-layer switch `session_host_override`; home is
- * walled into a temporary directory here (`<root>/_home`), so the real machine's `~/.pf` keeps every
- * byte.
+ * The host column is this engine's one host: every entry reads and shows as `dsh`, whatever word
+ * the file carries. An older or unknown word is data another implementation left there, never an
+ * error; the writer carries it forward byte for byte and writes its own entries as `dsh`.
  */
 
 let root: string;
-let home: string;
 let sessions: SessionsNamespace;
-
-/**
- * The one seam that reads the machine-layer settings file, counted: `readJsonFile` reads through
- * `node:fs/promises`' `readFile`, so the case below counts the calls that name that one file.
- * Nothing is stood in for — every other read stays the real implementation, and this file's own
- * reads go through `node:fs`, untouched.
- */
-const settingsProbe = vi.hoisted(() => ({ path: '', reads: 0 }));
-
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>();
-  return {
-    ...actual,
-    readFile: (...args: unknown[]) => {
-      if (String(args[0]) === settingsProbe.path) settingsProbe.reads += 1;
-      return (actual.readFile as (...rest: unknown[]) => Promise<unknown>)(...args);
-    },
-  };
-});
 
 function notePath(node: string): string {
   return sessionNotePath(pfPaths(root), node);
@@ -54,28 +29,6 @@ function notePath(node: string): string {
 function writeNote(node: string, body: unknown): void {
   mkdirSync(join(root, '.pf', 'meta', 'sessions'), { recursive: true });
   writeFileSync(notePath(node), JSON.stringify(body, null, 2));
-}
-
-/** Write the machine-layer settings file: the layer the host override rides on. */
-function writeHomeConfig(values: Record<string, unknown>): void {
-  mkdirSync(join(home, '.pf'), { recursive: true });
-  writeFileSync(join(home, '.pf', 'config.json'), JSON.stringify(values, null, 2));
-}
-
-/** Write the project-layer settings file. */
-function writeProjectConfig(values: Record<string, unknown>): void {
-  writeFileSync(join(root, '.pf', 'config.json'), JSON.stringify(values, null, 2));
-}
-
-/** Take the failure of one operation (a PfError); letting it through fails the test on its own. */
-async function failureOf(run: () => Promise<unknown>): Promise<PfError> {
-  try {
-    await run();
-  } catch (error) {
-    if (isPfError(error)) return error;
-    throw error;
-  }
-  throw new Error('an operation expected to fail went through');
 }
 
 /** Write a graph in the on-disk shape: only the ids matter here, the node field values are irrelevant to this test. */
@@ -91,17 +44,12 @@ const NODE_B = '22222222-2222-4222-8222-222222222222';
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'pf-sessions-'));
-  home = join(root, '_home');
-  mkdirSync(home, { recursive: true });
-  sessions = createSessionsNamespace(root, { homeDir: home });
-  settingsProbe.path = join(home, '.pf', 'config.json');
-  settingsProbe.reads = 0;
+  sessions = createSessionsNamespace(root);
 });
 
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
   root = undefined!;
-  home = undefined!;
   sessions = undefined!;
 });
 
@@ -125,7 +73,7 @@ describe('show: one page for one node', () => {
     expect(await sessions.show(node)).toEqual(page(node, { v: 1, discussion: [], run: [] }));
   });
 
-  it('both lists read back separately, with session, host, timestamp and source on each entry exactly as written', async () => {
+  it('both lists read back separately, with session, host, timestamp and source; an old host word reads as dsh', async () => {
     writeNote(node, {
       v: 1,
       discussion: [{ session: 'dsh-1', host: 'dsh', at: '2026-01-01T00:00:00Z' }],
@@ -134,11 +82,11 @@ describe('show: one page for one node', () => {
     expect(await sessions.show(node)).toEqual(page(node, {
       v: 1,
       discussion: [{ session: 'dsh-1', host: 'dsh', at: '2026-01-01T00:00:00Z' }],
-      run: [{ session: 'sess_z', host: 'zcode', at: null, source: 'ledger' }],
+      run: [{ session: 'sess_z', host: 'dsh', at: null, source: 'ledger' }],
     }));
   });
 
-  it('the written host is trusted whatever the id looks like: an id shaped one way says nothing about the host', async () => {
+  it('the written host is data, not a reading: every entry shows the one host this engine opens, whatever the word or the id shape', async () => {
     writeNote(node, {
       v: 1,
       discussion: [{ session: 'sess_looks_like_zcode', host: 'dsh', at: null }],
@@ -147,7 +95,7 @@ describe('show: one page for one node', () => {
     expect(await sessions.show(node)).toEqual(page(node, {
       v: 1,
       discussion: [{ session: 'sess_looks_like_zcode', host: 'dsh', at: null }],
-      run: [{ session: 'plain-id', host: 'zcode', at: null }],
+      run: [{ session: 'plain-id', host: 'dsh', at: null }],
     }));
   });
 
@@ -183,7 +131,7 @@ describe('show: one page for one node', () => {
     }));
   });
 
-  it('a host outside the closed set stops the reading and names the word it did not recognise', async () => {
+  it('a word outside any vocabulary does not stop the reading: the page reads, and that entry shows the one host', async () => {
     writeNote(node, {
       v: 1,
       discussion: [
@@ -192,62 +140,14 @@ describe('show: one page for one node', () => {
       ],
       run: [],
     });
-    const failure = await sessions.show(node).then(
-      () => {
-        throw new Error('a session entry naming an unknown host went through');
-      },
-      (error: unknown) => error as Error,
-    );
-    expect(failure.message).toContain('codex');
-    expect(failure.message).toContain('dsh');
-    expect(failure.message).toContain('zcode');
-  });
-
-  it('the override switch, on the machine layer, makes every entry read as dsh whatever the file says', async () => {
-    writeHomeConfig({ session_host_override: 'on' });
-    writeNote(node, {
-      v: 1,
-      discussion: [{ session: 'sess_z', host: 'zcode', at: '2026-01-01T00:00:00Z' }],
-      run: [{ session: 'plain', host: 'anything-goes-away', at: null }],
-    });
     expect(await sessions.show(node)).toEqual(page(node, {
       v: 1,
-      discussion: [{ session: 'sess_z', host: 'dsh', at: '2026-01-01T00:00:00Z' }],
-      run: [{ session: 'plain', host: 'dsh', at: null }],
-    }));
-  });
-
-  it('the override switch is a machine-layer setting only: a project-layer value is not in force, and the written host is trusted again', async () => {
-    writeProjectConfig({ session_host_override: 'on' });
-    writeNote(node, {
-      v: 1,
-      discussion: [{ session: 'sess_z', host: 'zcode', at: null }],
-      run: [],
-    });
-    expect(await sessions.show(node)).toEqual(page(node, {
-      v: 1,
-      discussion: [{ session: 'sess_z', host: 'zcode', at: null }],
+      discussion: [
+        { session: 's1', host: 'dsh', at: null },
+        { session: 's2', host: 'dsh', at: null },
+      ],
       run: [],
     }));
-  });
-
-  it('an unparsable machine layer is an error, not a silent "off": the same read of the setting refuses', async () => {
-    mkdirSync(join(home, '.pf'), { recursive: true });
-    writeFileSync(join(home, '.pf', 'config.json'), '{ not json');
-    writeNote(node, {
-      v: 1,
-      discussion: [{ session: 'sess_z', host: 'zcode', at: null }],
-      run: [],
-    });
-    const throughSessions = await failureOf(() => sessions.show(node));
-    const throughConfig = await failureOf(() =>
-      createConfigNamespace(root, { homeDir: home }).get(SESSION_HOST_OVERRIDE),
-    );
-    // One reading answers both: the same code, the same file, the same refusal.
-    expect(throughSessions.code).toBe('parse_failure');
-    expect(throughConfig.code).toBe('parse_failure');
-    expect(throughSessions.path).toBe(throughConfig.path);
-    expect(throughSessions.path).toBe(join(home, '.pf', 'config.json'));
   });
 
   it('ids accept the full form and a unique prefix; ambiguous and unrecognised ones are rejected', async () => {
@@ -276,30 +176,14 @@ describe('list: the whole book of session notes', () => {
     expect(rows[1]!.note.run).toEqual([{ session: 'r-b', host: 'dsh', at: null }]);
   });
 
-  it('one file naming an unknown host takes only itself out of the book: the other pages answer as usual', async () => {
+  it('one file naming an older host word is in the book like any other, its entry read as dsh', async () => {
     writeNote(NODE_A, { v: 1, discussion: [{ session: 's', host: 'codex', at: null }], run: [] });
     writeNote(NODE_B, { v: 1, discussion: [{ session: 'd', host: 'dsh', at: null }], run: [] });
     const rows = await sessions.list();
-    expect(rows.map((row) => row.node)).toEqual([NODE_B]);
-    expect(rows[0]!.note.discussion).toEqual([{ session: 'd', host: 'dsh', at: null }]);
-    // Asked for on its own, that same page still refuses and names the word it read.
+    expect(rows.map((row) => row.node)).toEqual([NODE_A, NODE_B]);
+    // Asked for on its own, that same page reads the word as data too.
     writeGraph([NODE_A, NODE_B]);
-    await expect(sessions.show(NODE_A)).rejects.toThrow(/codex/);
-  });
-
-  it('the settings chain behind the host column is read once for the whole listing, not once per file', async () => {
-    writeHomeConfig({ session_host_override: 'off' });
-    writeNote(NODE_A, { v: 1, discussion: [{ session: 'a', host: 'dsh', at: null }], run: [] });
-    writeNote(NODE_B, { v: 1, discussion: [{ session: 'b', host: 'dsh', at: null }], run: [] });
-    writeNote('33333333-3333-4333-8333-333333333333', {
-      v: 1,
-      discussion: [{ session: 'c', host: 'dsh', at: null }],
-      run: [],
-    });
-    settingsProbe.reads = 0;
-    const rows = await sessions.list();
-    expect(rows).toHaveLength(3);
-    expect(settingsProbe.reads).toBe(1);
+    expect((await sessions.show(NODE_A)).discussion).toEqual([{ session: 's', host: 'dsh', at: null }]);
   });
 });
 
@@ -321,15 +205,24 @@ describe('note: the one writer on the session book', () => {
     expect(readFileSync(notePath(NODE_A), 'utf8')).toBe(before);
   });
 
-  it('an entry this writer did not write is carried forward field for field', async () => {
+  it('an old record still reads and is written back as it was: host: zcode shows dsh, and the written word stays on disk', async () => {
     const talked = { session: 'sess_talk', host: 'zcode', at: '2026-01-01T00:00:00Z', source: 'ledger' };
+    writeGraph([NODE_A]);
     writeNote(NODE_A, { v: 1, discussion: [talked], run: [] });
+    // The reading side: the old word is data, the entry shows the host this engine opens.
+    expect((await sessions.show(NODE_A)).discussion).toEqual([{ ...talked, host: 'dsh' }]);
+
     expect(await sessions.note(NODE_A, 'run', 'session-run-1')).toBe(true);
-    const note = JSON.parse(readFileSync(notePath(NODE_A), 'utf8'));
+    const text = readFileSync(notePath(NODE_A), 'utf8');
+    const note = JSON.parse(text);
     expect(note.discussion).toEqual([talked]);
+    // Byte for byte: the rewrite carries the word another implementation wrote.
+    expect(text).toContain('"host": "zcode"');
     expect(note.run).toEqual([
       { session: 'session-run-1', host: 'dsh', at: expect.any(String) },
     ]);
+    // And the page read after the rewrite shows that entry as the DSH host as well.
+    expect((await sessions.show(NODE_A)).run[0]!.host).toBe('dsh');
   });
 });
 

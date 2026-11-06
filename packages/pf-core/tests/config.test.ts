@@ -9,7 +9,6 @@ import {
   createConfigNamespace,
   knobSpecs,
   resolveConfig,
-  SESSION_HOST_OVERRIDE,
   worktreeModeOf,
   type ConfigLayer,
   type ConfigNamespace,
@@ -179,23 +178,20 @@ function thrownBy(run: () => unknown): PfError {
 const NO_LAYER = undefined as unknown as ConfigLayer;
 
 describe('the knob list and its layers', () => {
-  it('four built-in knobs: max_agents / test_tier / worktree_mode taking the two wide layers, session_host_override taking the machine layer alone', () => {
+  it('three built-in knobs, all of them taking the two wide layers', () => {
     expect(Object.keys(BUILTIN_KNOBS).sort()).toEqual([
       'max_agents',
-      SESSION_HOST_OVERRIDE,
       'test_tier',
       'worktree_mode',
     ]);
     expect(acceptedLayers(BUILTIN_KNOBS['max_agents']!)).toEqual(['project', 'global']);
     expect(acceptedLayers(BUILTIN_KNOBS['test_tier']!)).toEqual(['project', 'global']);
     expect(acceptedLayers(BUILTIN_KNOBS['worktree_mode']!)).toEqual(['project', 'global']);
-    expect(acceptedLayers(BUILTIN_KNOBS[SESSION_HOST_OVERRIDE]!)).toEqual(['global']);
   });
 
   it('every built-in declaration carries a factory value: a literal, or a function of the project root', () => {
     expect(BUILTIN_KNOBS['max_agents']!.default).toBe(3);
     expect(BUILTIN_KNOBS['test_tier']!.default).toBe('full');
-    expect(BUILTIN_KNOBS[SESSION_HOST_OVERRIDE]!.default).toBe('off');
     // Every cell carries one and none of them is null: both are the engine's own declaration rule. How
     // the worktree mode's per-project default is spelled is not pinned here — the two behavioural tests
     // further down pin what it answers (fork with a `.git`, off without one).
@@ -560,19 +556,6 @@ describe('the layer a write names: one, and never defaulted', () => {
     }
   });
 
-  it('the machine-layer switch takes the machine layer alone: the project layer is refused outright', async () => {
-    const { root, config } = await makeProject();
-    try {
-      const refusal = await refusalOf(() => config.set(SESSION_HOST_OVERRIDE, 'on', { project: true }));
-      expect(refusal.code).toBe('layer_not_allowed');
-      expect(refusal.message).toContain('global');
-      await config.set(SESSION_HOST_OVERRIDE, 'on', { global: true });
-      expect(await config.get(SESSION_HOST_OVERRIDE)).toEqual({ value: 'on', source: 'global' });
-    } finally {
-      cleanup(root);
-    }
-  });
-
   it('a knob a declaration narrowed: a write beyond its layers is refused, a declared layer is let through', async () => {
     const { root, config } = await makeProject(DECLARED);
     try {
@@ -849,7 +832,6 @@ describe('list: every setting with its value and source', () => {
       expect(listed['max_agents']).toEqual({ value: 3, source: 'builtin' });
       expect(listed['test_tier']).toEqual({ value: 'full', source: 'builtin' });
       expect(listed['worktree_mode']).toEqual({ value: 'off', source: 'builtin' });
-      expect(listed[SESSION_HOST_OVERRIDE]).toEqual({ value: 'off', source: 'builtin' });
       expect(listed['sandbox_number']).toEqual({ value: null, source: 'builtin' });
       // One entry per key of the merged list, no more and no fewer.
       expect(Object.keys(listed).sort()).toEqual(Object.keys(knobSpecs(DECLARED)).sort());
@@ -910,7 +892,6 @@ describe('the source stamp and factory defaults', () => {
       expect(fresh['worktree_mode']).toEqual({ value: 'off', source: 'builtin' });
       expect(fresh['sandbox_on']).toEqual({ value: 'on', source: 'builtin' });
       expect(fresh['sandbox_number']).toEqual({ value: null, source: 'builtin' });
-      expect(fresh[SESSION_HOST_OVERRIDE]).toEqual({ value: 'off', source: 'builtin' });
 
       await config.set('max_agents', 4, { project: true });
       const stated = await resolveConfig(root, { homeDir: home, declaredKnobs: DECLARED });
@@ -976,13 +957,14 @@ describe('how tight the read is: only a wrong layer and an unreadable file stop 
   });
 
   it('a known name sitting in a layer the knob does not take is silent as well: the narrower layer does not apply', async () => {
-    const { root, config } = await makeProject();
+    const { root, home, config } = await makeProject(DECLARED);
     try {
-      // The machine-layer switch is not a project-layer setting: written into the project file it
-      // simply does not apply.
-      seedProjectConfig(root, `{"${SESSION_HOST_OVERRIDE}": "on", "max_agents": 4}`);
-      expect(await config.get(SESSION_HOST_OVERRIDE)).toEqual({ value: 'off', source: 'builtin' });
-      expect((await config.list())[SESSION_HOST_OVERRIDE]).toEqual({ value: 'off', source: 'builtin' });
+      // A declaration narrowed to the project layer is not a global-layer setting: written into the
+      // machine's file it simply does not apply.
+      mkdirSync(join(home, '.pf'), { recursive: true });
+      writeFileSync(join(home, '.pf', 'config.json'), JSON.stringify({ narrow_limit: 7 }, null, 2));
+      expect(await config.get('narrow_limit')).toEqual({ value: 1, source: 'builtin' });
+      expect((await config.list())['narrow_limit']).toEqual({ value: 1, source: 'builtin' });
     } finally {
       cleanup(root);
     }
@@ -1200,8 +1182,8 @@ describe('the declared knobs of the project own plugin folder', () => {
     const root = mkdtempSync(join(tmpdir(), 'pf-config-declared-'));
     try {
       // The handle carries a `homeDir` seam: `open(root, { homeDir })` hands one home to every namespace
-      // that reads the machine layer (`config`, `sessions`, `ledger.dag.info`, `conductor`), so `open` can
-      // wall the machine layer in. The declaration table has no option of its own: it is read from the
+      // that reads the machine layer (`config`, `conductor`), so `open` can wall the machine layer in. The
+      // declaration table has no option of its own: it is read from the
       // project's plugin folder on each call. This test names no home, so that layer is this machine's own
       // file; the knob names below belong to the declaration, so no wider layer can hold a value under
       // them, and every reading asserted here is the project's or the line's.
@@ -1220,7 +1202,7 @@ describe('the declared knobs of the project own plugin folder', () => {
         },
       }, null, 2), 'utf8');
 
-      // The list: the four built-ins plus the two declared knobs, each with its own factory default.
+      // The list: the three built-ins plus the two declared knobs, each with its own factory default.
       const listed = await pf.config.list();
       expect(Object.keys(listed).sort())
         .toEqual([...Object.keys(BUILTIN_KNOBS), 'pool_limit', 'pool_on'].sort());

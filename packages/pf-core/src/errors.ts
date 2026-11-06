@@ -30,11 +30,6 @@
  *                        (only `off` / `fork` are: `reuse` is refused as soon as it is read), the
  *                        mode is handed back to the caller and nothing was touched.
  *
- * The session file (`src/sessions.ts`) adds one code of its own:
- *
- * - `unknown_session_host` a session entry names a host outside the closed set of two words; the word
- *                        it names is in the message. Nothing is guessed from the id instead.
- *
  * The pipeline (`src/conductor.ts`) adds two codes of its own besides `dispatch_blocked`:
  *
  * - `dispatch_blocked`   dispatch was stopped by a plugin gate (the reasons are listed one per line
@@ -61,7 +56,6 @@ export type PfErrorCode =
   | 'node_not_found'
   | 'ambiguous_holder'
   | 'not_a_project'
-  | 'unknown_session_host'
   | 'invalid_config_file'
   | 'dispatch_blocked'
   | 'nothing_to_settle'

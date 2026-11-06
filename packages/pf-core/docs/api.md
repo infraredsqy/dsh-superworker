@@ -8,9 +8,9 @@
   直接抛错，记录一个字节都不动。git 不走这里：`ledger.init`、`ledger.register` 与 `conductor.doctor`
   每次调用自带一个 `git`（形状就是 `src/git.ts` 里的 `GitRunner`），句柄上不存 git；哪一次调用不传，
   那一次问 git 的部分就不问（doctor 的合并驱动一格只说没问，不判红）。`homeDir` 是机器层设置的 home
-  （`<home>/.pf/config.json`）：句柄把它交给每一个读这一层的命名空间——`ledger`（`dag.info` 的会话档）、
-  `config` 的 global 层、`sessions` 的宿主解析，以及 `conductor` 的派发准备与插件上下文；同一个句柄只
-  有一套机器层。不传时按 `PF_HOME_DIR`，再缺省到本机 home。`pluginsDir` 是这个句柄扫描的插件目录
+  （`<home>/.pf/config.json`）：句柄把它交给每一个读这一层的命名空间——`config` 的 global 层，以及
+  `conductor` 的派发准备与插件上下文；同一个句柄只有一套机器层。不传时按 `PF_HOME_DIR`，再缺省到本机
+  home。`pluginsDir` 是这个句柄扫描的插件目录
   （设置声明的并入、插件命令、doctor 与两道时机门读的都是它）：点名优先于 `PF_PLUGINS_DIR`，两者都压过
   缺省的 `<root>/plugins`；不点名时读法照旧。
 - `Pf { root: string; ledger; conductor; config; sessions }` —— `root` 是打开时给的项目根，原样保存。
@@ -172,7 +172,7 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 
 `verbose` 时两个方向的每一项多一个 `status`：依赖那侧缺席读 `(unknown)`（与它的标题同一格），被依赖那侧缺席读空串。`info` 与 `get` 一样是读动词：不持锁、不问 init 门槛；图上没有这个 id 时当场停下。
 
-`sessions` 格走本机会话档，读宿主时要解析机器层设置（`session_host_override`）：那一层的 home 由**句柄**带进来——`open(root, { homeDir })`（`PfOpenOptions.homeDir`），不传时按 `PF_HOME_DIR`、再缺省到本机 home。`DagInfoOptions` 只有 `verbose` 一格：这个开关的口径属于整台机器，落在句柄那一层，一问的选项不动它。
+`sessions` 格走本机会话档，读的是记录自己：本引擎只开 dsh 会话，宿主那一格一律读作 `dsh`，档里写的是哪个词都不改变读数、也不算错误（另一个实现仍在往这些记录里写它自己的词，那是数据）。`DagInfoOptions` 只有 `verbose` 一格。
 
 ### pf.ledger.cycles
 
@@ -200,7 +200,9 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 `null`。读动词：不拿锁、不碰门槛、一个字节都不写。
 
 线自己的策略键：`when_shelved`（节点没交付被放下时停线还是继续）、`parallel`
-（同时认领几个节点，缺省 1）、`spawner`（用哪个宿主开会话，只写词）；其余是插件声明的旋钮。
+（同时认领几个节点，缺省 1）、`model`（这条线开的会话用哪条模型路由，一个
+`provider/model` 的词）；其余是插件声明的旋钮。线记录里残留别的键（别的实现写下的旧词那种）
+当未知键跳过：不抛、不拒读整条线，也不进入有效集。
 
 ### pf.ledger.instructions
 
@@ -255,9 +257,8 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 读数来自它下面那层。
 
 `keys(dir?)` 交回此刻这份清单上的名字，排序后的字符串数组：引擎自己的设置加上已装插件声明的旋钮，
-只留收 project 层的那些。只收 global 的一格（`session_host_override` 那种）不在里面——它不是一次
-project 读写的对象。调用方要印「这几个动词收哪些名字」时印的就是这一份，插件装上或摘掉，下一次
-调用就换。
+只留收 project 层的那些；收窄到 global 一层的旋钮不在里面——它不是一次 project 读写的对象。调用方要印
+「这几个动词收哪些名字」时印的就是这一份，插件装上或摘掉，下一次调用就换。
 
 五个动词都带一个可选目录 `dir`：缺席时用句柄自己的项目根。无论哪种，那个目录都得自己有一份
 `.pf`——没有就是 `not_a_project`，不会往上找更宽的目录。句柄自己的根也不豁免：fork 档的节点在
@@ -269,17 +270,16 @@ pf 项目」，主树的设置一个字都漏不出来（in-repo 档记录随检
 两个词），读写两侧过同一道校验门。写侧不合种类当场拒绝（`invalid_value`），什么都没写；线层骑在线
 记录上，认不出的值当没说。
 
-旋钮名得在清单上，否则 `unknown_key`（拒绝里把可配的名全列出来）。核心内置四个：
+旋钮名得在清单上，否则 `unknown_key`（拒绝里把可配的名全列出来）。核心内置三个：
 
 - `max_agents`（`integer`，缺省 3）：一个会话同时在飞的子代理上限。
 - `test_tier`（`word`，`full` / `minimal`，缺省 `full`）：验证档位——full 跑全套，minimal 只跑点名的检查。
 - `worktree_mode`（`word`，`off` / `fork` / `reuse`，缺省按项目算：git 项目 `fork`，其余 `off`）：
   节点要不要自己的 worktree。`reuse` 在词汇表里，但这台引擎只在 `off` / `fork` 两档里干活，
   按模式读它、读到 `reuse` 就拒绝（`worktree_mode_unsupported`）。
-- `session_host_override`（`switch`，缺省 `off`）：打开时所有会话条目都按 `dsh` 读，写下的宿主不看。
 
-前三个只收 project / global 两层（`layer_not_allowed` 的拒绝里点名它收哪几层）；`session_host_override`
-只收 global 一层——这个开关是关于整台机器的决定，跟着那台机器走。其余旋钮由插件声明，顺着整条链收。
+三个都只收 project / global 两层（`layer_not_allowed` 的拒绝里点名它收哪几层）。其余旋钮由插件声明，
+顺着整条链收。
 
 出厂缺省的规矩，只管引擎自己的声明：每一项都带一个缺省（字面量，或按项目根现算的函数）——缺了它、
 写成 `null`、或字面量与自己的种类不合，合并清单的那一刻就拒绝并点名那一项（那是声明问题，抛
@@ -315,19 +315,18 @@ pf 项目」，主树的设置一个字都漏不出来（in-repo 档记录随检
 
 会话档住 `.pf/meta/sessions/<节点>.json`（会话 id 是本机的东西，不进记录）。读侧一律容忍：
 文件缺席、读不动、版本认不得，三者都读作「没写过」，两个名单都是空表；条目里没有会话 id 的
-丢掉，时刻认不得就是 `null`。宿主按写下来的那个词认：写下的宿主被信任，缺席读作 `dsh`，认得的
-只有 `dsh` 与 `zcode` 两个词，任何别的词当场停下这一档的读（`unknown_session_host`）并点名那个
-词——不拿会话 id 的形状去猜。`session_host_override` 打开时写下的宿主根本不读，每条都按 `dsh`
-读（那个开关只收 global 一层，缺省 `off`）。`list` 只给说得出一句的档（两个名单都空的不进清单），
-按节点 id 排；读宿主用的那条解析链对整份清单只走一次，写了一个不认得的宿主的档只丢它自己——
-别的条目照常给出（`show` 到那个节点还是当场拒绝并点出那个词）。
+丢掉，时刻认不得就是 `null`。宿主那一格：本引擎只开 dsh 会话，读取与展示一律读作 `dsh` ——
+档里写的是哪个词都不算错误（别的实现仍在往这些记录里写它自己的词，那是数据），也不拿会话 id
+的形状去猜。`list` 只给说得出一句的档（两个名单都空的不进清单），按节点 id 排；一个档读不动或
+认不得，只丢它自己，别的条目照常给出。
 `show` 认全 id 与唯一前缀：前缀认出多个节点、或一个都认不出，都当场拒绝，不替调用方猜。
 
 `note` 是这一层唯一的写口：一条会话记进 `discussion` / `run` 之一（`role` 只收这两个词，别的当场
 拒绝）。读写是一次动作、全程持这个项目的记录锁，所以同一个节点上的两个写者——开它会话的宿主，以及
 引擎自己在登记节点时记 discussion 的那条路——不会互相丢掉条目。同一个会话 id 已经在那一档里时不再
 写，交回 `false`（部分失败后的重试不该把同一个 run 记两遍）。文件按规范形状整份重写：两个名单、
-`{v, discussion, run}`，原有条目过写者自己的清理，别的什么都不动。`node` 收全 id：前缀是给人读的
+`{v, discussion, run}`，原有条目过写者自己的清理，别的什么都不动：条目里写下的宿主原样写回、一个
+字节不改，新写的条目落 `host: 'dsh'`。`node` 收全 id：前缀是给人读的
 id，写口认的是节点已有的那个目录。
 
 ## pf.conductor
@@ -343,7 +342,7 @@ id，写口认的是节点已有的那个目录。
 | `conductor.advance` | `advance(input?)` | 把线推一格：补满空槽（钉）→ 落每格的材料 → 一格开一个会话；停了的线转 `inactive`；交回 `AdvanceReceipt { cycle; pinned; dispatches; parked; plan }` |
 | `conductor.prepare` | `prepare(input?)` | 把一次派发的材料落下来、不开会话：提示词落到它的位置、运行稿立在节点目录、交接单模板随材料交回 `PreparedDispatch { cycle; nodes }`；只有规划交回 `dispatch` 时才有材料可落，别的计划当场拒绝、一个字节不写 |
 | `conductor.dispatch` | `dispatch(input?)` | 把一格交给一个会话，交回收据 `DispatchReceipt { action; cycle; node_id; node_title; prompt; prompt_text; session? }`；`action` 只有 `opened` / `already_open` 两个词 |
-| `conductor.dispatchPreview` | `dispatchPreview(input?)` | 派发的预演：这格会收到的请求（材料落点与是否已在盘上、`spawner`、`model`），拦下缝问各家自己的预演、理由当数据交回 `blocked`；不落材料、不落记号、不开会话 |
+| `conductor.dispatchPreview` | `dispatchPreview(input?)` | 派发的预演：这格会收到的请求（材料落点与是否已在盘上、`model`），拦下缝问各家自己的预演、理由当数据交回 `blocked`；不落材料、不落记号、不开会话 |
 | `conductor.handoff` | `handoff(input)` | 写一张交接单，落在 signals 下的「线 id / 节点 id」 |
 | `conductor.handoffForm` | `handoffForm(input?)` | 这条线要的交接单形状：它问哪几个读数格（不写一个字节） |
 | `conductor.pluginCommand` | `pluginCommand(input)` | 把一个词连同它的行交给声明这个词的插件，在本进程里跑，交回 `PluginCommandAnswer { word; plugin; ran; text; code; error }` |
@@ -376,7 +375,7 @@ id，写口认的是节点已有的那个目录。
 这一格（线、节点）的提示词**已经在盘上**时，准备这一步整个跳过：那份提示词是应用步落的，
 而「提示词在盘上、`started` 记号不在」这一对盘上事实本身就是一次派发，哪怕规划此刻还在等交接单
 ——跳过时不落第二份材料，只落 `started` 记号。绿灯才把请求交给注入的执行者，请求带着这一格解析
-出来的 `spawner` 与 `model`（本次调用点名 > 线的策略 > 机器的开关）。交回的只是收据：`opened`
+出来的 `model`（本次调用点名 > 线的策略 > 机器的开关）。交回的只是收据：`opened`
 带 `session`，说的是会话已经开着；节点的收场由 worker 写交接单、再由 `settle` 结算。记号随之落盘，
 规划从此把这一格算作在飞，不再派第二遍；执行者缺席或抛出时，记号不落、记录一个字节都不动。记号
 写不下去当场抛出：会话已经出去了而盘上没有凭证，文案带会话 id，并说清再派一次会开出第二个会话；
@@ -386,8 +385,8 @@ id，写口认的是节点已有的那个目录。
 票据落在 `signals/<线>/<节点>.json`，同一节点的第二张票整文件顶上。
 
 **预演是同一个动作减去效果。** `settlePreview` / `dispatchPreview` 是上面两个写动作的读版：同样的
-门槛（`settle` 那对数、`heldNodeId`、`started` 记号的存在）、同一份判据（`settleClose`）、同两条
-解析链（`spawnerOf` / `modelOf`），插件缝问的是各家自己的预演（`offer_preview` / `check_preview`），
+门槛（`settle` 那对数、`heldNodeId`、`started` 记号的存在）、同一份判据（`settleClose`）、同一条
+解析链（`modelOf`），插件缝问的是各家自己的预演（`offer_preview` / `check_preview`），
 上下文带 `preview: true`、`run` 拒跑。`dispatchPreview` 把拦下的理由当数据交回（`blocked`），不抛；
 `settlePreview` 的 `target` 就是插入缝的落点——这一单本该开的下一个节点，`seam` 是各家预演交回的
 节点（还没有 uuid，所以没有正文），`plan` 是这条线收完之后读到的计划。两个预演都写零字节：材料不落、
@@ -494,16 +493,12 @@ id，写口认的是节点已有的那个目录。
 - `class SimulatedExecutor implements Executor` —— 模拟开出一个会话：按次序交回 `sess-1` /
   `sess-2` …，并把收到的每次派发请求记在 `dispatched` 里；脚本是 `'open'`（缺省）、`'throw'`
   （开不出会话就抛）或 `'hang'`（永不落定），给函数就按请求与序号逐次现算。
-- `DispatchRequest { cycle?; node?; role?; prompt; spawner?; model?; dryRun?; zcodeDataDir? }`，
+- `DispatchRequest { cycle?; node?; role?; prompt; model?; dryRun? }`，
   `OpenedSession { sessionId?; host? }`。后几格都由派发这一次调用现读：
-  - `spawner`：这场会话由哪个 spawner 开（词或路径）。次序是本次调用点名的 `spawner` > 线的
-    `spawner` 策略 > 机器的 `DSH_CONDUCT_SPAWNER`；都没说时这一格缺席，执行者自己的缺省说了算。
-    本次点名走 `conductor.dispatch({ spawner })`（输入的形状是 `ConductorDispatchInput`）。
   - `model`：这场会话用哪条模型路由，一个 `provider/model` 的词、整格交给执行者。次序是本次
     调用点名的 `model` > 线的 `model` 策略 > 机器的 `DSH_CONDUCT_MODEL`；都没说时缺席，执行者
     自己的缺省说了算。
   - `dryRun`：演练档开着时是 `true`（缺席即关）。调用照做、回执照给，但执行者不许真的开一场会话。
-  - `zcodeDataDir`：只有解出的 spawner 是 `zcode` 那个词时才有；ZCode 宿主的 `.zcode` 根就在那里。
 
 ## 运行时开关
 
@@ -514,11 +509,9 @@ id，写口认的是节点已有的那个目录。
 | --- | --- | --- |
 | `PF_HOME_DIR` | 机器层设置的 home | `<home>/.pf/config.json` 的 home；沙盒靠它把机器层关进临时目录，不碰真的 `~/.pf` |
 | `PF_PLUGINS_DIR` | 插件目录 | 一个插件一个子目录的那个目录；去掉首尾空白，空值读出厂缺省 `<root>/plugins`；以 `~` 开头的路径按本机 home 展开（光杆 `~` 就是 home 本身） |
-| `DSH_CONDUCT_SPAWNER` | `conductor.dispatch` | 下一场会话由哪个 spawner 开：`dsh` / `zcode`，或一条路径。本次调用点名与线的策略都压过它 |
 | `DSH_CONDUCT_SPAWN_DRY_RUN` | `conductor.dispatch` | 演练档：值不是 `''` / `0` / `false` / `False` 就是开，请求多带 `dryRun: true` |
 | `DSH_CONDUCT_MODEL` | `conductor.dispatch` | 下一场会话用哪条模型路由（`provider/model`，整格交给执行者）。本次调用点名与线的 `model` 策略都压过它；都没说时这一格缺席，执行者的缺省说了算 |
-| `DSH_SESSION_ID` | `ledger.dag.add` | 本进程自己的会话 id：登记节点时作为这个节点的 discussion 会话记进它的会话档。尽力而为，写不进去也不回滚已登记的节点。本引擎只在这一处读它：另一个读点（本机自答「这台机器就是 dsh 宿主」）在引擎里没有落点——引擎不起进程，「这台机器是哪个宿主」由执行者接缝决定 |
-| `ZCODE_DATA_BASE_DIR` | `conductor.dispatch` | ZCode 宿主的数据根（`.zcode` 挂在它下面，本机 home 为缺省）；只有 spawner 解出来是 `zcode` 这个词时请求才带这一格——spawner 写成一条路径时不带，这一格只认那个词 |
+| `DSH_SESSION_ID` | `ledger.dag.add` | 本进程自己的会话 id：登记节点时作为这个节点的 discussion 会话记进它的会话档。尽力而为，写不进去也不回滚已登记的节点。本引擎只在这一处读它 |
 
 除演练档外，其余开关都把值去掉首尾空白之后再用，空值当没说；路径形的值里只有 `PF_PLUGINS_DIR` 认
 `~`（展开到本机 home），其余开关按写下的字面读。演练档是例外：它原样读、不去空白，值只在 `''` / `0` /
@@ -543,7 +536,6 @@ id，写口认的是节点已有的那个目录。
 | 设置 | `not_a_project` | 交给设置动词的那个目录自己没有 `.pf`（不往上猜） |
 | 设置 | `invalid_config_file` | 那一层文件的 JSON 顶层得是一个对象（键 -> 值），别的形状报这个码 |
 | 设置 | `worktree_mode_unsupported` | 按模式读 `worktree_mode` 读到的不是 `off` / `fork`（`reuse` 一读到就拒绝）；模式原样交回，什么都没改 |
-| 会话档 | `unknown_session_host` | 会话条目写了两个词以外的宿主；点名那个词，不拿 id 形状去猜 |
 | 流水线 | `dispatch_blocked` | 派发被插件的门拦下（理由逐条在文案里，什么都没改） |
 | 流水线 | `nothing_to_settle` | 收线结算被拒：这个节点的交接单缺席或还是 `pending`，没有判决可结算 |
 | 流水线 | `not_holding` | 点名的节点不在这条线的认领名单上：票没处写、这条线没东西可结算 |

@@ -384,7 +384,7 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
     const entries = (process.env.PATH ?? '').split(delimiter).filter((entry) => entry.length > 0)
     const removed = entries.filter((entry) => PF_NAMES.some((name) => existsSync(join(entry, name))))
     const kept = entries.filter((entry) => !removed.includes(entry))
-    const scrubbed = ['PF_PLUGINS_DIR', 'DSH_CONDUCT_SPAWNER', 'DSH_CONDUCT_SPAWN_DRY_RUN', 'DSH_SESSION_ID', 'ZCODE_DATA_BASE_DIR', 'NODE_OPTIONS', 'NODE_PATH']
+    const scrubbed = ['PF_PLUGINS_DIR', 'DSH_CONDUCT_SPAWN_DRY_RUN', 'DSH_SESSION_ID', 'NODE_OPTIONS', 'NODE_PATH']
     const env = { ...process.env, PATH: kept.join(delimiter), PF_HOME_DIR: home, DSH_HOME: home }
     const wasSet = scrubbed.filter((name) => env[name] !== undefined)
     for (const name of scrubbed) delete env[name]
