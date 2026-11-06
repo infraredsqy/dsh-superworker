@@ -20,14 +20,19 @@
  *   every call joins the same chain. The engine's own claim check is still
  *   the guard against a second session (two calls for one cell resolve to
  *   `already_open`), and the chain keeps the calls from even interleaving.
- * - **The trigger.** The relay listens to `turn/end` of the sessions **this
- *   host opened** (tracked here when a dispatch returns), reads the plan
- *   read-only after each turn, and carries the line on when the plan asks for
- *   it — claim the free slots, land each cell's material, open one session per
- *   cell (`conductor.advance`), or park a line with nothing left. A plan that
- *   says `wait` is never overridden, so a dead cell cannot be driven through.
- *   The switch (`autoRelay`, default on) turns the trigger off; the button
- *   keeps working whatever the switch says.
+ * - **The trigger.** The relay listens to the two ways one of its own sessions
+ *   stops running: `turn/end` of a session **this host opened** (tracked here
+ *   when a dispatch returns), and the host's `session/disposed` — a session
+ *   that crashed, was stopped, or ran out of context never reaches the first
+ *   one, and a line parked on that cell would wait for a person forever.
+ *   Either notice re-reads the plan read-only and carries the line on when the
+ *   plan asks for it — claim the free slots, land each cell's material, open
+ *   one session per cell (`conductor.advance`), or park a line with nothing
+ *   left. The judgement is the same one for both, so a plan that says `wait`
+ *   is never overridden and a second notice for a session already judged
+ *   cannot open a second time: the claim the first pass wrote is what the
+ *   re-read sees. The switch (`autoRelay`, default on) turns the trigger off;
+ *   the button keeps working whatever the switch says.
  *
  * The relay never throws into the event bus: a refused trigger logs one line
  * and the panel's button reports its own refusal to the reader.
@@ -35,7 +40,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { open, type Executor } from 'pf-core'
-import { openNodeSession, type SessionOpenOutcome } from './executor.ts'
+import { canonicalWorkspaceRoot, openNodeSession, type SessionOpenOutcome } from './executor.ts'
 import type { PfRefusalCode } from './failure.ts'
 import { PANEL_PREF_FIELDS } from './settings-fields.ts'
 import { shippedPluginsDir } from './skills.ts'
@@ -145,14 +150,17 @@ async function runDispatch(
   cycle: string,
   node: string,
 ): Promise<DispatchOutcome> {
+  /* The dispatch entry takes the canonical spelling once: the engine's handle, the opener's queue
+   * key and `cwd`, and the workspace this dispatch remembers are one string. */
+  const root = await canonicalWorkspaceRoot(workspaceRoot)
   try {
     /* The handle names the plugin folder this package ships, so the shipped plugin set (the `issue`
      * command surface and the two closing guards) answers here too — the same set the skills
      * placement reads. A project's own `plugins/` folder is not consulted through this path. */
-    const pf = open(workspaceRoot, { executor: executorOf(ctx, sessionId, workspaceRoot), pluginsDir: shippedPluginsDir() })
+    const pf = open(root, { executor: executorOf(ctx, sessionId, root), pluginsDir: shippedPluginsDir() })
     const receipt = await pf.conductor.dispatch({ cycle, node })
     if (receipt.action === 'opened' && receipt.session?.sessionId !== undefined) {
-      tracked.set(receipt.session.sessionId, workspaceRoot)
+      tracked.set(receipt.session.sessionId, root)
     }
     return { ok: true, session: receipt.session?.sessionId ?? '' }
   } catch (error) {
@@ -198,15 +206,18 @@ export function advanceLine(
   cycle: string,
 ): Promise<DispatchOutcome> {
   const step = async (): Promise<DispatchOutcome> => {
+    /* Same entry discipline as `dispatchCell`: one canonical spelling for the handle, the opener and
+     * the workspace the relay remembers. */
+    const root = await canonicalWorkspaceRoot(workspaceRoot)
     try {
-      const pf = open(workspaceRoot, {
-        executor: executorOf(ctx, sessionId, workspaceRoot),
+      const pf = open(root, {
+        executor: executorOf(ctx, sessionId, root),
         pluginsDir: shippedPluginsDir(),
       })
       const receipt = await pf.conductor.advance({ cycle })
       for (const cell of receipt.dispatches) {
         if (cell.receipt.action === 'opened' && cell.receipt.session?.sessionId !== undefined) {
-          tracked.set(cell.receipt.session.sessionId, workspaceRoot)
+          tracked.set(cell.receipt.session.sessionId, root)
         }
       }
       const first = receipt.dispatches[0]?.receipt
@@ -221,32 +232,45 @@ export function advanceLine(
 }
 
 /**
- * The relay's answer to one turn end: read the plan read-only, and carry the line on when the plan
+ * The relay's answer to either notice: read the plan read-only, and carry the line on when the plan
  * asks for it (`dispatch` / `open_node` to open or claim the next cell, `stop_pipeline` to park a line
  * that has nothing left). A plan that says `wait` is never overridden — the ticket owed, or the
- * session already out, is the caller's business — so a dead cell cannot be driven through. The switch
+ * session already out, is the caller's business — so a dead cell cannot be driven through, and the
+ * two notices cannot double-dispatch: the first pass writes the claim the second one reads. The switch
  * is read on the spot — turning it off stops the next round, not a step already in flight. A refusal
  * is a log line, never a throw into the event bus: the plan's own note (or the panel's button) is
  * where a person acts.
  */
 async function judge(ctx: Context, sessionId: SessionId, workspaceRoot: string): Promise<void> {
   if (!relayOn()) return
-  const plan = await open(workspaceRoot, { executor: executorOf(ctx, sessionId, workspaceRoot), pluginsDir: shippedPluginsDir() })
+  /* The root already arrives canonical from the dispatch that tracked it, and the entry takes it
+   * once more so a plan read can never disagree with the root a dispatch would use. */
+  const root = await canonicalWorkspaceRoot(workspaceRoot)
+  const plan = await open(root, { executor: executorOf(ctx, sessionId, root), pluginsDir: shippedPluginsDir() })
     .conductor.next({})
   if (plan.action !== 'dispatch' && plan.action !== 'open_node' && plan.action !== 'stop_pipeline') return
   const cycle = typeof plan.cycle === 'string' ? plan.cycle : ''
   if (cycle === '') return
-  const outcome = await advanceLine(ctx, sessionId, workspaceRoot, cycle)
+  const outcome = await advanceLine(ctx, sessionId, root, cycle)
   if (!outcome.ok) {
     loggerOf(ctx)?.warn(`dispatch relay could not advance ${cycle}: ${outcome.detail ?? outcome.code}`)
   }
 }
 
 /**
- * Arm the trigger: listen to `turn/end` for the sessions this host
- * dispatched, and judge after each. A host without an event surface
- * (`ctx.on`) takes nothing — the button still works, only the automatic
- * relay is absent. The returned disposer takes the listeners back.
+ * Arm the triggers: the two notices one of this host's own sessions can leave
+ * behind, each judged the same way.
+ *
+ * - `turn/end` says the session finished a round; the line carries on after it.
+ * - `session/disposed` says the session left the host's store — it crashed, was
+ *   stopped, or ran out of context, so no `turn/end` is ever coming. The entry
+ *   leaves the tracked table (that session can never answer again) and the same
+ *   judge runs: the plan decides, and a cell a `turn/end` already carried on is
+ *   now blocked by its own claim.
+ *
+ * A host without an event surface (`ctx.on`) takes nothing — the button still
+ * works, only the automatic relay is absent. The returned disposer takes the
+ * listeners back.
  */
 export function installRelay(ctx: Context, config?: unknown): () => void {
   lineConfig = config
@@ -254,18 +278,35 @@ export function installRelay(ctx: Context, config?: unknown): () => void {
     on?: (event: string, listener: (...args: never[]) => void) => unknown
   }
   if (typeof bus.on !== 'function') return () => undefined
-  const off = bus.on('session/event', (...args: never[]) => {
+  const offs: (() => void)[] = []
+  const keep = (off: unknown): void => {
+    if (typeof off === 'function') offs.push(off as () => void)
+  }
+  const judgeSoon = (id: string, root: string): void => {
+    void judge(ctx, id as SessionId, root).catch((error: unknown) => {
+      /* A refused trigger is a log line, never a throw into the event bus:
+       * the plan's own note (or the panel's button) is where a person acts. */
+      loggerOf(ctx)?.warn(`dispatch relay judged and refused: ${messageOf(error)}`)
+    })
+  }
+  keep(bus.on('session/event', (...args: never[]) => {
     const session = args[0] as { id?: unknown } | undefined
     const event = args[1] as { type?: unknown } | undefined
     if (event?.type !== 'turn/end') return
     const id = typeof session?.id === 'string' ? session.id : ''
     const root = tracked.get(id)
     if (root === undefined) return
-    void judge(ctx, id as SessionId, root).catch((error: unknown) => {
-      /* A refused trigger is a log line, never a throw into the event bus:
-       * the plan's own note (or the panel's button) is where a person acts. */
-      loggerOf(ctx)?.warn(`dispatch relay judged and refused: ${messageOf(error)}`)
-    })
-  })
-  return typeof off === 'function' ? (off as () => void) : () => undefined
+    judgeSoon(id, root)
+  }))
+  keep(bus.on('session/disposed', (...args: never[]) => {
+    const session = args[0] as { id?: unknown } | undefined
+    const id = typeof session?.id === 'string' ? session.id : ''
+    const root = tracked.get(id)
+    if (root === undefined) return
+    tracked.delete(id)
+    judgeSoon(id, root)
+  }))
+  return () => {
+    for (const off of offs) off()
+  }
 }

@@ -263,6 +263,99 @@ test('触发：自己开的会话收尾，计划说 dispatch，下一棒自己�
   }
 })
 
+test('销毁触发：计划说 wait 时，会话被销毁也什么都不开（判据没有变）', async () => {
+  const root = rigRecordRoot(['n-1'])
+  const agents = fakeAgents()
+  const { ctx, events, warnings } = fakeContext({ root, agents })
+  const installOff = installRelay(ctx)
+  try {
+    const first = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
+    assert.equal(first.ok, true, JSON.stringify(first))
+    assert.equal(agents.created.length, 1)
+
+    /* 认领在盘上、这一格还没收尾：计划说 wait。会话此刻被销毁也不该替他做主。 */
+    events.emit('session/disposed', { id: first.session })
+    await drain()
+    assert.equal(agents.created.length, 1, '计划说 wait 时销毁不开下一棒')
+  } finally {
+    installOff()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('销毁触发：会话没走到回合结束就被销毁，计划说 dispatch 时下一棒照开', async () => {
+  const root = rigRecordRoot(['n-1'])
+  const agents = fakeAgents()
+  const { ctx, events, warnings } = fakeContext({ root, agents })
+  const installOff = installRelay(ctx)
+  try {
+    const first = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
+    assert.equal(first.ok, true, JSON.stringify(first))
+    assert.equal(agents.created.length, 1)
+
+    /* 收尾落地，但这一棒被停掉／崩掉：没有 turn/end 可听，只有宿主说会话没了。 */
+    await settleClose(root, 'n-1', 'n-2')
+    events.emit('session/disposed', { id: first.session })
+    await until(
+      () => agents.created.length >= 2 && existsSync(claimPath(root, 'c-1', 'n-2')),
+      '销毁之后开出的下一棒与它的认领',
+      warnings,
+    )
+    const second = agents.created[1]
+    const promptNext = (await readFile(join(root, '.pf', 'meta', 'launch', 'c-1', 'n-2', 'prompt.txt'), 'utf8')).trim()
+    assert.equal(second.followups[0].content[0].text, promptNext, '下一棒的首条指令是盘上那份派发提示')
+  } finally {
+    installOff()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('销毁触发：不是本宿主开的会话被销毁，什么都不开', async () => {
+  const root = rigRecordRoot(['n-1'])
+  const agents = fakeAgents()
+  const { ctx, events, warnings } = fakeContext({ root, agents })
+  const installOff = installRelay(ctx)
+  try {
+    const first = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
+    assert.equal(first.ok, true, JSON.stringify(first))
+    await settleClose(root, 'n-1', 'n-2')
+    /* 计划此刻会说 dispatch，但这个身份不在本宿主的追踪表里：不归它管。 */
+    events.emit('session/disposed', { id: 'session-someone-else' })
+    await drain()
+    assert.equal(agents.created.length, 1, '别人开的会话没了，本宿主不跟着开')
+  } finally {
+    installOff()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('两份通知都来：轮次结束已经开了下一棒，同一会话的销毁不再开第三棒', async () => {
+  const root = rigRecordRoot(['n-1'])
+  const agents = fakeAgents()
+  const { ctx, events, warnings } = fakeContext({ root, agents })
+  const installOff = installRelay(ctx)
+  try {
+    const first = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
+    assert.equal(first.ok, true, JSON.stringify(first))
+    await settleClose(root, 'n-1', 'n-2')
+
+    events.emit('session/event', { id: first.session }, { type: 'turn/end' })
+    await until(
+      () => agents.created.length >= 2 && existsSync(claimPath(root, 'c-1', 'n-2')),
+      '轮次结束开出的下一棒与它的认领',
+      warnings,
+    )
+
+    /* 同一条会话随后被销毁：计划重读，认领已经在盘上，重复开工被它自己挡住。 */
+    events.emit('session/disposed', { id: first.session })
+    await drain()
+    assert.equal(agents.created.length, 2, '两份通知只推一棒')
+  } finally {
+    installOff()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('注册先于回合结束：本棒在途时它的 turn/end 就该被接力听到（长首回合形态）', async () => {
   const root = rigRecordRoot(['n-1'])
   let releaseIdle

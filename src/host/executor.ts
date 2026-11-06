@@ -16,10 +16,13 @@
  *    preset's mount is what gives the session its scoped world — tools and
  *    skills; without a roster the bare open stands, as before), attach the
  *    session to that workspace when the host carries a workspace service
- *    (`cwd` alone joins nothing), arm the session's `pathfinder` tool, arm the
- *    opening round's listeners, hand the prompt over as the first instruction,
- *    and note the session through the engine's writer — this side only names
- *    the entry;
+ *    (`cwd` alone joins nothing) — a host that answers no attachable
+ *    workspace, or refuses the attach after the session is minted, leaves the
+ *    session open cwd-only with one log line instead of failing an open that
+ *    already has a live session in it — arm the session's `pathfinder` tool,
+ *    arm the opening round's listeners, hand the prompt over as the first
+ *    instruction, and note the session through the engine's writer — this side
+ *    only names the entry;
  * 4. settle the opening round: hosts whose agents expose the wait interface
  *    get `whenIdle()`; older ones get the idle notification plus the
  *    turn-end events, resolved together.
@@ -34,6 +37,7 @@
  * hostage.
  */
 import { randomUUID } from 'node:crypto'
+import { realpath } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 /* The declaration merges for `agents` and the agent events live on the package entries; type-only, nothing enters the runtime. */
 import type {} from '@deepseek-ai/dsh-agent'
@@ -258,6 +262,26 @@ function inLine<T>(root: string, step: () => Promise<T>): Promise<T> {
   return mine
 }
 
+/**
+ * One workspace root in its canonical spelling: the `realpath` of what the caller named, or the
+ * name itself when that cannot be resolved (the path does not exist yet, or the platform refuses
+ * the call) — a spelling is not worth refusing an open over.
+ *
+ * The installed workspace layer compares the session header's `cwd` against the record it holds
+ * after resolving both: macOS's `/tmp` → `/private/tmp`, a symlinked home, a Windows short (8.3)
+ * name or another case are all the same workspace in different letters. Taking this once, at the
+ * entry, is what keeps the queue key, the `create()` call and `meta.cwd` one spelling: a second
+ * spelling of one root would otherwise queue a second line and fail its attach only after the
+ * session was already minted.
+ */
+export async function canonicalWorkspaceRoot(root: string): Promise<string> {
+  try {
+    return await realpath(root)
+  } catch {
+    return root
+  }
+}
+
 /** Why an open stopped after (or without) a session: the reason rides verbatim as the refusal's detail. */
 function openFailure(reason: string): { ok: false; code: PfRefusalCode; detail: string } {
   return { ok: false, code: 'open-failed', detail: reason }
@@ -305,8 +329,13 @@ export async function openNodeSession(
   const named = segmentFailure(cycle) ?? segmentFailure(node)
   if (named !== undefined) return named
 
+  /* One canonical spelling, taken once here: the record reads/writes below, the queue this open
+   * joins, the `create()` call and the workspace it is attached to all name the same directory —
+   * whatever letters the caller used. */
+  const root = await canonicalWorkspaceRoot(workspaceRoot)
+
   const signal = options?.signal ?? new AbortController().signal
-  const scope: PathfinderScope = { sessionId, workspaceRoot }
+  const scope: PathfinderScope = { sessionId, workspaceRoot: root }
   let prompt: string
   try {
     prompt = await readWholeFile(ctx.workspaceFiles, scope, `${RECORD_DIR}/meta/launch/${cycle}/${node}/prompt.txt`, signal)
@@ -339,23 +368,23 @@ export async function openNodeSession(
   /* The workspace-touching stretch, queued: create the session under the root, join it to that one workspace, arm the round's listeners, hand the prompt over, then note the session while the line still holds. */
   let settlement: Settlement
   try {
-    settlement = await inLine(workspaceRoot, async () => {
+    settlement = await inLine(root, async () => {
       const handle = await side.agents.create({
         sessionId: opened,
-        meta: { cwd: workspaceRoot, ...(standing === undefined ? {} : { agentPreset: standing.id }) },
+        meta: { cwd: root, ...(standing === undefined ? {} : { agentPreset: standing.id }) },
         ...(selection === undefined ? {} : { agentOptions: selection }),
         ...(mount === undefined ? {} : { setup: mount }),
       })
       /* A host with a workspace layer owns the grouping: the session is attached to the entity of the root, which is the call that puts it in that workspace. A composition without the layer keeps the cwd-only open. */
       const registry = workspaceRegistryOf(ctx)
       try {
-        const workspace = registry === undefined ? undefined : await registry.create(workspaceRoot)
+        const workspace = registry === undefined ? undefined : await registry.create(root)
         if (workspace === undefined) {
           reportUnattached(
             ctx,
             cycle,
             node,
-            workspaceRoot,
+            root,
             registry === undefined
               ? 'this host exposes no workspace service'
               : 'this host\'s workspace service answered no attachable workspace',
@@ -364,11 +393,12 @@ export async function openNodeSession(
           await workspace.attachSession(opened)
         }
       } catch (error) {
-        /* The agent is alive already: say which cell is open un-attached instead of letting the next open run a second session on it. The host's own sentence names the session id it refused, which is an address for navigation and not a word a reader is shown, so the reason goes to the log and the refusal carries this side's own words. */
-        logLine(ctx, `could not attach the session opened for ${cycle}/${node} to the workspace at ${workspaceRoot}: ${messageOf(error)}`)
-        throw new Error(
-          `${cycle}/${node} is open but was not attached to the workspace at ${workspaceRoot}: the host refused the attach`,
-        )
+        /* The session is already minted: the host refused the grouping after the fact. The open
+         * goes on cwd-only — the first instruction and the note below still land, so the session
+         * has its record and the panel keeps its cell — and one log line says which cell and which
+         * workspace missed the grouping, with the host's own reason. Failing here would leave a
+         * live session nobody wrote down. */
+        reportUnattached(ctx, cycle, node, root, messageOf(error))
       }
       const armed = armSettlement(ctx, handle.agent, opened)
       /* Arm the session's own tool before the first instruction goes in: the wake's event
@@ -389,14 +419,14 @@ export async function openNodeSession(
           content: [{ type: 'text', text: prompt }],
           source: { kind: 'user' },
         }))
-        await noteOpenedSession(workspaceRoot, node, opened)
+        await noteOpenedSession(root, node, opened)
         /* The placement's session-side diagnostic. This is the one stretch that knows both the
          * workspace and the live session's own scope, so a same-name copy in a project root
          * (rank 100/200 — DSH's own per-workspace override, outside this node's judgement) gets a
          * name and both places in one log line rather than passing silently. Neither call can fail
          * the open: the check hands back a code and the report writes a line. This diagnostic is not
          * an acceptance reading anyone can point at — the session's own catalog is. */
-        reportSkillView(skillHostOf(ctx), await confirmSkillsForWorkspace(skillHostOf(ctx), workspaceRoot, handle.agent))
+        reportSkillView(skillHostOf(ctx), await confirmSkillsForWorkspace(skillHostOf(ctx), root, handle.agent))
       } catch (error) {
         armed.drop()
         throw error
