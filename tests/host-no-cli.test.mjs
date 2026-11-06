@@ -109,6 +109,16 @@ function filesSaying(dir, literal, prefix = '') {
 }
 
 /**
+ * A variable's value in an environment object, whatever case that object spells the key in:
+ * `process.env` looks a key up case-insensitively on Windows, a spread copy of it does not — the
+ * host on this machine spells all three of the variables the child needs in caps.
+ */
+function envValue(env, name) {
+  const key = Object.keys(env).find((candidate) => candidate.toLowerCase() === name.toLowerCase())
+  return key === undefined ? undefined : env[key]
+}
+
+/**
  * The shipped shape: exactly the manifest's `files` entries, plus a manifest of the same name,
  * version, type and exports. Returns the inventory it copied.
  */
@@ -385,13 +395,18 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
     const removed = entries.filter((entry) => PF_NAMES.some((name) => existsSync(join(entry, name))))
     const kept = entries.filter((entry) => !removed.includes(entry))
     const scrubbed = ['PF_PLUGINS_DIR', 'DSH_CONDUCT_SPAWN_DRY_RUN', 'DSH_SESSION_ID', 'NODE_OPTIONS', 'NODE_PATH']
-    const env = { ...process.env, PATH: kept.join(delimiter), PF_HOME_DIR: home, DSH_HOME: home }
+    const env = { ...process.env, PF_HOME_DIR: home, DSH_HOME: home }
     const wasSet = scrubbed.filter((name) => env[name] !== undefined)
     for (const name of scrubbed) delete env[name]
-    /* Whatever the platform and git need stays in; only the command and the switches that would
-     * steer this run leave. */
+    /* PATH is written once, in one spelling. A host that spells the key `Path` would leave two keys
+     * in this plain copy (`process.env` finds either; the object keeps both), and which one the child
+     * then sees is the platform's pick, not this case's. */
+    for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key]
+    env.PATH = kept.join(delimiter)
+    /* Whatever the platform and git need stays in. Read by value, not by spelling: this host spells
+     * all three in caps, so a title-case read of the copy would be `undefined` forever. */
     for (const name of ['SystemRoot', 'ComSpec', 'PATHEXT']) {
-      if (process.env[name] !== undefined) assert.equal(env[name], process.env[name], `${name} must survive into the child`)
+      assert.equal(envValue(env, name), envValue(process.env, name), `${name} must survive into the child`)
     }
     const started = Date.now()
     const child = spawnSync(process.execPath, [join(work, 'run.mjs')], {
