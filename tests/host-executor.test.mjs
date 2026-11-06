@@ -61,6 +61,51 @@ async function opened(created, count = 1) {
 }
 
 /**
+ * Wait one promise out with a ceiling, naming what it waited for: a case whose answer never
+ * arrives goes red with that sentence instead of holding the whole command. The ceiling is one
+ * timer, cleared as soon as the wait answers — no spin.
+ */
+async function bounded(promise, what, ms = 5000) {
+  let timer
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`等不到：${what}（上限 ${ms} ms）`)), ms)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * The queue cases' doors: every `create` stops on its own door, and the moment it is called the
+ * door reports itself. A case waits for that report — the event says which seat on the line was
+ * taken, so a case need not presume which of two opens reaches the line first: the line is
+ * served in arrival order, and which open arrives first belongs to the scheduler.
+ */
+function createDoors(count = 2) {
+  const doors = []
+  const arrivals = []
+  for (let at = 0; at < count; at += 1) arrivals.push(defer())
+  return {
+    /** The gate handed to `fakeAgents`. */
+    gate() {
+      const at = doors.length
+      const door = defer()
+      doors.push(door)
+      arrivals[at]?.resolve()
+      return door.promise
+    },
+    /** Wait until the create on this seat has really been called. */
+    arrived(at) { return arrivals[at].promise },
+    /** Let the create on this seat through. */
+    release(at) { doors[at].resolve() },
+  }
+}
+
+/**
  * The session-side stand-in: every create is recorded (options, the messages handed over, its
  * `whenIdle` release), and each create may be held on a gate so a test controls when it lands.
  * `idleRefusal` makes the wait interface's own answer a rejection whenever consulted — the
@@ -287,27 +332,28 @@ test('规范拼写：从另一种写法开进来的会话，cwd 与挂接用的�
 })
 
 test('规范拼写：一个根两种写法排同一条线，第二个开等第一个开完才进 create', async () => {
-  const holds = [defer(), defer()]
-  let taken = 0
+  /* 两个 open 同时起：哪一格先进 create 由到达顺序决定，用例等的是「create 被调到了」这件事。 */
+  const doors = createDoors()
   const rigging = rig({
     files: { [promptPath('c1', 'n2')]: '/pf-conduct n2 [pipeline]\n' },
-    gate: () => holds[taken++].promise,
+    gate: doors.gate,
   })
   const alias = aliasOf(rigging.root)
   try {
     const first = openNodeSession(rigging.ctx, 's1', rigging.root, 'c1', 'n1')
     const second = openNodeSession(rigging.ctx, 's1', alias, 'c1', 'n2')
-    await opened(rigging.agents.created)
+    await bounded(doors.arrived(0), '第一格进 create')
+    /* 两种写法是同一个根：线上只该有一格，另一格还排着。 */
+    await flush()
     assert.equal(rigging.agents.created.length, 1, '两种写法是同一个根：第二个还排在线上，没进 create')
-    holds[0].resolve()
+    doors.release(0)
     rigging.agents.created[0].whenIdle.resolve()
-    const one = await first
-    assert.equal(one.ok, true, JSON.stringify(one))
-    await opened(rigging.agents.created, 2)
+    await bounded(doors.arrived(1), '第一格排完，第二格这才进 create')
     assert.equal(rigging.agents.created.length, 2, '线松了第二个这才进 create')
-    holds[1].resolve()
+    doors.release(1)
     rigging.agents.created[1].whenIdle.resolve()
-    assert.equal((await second).ok, true)
+    const outcomes = await bounded(Promise.all([first, second]), '两次开都结算')
+    for (const outcome of outcomes) assert.equal(outcome.ok, true, JSON.stringify(outcome))
   } finally {
     rmSync(alias, { recursive: true, force: true })
     assert.ok(existsSync(rigging.root), '收走别名不带走它指的根')
@@ -438,24 +484,23 @@ test('同一条工作区的线：两个开严格一前一后，都开成', async
   mkdirSync(join(tmpdir(), 'pf-executor-'), { recursive: true })
   const root = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-'))
   const files = { [promptPath('c1', 'n1')]: PROMPT, [promptPath('c1', 'n2')]: '/pf-conduct n2 [pipeline]\n' }
-  const holds = [defer(), defer()]
-  let taken = 0
-  const agents = fakeAgents({ gate: () => holds[taken++].promise })
+/* 同一条线的先后由到达顺序决定：用例等「create 被调到了」，不替两个 open 排先后。 */
+  const doors = createDoors()
+  const agents = fakeAgents({ gate: doors.gate })
   const { ctx } = context({ files, agents: agents.registry, sessions: {} })
   const first = openNodeSession(ctx, 's1', root, 'c1', 'n1')
   const second = openNodeSession(ctx, 's1', root, 'c1', 'n2')
-  await opened(agents.created)
-  assert.equal(agents.created.length, 1, '第一个在 create 上拿着线，第二个还没进')
-  holds[0].resolve()
+  await bounded(doors.arrived(0), '第一格进 create')
+  await flush()
+  assert.equal(agents.created.length, 1, '线上只有一格在 create：另一格还排着')
+  doors.release(0)
   agents.created[0].whenIdle.resolve()
-  const one = await first
-  assert.equal(one.ok, true, JSON.stringify(one))
-  await opened(agents.created, 2)
+  await bounded(doors.arrived(1), '第一格排完，第二格这才进 create')
   assert.equal(agents.created.length, 2, '线松了，第二个这才进 create')
-  holds[1].resolve()
+  doors.release(1)
   agents.created[1].whenIdle.resolve()
-  const two = await second
-  assert.equal(two.ok, true, JSON.stringify(two))
+  const outcomes = await bounded(Promise.all([first, second]), '两次开都结算')
+  for (const outcome of outcomes) assert.equal(outcome.ok, true, JSON.stringify(outcome))
   assert.notEqual(agents.created[0].options.sessionId, agents.created[1].options.sessionId, '两个会话各是各的身份')
   assert.ok(existsSync(join(root, '.pf', 'meta', 'sessions', 'n1.json')))
   assert.ok(existsSync(join(root, '.pf', 'meta', 'sessions', 'n2.json')))
