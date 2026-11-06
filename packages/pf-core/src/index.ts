@@ -127,6 +127,7 @@ export type {
   ConductorNamespaceOptions,
   ConductorPluginCommandInput,
   ConductorTarget,
+  DispatchPreview,
   DispatchReceipt,
   DoctorCheck,
   DoctorReport,
@@ -134,6 +135,8 @@ export type {
   HandoffFormReading,
   NextPlan,
   PluginCommandAnswer,
+  SettlePreview,
+  SettlePreviewSeam,
 } from './conductor';
 
 export type {

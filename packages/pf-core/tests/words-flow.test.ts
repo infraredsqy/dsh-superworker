@@ -10,7 +10,7 @@ import type { WordsIO } from '../src/words/types';
 /**
  * The flow's words, at the words layer: one operation each, and the standard order spelled out.
  *
- * `plan` reads a byte and writes none; `settle` records one node's end and nothing else; `cycle hold`
+ * `plan` reads a byte and writes none; `settle` records one node's end and nothing else; `hold`
  * claims; `dispatch` lands the cell's material (when the claim left none) and opens the session. The
  * composed `advance` is those three moves in one word, and it lands the same marks on disk.
  */
@@ -50,6 +50,56 @@ function state(io: WordsIO) {
     .cycles.find((cycle: { id: string }) => cycle.id === 'c1');
 }
 
+/** The ids on the graph, in on-disk order. */
+function graphIds(io: WordsIO): string[] {
+  return Object.keys(JSON.parse(readFileSync(join(io.root, '.pf', 'ideas.json'), 'utf8')).nodes);
+}
+
+describe('hold: the claim step, a verb of its own', () => {
+  it('claims a batch in one write, keeps the hand in order, and repeats an id without writing it twice', async () => {
+    const { io } = project();
+    await call(io, ['init']);
+    for (const title of ['a', 'b', 'c']) await call(io, ['dag', 'add', title]);
+    const [a, b, c] = graphIds(io);
+    await call(io, ['cycle', 'create', 'c1', '--force', '--tags', 'coding']);
+    const batch = await call(io, ['hold', a!, b!, '--cycle', 'c1']);
+    expect(batch.stdout).toContain(`CURRENT_NODE: c1 → ${a}`);
+    expect(batch.stdout).toContain(`HOLDING   : c1 → ${b}`);
+    expect(state(io).holding.map((item: { id: string }) => item.id)).toEqual([a, b]);
+    await call(io, ['hold', a!, '--cycle', 'c1']);
+    expect(state(io).holding.map((item: { id: string }) => item.id)).toEqual([a, b]);
+  });
+
+  it('refuses the whole batch when another line holds one of its nodes, writing nothing', async () => {
+    const { io } = project();
+    await call(io, ['init']);
+    for (const title of ['a', 'b']) await call(io, ['dag', 'add', title]);
+    const [a, b] = graphIds(io);
+    await call(io, ['cycle', 'create', 'c1', '--force', '--tags', 'coding']);
+    await call(io, ['cycle', 'create', 'c2', '--force', '--tags', 'coding']);
+    await call(io, ['hold', a!, '--cycle', 'c1']);
+    const refused = await answer(['hold', a!, b!, '--cycle', 'c2'], io);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('already held by cycle "c1"');
+    const c2 = JSON.parse(readFileSync(join(io.root, '.pf', 'state.json'), 'utf8'))
+      .cycles.find((cycle: { id: string }) => cycle.id === 'c2');
+    expect(c2.holding).toEqual([]);
+  });
+
+  it('takes the single active line without --cycle, and names the missing line when there is none', async () => {
+    const { io } = project();
+    await call(io, ['init']);
+    await call(io, ['dag', 'add', 'solo']);
+    const [only] = graphIds(io);
+    const noLine = await answer(['hold', only!], io);
+    expect(noLine.code).toBe(2);
+    expect(noLine.stderr).toContain('no cycle is active');
+    await call(io, ['cycle', 'start', 'c1', '--force', '--tags', 'coding']);
+    await call(io, ['hold', only!]);
+    expect(state(io).holding.map((item: { id: string }) => item.id)).toEqual([only]);
+  });
+});
+
 describe('plan: the reading word', () => {
   it('answers where the line goes and writes not one byte', async () => {
     const { root, io } = project();
@@ -77,7 +127,7 @@ describe('settle: the closing word, and nothing past it', () => {
   });
 });
 
-describe('the standard flow: plan, cycle hold, dispatch', () => {
+describe('the standard flow: plan, hold, dispatch', () => {
   it('claims the pick, lands its material and opens its session', async () => {
     const { root, io, executor } = project();
     const node = await station(io);
@@ -85,7 +135,7 @@ describe('the standard flow: plan, cycle hold, dispatch', () => {
     await call(io, ['settle', node, '--cycle', 'c1']);
     const plan = JSON.parse((await call(io, ['plan', '--cycle', 'c1', '--json'])).stdout);
     expect(plan.action).toBe('open_node');
-    await call(io, ['cycle', 'hold', 'c1', plan.node_id]);
+    await call(io, ['hold', plan.node_id, '--cycle', 'c1']);
     expect(state(io).holding.map((item: { id: string }) => item.id)).toEqual([plan.node_id]);
     // The claim wrote the hand only: the material has not landed yet.
     expect(existsSync(join(root, '.pf', 'meta', 'launch', 'c1', plan.node_id, 'prompt.txt'))).toBe(false);
@@ -143,7 +193,7 @@ describe('the engine and the words agree', () => {
     await call(io, ['handoff', 'c1', node, 'completed', '-s', 'done']);
     await call(io, ['settle', node, '--cycle', 'c1']);
     const plan = JSON.parse((await call(io, ['plan', '--cycle', 'c1', '--json'])).stdout);
-    await call(io, ['cycle', 'hold', 'c1', plan.node_id]);
+    await call(io, ['hold', plan.node_id, '--cycle', 'c1']);
     await call(io, ['dispatch', 'c1']);
     const line = await open(root).ledger.cycles.show('c1');
     expect(line.holding.map((item) => item.id)).toEqual([plan.node_id]);

@@ -6,6 +6,6 @@
   "nodes": [
     "@node-b@"
   ],
-  "note": "cycle c1 holds beta",
+  "note": "the next pick is beta",
   "settling": true
 }

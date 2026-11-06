@@ -281,8 +281,8 @@ export interface CyclesNamespace {
   policies(id: string): Promise<CyclePolicySet>;
   /** One node's standing in this line: held now / walked before / nothing, plus the ticket on disk. */
   standing(id: string, node: string): Promise<CycleStanding>;
-  /** Claim a node onto this line's roster. */
-  hold(id: string, node: string): Promise<CycleRecord>;
+  /** Claim one node — or a batch of them — onto this line's roster: one write, and all or none of it. */
+  hold(id: string, nodes: string | readonly string[]): Promise<CycleRecord>;
   /** Settle one step: the verdict goes into path, and the claim is laid down with it. */
   close(id: string, input: CycleCloseInput): Promise<CycleRecord>;
   /** Pick a line that did not run to the end back up and run it again; `drop` also clears the claim, which is what a dead session needs, and `summary` is the sentence the new pending ticket carries. */

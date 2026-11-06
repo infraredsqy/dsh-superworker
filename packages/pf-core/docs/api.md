@@ -16,9 +16,10 @@
 - `Pf { root: string; ledger; conductor; config; sessions }` —— `root` 是打开时给的项目根，原样保存。
 - `pf.ledger.dag` 十五动词、`pf.ledger.cycles` 十三动词、`pf.ledger.instructions` 五动词、
   `pf.config` 五动词、`ledger.init` / `ledger.register` / `ledger.cleanTemp`、`pf.sessions` 三动词与
-  `conductor.next` / `conductor.close` / `conductor.advance` / `conductor.settle` / `conductor.dispatch` /
-  `conductor.doctor` / `conductor.handoff` / `conductor.handoffForm` / `conductor.pluginCommand` /
-  `conductor.pluginCommands` / `conductor.prepare` 都在句柄上，全是真实现；没有一个桩。
+  `conductor.next` / `conductor.close` / `conductor.advance` / `conductor.settle` / `conductor.settlePreview` /
+  `conductor.dispatch` / `conductor.dispatchPreview` / `conductor.doctor` / `conductor.handoff` /
+  `conductor.handoffForm` / `conductor.pluginCommand` / `conductor.pluginCommands` / `conductor.prepare`
+  都在句柄上，全是真实现；没有一个桩。
 - 动作路径即 API 路径：`ledger.dag.add` 这样的动作路径，同时就是将来 API 的命名空间路径——
   按这个拼写找方法，从句柄一路点下去就能到。
 
@@ -189,7 +190,7 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 | `ledger.cycles.show` | `show(id)` | 一条线的完整记录 |
 | `ledger.cycles.policies` | `policies(id)` | 这条线的有效策略集：缺省在前，线自己写了的盖上去 |
 | `ledger.cycles.standing` | `standing(id, node)` | 一个节点在这条线里的站况：`holding` / `walked` / `nothing`，外加磁盘上那张票 |
-| `ledger.cycles.hold` | `hold(id, node)` | 认领一个节点进这条线的在册名单 |
+| `ledger.cycles.hold` | `hold(id, nodes)` | 认领一个节点（或一批）进这条线的在册名单：一个节点只属于一条线，一批是一次写入、要么整批落、要么一个字节都不落 |
 | `ledger.cycles.close` | `close(id, input)` | 结算一步：判决进 path，认领放下 |
 | `ledger.cycles.retry` | `retry(id, node?, options?)` | 撤旧票、改写 pending，线册不动；`{ drop: true }` 连认领一起摘掉，会话已经死掉时重来要的是这一档；`{ summary: '…' }` 是改写后那张票上的那句话，没给时用固定的那句 |
 
@@ -337,10 +338,12 @@ id，写口认的是节点已有的那个目录。
 | --- | --- | --- |
 | `conductor.next` | `next(input?)` | 读一份只读规划：下一步该干什么，不执行、不写记录；`after` 问的是收尾预演 |
 | `conductor.settle` | `settle(input?)` | 收这一单：判决进 path、认领放下、图落 `completed` / `shelved`、收尾插件缝跑完；不补槽、不停线、不落材料、不开会话 |
+| `conductor.settlePreview` | `settlePreview(input?)` | 收这一单的预演：同一对门槛、同一份收尾判据、收尾缝问各家自己的预演，写零字节；交回 `SettlePreview { action; dry_run; cycle; node_id; result; delivered; graph; target; filled; park_line; seam; warnings; plan }` |
 | `conductor.close` | `close(input?)` | `settle` 加应用步而不开会话：补满空槽，没得做了且手是空的就把线转 `inactive` |
 | `conductor.advance` | `advance(input?)` | 把线推一格：补满空槽（钉）→ 落每格的材料 → 一格开一个会话；停了的线转 `inactive`；交回 `AdvanceReceipt { cycle; pinned; dispatches; parked; plan }` |
 | `conductor.prepare` | `prepare(input?)` | 把一次派发的材料落下来、不开会话：提示词落到它的位置、运行稿立在节点目录、交接单模板随材料交回 `PreparedDispatch { cycle; nodes }`；只有规划交回 `dispatch` 时才有材料可落，别的计划当场拒绝、一个字节不写 |
 | `conductor.dispatch` | `dispatch(input?)` | 把一格交给一个会话，交回收据 `DispatchReceipt { action; cycle; node_id; node_title; prompt; prompt_text; session? }`；`action` 只有 `opened` / `already_open` 两个词 |
+| `conductor.dispatchPreview` | `dispatchPreview(input?)` | 派发的预演：这格会收到的请求（材料落点与是否已在盘上、`spawner`、`model`），拦下缝问各家自己的预演、理由当数据交回 `blocked`；不落材料、不落记号、不开会话 |
 | `conductor.handoff` | `handoff(input)` | 写一张交接单，落在 signals 下的「线 id / 节点 id」 |
 | `conductor.handoffForm` | `handoffForm(input?)` | 这条线要的交接单形状：它问哪几个读数格（不写一个字节） |
 | `conductor.pluginCommand` | `pluginCommand(input)` | 把一个词连同它的行交给声明这个词的插件，在本进程里跑，交回 `PluginCommandAnswer { word; plugin; ran; text; code; error }` |
@@ -381,6 +384,16 @@ id，写口认的是节点已有的那个目录。
 可派的，演练从来不需要拆。`handoff` 把交接单落盘：线要在册、节点要在认领名单里（否则 `not_holding`，
 什么都没写就拒绝），判决词只收 `completed` / `failed` / `stopped`（`pending` 是重跑的记号），
 票据落在 `signals/<线>/<节点>.json`，同一节点的第二张票整文件顶上。
+
+**预演是同一个动作减去效果。** `settlePreview` / `dispatchPreview` 是上面两个写动作的读版：同样的
+门槛（`settle` 那对数、`heldNodeId`、`started` 记号的存在）、同一份判据（`settleClose`）、同两条
+解析链（`spawnerOf` / `modelOf`），插件缝问的是各家自己的预演（`offer_preview` / `check_preview`），
+上下文带 `preview: true`、`run` 拒跑。`dispatchPreview` 把拦下的理由当数据交回（`blocked`），不抛；
+`settlePreview` 的 `target` 就是插入缝的落点——这一单本该开的下一个节点，`seam` 是各家预演交回的
+节点（还没有 uuid，所以没有正文），`plan` 是这条线收完之后读到的计划。两个预演都写零字节：材料不落、
+记号不落、认领不落、图不动，进程里没有执行者也能答。命令面用 `--dry-run` 叫它们（`settle --dry-run`、
+`dispatch --dry-run`）；记录内的动作没有这个旗标——它们的预演是 `next`（收尾那半边是 `next` 的
+`after`）。
 `doctor` 两半都接：插件面是严格面——装上的插件先逐插件列一条（名字、摘要、旋钮、标签、
 方法、来源与命令，全从声明读出），再逐条列坏点；记录面四格——`init` 的四份布局
 齐不齐、图有没有环与悬空引用、线手里的节点还在不在图上，以及合并驱动的两个键在不在本项目
@@ -435,9 +448,9 @@ id，写口认的是节点已有的那个目录。
 问法（`NextQuery` 的可选字段，都可不给）：`cycle` 点名一条线；`after` 点名一个已经交回交接单
 的节点，问「按它收，这条线会走到哪」（收尾预演，只算不写）。
 
-命令面一眼对应：`plan` 读这份计划，`settle <node>` 收一单，`cycle hold <cycle> <node>` 钉住计划
-点的那个，`dispatch <cycle>` 开它的会话；`advance` 是钉、材料、会话三步的合成词，标准流程不必
-经过它。
+命令面一眼对应：`plan` 读这份计划，`settle <node>` 收一单（预演是 `settle --dry-run`），`hold <node>`
+钉住计划点的那个，`dispatch <cycle>` 开它的会话（预演是 `dispatch --dry-run`）；`advance` 是钉、材料、
+会话三步的合成词，标准流程不必经过它。
 
 ## 插件
 
@@ -457,6 +470,10 @@ id，写口认的是节点已有的那个目录。
   节点、spec.md、依赖边都成为图的一部分；派发拦下——各家各交一句理由，任何一家拦就是拦
   （错误码 `dispatch_blocked`，理由逐条列在错误文案里）。插入只发生在收尾这一步——`settle`，以及
   把结算串起来的 `close` / `advance`；`next` 是只读规划，不写记录、不插节点。
+- **每个时机欠一份预演**：实现入口在 `offer` / `check` 旁边交出 `offer_preview` / `check_preview`，
+  同一条判据、同一套上下文——预演的上下文能读（`knob` / `reading` / `capture`），`run` 拒跑并留
+  一句 WARNING（效果归真时机）。没有预演的插件照常在真时机里生效；预演时它被跳过、留一条点名的
+  WARNING，`doctor` 把这条缺口当提示列在插件面里（不是声明问题、不判红）。
 - **运行时容忍、doctor 严格**：坏插件在运行时折成一句 WARNING、这一轮不出力，主流程照常；
   doctor 把坏点逐条列出——声明、实现装载、自带技能、认领的来源，外加对着替身项目把实现
   真实问一遍（声明配了门而实现缺入口、答非所问都算坏点）——另报两张撞名表：插件旋钮撞
@@ -465,7 +482,8 @@ id，写口认的是节点已有的那个目录。
   图快照）加几样能力：按名字取旋钮（走 `pf.config` 的整条解析链，插件声明的旋钮并入同一张
   清单）、取读数、按标签取节点、在本进程内跑一个插件命令（交回它是否真的跑起来了：词没人
   认领、实现没有入口、命令抛错都是没跑起来；跑完而没答文本仍算跑起来了）、节点 spec.md
-  的落点。插件可用 `enable_knob` 挂自己的开关，开关解析出 off 就整轮跳过。
+  的落点。预演时上下文多一格 `preview: true`，`run` 拒跑。插件可用 `enable_knob` 挂自己的
+  开关，开关解析出 off 就整轮跳过。
 - **出口**：插件契约的类型经 `src/index.ts` 按类型出口。
 
 ## 执行者接缝

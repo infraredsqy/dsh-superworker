@@ -19,8 +19,8 @@ const INSTRUCTION_METHODS = ['add', 'list', 'resolve', 'revive', 'remove'];
 const CONFIG_METHODS = ['get', 'set', 'unset', 'list', 'keys'];
 const SESSION_METHODS = ['list', 'show', 'note'];
 const CONDUCTOR_METHODS = [
-  'next', 'prepare', 'dispatch', 'handoff', 'settle', 'close', 'advance', 'doctor',
-  'handoffForm', 'pluginCommand', 'pluginCommands',
+  'next', 'prepare', 'dispatch', 'dispatchPreview', 'handoff', 'settle', 'settlePreview', 'close',
+  'advance', 'doctor', 'handoffForm', 'pluginCommand', 'pluginCommands',
 ];
 
 const pf = open('\\\\tmp\\pf-surface-probe');
@@ -60,7 +60,7 @@ describe('pf.config / pf.sessions / pf.conductor', () => {
   it('sessions has all three verbs', () => {
     expect(Object.keys(pf.sessions).sort()).toEqual([...SESSION_METHODS].sort());
   });
-  it('conductor has all eleven verbs', () => {
+  it('conductor has all thirteen verbs', () => {
     expect(Object.keys(pf.conductor).sort()).toEqual([...CONDUCTOR_METHODS].sort());
   });
 });

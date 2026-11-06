@@ -226,7 +226,7 @@ describe('hold: claiming', () => {
     await pf.ledger.cycles.hold('a', node.id);
     await pf.ledger.cycles.setStatus('a', 'inactive');
     await pf.ledger.cycles.create({ id: 'b', tags: ['coding'], force: true });
-    await expect(pf.ledger.cycles.hold('b', node.id)).rejects.toThrow('already pinned by cycle "a"');
+    await expect(pf.ledger.cycles.hold('b', node.id)).rejects.toThrow('already held by cycle "a"');
   });
 
   it('a cycle not on the books: the claim is refused', async () => {

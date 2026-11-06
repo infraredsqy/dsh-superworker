@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { createDagNamespace } from './dag';
 import { nowSeconds } from './clock';
 import { pluginAssemblyOf } from './plugins/assembly';
+import type { PluginAssembly } from './plugins/assembly';
 import { createContext, readGraphSnapshot, warnLine } from './plugins/context';
 import { collectGates, collectOffers } from './plugins/host';
 import { applyInsertion } from './plugins/insertion';
@@ -12,6 +13,7 @@ import {
   implOf,
   pluginListing,
   pluginsDirOf,
+  previewGaps,
   routableCommands,
   shadowedKnobs,
   verifyPlugins,
@@ -35,8 +37,7 @@ import type { PreparedDispatch } from './prepare';
 import { launchPromptPath, PF_DIR_NAME, pfPaths, signalPath, startedMarkerPath, type PfPaths } from './paths';
 import type { DagNamespace } from './ledger';
 import type { CycleRecord, HandoffRecord, NodeMode, NodeResult } from './types';
-import type { PluginFolder } from './plugins/types';
-import type { PluginCommandEntry } from './plugins/types';
+import type { PluginCommandEntry, PluginContext, PluginFolder } from './plugins/types';
 import { withLedgerLock } from './ledgerlock';
 import { createCyclesNamespace, cyclePolicy } from './cycles';
 
@@ -125,6 +126,62 @@ export interface DispatchReceipt {
   prompt_text: string;
   /** The session this call opened; absent on `already_open`. */
   session?: OpenedSession;
+}
+
+/**
+ * What one dispatch's rehearsal answers (`dispatchPreview`): the cell as the executor would receive it, with
+ * nothing written and nothing opened. `material` says whether the prompt is already on disk or the real dispatch
+ * would land it; `blocked` carries the lines a dispatch-time plugin gate would refuse with, in the same shape the
+ * real refusal prints (a rehearsal answers them instead of throwing, since refusing is the thing being rehearsed).
+ */
+export interface DispatchPreview {
+  readonly action: 'dispatch';
+  readonly dry_run: true;
+  readonly cycle: string;
+  readonly node_id: string;
+  readonly node_title: string;
+  /** Where the prompt lives (`<pf>/meta/launch/<line>/<node>/prompt.txt`). */
+  readonly prompt: string;
+  /** The one line that file holds (or would hold). */
+  readonly prompt_text: string;
+  readonly material: 'on_disk' | 'to_land';
+  readonly spawner?: string;
+  readonly model?: string;
+  readonly blocked: readonly string[];
+  readonly warnings: readonly string[];
+}
+
+/** One insertion a close-time plugin says it would make, as a rehearsal reads it (the node has no uuid yet, so no body). */
+export interface SettlePreviewSeam {
+  readonly plugin: string;
+  readonly title: string;
+  readonly tags: readonly string[];
+  readonly note: string;
+  readonly why: string;
+}
+
+/**
+ * What one settle's rehearsal answers (`settlePreview`): the step the verdict would write into `path`, the graph
+ * mark, which freed slot the line would fill, what the close-time seam would insert and in front of which node, and
+ * the plan the line would read afterwards — with not one record written.
+ */
+export interface SettlePreview {
+  readonly action: 'settle';
+  readonly dry_run: true;
+  readonly cycle: string;
+  readonly node_id: string;
+  /** The verdict word the ticket states (the word that would land in `path`). */
+  readonly result: 'completed' | 'failed' | 'stopped';
+  readonly delivered: boolean;
+  readonly graph: 'completed' | 'shelved';
+  /** The node the close would have opened next: where an offered node is wired in front of (`null` when the line stops or has no free slot). */
+  readonly target: string | null;
+  /** The freed slots the criteria would fill. */
+  readonly filled: readonly string[];
+  readonly park_line: boolean;
+  readonly seam: readonly SettlePreviewSeam[];
+  readonly warnings: readonly string[];
+  readonly plan: NextPlan;
 }
 
 /**
@@ -336,7 +393,7 @@ export interface ConductorNamespaceOptions {
   readonly gitTimeoutMs?: number;
 }
 
-/** The pipeline namespace: the group of actions that pushes a line along, these ten verbs. */
+/** The pipeline namespace: the group of actions that pushes a line along. */
 export interface ConductorNamespace {
   /** Read what the next step is: a plan (dispatch / pin / stop / wait / ask a person / no line yet). */
   next(input?: NextQuery): Promise<NextPlan>;
@@ -353,6 +410,12 @@ export interface ConductorNamespace {
    * session is **open**. The result is not here — the worker files a ticket and `close` settles it.
    */
   dispatch(input?: ConductorDispatchInput): Promise<DispatchReceipt>;
+  /**
+   * The rehearsal of one dispatch: the cell as the executor would receive it — the material's spot and whether it
+   * is already on disk, the spawner and the model route, and the lines a dispatch-time gate would refuse with.
+   * Nothing is written, nothing claims the cell, and the opener is not asked for a session.
+   */
+  dispatchPreview(input?: ConductorDispatchInput): Promise<DispatchPreview>;
   /** Write one handoff ticket, landing at "line id / node id" under signals. */
   handoff(input: ConductorHandoffInput): Promise<HandoffRecord>;
   /**
@@ -362,6 +425,12 @@ export interface ConductorNamespace {
    * are `advance`'s steps (and `close`'s, which settles and then takes them without a session).
    */
   settle(input?: ConductorTarget): Promise<CycleRecord>;
+  /**
+   * The rehearsal of one settle: the same two gates, the same criteria, and the close-time seam asked its own
+   * preview — the path step, the graph mark, the slot it would fill and what would be inserted in front of that
+   * node, with not one record written. A plugin that ships no close preview is skipped with one WARNING line.
+   */
+  settlePreview(input?: ConductorTarget): Promise<SettlePreview>;
   /** The settle plus the applier's steps with no session opened: claim the freed slots, park a stopped line. */
   close(input?: ConductorTarget): Promise<CycleRecord>;
   /**
@@ -568,20 +637,16 @@ export function createConductorNamespace(
   }
 
   /**
-   * The settle: one node's end, recorded — and nothing else.
-   *
-   * The gates first (the line must hold the node; the ticket must be on disk with a verdict), then the
-   * plugin half of the close asked **before the lock** on one snapshot of the scene, then one transaction
-   * over the records: the verdict into `path`, the claim laid down, the graph node marked, and the closing
-   * insertion seam. No slot is filled, no line is parked, no material lands and no session opens — those
-   * are the applier's steps (`applySteps`), and which node they touch is the plan's answer.
-   *
-   * The seam's target is the node this close **would have opened next** — the head of the slot-filling
-   * list the criteria name, read before anything is inserted. An offered node is wired in front of it, so
-   * the ordinary ranking picks the inserted node before the work that was going to run: the close decides
-   * the ordering by what it puts into the graph, not by claiming anything.
+   * The two gates of a settle, and the scene they read: the line must hold the node, and the ticket on disk must
+   * state a verdict. The write and its rehearsal share this one block — a rehearsal refuses exactly what the write
+   * refuses (refusing is not a write), and neither copies the other's sentences.
    */
-  const settleNode = async (input: ConductorTarget | undefined): Promise<CycleRecord> => {
+  async function settleScene(input: ConductorTarget | undefined): Promise<{
+    cycle: CycleRecord;
+    cycleId: string;
+    nodeId: string;
+    sig: Record<string, unknown>;
+  }> {
     assertLedgerInitialized(paths);
     const cycle = await resolveCycle(input?.cycle);
     const cycleId = String(cycle.id ?? '');
@@ -610,24 +675,61 @@ export function createConductorNamespace(
     // settle, and not one byte moves.
     const sig = await ticketOf(cycleId, nodeId);
     if (sig === null || sig.status === 'pending') throw nothingToSettle(cycleId, nodeId);
-    // The plugin half of the close — the scan, the dynamic load, every plugin's question — is asked here, before
-    // the lock is taken, on one snapshot of the scene (the line and the ticket as read just above). How long a
-    // plugin takes to answer is how long it takes and no writer waits on it: no record of this ledger is written
-    // in this stretch. What the answered offers want in the graph is landed under the lock by the mechanism below.
+    return { cycle, cycleId, nodeId, sig };
+  }
+
+  /**
+   * One plugin round's context: the folders, the context itself (built on the scene the caller already read) and
+   * where its WARNING lines land. A rehearsal asks the same scene with `preview: true`, and there `run` refuses —
+   * the plugin may read (`knob`, `reading`, `capture`), and an effect waits for the real timing.
+   */
+  async function pluginContext(
+    scene: {
+      cycle: CycleRecord;
+      nodeId: string;
+      sig?: unknown;
+      preview?: boolean;
+    },
+    assembly: PluginAssembly = pluginAssemblyOf(root, options.pluginsDir),
+  ): Promise<{ assembly: PluginAssembly; folders: PluginFolder[]; ctx: PluginContext; warnings: string[] }> {
     const warnings: string[] = [];
-    const folders = await pluginAssemblyOf(root, options.pluginsDir).folders();
-    const snapshot = await readGraphSnapshot(paths);
+    const folders = await assembly.folders();
     const ctx = createContext({
       root,
       folders,
       homeDir: options.homeDir,
       warnings,
-      cycle: cycle as unknown as Record<string, unknown>,
-      nodeId,
-      sig,
-      dag: snapshot,
+      cycle: scene.cycle as unknown as Record<string, unknown>,
+      nodeId: scene.nodeId,
+      sig: scene.sig ?? null,
+      dag: await readGraphSnapshot(paths),
       target: null,
+      ...(scene.preview === true ? { preview: true } : {}),
     });
+    return { assembly, folders, ctx, warnings };
+  }
+
+  /**
+   * The settle: one node's end, recorded — and nothing else.
+   *
+   * The gates first (the line must hold the node; the ticket must be on disk with a verdict), then the
+   * plugin half of the close asked **before the lock** on one snapshot of the scene, then one transaction
+   * over the records: the verdict into `path`, the claim laid down, the graph node marked, and the closing
+   * insertion seam. No slot is filled, no line is parked, no material lands and no session opens — those
+   * are the applier's steps (`applySteps`), and which node they touch is the plan's answer.
+   *
+   * The seam's target is the node this close **would have opened next** — the head of the slot-filling
+   * list the criteria name, read before anything is inserted. An offered node is wired in front of it, so
+   * the ordinary ranking picks the inserted node before the work that was going to run: the close decides
+   * the ordering by what it puts into the graph, not by claiming anything.
+   */
+  const settleNode = async (input: ConductorTarget | undefined): Promise<CycleRecord> => {
+    const { cycle, cycleId, nodeId, sig } = await settleScene(input);
+    // The plugin half of the close — the scan, the dynamic load, every plugin's question — is asked here, before
+    // the lock is taken, on one snapshot of the scene (the line and the ticket as read just above). How long a
+    // plugin takes to answer is how long it takes and no writer waits on it: no record of this ledger is written
+    // in this stretch. What the answered offers want in the graph is landed under the lock by the mechanism below.
+    const { folders, ctx, warnings } = await pluginContext({ cycle, nodeId, sig });
     const offers = await collectOffers('close', ctx, folders, warnings);
     return withLedgerLock(paths, async () => {
       // The first thing under the lock: the line and the ticket are read again, and the settle answers to these
@@ -684,6 +786,18 @@ export function createConductorNamespace(
     const policy = cyclePolicy(line).model;
     if (typeof policy === 'string' && policy !== '') return policy;
     return envModel();
+  }
+
+  /**
+   * Which spawner opens this dispatch: the call's own name > the line's `spawner` policy > the machine's switch,
+   * and nothing named leaves the executor's own default in force. The write and its rehearsal ask this one
+   * function, so a dry run can never name a different opener than the dispatch it is rehearsing.
+   */
+  function spawnerOf(line: CycleRecord, named: string | undefined): string | undefined {
+    if (named !== undefined && named !== '') return named;
+    const policy = cyclePolicy(line).spawner;
+    if (typeof policy === 'string' && policy !== '') return policy;
+    return envSpawner();
   }
 
   /**
@@ -833,23 +947,12 @@ export function createConductorNamespace(
           prompt_text: promptTextOf(nodeId),
         };
       }
-      const warnings: string[] = [];
-      // One assembly for this dispatch: the gate reads the folder once, and the preparation below is handed
-      // the same copy instead of reading it a second time.
-      const assembly = pluginAssemblyOf(root, options.pluginsDir);
-      const folders = await assembly.folders();
-      const snapshot = await readGraphSnapshot(paths);
-      const ctx = createContext({
-        root,
+      const {
+        assembly,
         folders,
-        homeDir: options.homeDir,
+        ctx,
         warnings,
-        cycle: cycle as unknown as Record<string, unknown>,
-        nodeId,
-        sig: null,
-        dag: snapshot,
-        target: null,
-      });
+      } = await pluginContext({ cycle, nodeId });
       const reasons = await collectGates('dispatch', ctx, folders, warnings);
       if (reasons.length > 0) {
         throw new PfError(
@@ -891,14 +994,9 @@ export function createConductorNamespace(
       // The request goes to the executor: the line's and the node's identity are carried as they are, role is
       // carried by the request, and the prompt is the one line the material holds. What comes back is a
       // receipt, not a result: the session is open, and the result will arrive as a ticket from the worker.
-      // Which spawner opens this session is the most specific answer: what this call named, then the line's
-      // own `spawner` policy, then the machine's switch; with nothing said the cell is absent and the
-      // executor's default speaks. The model route resolves the same way (call > line policy > machine). The
-      // drill switch and the ZCode host's data root ride along the same seam, both read at this call.
-      const policySpawner = cyclePolicy(cycle).spawner;
-      const namedSpawner = input?.spawner
-        ?? (typeof policySpawner === 'string' ? policySpawner : undefined)
-        ?? envSpawner();
+      // Which spawner opens this session, and which model route it opens on, are the two resolution chains
+      // (`spawnerOf` / `modelOf`); the drill switch and the ZCode host's data root ride along the same seam.
+      const spawner = spawnerOf(cycle, input?.spawner);
       const model = modelOf(cycle, input?.model);
       const dryRun = envSpawnDryRun();
       const request: DispatchRequest = {
@@ -906,9 +1004,9 @@ export function createConductorNamespace(
         node: nodeId,
         role: 'execute',
         prompt: material.prompt_text,
-        ...(namedSpawner === undefined ? {} : { spawner: namedSpawner }),
+        ...(spawner === undefined ? {} : { spawner }),
         ...(model === undefined ? {} : { model }),
-        ...(namedSpawner === 'zcode' ? { zcodeDataDir: zcodeDataDir() } : {}),
+        ...(spawner === 'zcode' ? { zcodeDataDir: zcodeDataDir() } : {}),
         ...(dryRun ? { dryRun: true } : {}),
       };
       const session = await executor.dispatch(request);
@@ -937,8 +1035,79 @@ export function createConductorNamespace(
       return receipt;
     },
 
+    /**
+     * The rehearsal of one dispatch: the same gates (a dispatch-time block is reported, not thrown) and the same
+     * resolution chains, with the material only *named*. Nothing is claimed, nothing is landed, and the executor is
+     * not asked for a session — a rehearsal is a reading of what the real call would hand over.
+     */
+    dispatchPreview: async (input) => {
+      const cycle = await resolveCycle(input?.cycle);
+      const cycleId = String(cycle.id ?? '');
+      const nodeId = heldNodeId(cycle, input?.node);
+      const known = await dag.get(nodeId);
+      if (known === null) {
+        throw new Error(`node ${nodeId} not found`);
+      }
+      const { folders, ctx, warnings } = await pluginContext({ cycle, nodeId, preview: true });
+      // Refusing is the thing being rehearsed: the reasons come back as data, in the same order the real gate
+      // would join them, instead of the refusal's exception.
+      const blocked = await collectGates('dispatch', ctx, folders, warnings, true);
+      const prompt = launchPromptPath(paths, cycleId, nodeId);
+      const spawner = spawnerOf(cycle, input?.spawner);
+      const model = modelOf(cycle, input?.model);
+      return {
+        action: 'dispatch' as const,
+        dry_run: true as const,
+        cycle: cycleId,
+        node_id: nodeId,
+        node_title: String(known.title ?? ''),
+        prompt,
+        prompt_text: promptTextOf(nodeId),
+        material: (existsSync(prompt) ? 'on_disk' : 'to_land') as 'on_disk' | 'to_land',
+        ...(spawner === undefined ? {} : { spawner }),
+        ...(model === undefined ? {} : { model }),
+        blocked,
+        warnings,
+      };
+    },
+
     /** The settle, on its own: record this node's end, mark the graph, run the close-time seam. */
     settle: async (input) => await settleNode(input),
+
+    /**
+     * The rehearsal of one settle: the two gates, the shared criteria and the close seam's own previews, answered
+     * without one record write — the step that would land in `path`, the graph mark, the slot the line would fill,
+     * what would be inserted in front of which node, and the plan the line would read afterwards.
+     */
+    settlePreview: async (input) => {
+      const { cycle, cycleId, nodeId, sig } = await settleScene(input);
+      const { folders, ctx, warnings } = await pluginContext({ cycle, nodeId, sig, preview: true });
+      const settle = await settleClose(root, cycle, nodeId, sig);
+      const target = settle.filled[0]?.id ?? null;
+      const offers = await collectOffers('close', ctx, folders, warnings, true);
+      const plan = await planNext(root, { cycle: cycleId, after: nodeId });
+      return {
+        action: 'settle' as const,
+        dry_run: true as const,
+        cycle: cycleId,
+        node_id: nodeId,
+        result: settle.outcome,
+        delivered: settle.delivered,
+        graph: (settle.delivered ? 'completed' : 'shelved') as 'completed' | 'shelved',
+        target,
+        filled: settle.filled.map((row) => row.id),
+        park_line: settle.parkLine,
+        seam: offers.map((offer) => ({
+          plugin: offer.plugin,
+          title: offer.title,
+          tags: [...offer.tags],
+          note: offer.note,
+          why: offer.why,
+        })),
+        warnings,
+        plan,
+      };
+    },
 
     /**
      * The settle plus the applier's steps, with no session opened: claim the freed slots, land nothing, park
@@ -1021,6 +1190,9 @@ export function createConductorNamespace(
       const problems = [...(await assembly.scanProblems()), ...(await verifyPlugins(folders))];
       const shadows = shadowedKnobs(folders);
       const clashes = commandClashes(folders);
+      // The rehearsal gaps are a notice, never a declaration problem: the plugin still serves its timing, and a
+      // `--dry-run` skip is where the gap is paid (one WARNING line on the round).
+      const gaps = await previewGaps(folders);
       const pluginDetail = folders.length === 0
         ? `0 installed (the scan reads ${pluginsDirOf(root, options.pluginsDir)}; one folder per plugin)`
         : folders.length === 1
@@ -1034,7 +1206,9 @@ export function createConductorNamespace(
           // sources and commands — all read off the declaration), then every bad spot one by one, then the
           // freshness line: what is loaded stays loaded, so whoever changed a plugin can read here why the
           // change is not in force yet.
-          detail: [pluginDetail, ...pluginListing(folders), ...problems, PLUGIN_LOAD_NOTE].join('\n'),
+          detail: [pluginDetail, ...pluginListing(folders), ...problems, ...(gaps.length === 0
+            ? []
+            : ['', 'rehearsal (a --dry-run skips these, one WARNING line each):', ...gaps]), PLUGIN_LOAD_NOTE].join('\n'),
         },
         {
           name: 'knobs',

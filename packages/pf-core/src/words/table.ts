@@ -23,6 +23,7 @@ export const TOP = {
     "init",
     "register",
     "plan",
+    "hold",
     "settle",
     "advance",
     "dispatch",
@@ -125,7 +126,7 @@ export const COMMANDS = {
   "plan": {
     "word": "plan",
     "prog": "plan",
-    "description": "Read-only: what the next step is, writing not one byte. The answer is one action -- `dispatch` (a node is claimed: send it out, and it lands the cell''s material when the claim left none), `open_node` (the line holds no node: the head of the ranking is what a claim would pick -- `cycle hold` names it), `stop_pipeline` (nothing left, or the line was stopped), `wait` (a ticket is owed or a session is already out: read `note` / `close_with`, never poll), `ask_user`, `no_cycle` -- plus the cells a reader acts on. `--after <node>` asks the closing question instead: that node''s ticket is on disk, and settling it, where would the line go. Carrying any of it out is `dispatch` (the single op) or `advance` (claim, material and session in one word).",
+    "description": "Read-only: what the next step is, writing not one byte. The answer is one action -- `dispatch` (a node is claimed: send it out, and it lands the cell''s material when the claim left none), `open_node` (the line holds no node: the head of the ranking is what a claim would pick -- `hold` names it), `stop_pipeline` (nothing left, or the line was stopped), `wait` (a ticket is owed or a session is already out: read `note` / `close_with`, never poll), `ask_user`, `no_cycle` -- plus the cells a reader acts on. `--after <node>` asks the closing question instead: that node''s ticket is on disk, and settling it, where would the line go. Carrying any of it out is `dispatch` (the single op) or `advance` (claim, material and session in one word).",
     "positionals": [],
     "options": [
       {
@@ -168,12 +169,52 @@ export const COMMANDS = {
         "invocation": "--json"
       }
     ],
-    "epilog": "the full set of actions `plan` returns (the discriminant is the `action` field):\n  dispatch        a node is claimed -- `dispatch <cycle>` lands its material if the claim left none and opens its session\n  open_node       the line holds no node and the ranking's head is what a claim would pick -- `cycle hold <cycle> <node>` claims it, then `dispatch <cycle>` opens it\n  stop_pipeline   nothing left to do, the line was stopped, or nothing is left in its picking range -- read `reason`\n  wait            it is not yet time to act -- read `note` / `close_with`, never poll\n  ask_user        the state cannot explain itself -- ask a human\n  no_cycle        there is no line yet -- opening one takes a human's intent\n\nthe standard flow is one word per operation: `plan` reads, `cycle hold` claims, `dispatch` opens; a node's end is `handoff` then `settle`. `advance` is those three moves as one word (claim, material, session) for the host that drives the line by itself.\n\nInvariant: the action is a reading of the records. The words that write are `settle`, `cycle hold`, `dispatch` and `advance`."
+    "epilog": "the full set of actions `plan` returns (the discriminant is the `action` field):\n  dispatch        a node is claimed -- `dispatch <cycle>` lands its material if the claim left none and opens its session\n  open_node       the line holds no node and the ranking's head is what a claim would pick -- `hold <node>` claims it, then `dispatch <cycle>` opens it\n  stop_pipeline   nothing left to do, the line was stopped, or nothing is left in its picking range -- read `reason`\n  wait            it is not yet time to act -- read `note` / `close_with`, never poll\n  ask_user        the state cannot explain itself -- ask a human\n  no_cycle        there is no line yet -- opening one takes a human's intent\n\nthe standard flow is one word per operation: `plan` reads, `hold` claims, `dispatch` opens; a node's end is `handoff` then `settle`. `advance` is those three moves as one word (claim, material, session) for the host that drives the line by itself.\n\nInvariant: the action is a reading of the records. The words that write are `settle`, `hold`, `dispatch` and `advance`."
+  },
+  "hold": {
+    "word": "hold",
+    "prog": "hold",
+    "description": "Put nodes into this line's hand: the claim that makes `dispatch` send them out. One node belongs to one line at a time -- a node another line holds stops the whole call before one byte is written. It writes the line's `holding` and nothing else: no material, no session, no path step, no status. The line is named with `--cycle`; without it the single active line is taken, and a line that is not in service is refused (put it back with `cycle status <id> active`).",
+    "positionals": [
+      {
+        "name": "node",
+        "metavar": "node",
+        "required": true,
+        "nargs": "+"
+      }
+    ],
+    "options": [
+      {
+        "flags": [
+          "-h",
+          "--help"
+        ],
+        "help": "Print `hold`'s help",
+        "invocation": "-h, --help"
+      },
+      {
+        "flags": [
+          "--cycle"
+        ],
+        "metavar": "CYCLE",
+        "help": "Cycle id (default: the single active cycle)",
+        "invocation": "--cycle CYCLE"
+      },
+      {
+        "flags": [
+          "--project"
+        ],
+        "metavar": "PROJECT",
+        "help": "Project root (default: current directory)",
+        "invocation": "--project PROJECT"
+      }
+    ],
+    "epilog": "the claim step of the standard flow: `plan` names the head of the ranking, `hold <node>` puts it in the line's hand, `dispatch <cycle>` lands its material and opens its session. Several ids in one line are one write, all or none. An id already in that hand is not an error (nothing is written twice); an id another line holds is refused with nothing written."
   },
   "settle": {
     "word": "settle",
     "prog": "settle",
-    "description": "Record one node''s end: read its handoff ticket, put the verdict into the line''s `path`, lay the claim down, mark the graph node `completed` / `shelved`, and run the close-time plugin seam (an offer may put a node into the graph, wired in front of the node this close would have opened next). It claims nothing, lands no prompt, opens no session and stops no line -- the next claim is `cycle hold`''s, the session is `dispatch`''s, and the plan printed underneath says who they touch. A missing ticket, or one still `pending`, is refused with nothing written.",
+    "description": "Record one node''s end: read its handoff ticket, put the verdict into the line''s `path`, lay the claim down, mark the graph node `completed` / `shelved`, and run the close-time plugin seam (an offer may put a node into the graph, wired in front of the node this close would have opened next). It claims nothing, lands no prompt, opens no session and stops no line -- the next claim is `hold`''s, the session is `dispatch`''s, and the plan printed underneath says who they touch. A missing ticket, or one still `pending`, is refused with nothing written. `--dry-run` is the same gates and criteria with the effect shaped away: it reports the step, the graph mark and what the seam would insert, and writes not one byte (a plugin that ships no close preview is skipped, with one WARNING line).",
     "positionals": [
       {
         "name": "node",
@@ -209,18 +250,25 @@ export const COMMANDS = {
       },
       {
         "flags": [
+          "--dry-run"
+        ],
+        "help": "Rehearse it: the path step, the graph mark and the close-time seam, with not one byte written",
+        "invocation": "--dry-run"
+      },
+      {
+        "flags": [
           "--json"
         ],
         "help": "Print raw JSON",
         "invocation": "--json"
       }
     ],
-    "epilog": "settle is the write half of a worker''s close, and the whole of it: the line''s hand does not move. To stop the line: `cycle status <cycle> inactive`. To name the next node: `cycle hold <cycle> <node>`. To read what happens next without doing it: `plan --after <node>`."
+    "epilog": "settle is the write half of a worker''s close, and the whole of it: the line''s hand does not move. To stop the line: `cycle status <cycle> inactive`. To name the next node: `hold <node> --cycle <cycle>`. To read what happens next without doing it: `plan --after <node>`; to read what this settle itself would write, `--dry-run`."
   },
   "advance": {
     "word": "advance",
     "prog": "advance",
-    "description": "The composed word, and nothing new: claim the nodes the line has free slots for (the head of the graph''s ranking, as many as `parallel` allows), land each one''s prompt and run doc, then open one session per cell in hand; a line that stopped with nothing left is turned `inactive`. Every move in it is a word of its own (`cycle hold`, `dispatch`), so the same work can always be done one reading at a time. It settles nothing -- a node whose work ended is recorded by `settle` -- and it never moves a node''s status.",
+    "description": "The composed word, and nothing new: claim the nodes the line has free slots for (the head of the graph''s ranking, as many as `parallel` allows), land each one''s prompt and run doc, then open one session per cell in hand; a line that stopped with nothing left is turned `inactive`. Every move in it is a word of its own (`hold`, `dispatch`), so the same work can always be done one reading at a time. It settles nothing -- a node whose work ended is recorded by `settle` -- and it never moves a node''s status.",
     "positionals": [],
     "options": [
       {
@@ -271,12 +319,12 @@ export const COMMANDS = {
         "invocation": "--json"
       }
     ],
-    "epilog": "the composed step: claim (`cycle hold`), material (the dispatch preparation) and session (`dispatch`), in that order, for whatever the plan says. It is never required -- `plan` -> `cycle hold` -> `dispatch` is the same work with a reading between the moves -- and it is what the host runs when it drives a line with nobody in between."
+    "epilog": "the composed step: claim (`hold`), material (the dispatch preparation) and session (`dispatch`), in that order, for whatever the plan says. It is never required -- `plan` -> `hold` -> `dispatch` is the same work with a reading between the moves -- and it is what the host runs when it drives a line with nobody in between."
   },
   "dispatch": {
     "word": "dispatch",
     "prog": "dispatch",
-    "description": "Open the sessions of the nodes this cycle holds, and nothing else: land each cell''s material when it is not on disk yet (the prompt at .pf/meta/launch/<cycle>/<node>/prompt.txt, the run doc), hand it to the executor, and stamp the cell `started`. It never claims a node -- that is `cycle hold` -- and it never settles one; that makes \"commit and push first, then open the next session\" expressible as two commands. DSH_CONDUCT_SPAWN_DRY_RUN=1 makes the call and reports it without opening a session and without claiming the cell, so a rehearsal is never something to unwind.",
+    "description": "Open the sessions of the nodes this cycle holds, and nothing else: land each cell''s material when it is not on disk yet (the prompt at .pf/meta/launch/<cycle>/<node>/prompt.txt, the run doc), hand it to the executor, and stamp the cell `started`. It never claims a node -- that is `hold` -- and it never settles one; that makes \"commit and push first, then open the next session\" expressible as two commands. `--dry-run` is the same gates with the effect shaped away: it reports the cells it would hand over, where each material stands, the spawner and the model route, and the lines a dispatch-time gate would refuse with -- writing nothing, claiming nothing and opening nothing (so a process without an opener can rehearse too). DSH_CONDUCT_SPAWN_DRY_RUN=1 is the machine-wide drill of the same call: it goes through the executor, which answers it without opening a session.",
     "positionals": [
       {
         "name": "id",
@@ -308,6 +356,13 @@ export const COMMANDS = {
         ],
         "help": "Print raw JSON",
         "invocation": "--json"
+      },
+      {
+        "flags": [
+          "--dry-run"
+        ],
+        "help": "Rehearse it: the cells, their material and route, and the lines a dispatch-time gate would refuse with -- nothing written, nothing claimed, no session opened",
+        "invocation": "--dry-run"
       },
       {
         "flags": [
@@ -809,35 +864,6 @@ export const COMMANDS = {
     ],
     "group": "cycle",
     "summary": "One node's standing in a cycle: signal + path step"
-  },
-  "cycle hold": {
-    "word": "hold",
-    "prog": "cycle hold",
-    "description": null,
-    "positionals": [
-      {
-        "name": "id",
-        "metavar": "id",
-        "required": true
-      },
-      {
-        "name": "node",
-        "metavar": "node",
-        "required": true
-      }
-    ],
-    "options": [
-      {
-        "flags": [
-          "-h",
-          "--help"
-        ],
-        "help": "show this help message and exit",
-        "invocation": "-h, --help"
-      }
-    ],
-    "group": "cycle",
-    "summary": "Pin the cycle on a node: this is how work is claimed"
   },
   "cycle close": {
     "word": "close",
@@ -2114,8 +2140,8 @@ export const GROUPS = {
   "cycle": {
     "word": "cycle",
     "prog": "cycle",
-    "description": "A cycle is one line of work: it picks ONE DAG node at a time, hands it to a session, and records the step when that session reports back. This group owns the line itself -- its identity, whether it is in service, its policies, which nodes it is holding, and the path it has walked.",
-    "metavar": "{create,start,rename,status,policy,list,current,show,hold,close,retry}",
+    "description": "A cycle is one line of work: it picks ONE DAG node at a time, hands it to a session, and records the step when that session reports back. This group owns the line itself -- its identity, whether it is in service, its policies, and the path it has walked. Which nodes it holds is the `hold` word's business.",
+    "metavar": "{create,start,rename,status,policy,list,current,show,close,retry}",
     "commands": [
       {
         "word": "create",
@@ -2396,35 +2422,6 @@ export const GROUPS = {
         ],
         "group": "cycle",
         "summary": "One node's standing in a cycle: signal + path step"
-      },
-      {
-        "word": "hold",
-        "prog": "cycle hold",
-        "description": null,
-        "positionals": [
-          {
-            "name": "id",
-            "metavar": "id",
-            "required": true
-          },
-          {
-            "name": "node",
-            "metavar": "node",
-            "required": true
-          }
-        ],
-        "options": [
-          {
-            "flags": [
-              "-h",
-              "--help"
-            ],
-            "help": "show this help message and exit",
-            "invocation": "-h, --help"
-          }
-        ],
-        "group": "cycle",
-        "summary": "Pin the cycle on a node: this is how work is claimed"
       },
       {
         "word": "close",

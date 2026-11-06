@@ -11,7 +11,14 @@
  * `offer` is the insert gate at the close. A healthy plugin's usual answer is "none this round",
  * and that is what this one always answers: no node is written, no session is opened, and a
  * project's close stays byte for byte what it was.
+ *
+ * `offer_preview` is the rehearsal the timing owes: the same answer, asked with nothing to do and
+ * nothing to change. This plugin asks no question and reads no record, so the two are one line.
  */
 export function offer() {
+  return null;
+}
+
+export function offer_preview() {
   return null;
 }

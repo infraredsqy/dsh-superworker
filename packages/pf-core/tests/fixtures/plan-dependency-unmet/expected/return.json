@@ -6,6 +6,6 @@
   "nodes": [
     "@node-a@"
   ],
-  "note": "cycle c1 holds first",
+  "note": "the next pick is first",
   "settling": true
 }

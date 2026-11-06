@@ -202,6 +202,12 @@ export async function offer(ctx) {
   return null;
 }
 
+/**
+ * The rehearsal of `offer`: this gate only reads (the knobs and the ticket's own number), so the same question
+ * answers the same way on a rehearsal context. A rehearsal's `ctx.run` refuses — this file never calls it.
+ */
+export const offer_preview = offer;
+
 /** One number written the way the reader sees it: six significant digits, trailing zeros dropped, plus the unit. */
 function shown(value, unit) {
   return `${gFormat(value)}${unit}`;
@@ -236,7 +242,7 @@ function offerText(ctx, cycle, hit) {
     `and the inserted node is not pinned: which node the next dispatch picks is the usual ` +
     `ranking's call (on a line that fills several slots, this same close may have pinned ` +
     `the rest of its fill). After committing and pushing: ` +
-    `\`plan --cycle ${cycle.id} --json\`, then \`cycle hold ${cycle.id} <that node>\` and ` +
+    `\`plan --cycle ${cycle.id} --json\`, then \`hold <that node> --cycle ${cycle.id}\` and ` +
     `\`dispatch ${cycle.id}\` — or the composed \`advance --cycle ${cycle.id}\`.`;
   return {
     title: hit.title,

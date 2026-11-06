@@ -76,7 +76,6 @@ const POSITIONAL_NAMES: Record<string, readonly string[]> = {
   'cycle status': ['id', 'status'],
   'cycle close': ['id', 'node'],
   'cycle show': ['id', 'node'],
-  'cycle hold': ['id', 'node'],
   'cycle retry': ['id', 'node'],
   'cycle create': ['id'],
   'cycle start': ['id'],
@@ -90,6 +89,7 @@ const POSITIONAL_NAMES: Record<string, readonly string[]> = {
   'instruction rm': ['ins_id'],
   'instruction revive': ['ins_id'],
   'session show': ['node'],
+  hold: ['node'],
   dispatch: ['id'],
   'merge-ledger': ['base', 'ours', 'theirs', 'path'],
 };

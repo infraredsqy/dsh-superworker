@@ -578,23 +578,32 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
       return standing;
     },
 
-    async hold(id: string, node: string): Promise<CycleRecord> {
+    async hold(id: string, nodes: string | readonly string[]): Promise<CycleRecord> {
+      // One claim or a batch of them: the caller's own words are read the same way, and the write is
+      // one record either way. The whole batch lands or none of it does — a node another line holds
+      // stops the call before anything is written.
+      const wanted = (typeof nodes === 'string' ? [nodes] : [...nodes]).filter((node) => node !== '');
+      if (wanted.length === 0) {
+        throw new Error('hold needs at least one node id; nothing was changed.');
+      }
       return mutate(async (ledger) => {
         const record = findCycle(ledger, id);
-        const holder = ledger.cycles.find(
-          (other) => other.id !== id && holdingIds(other).includes(node),
-        );
-        if (holder !== undefined) {
-          throw new Error(
-            `node "${node}" is already pinned by cycle "${holder.id}" (status ${holder.status}). ` +
-              '-- one node belongs to one cycle at a time, whatever that line\'s status. ' +
-              'Close it there first, or pick another node.',
-          );
-        }
-        const now = nowSeconds();
         const holding = holdingOf(record);
-        if (!holding.some((item) => item.id === node)) {
-          holding.push({ id: node, since: now });
+        const now = nowSeconds();
+        for (const node of wanted) {
+          const holder = ledger.cycles.find(
+            (other) => other.id !== id && holdingIds(other).includes(node),
+          );
+          if (holder !== undefined) {
+            throw new Error(
+              `node "${node}" is already held by cycle "${holder.id}" (status ${holder.status}). ` +
+                '-- one node belongs to one cycle at a time, whatever that line\'s status. ' +
+                'Close it there first, or pick another node.',
+            );
+          }
+          if (!holding.some((item) => item.id === node)) {
+            holding.push({ id: node, since: now });
+          }
         }
         setHolding(record, holding);
         record.updated_at = now;

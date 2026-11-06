@@ -84,6 +84,12 @@ export interface ContextOptions {
   readonly sig?: unknown;
   readonly dag?: PluginGraphSnapshot;
   readonly target?: PluginInsertTarget | null;
+  /**
+   * Whether this round is a rehearsal: the context then carries `preview: true`, and `run` refuses (its
+   * effect belongs to the real timing). The read side — knobs, readings, tags, `capture` — is the same,
+   * so a plugin's preview sees the scene its real door would see.
+   */
+  readonly preview?: boolean;
 }
 
 export function createContext(options: ContextOptions): PluginContext {
@@ -192,6 +198,7 @@ export function createContext(options: ContextOptions): PluginContext {
 
   const context: PluginContext = {
     root,
+    ...(options.preview === true ? { preview: true } : {}),
     cycle,
     nodeId,
     sig: options.sig ?? null,
@@ -222,7 +229,17 @@ export function createContext(options: ContextOptions): PluginContext {
     },
 
     capture: async (argv) => (await dispatchCommand(argv, true)).text,
-    run: async (argv) => (await dispatchCommand(argv, false)).ran,
+    // A rehearsal may read but must not act: a command whose effect is the point refuses here, and the
+    // line it leaves says which word was not run — the picture stays whole instead of quietly missing it.
+    run: options.preview === true
+      ? async (argv) => {
+          warnings.push(
+            `WARNING: a rehearsal cannot run \`${argv.map(String).join(' ')}\`: ` +
+              "the command's effect belongs to the timing itself",
+          );
+          return false;
+        }
+      : async (argv) => (await dispatchCommand(argv, false)).ran,
     specPath: (nodeIdIn: string) => specPathOf(paths, nodeIdIn),
   };
 

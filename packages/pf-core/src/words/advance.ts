@@ -2,7 +2,7 @@
  * The two words that open sessions: `dispatch` (the single op: a session for a cell this line holds) and
  * `advance` (the composed one — claim, land the material, open the sessions).
  *
- * The standard flow needs neither to be composed: `plan` reads what to do, `cycle hold` claims it, and
+ * The standard flow needs neither to be composed: `plan` reads what to do, `hold` claims it, and
  * `dispatch` lands the cell's material and opens its session -- three words, one operation each, a reading
  * between the first and the second. `advance` is the same three moves as one word, for the host that drives
  * the line without a person in between; every step of it is a primitive (`ledger.cycles.hold`, the dispatch
@@ -123,7 +123,7 @@ function alreadyStartedRefusal(cycleId: string, ids: readonly string[]) {
     `every node this cycle holds already had its session started (${ids.map(short).join(', ') || '(none)'}), ` +
       'so there is nothing to dispatch: doing it again would boot a second session onto the same node. ' +
       `To reopen one, retry it the documented way: \`cycle retry ${cycleId} <node> --drop\`, then ` +
-      `\`cycle hold ${cycleId} <node>\`, then \`dispatch ${cycleId}\`.`,
+      `\`hold <node> --cycle ${cycleId}\`, then \`dispatch ${cycleId}\`.`,
     2,
   );
 }
@@ -160,7 +160,7 @@ export async function dispatchVerb(call: VerbCall) {
     // The gate this verb asks before it opens anything is the `started` claim: that marker is the evidence a
     // session is out already, and a second session on the same node never pays for itself. Everything else the
     // dispatch needs -- its prompt, its run doc -- is the engine's preparation, landed here when it is not on
-    // disk yet: a node claimed by hand (`cycle hold`) and dispatched in the next command has no material until
+    // disk yet: a node claimed by hand (`hold`) and dispatched in the next command has no material until
     // this one writes it.
     const pending: string[] = [];
     for (const nodeId of held) {
@@ -169,6 +169,57 @@ export async function dispatchVerb(call: VerbCall) {
     }
     if (pending.length === 0) {
       return alreadyStartedRefusal(cycleId, held);
+    }
+    // The rehearsal: the same gates read the same cells, the engine answers each one's preview, and nothing is
+    // claimed, landed or opened. A cell a plugin gate would refuse is printed with its reasons and the call leaves
+    // with the same non-zero code the real refusal would; the opener is not asked for anything.
+    if (values.dry_run === true) {
+      const named = {
+        ...(values.spawner === undefined ? {} : { spawner: values.spawner }),
+        ...(values.model === undefined ? {} : { model: values.model }),
+      };
+      const cells = [];
+      for (const nodeId of pending) {
+        cells.push(await pf.conductor.dispatchPreview({ cycle: cycleId, node: nodeId, ...named }));
+      }
+      const blocked = cells.some((cell) => cell.blocked.length > 0);
+      if (values.json === true) {
+        return {
+          ...(blocked ? { code: 2 } : {}),
+          stdout: pyIndented({
+            action: 'dispatch',
+            dry_run: true,
+            cycle: cycleId,
+            nodes: cells.map((cell) => cell.node_id),
+            cells,
+          }),
+        };
+      }
+      const lines = ['dry run: nothing was opened, nothing was written'];
+      for (const cell of cells) {
+        const route = [
+          cell.spawner === undefined ? '' : `via ${cell.spawner}`,
+          cell.model === undefined ? '' : `(model ${cell.model})`,
+        ].filter((part) => part !== '').join(' ');
+        lines.push(
+          `would open ${short(cell.node_id)}  ${JSON.stringify(cell.node_title)}` +
+            `${route === '' ? '' : `  ${route}`}`,
+        );
+        lines.push(
+          `  prompt   ${cell.prompt}  ` +
+            `(${cell.material === 'on_disk' ? 'already on disk' : 'not on disk yet: the dispatch would land it'})`,
+        );
+        for (const reason of cell.blocked) lines.push(`  blocked  ${reason}`);
+        for (const warning of cell.warnings) lines.push(warning);
+      }
+      if (blocked) {
+        return {
+          code: 2,
+          stdout: lines.join('\n'),
+          stderr: 'dispatch would be blocked by plugin gate(s); nothing was opened, nothing was written',
+        };
+      }
+      return { stdout: lines.join('\n') };
     }
     // The opener comes before the engine, which lands the claim and only then asks its executor: a process
     // with none would claim the cell and leave no session behind. The gate above wrote nothing, so this

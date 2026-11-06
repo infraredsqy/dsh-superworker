@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { open } from '../src/open';
 
 /**
- * No stub left on the surface: all fifty-four verbs across the seven namespaces are methods, and
+ * No stub left on the surface: all fifty-six verbs across the seven namespaces are methods, and
  * the source tree has no "not implemented yet" path either.
  * The probe handle's root is a made-up address; the assertions here touch only methods and source
  * text, and nothing lands on disk.
@@ -35,14 +35,14 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
 }
 
 describe('verbs on the handle', () => {
-  it('seven namespaces, fifty-four verbs, none missing', () => {
+  it('seven namespaces, fifty-six verbs, none missing', () => {
     let count = 0;
     for (const [, ns] of SURFACE) {
       for (const value of Object.values(ns)) {
         if (typeof value === 'function') count += 1;
       }
     }
-    expect(count).toBe(3 + 15 + 13 + 5 + 5 + 3 + 11);
+    expect(count).toBe(3 + 15 + 13 + 5 + 5 + 3 + 13);
   });
 
   it("each level's verb names match the frozen surface", () => {
@@ -69,8 +69,8 @@ describe('verbs on the handle', () => {
       config: ['get', 'keys', 'list', 'set', 'unset'].sort(),
       sessions: ['list', 'note', 'show'],
       conductor: [
-        'advance', 'close', 'dispatch', 'doctor', 'handoff', 'handoffForm', 'next',
-        'pluginCommand', 'pluginCommands', 'prepare', 'settle',
+        'advance', 'close', 'dispatch', 'dispatchPreview', 'doctor', 'handoff', 'handoffForm',
+        'next', 'pluginCommand', 'pluginCommands', 'prepare', 'settle', 'settlePreview',
       ],
     });
   });

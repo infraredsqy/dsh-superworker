@@ -664,7 +664,7 @@ function openAction(cycle: CycleRecord, chosen: readonly ReadyRow[]): OpenNodePl
     node_id: head.id,
     node_title: head.title ?? '',
     nodes: chosen.map((row) => row.id),
-    note: `cycle ${cycle.id} holds ${titles}`,
+    note: `the next pick is ${titles}`,
     // The claiming command has not run yet: the preview therefore says "not settled yet", and `settling` is always true.
     settling: true,
   };
@@ -739,7 +739,7 @@ function retryWait(cycle: CycleRecord, nodeId: string, holding: readonly string[
       `The note for ${short(nodeId)} is still pending (no verdict yet, or somebody ` +
       'cleared the note to retry); do not poll. Three commands unwind it: ' +
       `cycle retry ${cycle.id} ${nodeId} --drop --summary "retry", then ` +
-      `cycle hold ${cycle.id} ${nodeId}, then dispatch ${cycle.id}.` +
+      `hold ${nodeId} --cycle ${cycle.id}, then dispatch ${cycle.id}.` +
       `${tail}`,
   };
 }

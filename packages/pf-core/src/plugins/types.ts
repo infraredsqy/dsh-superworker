@@ -166,12 +166,24 @@ export interface NormalizedOffer {
   readonly why: string;
 }
 
-/** The shape of a plugin implementation entry: an insert timing asks offer, a block timing asks check, and a command hands argv to main. */
+/**
+ * The shape of a plugin implementation entry: an insert timing asks offer, a block timing asks check, and a command hands argv to main.
+ *
+ * **A timing also owes its rehearsal.** A plugin that wants to act at a timing must ship the preview of that
+ * action beside it (`offer_preview` / `check_preview`), answering the same question on a context that may read
+ * but must not write. A plugin without one still works at the real timing; in a rehearsal (`--dry-run`) it is
+ * skipped and the round carries one WARNING naming it, because a preview that skipped it silently would be a
+ * picture that lies by omission.
+ */
 export interface PluginImplModule {
   /** The gate of the insert timing: hand back a PluginOffer, or "I have nothing to say this round" (null / empty). */
   offer?: (ctx: PluginContext) => unknown | Promise<unknown>;
+  /** The rehearsal of the insert gate: what this timing would offer, on a context that may read but must not write. */
+  offer_preview?: (ctx: PluginContext) => unknown | Promise<unknown>;
   /** The gate of the block timing: hand back the blocking reason sentence, or an empty value to let it through. */
   check?: (ctx: PluginContext) => unknown | Promise<unknown>;
+  /** The rehearsal of the block gate: what it would say now, on a context that may read but must not write. */
+  check_preview?: (ctx: PluginContext) => unknown | Promise<unknown>;
   /** The gate of a command: run this word in this process and hand back an output string, an exit code, or just do the work. */
   main?: (argv: readonly string[], ctx: PluginContext) => unknown | Promise<unknown>;
   /** The computing function of a claimed source: its name comes from the declaration's sources.<name>.by. */
@@ -198,6 +210,8 @@ export interface PluginInsertTarget {
 export interface PluginContext {
   /** The project root (the spelling open received, as it is). */
   readonly root: string;
+  /** Whether this round is a rehearsal (`--dry-run`), and the door being asked is its preview: the context can read, and `run` refuses. */
+  readonly preview?: boolean;
   /** This line's record (the scene of a close / dispatch); an empty object when there is no line. */
   readonly cycle: Readonly<Record<string, unknown>>;
   /** The id of the node in hand (the one being closed, at close time); null when there is none. */
@@ -220,7 +234,8 @@ export interface PluginContext {
    * Run one plugin command in this process, where the effect is the point, and hand back whether it really
    * ran: `false` for a word nobody routes, for a routed command whose implementation has no `main()`, and for
    * a command that threw (a failure leaves one warning besides); `true` for a command that ran to its end,
-   * whether or not it answered any text.
+   * whether or not it answered any text. In a rehearsal (`preview`) this refuses — `false`, and one WARNING
+   * line naming the command: an effect belongs to the real timing.
    */
   run(argv: readonly string[]): Promise<boolean>;
   /** The location of one node's spec.md (this tree's own layout, told to the plugin as it is). */

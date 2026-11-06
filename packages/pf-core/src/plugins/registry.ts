@@ -17,6 +17,7 @@ import { standInContext } from './standin';
 import type {
   PluginAction,
   PluginCommandEntry,
+  PluginContext,
   PluginDeclaration,
   PluginFolder,
   PluginImplModule,
@@ -1009,6 +1010,37 @@ function doorOf(action: unknown): 'offer' | 'check' | null {
   return null;
 }
 
+/** The rehearsal a timing owes beside its door: the same name with `_preview` (see PluginImplModule). */
+export function previewDoorOf(door: string): string {
+  return `${door}_preview`;
+}
+
+/**
+ * The rehearsal gaps doctor reports as a notice, never as a declaration problem: every plugin that declares a
+ * timing and ships no preview for it. The plugin still runs at the real timing; a rehearsal skips it and puts one
+ * WARNING line on the round, which is where the cost of the gap is paid.
+ */
+export async function previewGaps(folders: readonly PluginFolder[]): Promise<string[]> {
+  const gaps: string[] = [];
+  for (const folder of folders) {
+    const decl = folder.decl;
+    if (decl === null || !usable(folder)) continue;
+    const record = decl as Record<string, unknown>;
+    const door = doorOf(record.action);
+    if (door === null) continue;
+    const impl = existsSync(implPathOf(folder)) ? await implOf(folder) : null;
+    if (impl === null) continue; // a load failure is the `plugins` check's own line
+    const cells = impl as Record<string, unknown>;
+    if (typeof cells[door] !== 'function') continue; // "no door at all" is a problem, not a gap
+    if (typeof cells[previewDoorOf(door)] === 'function') continue;
+    gaps.push(
+      `plugin ${JSON.stringify(folder.name)}: the ${String(record.timing ?? '?')}/${String(record.action ?? '?')} ` +
+        `timing ships no ${previewDoorOf(door)}() -- a rehearsal skips it (one WARNING line)`,
+    );
+  }
+  return gaps;
+}
+
 /**
  * One real question put against a stand-in project: the implementation has to answer (an offer / a reason
  * sentence) or answer "none this round", and it must not throw along the way. The stand-in does no disk write and
@@ -1040,31 +1072,52 @@ async function liveCallProblems(
   const name = folder.name;
   const door = doorOf((decl as Record<string, unknown>).action);
   if (door === null) return [];
-  const call = (impl as Record<string, unknown>)[door];
+  const cells = impl as Record<string, unknown>;
+  const call = cells[door];
   if (typeof call !== 'function') {
     return [`plugin ${JSON.stringify(name)}: ${PLUGIN_IMPL_NAME} has no ${door}(), so the ` +
       `${JSON.stringify((decl as Record<string, unknown>).action ?? null)} timing it declares can never be served`];
   }
-  let answer: unknown;
   const standIn = mkdtempSync(join(tmpdir(), 'pf-plugin-check-'));
+  try {
+    const problems = await doorProblems(name, door, call as (ctx: PluginContext) => unknown, decl, standIn);
+    // The rehearsal the timing owes is asked the same way when it is there: a preview that raises or answers a
+    // shape its timing cannot read is a plugin defect like any other, and it would only show up on a drill.
+    const preview = cells[previewDoorOf(door)];
+    if (typeof preview === 'function') {
+      problems.push(...await doorProblems(name, previewDoorOf(door), preview as (ctx: PluginContext) => unknown, decl, standIn));
+    }
+    return problems;
+  } finally {
+    rmSync(standIn, { recursive: true, force: true });
+  }
+}
+
+/** One door asked on a stand-in project: the sentence it leaves when it raises, or when its answer is a shape its timing cannot read. */
+async function doorProblems(
+  name: string,
+  door: string,
+  call: (ctx: PluginContext) => unknown,
+  decl: PluginDeclaration,
+  standIn: string,
+): Promise<string[]> {
+  let answer: unknown;
   try {
     answer = await call(standInContext(decl, standIn));
   } catch (error) {
     return [`plugin ${JSON.stringify(name)}: ${door}() raised on a stand-in project: ` +
       `${error instanceof Error ? error.message : String(error)}`];
-  } finally {
-    rmSync(standIn, { recursive: true, force: true });
   }
   // "None this round" is always a legitimate answer, and the whole falsy family counts (the same rule as
   // collectOffers / collectGates): null / undefined / false / '' / 0, plus an object with no own keys and an empty
   // array — so a healthy plugin answering an empty table for "none this round" is not blamed.
   if (!answer || isEmptyObject(answer) || (Array.isArray(answer) && answer.length === 0)) return [];
-  if (door === 'check' && typeof answer !== 'string') {
-    return [`plugin ${JSON.stringify(name)}: check() answered ${typeof answer}, and that timing reads a ` +
+  if (door.startsWith('check') && typeof answer !== 'string') {
+    return [`plugin ${JSON.stringify(name)}: ${door}() answered ${typeof answer}, and that timing reads a ` +
       'reason string or nothing'];
   }
-  if (door === 'offer' && (typeof answer !== 'object' || Array.isArray(answer))) {
-    return [`plugin ${JSON.stringify(name)}: offer() answered ${typeof answer}, and that timing reads an ` +
+  if (door.startsWith('offer') && (typeof answer !== 'object' || Array.isArray(answer))) {
+    return [`plugin ${JSON.stringify(name)}: ${door}() answered ${typeof answer}, and that timing reads an ` +
       'offer object or nothing'];
   }
   return [];

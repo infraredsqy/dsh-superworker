@@ -41,7 +41,7 @@ read the started claim -> the plugin dispatch gate -> the material (landed only 
   when it is there the answer is `already_open`, not one byte is written, and the executor is called not once.
 - **The material lands second.** When the prompt is already on disk the preparation is skipped; when it is not,
   `prepareDispatch` lands the prompt and this round's `run.md` (the run doc is created exclusively, and one already
-  written is left untouched). In the standard flow this is where the material is written: `cycle hold` writes the
+  written is left untouched). In the standard flow this is where the material is written: `hold` writes the
   claim only, and landing the material belongs to `dispatch`.
 - **The claim is written last.** `started` lands only once a session is really out. A claim that cannot be written is
   an incident, not a warning: the session is out and nothing on disk says so, so the call throws with the session id
@@ -95,7 +95,7 @@ sessions. The claim stays off disk here too, so nothing comes away afterwards.
   dispatch would open again — either land the claim as that sentence says, or take it all back and start over.
 - **The session died, the claim is still there.** `started` is the only "already opened" evidence, so the plan never
   dispatches that cell again. There is one way to reopen it: `cycle retry <cycle> <node> --drop` (the claim and the
-  old ticket go together), then `cycle hold <cycle> <node>`, then `dispatch <cycle>`.
+  old ticket go together), then `hold <node> --cycle <cycle>`, then `dispatch <cycle>`.
 - **Two lines side by side.** The waking line may be running git on the same tree, and a write hitting `index.lock`
   is a momentary collision: wait a few seconds and re-run the same command, and when two or three tries still do not
   free it, stop and hand it to the user; the lock file belongs to a live process and must not be deleted.

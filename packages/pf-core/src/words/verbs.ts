@@ -383,13 +383,37 @@ export const cycleShowVerb = guarded(async (call: VerbCall) => {
   return { stdout: lines.join('\n') };
 }, 1);
 
-/** `cycle hold`. */
-export const cycleHoldVerb = guarded(async (call: VerbCall) => {
-  const { positionals } = call;
-  const [id, node] = positionals.map((words) => words[0]);
-  const { pf } = await project(undefined, call.io);
-  await pf.ledger.cycles.hold(id, node);
-  return { stdout: `CURRENT_NODE: ${id} → ${node}` };
+/**
+ * `hold`: the claim step. The nodes are the operand and the line is where they are held — without
+ * `--cycle` the single active line is taken. The words are written in one record, so a batch lands
+ * whole or not at all, and the answer is the line's hand after the write: the head as `CURRENT_NODE`
+ * (the cell a dispatch would send first) and the rest as `HOLDING`.
+ */
+export const holdVerb = guarded(async (call: VerbCall) => {
+  const { values, positionals } = call;
+  const nodes = (positionals[0] ?? []).filter((node) => node !== '');
+  if (nodes.length === 0) {
+    return refuse('hold names at least one node. Nothing was changed.', 2);
+  }
+  const { pf } = await project(values.project, call.io);
+  let cycleId: string | undefined = values.cycle;
+  if (cycleId === undefined) {
+    const line = await pf.ledger.cycles.current();
+    if (line === null) {
+      return refuse(
+        `hold needs the line to put ${nodes.map(short).join(', ')} in hand, and no cycle is active. ` +
+          'Name one with `--cycle <id>`, or read them with `cycle list`.',
+        2,
+      );
+    }
+    cycleId = String(line.id);
+  }
+  const record = await pf.ledger.cycles.hold(cycleId, nodes);
+  const holding = Array.isArray(record.holding) ? record.holding : [];
+  const lines = holding.map((item, index) =>
+    `${index === 0 ? 'CURRENT_NODE' : 'HOLDING   '}: ${cycleId} → ${item.id}`,
+  );
+  return { stdout: lines.join('\n') };
 }, 1);
 
 /** `cycle close`. */

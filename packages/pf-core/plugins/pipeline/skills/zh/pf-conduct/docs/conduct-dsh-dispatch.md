@@ -37,7 +37,7 @@
 - **认领先读。** `conductor.dispatch` 第一件事是看这一格的 `started` 在不在盘上；在，就回
   `already_open`，一个字节不写、一次 executor 调用都不发。
 - **材料后落。** prompt 已经在盘上就跳过准备；不在，才由 `prepareDispatch` 落 prompt 与本轮的
-  `run.md`（run doc 独占创建，已经写过就不动它）。标准流程里这份材料就是这一步落的——`cycle hold`
+  `run.md`（run doc 独占创建，已经写过就不动它）。标准流程里这份材料就是这一步落的——`hold`
   只写认领，落材料是 `dispatch` 自己的事。
 - **认领最后写。** 会话真开出来才写 `started`。写不进去按事故处理：会话已经出去、盘上没有一句
   话说得清，这一调用当场抛，句子里带着会话 id 并说明「再派一次就是第二个会话」。
@@ -80,7 +80,7 @@
 - **会话开了、认领没落。** 引擎抛，句子里带着会话 id，并明说该先补认领；这时盘上留着一条 prompt
   而没有认领，下一次派发会照常开 —— 先按上面那句把认领补上，或者撤掉重来。
 - **会话死了、认领还在。** `started` 是唯一的「已经开过」证据，plan 因此不再派这一格。重开的走法
-  只有一条：`cycle retry <cycle> <node> --drop`（认领与旧票一起撤）、`cycle hold <cycle> <node>`、
+  只有一条：`cycle retry <cycle> <node> --drop`（认领与旧票一起撤）、`hold <node> --cycle <cycle>`、
   再 `dispatch <cycle>`。
 - **两条线并排。** 醒着的那条可能正往同一棵树上跑 git，写操作撞 `index.lock` 是瞬时撞锁：等几秒
   重跑同一条命令，两三次仍不解放就停手交人；锁文件属于活进程，不许删。

@@ -129,16 +129,24 @@ function ownFields(plugin: string, fields: Record<string, unknown>, warnings: st
   return kept;
 }
 
-/** The entry the two questions share: filter plugins by timing and action, ask the switch, get the implementation, call the door, and leave one line per failure. */
+/**
+ * The entry the two questions share: filter plugins by timing and action, ask the switch, get the implementation,
+ * call the door, and leave one line per failure.
+ *
+ * A rehearsal (`preview`) asks the door's own preview instead (`offer_preview` / `check_preview`). A plugin that
+ * declares a timing but ships no preview is skipped for this round with one WARNING: it still runs at the real
+ * timing, and the rehearsal says out loud which plugin it could not picture.
+ */
 async function askDoors(
   timing: PluginTiming,
   action: 'insert' | 'block',
   ctx: PluginContext,
   folders: readonly PluginFolder[],
   warnings: string[],
+  preview = false,
 ): Promise<Array<{ folder: PluginFolder; answer: unknown }>> {
   const answers: Array<{ folder: PluginFolder; answer: unknown }> = [];
-  const door = action === 'insert' ? 'offer' : 'check';
+  const door = doorOf(action, preview);
   for (const folder of folders) {
     const decl = folder.decl;
     if (decl === null || !usable(folder)) continue;
@@ -149,7 +157,15 @@ async function askDoors(
     if (impl === null) continue; // a load failure is already recorded in the runtime problem table, which doctor reports.
     const call = (impl as Record<string, unknown>)[door];
     if (typeof call !== 'function') {
-      warnings.push(warnLine(folder.name, `has no ${door}()`, 'the timing it declares cannot be served'));
+      warnings.push(
+        preview
+          ? warnLine(
+              folder.name,
+              `has no ${door}()`,
+              `a rehearsal cannot say what it would ${action === 'insert' ? 'insert' : 'hold back'} this round`,
+            )
+          : warnLine(folder.name, `has no ${door}()`, 'the timing it declares cannot be served'),
+      );
       continue;
     }
     try {
@@ -161,15 +177,22 @@ async function askDoors(
   return answers;
 }
 
+/** The door of one action: the real one, or its rehearsal. */
+function doorOf(action: 'insert' | 'block', preview: boolean): string {
+  const base = action === 'insert' ? 'offer' : 'check';
+  return preview ? `${base}_preview` : base;
+}
+
 /** The insertions every plugin wants at this timing, in registry order; the shape was checked here and the graph edit is landed by the caller. */
 export async function collectOffers(
   timing: PluginTiming,
   ctx: PluginContext,
   folders: readonly PluginFolder[],
   warnings: string[],
+  preview = false,
 ): Promise<NormalizedOffer[]> {
   const offers: NormalizedOffer[] = [];
-  for (const { folder, answer } of await askDoors(timing, 'insert', ctx, folders, warnings)) {
+  for (const { folder, answer } of await askDoors(timing, 'insert', ctx, folders, warnings, preview)) {
     // null / undefined / false / an empty object: "I have nothing to say this round", always a legitimate answer —
     // skipped silently, without a warning.
     if (answer === null || answer === undefined || answer === false || isEmptyObject(answer)) continue;
@@ -185,9 +208,10 @@ export async function collectGates(
   ctx: PluginContext,
   folders: readonly PluginFolder[],
   warnings: string[],
+  preview = false,
 ): Promise<string[]> {
   const reasons: string[] = [];
-  for (const { folder, answer } of await askDoors(timing, 'block', ctx, folders, warnings)) {
+  for (const { folder, answer } of await askDoors(timing, 'block', ctx, folders, warnings, preview)) {
     // "Not this round" has to state a reason; ones that state none (null / false / an empty string / an object with
     // no own keys) are skipped silently — the same rule as collectOffers.
     if (answer === null || answer === undefined || answer === false || answer === '' || isEmptyObject(answer)) continue;

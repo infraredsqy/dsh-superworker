@@ -219,11 +219,11 @@ record.held = JSON.parse(readFileSync(join(project, '.pf', 'state.json'), 'utf8'
 record.executor = snapshot(executor.dispatched)
 await step('handoff', ['handoff', 'c-1', record.held[0], 'completed', '-s', 'leg one done'])
 /* The closing word is 'settle': it records this node's end and nothing else -- no claim, no prompt, no
- * session, no parking. What the line would do next is 'plan''s answer; claiming it is 'cycle hold', and
+ * session, no parking. What the line would do next is 'plan''s answer; claiming it is 'hold', and
  * opening its session is 'dispatch'. The composed 'advance' is the same three moves as one word. */
 await step('settle', ['settle', record.held[0], '--cycle', 'c-1', '--json'])
 record.planAfterSettle = JSON.parse((await step('plan (the next leg)', ['plan', '--cycle', 'c-1', '--json'])).stdout)
-await step('cycle hold (the next leg)', ['cycle', 'hold', 'c-1', record.planAfterSettle.node_id])
+await step('hold (the next leg)', ['hold', record.planAfterSettle.node_id, '--cycle', 'c-1'])
 await step('dispatch (the next leg)', ['dispatch', 'c-1'])
 record.executorFinal = snapshot(executor.dispatched)
 
@@ -434,7 +434,7 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
         ['handoff', ['handoff', 'c-1', record.held[0], 'completed', '-s', 'leg one done']],
         ['settle', ['settle', record.held[0], '--cycle', 'c-1', '--json']],
         ['plan (the next leg)', ['plan', '--cycle', 'c-1', '--json']],
-        ['cycle hold (the next leg)', ['cycle', 'hold', 'c-1', record.planAfterSettle.node_id]],
+        ['hold (the next leg)', ['hold', record.planAfterSettle.node_id, '--cycle', 'c-1']],
         ['dispatch (the next leg)', ['dispatch', 'c-1']],
       ],
     )
@@ -477,7 +477,7 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
     )
 
     /* handoff wrote the ticket; settle recorded it and released the hand (the receipt's own plan asks for the
-     * next claim); cycle hold claimed that pick; dispatch landed its material and opened its session. */
+     * next claim); hold claimed that pick; dispatch landed its material and opened its session. */
     const ticket = JSON.parse(readFileSync(join(project, '.pf', 'signals', 'c-1', `${node}.json`), 'utf8'))
     assert.equal(ticket.node, node)
     assert.equal(ticket.status, 'completed')
@@ -497,14 +497,14 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
     assert.equal(settleReceipt.action, 'settle')
     assert.equal(settleReceipt.result, 'completed')
     assert.equal(settleReceipt.plan.action, 'open_node')
-    /* cycle hold claimed the next leg; dispatch opened its session: the material is on disk and the claim too. */
+    /* hold claimed the next leg; dispatch opened its session: the material is on disk and the claim too. */
     const afterNext = JSON.parse(readFileSync(join(project, '.pf', 'state.json'), 'utf8')).cycles.find((cycle) => cycle.id === 'c-1')
-    assert.equal(afterNext.holding.length, 1, 'cycle hold claimed the next node')
+    assert.equal(afterNext.holding.length, 1, 'hold claimed the next node')
     const claimed = afterNext.holding[0].id
     assert.equal(claimed, record.planAfterSettle.node_id, 'the claim is the node the plan named')
     assert.notEqual(claimed, node, 'the next leg is a different node')
     assert.equal(ideas[claimed].status, 'todo', 'the next leg is still to do')
-    assert.match(byLabel['cycle hold (the next leg)'].stdout, /^CURRENT_NODE: c-1 /mu)
+    assert.match(byLabel['hold (the next leg)'].stdout, /^CURRENT_NODE: c-1 /mu)
     assert.match(byLabel['dispatch (the next leg)'].stdout, /^opened /mu)
     const nextLaunch = join(project, '.pf', 'meta', 'launch', 'c-1', claimed)
     assert.ok(existsSync(join(nextLaunch, 'prompt.txt')), 'the dispatch landed the next leg\'s prompt')

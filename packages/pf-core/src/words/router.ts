@@ -41,6 +41,7 @@ const VERB_ROUTES: Record<string, string> = {
   init: 'initVerb',
   register: 'registerVerb',
   plan: 'planVerb',
+  hold: 'holdVerb',
   settle: 'settleVerb',
   advance: 'advanceVerb',
   dispatch: 'dispatchVerb',
@@ -61,7 +62,6 @@ const GROUP_HANDLERS: Record<string, string> = {
   'cycle list': 'cycleListVerb',
   'cycle current': 'cycleCurrentVerb',
   'cycle show': 'cycleShowVerb',
-  'cycle hold': 'cycleHoldVerb',
   'cycle close': 'cycleCloseVerb',
   'cycle retry': 'cycleRetryVerb',
   'dag add': 'dagAddVerb',
@@ -165,9 +165,10 @@ const VERB_SENSE: Record<string, string> = {
   init: 'put the ledger in place (run once per project)',
   register: "write the ledger's git merge driver into this project",
   plan: 'read what the next step is, and write nothing',
+  hold: "put the named nodes in this line's hand (the claim)",
   settle: "record one node's end: the verdict, the graph mark, the close-time seam",
   advance: 'carry the line one step: claim the free slots and open their sessions',
-  dispatch: 'start the session for the node the cycle holds',
+  dispatch: 'start the session for the nodes the cycle holds',
   'clean-temp': "list (or remove) every node's temp/ directory",
   handoff: "a worker's own closing call for the line it just ran",
   'merge-ledger': 'the three-way merge driver git calls',
@@ -215,7 +216,7 @@ export function describe(): WordsIndex {
   return {
     shape: USAGE_SHAPE,
     self: SELF_VERBS.map(([, display, blurb]) => [display, blurb] as const),
-    verbs: ['init', 'register', 'plan', 'settle', 'advance', 'dispatch', 'clean-temp', 'handoff', 'merge-ledger'].map(
+    verbs: ['init', 'register', 'plan', 'hold', 'settle', 'advance', 'dispatch', 'clean-temp', 'handoff', 'merge-ledger'].map(
       (word) => [word, verbSense(word)] as const,
     ),
     groups: ['cycle', 'dag', 'config', 'instruction', 'session'].map((word) => [word, groupSense(word)] as const),
