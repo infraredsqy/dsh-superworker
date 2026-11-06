@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { isPfError, type PfError } from '../src/errors.ts';
 import { withLedgerLock } from '../src/ledgerlock.ts';
 import { ledgerLockPath, pfPaths, type PfPaths } from '../src/paths.ts';
 
@@ -92,6 +93,26 @@ describe('in-process lock invariants', () => {
     });
     expect(observedSize).toBe(0);
     expect(existsSync(lock)).toBe(false);
+  });
+
+  it('a lock file nobody is releasing: a decidable lock_timeout naming the path, and how to clear it', async () => {
+    const paths = tempPaths();
+    const lock = ledgerLockPath(paths);
+    // A 0-byte file is the whole of what a holder that died leaves behind (an older protocol kept
+    // one resident, and this reading is what made it wait 10 seconds before saying so).
+    mkdirSync(join(paths.pfDir, 'meta'), { recursive: true });
+    writeFileSync(lock, '');
+    const failure: unknown = await withLedgerLock(paths, async () => 'never reached', { timeoutMs: 0 }).catch(
+      (error: unknown) => error,
+    );
+    expect(isPfError(failure, 'lock_timeout')).toBe(true);
+    const error = failure as PfError;
+    // The code is the contract; the sentence still has to let a person act on their own.
+    expect(error.path).toBe(lock);
+    expect(error.message).toContain(lock);
+    expect(error.message).toContain('delete that path');
+    // Nothing is swept for the caller: clearing a lock file stays a person's call.
+    expect(existsSync(lock)).toBe(true);
   });
 
   it('re-entrant within one process: nested holds do not stall, and only the outermost frame writes to disk', async () => {

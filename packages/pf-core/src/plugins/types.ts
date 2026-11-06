@@ -133,12 +133,6 @@ export interface PluginFolder {
   readonly problems: readonly string[];
 }
 
-/** The name in the declaration and, when the declaration is readable, its summary — what doctor lists. */
-export interface PluginListing {
-  readonly name: string;
-  readonly summary: string;
-}
-
 /** The insertion wish a plugin hands back: one node declared (title, tags, body builder) together with its own words (why, a one-line account, its own data). */
 export interface PluginOffer {
   /** The node title: a non-empty string. */

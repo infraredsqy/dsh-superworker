@@ -4,21 +4,26 @@
  *
  * The pool lives with the rest of this project's records, at `<project root>/.pf/issues/issues.json`:
  * clearing `temp/` does not touch it, and it travels with the project wherever the project goes.
- * Record io has its one foundation on the core side (`src/jsonio.ts`), and that foundation serves
- * the core's four records and never goes into the package exports; a plugin is given no way to read
- * the records a second time (the host hands in a context holding `root` and the snapshots it has
- * already read), so this layer carries the pool's reads and writes itself — the same byte-level rules
- * as core (two-space indent, non-ASCII as it is, deeply sorted keys, LF on every platform, no
- * trailing newline), and a write is atomic.
+ * **The pool belongs to this plugin, and whoever owns a record writes it.** The core's foundation
+ * (`src/jsonio.ts`) serves the core's own records and never goes into the package exports, so this
+ * layer carries the pool's reads and writes itself, under the same byte rules as core (two-space
+ * indent, non-ASCII as it is, deeply sorted keys, LF on every platform, no trailing newline), and a
+ * write is atomic. That sameness is not maintained by editing both sides together: a contract test
+ * (`tests/issue-pool-bytes.test.ts`) runs one batch of values through both implementations and
+ * compares the encoded bytes, so a change to either side's indent / key order / line ending /
+ * number spelling turns it red on the spot.
  *
  * The runtime hands in two facts:
  * - Locking: a write lands atomically (a temp file in the target's own directory is renamed over
  *   it), so a reader never sees half a record; and every "read → change → write" of one command
- *   runs exclusively against the other commands of **this process** through `withPoolLock` below,
- *   so a write that took its snapshot before another one landed cannot put that one back out of the
- *   pool. Nothing here locks across processes: core's own lock is a module-level exclusive-create
- *   mutex that is not shared with a plugin, plugin commands run inside the host's process, and two
- *   processes writing the same pool at once are still last-writer-wins.
+ *   runs exclusively against every other one — inside this process through the promise chain
+ *   below, **across processes through this plugin's own lock file**
+ *   (`<root>/.pf/meta/issues.lock`). The protocol is core's ledger lock's: taking it is creating
+ *   an empty file exclusively, releasing it is deleting that file, a contender retries every
+ *   50 ms and gives up after 10 s with a decidable error naming the path. The path is not the
+ *   core's `ledger.lock` — the two records get two locks, and no operation holds both. A holder
+ *   that dies mid-way leaves the file behind and it is not swept: cleaning it up has a race of its
+ *   own, the same reason core gives.
  * - The base of a relative path: always resolved from the project root `root` the host hands in
  *   (a plugin is given no working directory).
  */
@@ -41,6 +46,22 @@ import { basename, dirname, join, resolve } from 'node:path';
 export function poolPath(root) {
   return join(root, '.pf', 'issues', 'issues.json');
 }
+
+/**
+ * Where the pool's cross-process lock lands: `<root>/.pf/meta/issues.lock`.
+ *
+ * Deliberately not the core's `ledger.lock`: the two records get two locks, so one protocol can
+ * never stand in for the other, and no operation ends up holding both.
+ */
+export function poolLockPath(root) {
+  return join(root, '.pf', 'meta', 'issues.lock');
+}
+
+/** The limit for waiting on the pool lock: core's ledger lock reads the same limit (writing one record takes milliseconds; the limit only guards against a deadlock). */
+export const POOL_LOCK_TIMEOUT_MS = 10_000;
+
+/** The probe interval of a contender: core's ledger lock probes on the same cadence. */
+export const POOL_LOCK_POLL_MS = 50;
 
 /** Where the record directory lands: `<root>/.pf` (the path `init` looks for). */
 export function ledgerDir(root) {
@@ -183,13 +204,13 @@ export async function writePool(root, data) {
   await atomicWriteBytes(poolPath(root), jsonBytes(data));
 }
 
-// ═══ One read-modify-write at a time, inside this process ════════════════════
+// ═══ One read-modify-write at a time, in this process and across processes ═══
 
 /** The tail of the queue per pool path: the body queued behind it starts once this settles. */
 const poolTails = new Map();
 
 /**
- * Run one pool "read → change → write" exclusively inside this process.
+ * Run one pool "read → change → write" exclusively.
  *
  * One process runs commands side by side (a session's `issue add` while a close-time pass reads
  * the pool, a batch import beside a mark), and two bodies that both took their snapshot before
@@ -201,19 +222,90 @@ const poolTails = new Map();
  *
  * The queue is keyed by the pool path, so two projects do not wait for each other, and it is
  * dropped as soon as it drains (an idle pool leaves nothing behind). A body that throws releases
- * the queue just the same, and only the atomic write's own bytes ever reach the disk: this orders
- * the writers of one process, it does not lock the file across processes.
+ * the queue just the same. Inside this process's turn, the body holds the pool's own lock file
+ * (`poolLockPath`) from the snapshot through the write, so a second **process** writing the same
+ * pool waits instead of overwriting — see `acquirePoolLock`.
  */
 export function withPoolLock(root, body) {
   const key = poolPath(root);
   const previous = poolTails.get(key) ?? Promise.resolve();
-  const run = previous.then(body, body);
+  const run = previous.then(
+    () => inPoolLockFile(root, body),
+    () => inPoolLockFile(root, body),
+  );
   const settled = run.then(() => undefined, () => undefined);
   poolTails.set(key, settled);
   void settled.then(() => {
     if (poolTails.get(key) === settled) poolTails.delete(key);
   });
   return run;
+}
+
+/**
+ * The decidable "the pool lock stayed busy" error: `code` is `lock_timeout` (the same code core
+ * uses for the same fact), `path` is the file a person can delete once nobody is writing.
+ */
+export class PoolLockError extends Error {
+  constructor(path, timeoutMs) {
+    super(
+      `the issue pool lock ${path} stayed busy for ${timeoutMs} ms; another process is writing ` +
+        'the pool. Confirm nobody is writing, then delete that path. Nothing was changed.',
+    );
+    this.name = 'PoolLockError';
+    this.code = 'lock_timeout';
+    this.path = path;
+  }
+}
+
+/** Hold the pool's lock file through one body; a body that throws releases it just the same. */
+async function inPoolLockFile(root, body) {
+  const lockPath = poolLockPath(root);
+  await acquirePoolLock(lockPath);
+  try {
+    return await body();
+  } finally {
+    await releasePoolLock(lockPath);
+  }
+}
+
+/**
+ * Take the pool lock: exclusive creation of an empty file, the same protocol as core's ledger lock.
+ * Waiting has the same limit and cadence; on timeout nothing was changed and the error names the
+ * path. A file left behind by a holder that died is waited out, not swept — sweeping it races with
+ * a live holder the same way it does for core, so it stays a person's call.
+ */
+async function acquirePoolLock(lockPath) {
+  mkdirSync(dirname(lockPath), { recursive: true });
+  const deadline = Date.now() + POOL_LOCK_TIMEOUT_MS;
+  for (;;) {
+    let handle;
+    try {
+      handle = openSync(lockPath, 'wx');
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      if (Date.now() >= deadline) throw new PoolLockError(lockPath, POOL_LOCK_TIMEOUT_MS);
+      await sleep(POOL_LOCK_POLL_MS);
+      continue;
+    }
+    closeSync(handle);
+    return;
+  }
+}
+
+/** Release the pool lock: delete the file, backing off on a brief standoff (a reader, Windows). */
+async function releasePoolLock(lockPath) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      unlinkSync(lockPath);
+      return;
+    } catch (error) {
+      const code = error?.code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return;
+      const busy = code === 'EPERM' || code === 'EACCES' || code === 'EBUSY';
+      if (!busy || attempt >= 4) throw error;
+      await sleep(50 * attempt);
+    }
+  }
 }
 
 async function atomicWriteBytes(path, text) {

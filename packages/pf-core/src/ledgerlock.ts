@@ -100,7 +100,9 @@ async function acquire(path: string, timeoutMs: number): Promise<void> {
           'lock_timeout',
           path,
           `the ledger lock ${path} stayed busy for ${timeoutMs} ms; another process is ` +
-            'mid-write. Nothing was changed.',
+            'mid-write. If you are sure nobody is writing right now, delete that path and run ' +
+            'again: an empty lock file is the only thing a holder that died leaves behind. ' +
+            'Nothing was changed.',
           { cause: error },
         );
       }
