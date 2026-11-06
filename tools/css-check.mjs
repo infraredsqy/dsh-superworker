@@ -16,7 +16,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { cssBlocks, stripComments } from './lib/cssrules.mjs'
-import { SHEETS } from './lib/sheets.mjs'
+import { LAYER_CLASSES, SHEETS } from './lib/sheets.mjs'
 
 const argv = process.argv.slice(2)
 const argOf = (flag) => {
@@ -37,26 +37,29 @@ const THEME_SHEET = join(ROOT, 'tools', 'theme.css')
 
 /* ------------------------------------------------------------------ parsing */
 
-/* The layer classes the shipped sheets lead their selectors with — one per cell. */
-const LAYER_CLASSES = ['pf-page', 'pf-wires', 'pf-issue']
+/* The layer classes the shipped sheets lead their selectors with — one per cell, read off the
+ * shipping manifest (tools/lib/sheets.mjs) rather than kept as a second copy here: a sheet added to
+ * the table is a layer class here too, and a class no sheet leads with is not one. The names go into
+ * a regular expression below, so the leading dot comes off. */
+const LAYER_NAMES = LAYER_CLASSES.map((one) => one.replace(/^\./u, ''))
 
 /**
  * Fold a shipped selector back into the page shape this checker asks its questions in.
  *
  * The sheets are stored in the shape they ship in, so a selector leads with its cell's layer class
- * (`.pf-page .pf-cell`, `.is-embed.pf-wires .pf-bar`, and plain `.pf-page` for the page
+ * (`.pf-page .pf-cell`, `.is-embed.pf-issue .pf-band`, and plain `.pf-page` for the page
  * root). Every expectation downstream — the mark table's `.pf-cell` / `.is-P0`, the per-name
  * rules, the palette map's `:root` / `body` — is written in the sheets' page shape, and those
  * expectations are the check's whole point, so the shape is restored once here rather than rewritten
- * in a dozen places. Only the first class comes off: `.pf-wires .pf-page` is a rule whose page
- * prefix is real and whose subject is a `.pf-page` inside it.
+ * in a dozen places. Only the first class comes off: `.is-embed.pf-issue .pf-page` is a rule whose
+ * layer prefix is real and whose subject is a `.pf-page` inside it.
  *
  * A selector that was nothing but the layer class becomes `body` — the page root the panel's own
  * declarations were written on. (`:root` and `body` collapse into one layer class on the way in, so
  * the checker reads them all as `body`, which is where the theme's aliases are declared too.)
  */
 function bareSelector(selector) {
-  const one = new RegExp(`\\.(?:${LAYER_CLASSES.join('|')})(?![\\w-])`, 'u')
+  const one = new RegExp(`\\.(?:${LAYER_NAMES.join('|')})(?![\\w-])`, 'u')
   if (!one.test(selector)) return selector
   const tidy = selector.replace(one, '').trim().replace(/^[>+~]\s*/u, '').replace(/\s+/gu, ' ')
   if (tidy.length === 0) return 'body'

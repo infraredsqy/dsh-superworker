@@ -21,3 +21,12 @@ export const SHEETS = [
   { sheet: 'register.css', root: '.pf-issue' },
   { sheet: 'settings.css', root: '.pf-page' },
 ]
+
+/**
+ * The layer classes those sheets lead their selectors with — the `root` column above, deduped, in
+ * the same order. Both readers of this table take the set from here: `build-client.mjs` hands it to
+ * its scoping check, `css-check.mjs` folds shipped selectors back to the page shape with it. A class
+ * no sheet leads with is not a layer, so it is not a layer class; adding a sheet is the one move that
+ * widens it.
+ */
+export const LAYER_CLASSES = [...new Set(SHEETS.map(({ root }) => root))]

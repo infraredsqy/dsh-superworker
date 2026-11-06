@@ -7,8 +7,17 @@
 
 ## 交付形态：预构建产物随包走
 
-用户端不跑构建。四份产物在本仓构建一次，构建链的正本就是 `package.json` 的 `prepack`（引擎排头，types 与
-两份 bundle 跟后）——本页不抄第二份；`npm pack` 与 `npm publish` 会自己把它跑一遍。
+用户端不跑构建。产物在本仓构建一次，链只有一条、正本放在一处：`package.json` 的 `build:products`
+（引擎产物 → 类型 → 宿主半身 → 浏览器半身，四步与它们的顺序都写在那条脚本里，这页不复述）。装好依赖
+之后跑它一次就够：
+
+```sh
+pnpm install --frozen-lockfile
+npm run build:products
+```
+
+`prepack` 就是这一条，`npm pack` 与 `npm publish` 会自己跑一遍；`npm test` 也先跑同一条，再把两套
+单测接在后面。四份产物各自的落点见下面 `files` 那一段。
 
 `package.json` 的 `files` 只收这几样：两个运行时入口、`lib/types/**/*.d.ts`、`locale/*.json`、
 `cordis.patch.yml`、`packages/pf-core/dist/**/*`（引擎的产物：并入宿主半身的那份代码，加上 git 合并驱动要跑的入口），
@@ -104,7 +113,7 @@ gh run watch
 npm view dsh-pathfinder version --registry=https://registry.npmjs.org
 ```
 
-`prepack` 也在 CI 上现跑一遍（构建链的正本见 `package.json`），所以装出去的就是这份预构建产物。
+`prepack` 也在 CI 上现跑一遍 `build:products`，所以装出去的就是这份预构建产物。
 `tools/testbed/` 那条要一个真实 DSH 实例，留在本机手动跑。
 
 新包名第一次发布会先落一个**公开的占位版本** `0.0.0-stage`：它一直留在 `versions` 列表里，真版本随后就公开；
@@ -241,8 +250,9 @@ dsh plugin --profile <名> remove dsh-pathfinder
 
 **验的是打包出来的那一份。** `npm pack --pack-destination .tmp/pack` 打出 `.tgz`，再用
 `tools/testbed/testbed.ps1 up -Plugin <.tgz>` 装它：`prepack` 会把四份产物现构建一次，装到的才是发出去的
-内容。隔离实例不带 `-Plugin` 时装的是本仓目录（pnpm 的 `link:`），读到的是盘上现成的那两份——而 `npm test`
-只重建浏览器半身，宿主半身那份可能是旧的。
+内容。隔离实例不带 `-Plugin` 时装的是本仓目录（pnpm 的 `link:`），读到的是盘上现成的那两份——而
+`npm test` 走的就是同一条 `build:products`，四份产物一起重建，所以刚跑过它、且没改过源码时，盘上那两份
+与包里的同源。
 
 下面这些只有手动看。合成的隔离工作区里没有 `.pf`，正好是「没有记录」那一态；要看真记录下的读数，就把这一
 行装进你自己那个 profile，在一个有 `.pf` 的工作区里开面板——本仓自己就有一份：

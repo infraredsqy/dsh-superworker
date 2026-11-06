@@ -6,20 +6,20 @@
 //
 // - the plugin's own suite: node's test runner over `tests/`, the host half, the model layer and
 //   the built browser half;
-// - the engine's suite: vitest over `packages/pf-core/tests/`, the in-repo engine package's own
-//   suite, with its own test runner and its own dev dependencies.
+// - the engine's suite: the in-repo engine package's own `test` script, run through pnpm from the
+//   workspace root, with its own test runner, its own dev dependencies and its own start-up shape.
 //
 // It prints one line per suite plus a total — test files, cases and the wall seconds each took —
 // so a single command answers "both green, how much of each, how long". A failing suite's raw
 // output is kept in `.tmp/test-all/<suite>.log` (gitignored; the path is printed) and its tail is
 // echoed here.
 //
-// `npm test` builds both products first (`tools/build-client.mjs` for the browser half,
-// `pnpm --filter pf-core build` for the engine's own product) because the packaging case in
-// `tests/` drives them; run this file alone and that case skips itself with the reason.
+// `npm test` builds the products first (`npm run build:products` — the one place the chain is
+// written; this file does not restate it) because the packaging case in `tests/` drives them; run
+// this file alone and that case skips itself with the reason.
 import { spawn } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -44,12 +44,17 @@ function testFilesUnder(dir) {
  * One child suite: stdout and stderr both land in `logPath` (no pipes are held), and the promise
  * settles with the exit code and the wall seconds. A child that cannot even start is a failure of
  * its own kind — the message goes into the log so the tail printed below carries it.
+ *
+ * With `shell`, `command` is a whole command line and `args` stays empty: that form is for runners
+ * reached by name rather than by path (pnpm is a program on PATH, and on Windows its entry is a
+ * `.cmd` shim node will not spawn directly). Nothing is passed separately there, so nothing has to
+ * be escaped.
  */
-function runChild(command, args, cwd, logPath) {
+function runChild(command, args, cwd, logPath, shell = false) {
   return new Promise((resolve) => {
     const fd = openSync(logPath, 'w')
     const started = process.hrtime.bigint()
-    const child = spawn(command, args, { cwd, stdio: ['ignore', fd, fd], windowsHide: true })
+    const child = spawn(command, args, { cwd, stdio: ['ignore', fd, fd], windowsHide: true, shell })
     let spawnError
     child.on('error', (error) => {
       spawnError = error
@@ -63,13 +68,31 @@ function runChild(command, args, cwd, logPath) {
   })
 }
 
-/** The vitest the engine package installed, as an entry node can run directly (bin of its manifest). */
-function engineVitestEntry() {
-  const manifestPath = join(engineDir, 'node_modules', 'vitest', 'package.json')
-  if (!existsSync(manifestPath)) return undefined
-  const bin = JSON.parse(readFileSync(manifestPath, 'utf8')).bin?.vitest
-  if (typeof bin !== 'string') return undefined
-  return join(dirname(manifestPath), bin)
+/**
+ * How the engine package's suite starts, read off that package's own manifest: the `test` script it
+ * declares, which is the same entry `pnpm --filter pf-core test` runs. Building a vitest argv here
+ * instead would put a second copy of the start-up in this file — a different runner, a config flag
+ * or a worker count changes in the package and this file would go on running the old shape.
+ *
+ * Two refusals are read off the manifest and the disk rather than guessed from a failed spawn: a
+ * package that declares no `test` script, and one whose `vitest` devDependency is not installed.
+ */
+function engineTestScript() {
+  const manifestPath = join(engineDir, 'package.json')
+  if (!existsSync(manifestPath)) return { reason: `packages/pf-core/package.json is missing: ${manifestPath}` }
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const script = manifest.scripts?.test
+  if (typeof script !== 'string' || script.trim().length === 0) {
+    return { reason: 'packages/pf-core/package.json declares no test script: nothing to run' }
+  }
+  const declared = typeof manifest.devDependencies?.vitest === 'string'
+  const installed = existsSync(join(engineDir, 'node_modules', 'vitest'))
+  if (!declared || !installed) {
+    return {
+      reason: `packages/pf-core's vitest is devDependency declared=${String(declared)} installed=${String(installed)}: run pnpm install first.`,
+    }
+  }
+  return { script }
 }
 
 /** One number out of the runner's summary, whichever of the two spellings it printed. */
@@ -115,37 +138,41 @@ report('plugin suite', 'node --test tests/', {
 })
 if (pluginRun.code !== 0) failures.push(['plugin suite', pluginLog])
 
-// The engine suite: the package's own vitest, run from the package so its config and its
-// node_modules answer; the JSON reporter writes the case counts beside the run, and the default
-// reporter writes the human-readable one — the failing case and its reason — into the log echoed
-// below, so a red engine suite names what broke here rather than only in the JSON file.
+// The engine suite: the package's own `test` script, run through pnpm from the workspace root so
+// its config and its node_modules answer. The JSON reporter writes the case counts beside the run,
+// and the default reporter writes the human-readable one — the failing case and its reason — into
+// the log echoed below, so a red engine suite names what broke here rather than only in the JSON
+// file. The JSON reporter resolves its output path against the package's own working directory
+// (pnpm runs a package's script from that package's directory), so the path is handed over relative
+// to `packages/pf-core`.
 const engineLog = join(logDir, 'engine.log')
 const engineJson = join(logDir, 'engine.json')
-const vitest = engineVitestEntry()
+const engineJsonArg = relative(engineDir, engineJson).split(sep).join('/')
+const engineScript = engineTestScript()
 let engineReadings = { files: 0, cases: 0 }
 let engineCode = 1
-if (vitest === undefined) {
-  writeFileSync(engineLog, `packages/pf-core/node_modules/vitest is missing: run pnpm install first.\n`)
+if (engineScript.reason !== undefined) {
+  writeFileSync(engineLog, `${engineScript.reason}\n`)
 } else {
-  const engineRun = await runChild(
-    process.execPath,
+  const engineCommand = [
+    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    '--filter', 'pf-core', 'test',
     // Two reporters: `default` for the failure detail, `json` for the counts; `.json=` scopes the
     // output file to the JSON one alone, so the default reporter keeps printing to stdout.
-    [vitest, 'run', '--reporter=default', '--reporter=json', `--outputFile.json=${engineJson}`],
-    engineDir,
-    engineLog,
-  )
+    '--reporter=default', '--reporter=json', `--outputFile.json=${engineJsonArg}`,
+  ].join(' ')
+  const engineRun = await runChild(engineCommand, [], root, engineLog, true)
   engineCode = engineRun.code
   const json = existsSync(engineJson) ? JSON.parse(readFileSync(engineJson, 'utf8')) : undefined
   engineReadings = {
     files: Array.isArray(json?.testResults) ? json.testResults.length : 0,
     cases: typeof json?.numTotalTests === 'number' ? json.numTotalTests : 0,
   }
-  report('engine suite', 'vitest run (packages/pf-core/', { ...engineReadings, seconds: engineRun.seconds })
+  report('engine suite', 'pnpm --filter pf-core test', { ...engineReadings, seconds: engineRun.seconds })
   if (engineRun.code !== 0) failures.push(['engine suite', engineLog])
 }
-if (vitest === undefined) {
-  report('engine suite', 'vitest run (packages/pf-core/', { ...engineReadings, seconds: 0 })
+if (engineScript.reason !== undefined) {
+  report('engine suite', 'pnpm --filter pf-core test', { ...engineReadings, seconds: 0 })
   failures.push(['engine suite', engineLog])
 }
 

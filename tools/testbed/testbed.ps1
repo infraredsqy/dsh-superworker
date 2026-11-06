@@ -6,7 +6,12 @@
 #   pwsh -File tools/testbed/testbed.ps1 -Action down    stop only the PID this script recorded (verify the command line first, never kill by process name)
 #
 # Everything it creates lives under -Root (default %LOCALAPPDATA%\dsh-pathfinder-testbed): not in the repo, never touches the main home.
-# Synthetic records are authored here; this script only describes what it does and what its limits are.
+#
+# This file is the dispatch and the report, nothing else: which action runs, the reading assembly per criterion
+# (Add-Report / Add-Criterion) and the two files a check leaves behind. Everything an action calls lives in the
+# three parts the base loads — testbed-mainhome.ps1 (criterion 4's counter-evidence), testbed-fixture.ps1 (the
+# synthetic records), testbed-instance.ps1 (tarball, profile, install, start/stop, HTTP) — over
+# testbed-lib.ps1, which holds the path and file helpers those parts share.
 #
 # Parameters: -Workspace renames the workspace, -SessionCount adds a second session, -EmptyWorkspace adds a session-less workspace,
 # -Plugin swaps the plugin installed into the profile (default is this repo; relative paths are resolved against the caller's current
@@ -48,250 +53,6 @@ $Plugin = [System.IO.Path]::GetFullPath($Plugin)
 $DshCmd = Resolve-ApplicationExecutable -Name $DshCmd
 $NodeExe = Resolve-ApplicationExecutable -Name $NodeExe
 
-# Keep only summaries in the readings file: per-file lists are too long; raw readings live in check-report.txt and logs\raw.
-function Get-FingerprintSummary {
-  param([Parameter(Mandatory = $true)]$Fingerprint)
-  return [ordered]@{
-    path = $Fingerprint.path
-    exists = $Fingerprint.exists
-    kind = $Fingerprint.kind
-    fileCount = $Fingerprint.fileCount
-    totalBytes = $Fingerprint.totalBytes
-    contentDigest = $Fingerprint.contentDigest
-    entryDigest = $Fingerprint.entryDigest
-  }
-}
-
-# The three counter-evidence areas for completion criterion 4: the main home's session store, workspace records, credentials.
-function Get-MainHomeAreas {
-  param([Parameter(Mandatory = $true)][string]$MainHome)
-  return @(
-    [ordered]@{ name = 'sessions'; path = (Join-Path $MainHome 'sessions') },
-    [ordered]@{ name = 'workspace-records'; path = (Join-Path $MainHome 'storages\workspace.json') },
-    [ordered]@{ name = 'credentials'; path = (Join-Path $MainHome '.credentials.yaml') }
-  )
-}
-
-function Get-MainHomeFingerprint {
-  param([Parameter(Mandatory = $true)][string]$MainHome)
-  $areas = [ordered]@{}
-  foreach ($area in (Get-MainHomeAreas -MainHome $MainHome)) {
-    $areas[$area.name] = Get-AreaFingerprint -Path $area.path
-  }
-  return $areas
-}
-
-# Lightweight scan for the witness set: takes only "relative path -> length|mtime", never reads
-# content (same shape as the full fingerprint's readings; the criteria read the full one).
-function Get-MainHomeMetaScan {
-  param([Parameter(Mandatory = $true)][string]$MainHome)
-  $areas = [ordered]@{}
-  foreach ($area in (Get-MainHomeAreas -MainHome $MainHome)) {
-    $areas[$area.name] = Get-AreaMetaScan -Path $area.path
-  }
-  return $areas
-}
-
-# Print "one command that prints the session list". Only the pwsh form is printed, labeled as such;
-# the command is immediately followed by "what counts as passing".
-function Get-TestbedListCommandLines {
-  param(
-    [Parameter(Mandatory = $true)][int]$Port,
-    [Parameter(Mandatory = $true)][string]$Token,
-    [AllowEmptyCollection()][string[]]$SessionIds = @()
-  )
-  $lines = New-Object System.Collections.Generic.List[string]
-  $lines.Add('one command that prints the session list — pwsh only, this entry runs under pwsh; paste this single line as-is:')
-  $lines.Add((Format-TestbedListCommand -Port $Port -Token $Token))
-  $lines.Add('it passed when the reply has "ok":true and its items contain: ' + (@($SessionIds) -join ', ') + ' — read that reply, and leave the shell exit code out of it: -f makes curl itself exit 22 on a 4xx/5xx, while the shell that runs this one line still exits 0')
-  return @($lines.ToArray())
-}
-
-# Guard before deleting the testbed root: never a drive root, never inside the project tree, never overlapping the main home in either direction.
-function Assert-SafeRoot {
-  param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$MainHome)
-  $full = [System.IO.Path]::GetFullPath($Root).TrimEnd('\')
-  $driveRoot = [System.IO.Path]::GetPathRoot($full).TrimEnd('\')
-  if ($full.Length -eq 0 -or $full -eq $driveRoot) { throw "refusing a drive root as the testbed root: '$full'" }
-  if (($full.Split('\')).Count -lt 3) { throw "refusing a shallow testbed root: '$full'" }
-  $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')).TrimEnd('\')
-  if ($full -eq $projectRoot -or $full.StartsWith($projectRoot + '\')) {
-    throw "refusing a testbed root inside the project tree: '$full'"
-  }
-  $main = [System.IO.Path]::GetFullPath($MainHome).TrimEnd('\')
-  if ($full -eq $main -or $full.StartsWith($main + '\') -or $main.StartsWith($full + '\')) {
-    throw "refusing a testbed root that overlaps the main home: '$full'"
-  }
-  return $full
-}
-
-# Delete wholesale and rebuild: idempotent in place; a home left over from the previous round is not treated as clean.
-function Invoke-TestbedProvision {
-  param(
-    [Parameter(Mandatory = $true)][string]$Root,
-    [Parameter(Mandatory = $true)][string]$Profile,
-    [Parameter(Mandatory = $true)][string]$Workspace,
-    [Parameter(Mandatory = $true)][int]$SessionCount,
-    [string]$EmptyWorkspace = '',
-    [Parameter(Mandatory = $true)][string]$DshCmd,
-    [Parameter(Mandatory = $true)][string]$NodeExe
-  )
-  # Stop the still-running instance before rebuilding: it holds its own stdout/stderr files open, and they cannot be deleted otherwise.
-  $null = Stop-TestbedInstance -Root $Root -Profile $Profile
-  if (Test-Path -LiteralPath $Root) { Remove-Item -LiteralPath $Root -Recurse -Force }
-  New-Item -ItemType Directory -Force -Path (Join-Path $Root 'logs') | Out-Null
-  $testbedHome = Join-Path $Root 'home'
-  New-Item -ItemType Directory -Force -Path $testbedHome | Out-Null
-
-  $profileDir = New-TestbedProfile -TestbedHome $testbedHome -Profile $Profile -DshCmd $DshCmd
-  $manifest = New-TestbedFixture -Root $Root -Profile $Profile -WorkspaceName $Workspace `
-    -SessionCount $SessionCount -EmptyWorkspaceName $EmptyWorkspace -NodeExe $NodeExe
-
-  # Validate the header first, then the manifest: an invalid header makes that session vanish silently, so it must be caught here.
-  foreach ($session in $manifest.sessions) {
-    $problems = Test-TestbedSessionFixture -Session $session
-    if ($problems.Count -gt 0) { throw ("synthetic session header check failed: " + ($problems -join '; ')) }
-  }
-
-  $lines = New-Object System.Collections.Generic.List[string]
-  $lines.Add("root=$Root")
-  $lines.Add("home=$testbedHome")
-  $lines.Add("profileDir=$profileDir")
-  foreach ($ws in $manifest.workspaces) {
-    $lines.Add("workspace=$($ws.workspaceId) name=$($ws.name) sessions=$(@($ws.sessionIds).Count) path=$($ws.path)")
-  }
-  foreach ($session in $manifest.sessions) {
-    $lines.Add("session=$($session.sessionId) log=$($session.logPath)")
-  }
-  Write-TextFile -Path (Join-Path $Root 'logs\provision-summary.txt') -Text (($lines -join "`n") + "`n")
-  return $manifest
-}
-
-# Readings from one instance cycle: completion criteria 1, 2 and 5 all draw from here.
-function Invoke-TestbedRun {
-  param(
-    [Parameter(Mandatory = $true)][string]$Root,
-    [Parameter(Mandatory = $true)]$Manifest,
-    [Parameter(Mandatory = $true)]$Ready
-  )
-  $rawDir = Join-Path $Root 'logs\raw'
-  if (-not (Test-Path -LiteralPath $rawDir)) { New-Item -ItemType Directory -Force -Path $rawDir | Out-Null }
-  $browser = Connect-TestbedBrowser -Url $Ready.url
-  $list = Invoke-TestbedApi -Port $Ready.port -WebSession $browser -Endpoint 'session/list' `
-    -Arguments ([ordered]@{ _request = [ordered]@{} }) `
-    -EvidencePath (Join-Path $rawDir 'session-list')
-
-  $rows = New-Object System.Collections.Generic.List[object]
-  foreach ($session in $Manifest.sessions) {
-    $row = @($list.items | Where-Object { [string]$_.sessionId -eq [string]$session.sessionId })
-    $page = Invoke-TestbedApi -Port $Ready.port -WebSession $browser -Endpoint 'session/page' -Arguments ([ordered]@{
-        request = [ordered]@{
-          address = [ordered]@{ kind = 'session'; sessionId = [string]$session.sessionId }
-          throughSeq = -1
-        }
-      }) -EvidencePath (Join-Path $rawDir ('session-page-' + $session.sessionId))
-    $projections = Invoke-TestbedApi -Port $Ready.port -WebSession $browser -Endpoint 'session/projections' `
-      -Arguments ([ordered]@{ request = [ordered]@{ sessionId = [string]$session.sessionId } }) `
-      -EvidencePath (Join-Path $rawDir ('session-projections-' + $session.sessionId))
-    $workspace = Invoke-TestbedApi -Port $Ready.port -WebSession $browser -Endpoint 'workspace/create' `
-      -Arguments ([ordered]@{ request = [ordered]@{ path = [string]$session.workspacePath } }) `
-      -EvidencePath (Join-Path $rawDir ('workspace-create-' + $session.sessionId))
-
-    $listed = $row.Count -gt 0
-    $accounted = @($workspace.workspace.sessionIds) -contains [string]$session.sessionId
-    $cwdMatches = ($listed -and ([string]$row[0].cwd -eq [string]$session.workspacePath))
-    $rows.Add([ordered]@{
-      sessionId = $session.sessionId
-      listed = $listed
-      listRow = $(if ($listed) { $row[0] } else { $null })
-      listItemCount = @($list.items).Count
-      listAllIds = @($list.items | ForEach-Object { [string]$_.sessionId })
-      pageRecordCount = @($page.records).Count
-      pageHasMore = $page.hasMore
-      pageOpened = ($null -ne $page)
-      projectionsAsOfSeq = $projections.asOfSeq
-      projectionsOpened = ($null -ne $projections)
-      workspaceCreatedByThisCall = [bool]$workspace.created
-      workspaceId = [string]$workspace.workspace.workspaceId
-      workspacePath = [string]$workspace.workspace.path
-      workspaceSessionIds = @($workspace.workspace.sessionIds)
-      accounted = $accounted
-      cwdMatches = $cwdMatches
-    })
-  }
-
-  # The optional empty workspace is read too: it should resolve, with an empty member list.
-  $emptyReadings = New-Object System.Collections.Generic.List[object]
-  foreach ($ws in $Manifest.workspaces) {
-    if (-not $ws.empty) { continue }
-    $resolved = Invoke-TestbedApi -Port $Ready.port -WebSession $browser -Endpoint 'workspace/create' `
-      -Arguments ([ordered]@{ request = [ordered]@{ path = [string]$ws.path } }) `
-      -EvidencePath (Join-Path $rawDir ('workspace-create-' + $ws.workspaceId))
-    $emptyReadings.Add([ordered]@{
-      name = $ws.name
-      workspaceId = [string]$resolved.workspace.workspaceId
-      createdByThisCall = [bool]$resolved.created
-      sessionIds = @($resolved.workspace.sessionIds)
-    })
-  }
-
-  return [ordered]@{
-    url = $Ready.url
-    port = $Ready.port
-    token = $Ready.token
-    itemCount = @($list.items).Count
-    sessions = @($rows.ToArray())
-    emptyWorkspaces = @($emptyReadings.ToArray())
-  }
-}
-
-function Format-RunReadings {
-  param([Parameter(Mandatory = $true)]$Run)
-  $lines = New-Object System.Collections.Generic.List[string]
-  $lines.Add("url=http://127.0.0.1:$($Run.port)/?token=<redacted>")
-  $lines.Add("session.list items=$($Run.itemCount) ids=$((@($Run.sessions | ForEach-Object { $_.listAllIds }) | Select-Object -First 1) -join ',')")
-  foreach ($row in $Run.sessions) {
-    $lines.Add("  session $($row.sessionId): listed=$($row.listed) cwdMatches=$($row.cwdMatches) blank=$($row.listRow.blank) running=$($row.listRow.running) agentAvailable=$($row.listRow.agentAvailable)")
-    $lines.Add("  session.page records=$($row.pageRecordCount) hasMore=$($row.pageHasMore) (ok result, no error)")
-    $lines.Add("  session.projections opened=$($row.projectionsOpened) asOfSeq=$($row.projectionsAsOfSeq) (ok result, no error)")
-    $lines.Add("  workspace $($row.workspaceId) path=$($row.workspacePath) createdByThisCall=$($row.workspaceCreatedByThisCall) sessionIds=$($row.workspaceSessionIds -join ',') accounted=$($row.accounted)")
-  }
-  foreach ($empty in $Run.emptyWorkspaces) {
-    $lines.Add("  empty workspace $($empty.workspaceId) createdByThisCall=$($empty.createdByThisCall) sessionIds=$(@($empty.sessionIds).Count)")
-  }
-  return @($lines.ToArray())
-}
-
-function Test-RunCriteria {
-  param([Parameter(Mandatory = $true)]$Run)
-  $ok = $true
-  foreach ($row in $Run.sessions) {
-    # Listed, grouped under the workspace (both readings of membership require it), and both open
-    # steps returned ok results. Zero records in the page is normal: the synthetic session is built
-    # to be listable and openable only — its body carries no message events.
-    if (-not $row.listed) { $ok = $false }
-    if (-not $row.cwdMatches) { $ok = $false }
-    if (-not $row.accounted) { $ok = $false }
-    if ($row.workspaceCreatedByThisCall) { $ok = $false }
-    if (-not $row.pageOpened) { $ok = $false }
-    if (-not $row.projectionsOpened) { $ok = $false }
-  }
-  return $ok
-}
-
-# Criterion 2's own verdict: the session is grouped under the workspace, not ungrouped. It reads
-# only its own two terms — the session accounted in workspace.sessionIds, and the session.list
-# row's cwd equal to the workspace path — so it can turn red on its own while criterion 1 stays
-# green; it is not a share of criterion 1's full predicate.
-function Test-GroupingCriteria {
-  param([Parameter(Mandatory = $true)]$Run)
-  $ok = $true
-  foreach ($row in $Run.sessions) {
-    if (-not $row.accounted) { $ok = $false }
-    if (-not $row.cwdMatches) { $ok = $false }
-  }
-  return $ok
-}
 
 # ---------------------------------------------------------------------------
 # Action: down
@@ -459,140 +220,39 @@ try {
   }
 
   # ---- Criterion 1: one command prints the session list; the synthetic session is in it; opening it raises no error ----
-  $lines1 = New-Object System.Collections.Generic.List[string]
-  foreach ($line in (Format-RunReadings -Run $run1)) { $lines1.Add($line) }
-  $lines1.Add('command used (one command, prints the session list):')
-  foreach ($line in (Get-TestbedListCommandLines -Port $run1.port -Token $run1.token -SessionIds @($run1.sessions | ForEach-Object { [string]$_.sessionId }))) { $lines1.Add($line) }
+  $criterion1 = Get-SessionListCriterion -Run $run1
   Add-Criterion -Id '1' -Title 'session list contains the synthetic session and opening it returns a page' `
-    -Passed (Test-RunCriteria -Run $run1) -Lines @($lines1.ToArray())
+    -Passed $criterion1.Passed -Lines @($criterion1.Lines)
 
   # ---- Criterion 2: the session is grouped under the synthetic workspace, not ungrouped ----
-  $lines2 = New-Object System.Collections.Generic.List[string]
-  foreach ($row in $run1.sessions) {
-    $lines2.Add("session $($row.sessionId) accounted by workspace.sessionIds: $($row.accounted)")
-    $lines2.Add("session.list row cwd == workspace path: $($row.cwdMatches) ($($row.listRow.cwd))")
-    $lines2.Add("workspace.create resolved an existing registration: createdByThisCall=$($row.workspaceCreatedByThisCall) workspaceId=$($row.workspaceId)")
-    $lines2.Add("grouping input is workspace.sessionIds; this session is in it, so it is grouped, not ungrouped")
-  }
+  $criterion2 = Get-GroupingCriterion -Run $run1
   Add-Criterion -Id '2' -Title 'the session is grouped under the synthetic workspace, not ungrouped' `
-    -Passed (Test-GroupingCriteria -Run $run1) -Lines @($lines2.ToArray())
+    -Passed $criterion2.Passed -Lines @($criterion2.Lines)
 
   # ---- Criterion 3: after restarting a second instance, the two criteria above still hold ----
-  $lines3 = New-Object System.Collections.Generic.List[string]
-  $lines3.Add("restarted instance: port=$($run2.port) pid=$instancePid2")
-  foreach ($line in (Format-RunReadings -Run $run2)) { $lines3.Add($line) }
+  $criterion3 = Get-RestartCriterion -Run $run2 -ProcessId $instancePid2
   Add-Criterion -Id '3' -Title 'after restarting the instance, criteria 1 and 2 still hold' `
-    -Passed (Test-RunCriteria -Run $run2) -Lines @($lines3.ToArray())
+    -Passed $criterion3.Passed -Lines @($criterion3.Lines)
 
-  # ---- Criterion 4: file counts and hashes in the main home's three areas identical before and after ----
-  # The verdict is delegated to the library's Get-MainHomeAreaVerdict: every difference needs
-  # positive ownership evidence (S1 structural / S2 witnessed, unioned); deletions, paths carrying
-  # a testbed-made name and any change in the two quiet areas fail outright. This section only
-  # prints, line by line, the readings the verdict actually reads.
-  # The four buckets (exempt / deletion / testbed-made name / unattributed) are mutually exclusive:
-  # each change lands in exactly one and prints one line, and an entry-point self-check line
-  # reconciles against the detail lines one by one.
-  $lines4 = New-Object System.Collections.Generic.List[string]
-  $pass4 = $true
-  # Leak signatures: names this testbed itself makes. Signatures are always fragments that can
-  # appear contiguously inside a relative path — the verdict matches against relative paths, where
-  # a whole absolute path (e.g. the workspace path) is never contiguous and such entries would not
-  # be recognized; the library's Get-TestbedLeakSignatures therefore computes them uniformly:
-  # synthetic session ids + synthetic workspace directory names + the testbed root's leaf name.
-  $leakSignatures = @(Get-TestbedLeakSignatures -Root $safeRoot -Sessions @($manifest.sessions) -Workspaces @($manifest.workspaces))
-  # S1's baseline: the project keys this fixture itself derives (computed from the synthetic
-  # workspace paths) + the encodings this profile can write. A plaintext .jsonl appearing under some
-  # other project key still fails S1 — this closes the "unknown name, let it pass" escape hatch.
-  $fixtureProjectKeys = New-Object System.Collections.Generic.List[string]
-  foreach ($ws in $manifest.workspaces) {
-    $key = Get-ProjectKey -Cwd ([string]$ws.path)
-    if (-not $fixtureProjectKeys.Contains($key)) { $fixtureProjectKeys.Add($key) }
-  }
-  $fixtureEncodings = @('.jsonl')
-  $lines4.Add("hard-fail signature set — these names are what this testbed makes (a changed path carrying one of them is never exempt; $($leakSignatures.Count) entries): $($leakSignatures -join ' | ')")
-  $lines4.Add("S1 baseline — project keys this fixture derives: $($fixtureProjectKeys -join ', ')")
-  $lines4.Add("S1 baseline — encodings this profile writes: $($fixtureEncodings -join ', ') (the profile pins compression: none, so this home only ever writes plaintext)")
-
-  foreach ($name in $pass2.Keys) {
-    $before = $pass2[$name]
-    $after = $fingerprintEnd[$name]
-    # The session store already has other live harness sessions appending to it (the witness-set
-    # paths); the workspace records and credentials areas have no other writer, so any touch there
-    # is a hard failure; in the session store, each changed path is judged by who owns it.
-    $quietArea = ($name -ne 'sessions')
-    $verdict = Get-MainHomeAreaVerdict -Name $name -Before $before -After $after -QuietArea $quietArea `
-      -LiveWitness @($liveWitness) -LeakSignatures $leakSignatures `
-      -FixtureProjectKeys @($fixtureProjectKeys.ToArray()) -FixtureEncodings $fixtureEncodings
-    $countIdentical = ($before.fileCount -eq $after.fileCount)
-    $wholeIdentical = $countIdentical -and ($before.contentDigest -eq $after.contentDigest)
-    $lines4.Add("$name : before files=$($before.fileCount) bytes=$($before.totalBytes) sha256=$($before.contentDigest.Substring(0,16))... | after files=$($after.fileCount) bytes=$($after.totalBytes) sha256=$($after.contentDigest.Substring(0,16))...")
-    $lines4.Add("$name : path=$($before.path) kind=$($before.kind)")
-    $areaNote = $(if ($quietArea) { 'quiet area: no other writer here, so any change fails' } else { 'shared area: every changed path needs its own positive ownership evidence' })
-    $lines4.Add("$name : raw whole-area reading (context only; $areaNote): fileCount identical=$countIdentical wholeAreaCountAndHashIdentical=$wholeIdentical")
-    $lines4.Add("$name : changed paths=$($verdict.changed.Count), prefixes kept (+ new / ~ rewritten / - deleted)")
-    $lines4.Add("$name : four buckets, mutually exclusive — every changed path is filed in exactly one, in this order: deletion -> a testbed-made name -> a quiet area -> exempt or unattributed | exempt=$($verdict.exempt.Count) (S1 structural=$($verdict.exemptStructural.Count), S2 witnessed live write=$($verdict.exemptWitnessed.Count)) | deletions (hard fail, never exempt)=$($verdict.deletions.Count) | carrying a testbed-made name (hard fail, never exempt)=$($verdict.leaks.Count) | unattributed (no positive evidence)=$($verdict.unattributed.Count)")
-    $lines4.Add("$name : bucket self-check: changed=$($verdict.changed.Count) filed=$($verdict.filedCount) distinct=$($verdict.filedDistinctCount) partitionConsistent=$($verdict.partitionConsistent) (each changed path shows up in exactly one detail line below)")
-    if (-not $verdict.partitionConsistent) { $pass4 = $false }
-    # Every detail line is printed: the counts cover the full set, so the details print the full set
-    # too (small scale this round); every basis for PASS/FAIL stays visible.
-    foreach ($item in $verdict.exempt) { $lines4.Add("$name : exempt -> $item") }
-    foreach ($item in $verdict.exempt) { $lines4.Add("$name :    why: $($verdict.exemptReasons[$item])") }
-    foreach ($item in $verdict.deletions) { $lines4.Add("$name : DELETION, hard fail (never exempt) -> $item") }
-    foreach ($item in $verdict.unattributed) { $lines4.Add("$name : UNATTRIBUTED change, no positive evidence -> $item") }
-    foreach ($item in $verdict.leaks) { $lines4.Add("$name : LEAK SIGNATURE, hard fail (never exempt) -> $item") }
-    # The subset comparison is a support reading: it carves the exempt paths out of both sides, and
-    # holds trivially when the three counts are 0, so it is no independent evidence (the verdict
-    # rests on the four counts above plus the partitionConsistent self-check — a mismatch between
-    # reading and detail lines turns red right here).
-    # Only with an empty exempt set does it equal the spec's literal wording "file counts and hashes
-    # of the three areas fully identical"; a non-empty exempt set demotes it to support; empty areas
-    # and empty subsets never claim equality — there is nothing to compare on an empty set.
-    if ($before.fileCount -eq 0) { $lines4.Add("$name : this area holds no files (empty set: before=$($before.fileCount) after=$($after.fileCount)); its digest is the fixed empty-set sha256, so there is nothing to compare here") }
-    elseif ($verdict.exempt.Count -eq 0) { $lines4.Add("$name : nothing was exempted here, so the whole-area reading above is the spec's literal one (no subset was carved out of it)") }
-    elseif ($verdict.subsetBefore.fileCount -eq 0) { $lines4.Add("$name : support reading only, and it has nothing to compare: excluding exactly the $($verdict.exempt.Count) exempt path(s) leaves no file in the remainder (empty subset), so no equality is claimed") }
-    else { $lines4.Add("$name : support reading only (implied by the counts above, so it is no independent evidence): excluding exactly the $($verdict.exempt.Count) exempt path(s) leaves files=$($verdict.subsetBefore.fileCount) sha256=$($verdict.subsetBefore.digest.Substring(0,16))... countAndHashIdentical=$($verdict.subsetIdentical)") }
-    if (-not $verdict.passed) { $pass4 = $false }
-  }
-  $lines4.Add("live-write witness (paths that changed during an observation window opened while no testbed instance was running): $($liveWitness.Count)")
-  $lines4.Add("  window 1 before the run (lightweight scan -> full fingerprint): $(@($witnessBeforeRun.Values | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum) path(s)")
-  $lines4.Add("  window 2 after the run (lightweight scan -> full fingerprint, instance already stopped): $(@($witnessAfterRun.Values | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum) path(s)")
-  foreach ($item in (@($liveWitness) | Sort-Object)) { $lines4.Add("live witness -> $item") }
-  # After the final stop there must be no listener or process of this testbed left: this check is
-  # what makes the "foreign changes" claim above hold.
-  # Stray processes are collected by **identity**: this fixture's own launcher path, or descendants
-  # of the instance pids recorded this run; the caller itself and its ancestor chain are excluded
-  # (the shell and host running check are fine even if their command lines mention the run root).
-  $strayProcesses = Get-StrayTestbedProcess -Root $safeRoot -Profile $Profile -InstancePids @($instancePid, $instancePid2)
-  $listenerAlive = Test-TcpListener -Port $run2.port
-  $lines4.Add("stray listener on the last instance port after the final stop: $listenerAlive")
-  $lines4.Add("stray scan identity: this testbed's own launcher path '$(Join-Path $safeRoot ('logs\start-' + $Profile + '.cmd'))' and the instance pid tree @($instancePid, $instancePid2); the caller's own process (pid=$PID) and its ancestors are excluded from the scan")
-  $lines4.Add("stray node/cmd process carrying that identity: $($strayProcesses.Count)")
-  foreach ($item in $strayProcesses) { $lines4.Add("stray process -> $item") }
-  if ($listenerAlive) { $pass4 = $false }
-  if ($strayProcesses.Count -gt 0) { $pass4 = $false }
-  Add-Criterion -Id '4' -Title 'main home: every changed path carries its own positive ownership evidence (S1 structural or S2 witness; deletions, testbed-made names and quiet-area changes never exempt), and this testbed left no listener and no process of its own identity behind' -Passed $pass4 -Lines @($lines4.ToArray())
+  # ---- Criterion 4: the main home's three areas, every change attributed ----
+  # The reading assembly — the four mutually exclusive buckets, the S1 structural / S2 witnessed
+  # ownership terms, the partition self-check, and the no-listener / no-stray-process assertions —
+  # lives with the fingerprints it reads, in testbed-mainhome.ps1. This entry hands over both
+  # observation windows and prints what comes back.
+  $criterion4 = Get-MainHomeCriterion -Root $safeRoot -Profile $Profile -Manifest $manifest `
+    -Before $pass2 -After $fingerprintEnd -LiveWitness @($liveWitness) `
+    -WindowBeforeRun $witnessBeforeRun -WindowAfterRun $witnessAfterRun `
+    -InstancePids @($instancePid, $instancePid2) -Run $run2
+  Add-Criterion -Id '4' -Title 'main home: every changed path carries its own positive ownership evidence (S1 structural or S2 witness; deletions, testbed-made names and quiet-area changes never exempt), and this testbed left no listener and no process of its own identity behind' `
+    -Passed $criterion4.Passed -Lines @($criterion4.Lines)
 
   # ---- Criterion 5: the isolated environment starts without credentials ----
   # Before the instance starts, the isolated home holds no credentials; after it starts, only the
   # browser-session record the web app issues itself may appear.
-  $recordKeys = New-Object System.Collections.Generic.List[string]
-  $inRecords = $false
-  foreach ($line in ($credentialsAfterStart -split "`n")) {
-    if ($line -match '^records:\s*$') { $inRecords = $true; continue }
-    if (-not $inRecords) { continue }
-    if ($line -match '^  ([^\s:]+):\s*$') { $recordKeys.Add($Matches[1]); continue }
-    if ($line -match '^\S') { $inRecords = $false }
-  }
-  $unexpectedKeys = @($recordKeys | Where-Object { $_ -ne 'client-connection/browser-session' })
-  $lines5 = New-Object System.Collections.Generic.List[string]
-  $lines5.Add("credentials file present before the first start: $credentialsBeforeStart")
-  $lines5.Add("isolated home: $testbedHome")
-  $lines5.Add("first start printed: $urlLine1")
-  $lines5.Add("credential record keys after the first start: $($recordKeys -join ', ') (expected: the web app's own client-connection/browser-session grant only)")
-  $lines5.Add("unexpected credential keys: $($unexpectedKeys.Count)")
-  $lines5.Add("model credentials supplied by the provisioner: none; no fake model service was mounted")
+  $criterion5 = Get-CredentialsCriterion -PresentBeforeStart $credentialsBeforeStart `
+    -CredentialsAfterStart $credentialsAfterStart -TestbedHome $testbedHome -UrlLine $urlLine1
   Add-Criterion -Id '5' -Title 'the isolated instance starts with no credentials supplied (no fake model service needed)' `
-    -Passed ((-not $credentialsBeforeStart) -and ($urlLine1 -match 'dsh web:') -and ($unexpectedKeys.Count -eq 0)) -Lines @($lines5.ToArray())
+    -Passed $criterion5.Passed -Lines @($criterion5.Lines)
 
   $readings['firstRun'] = $run1
   $readings['secondRun'] = $run2

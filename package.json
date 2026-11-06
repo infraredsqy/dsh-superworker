@@ -35,7 +35,8 @@
     "packages/pf-core/plugins/**/*"
   ],
   "scripts": {
-    "prepack": "pnpm --filter pf-core build && npm run types && npm run bundle && npm run bundle:client",
+    "build:products": "pnpm --filter pf-core build && npm run types && npm run bundle && npm run bundle:client",
+    "prepack": "npm run build:products",
     "bundle": "tsdown",
     "bundle:client": "node tools/build-client.mjs",
     "watch": "tsdown --watch",
@@ -43,7 +44,7 @@
     "types:model": "tsc -p src/model/tsconfig.json",
     "types:client": "tsc -p src/client/tsconfig.json",
     "typecheck": "tsc -b tsconfig.host.json --noEmit && tsc -p src/model/tsconfig.json && tsc -p src/client/tsconfig.json && pnpm --filter pf-core run typecheck",
-    "test": "node tools/build-client.mjs && pnpm --filter pf-core build && npm run types && npm run bundle && node tools/test-all.mjs"
+    "test": "npm run build:products && node tools/test-all.mjs"
   },
   "dsh": {
     "client": {

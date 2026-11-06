@@ -88,7 +88,7 @@ test('包面：这份包不交任何命令，`bin` 字段与 `files` 里都没�
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml', 'profile 里那一行的挂载点动了')
 })
 
-test('包面：引擎的构建产物随包走，`prepack` 先把它构建出来', () => {
+test('包面：引擎的构建产物随包走，构建链先把它构建出来', () => {
   const files = manifest.files ?? []
   for (const rel of ['packages/pf-core/dist/index.mjs', 'packages/pf-core/dist/merge-ledger.mjs']) {
     assert.ok(
@@ -97,9 +97,67 @@ test('包面：引擎的构建产物随包走，`prepack` 先把它构建出来'
     )
   }
   assert.match(
-    manifest.scripts?.prepack ?? '',
+    manifest.scripts?.['build:products'] ?? '',
     /pnpm --filter pf-core build/u,
-    `prepack 不构建引擎，包里那份 dist 就是旧的或者根本没有：prepack=${JSON.stringify(manifest.scripts?.prepack)}`,
+    `构建链不构建引擎，包里那份 dist 就是旧的或者根本没有：build:products=${JSON.stringify(manifest.scripts?.['build:products'])}`,
+  )
+})
+
+/*
+ * The build chain has one home: `package.json`'s `build:products`. `prepack` and `npm test` both
+ * call it, and the four steps are written only there — a step dropped from the chain, or a caller
+ * drifting off it, ships an artifact nobody can load while every other case stays green.
+ * `docs/publish.md` and `tools/test-all.mjs` point back at this name instead of repeating the steps;
+ * prose cannot be asserted, so this case is what holds the name in place.
+ */
+test('包面：构建链只有一处正本，prepack 与 test 都调它，四步各在链里', () => {
+  const scripts = manifest.scripts ?? {}
+  for (const caller of ['prepack', 'test']) {
+    assert.match(
+      scripts[caller] ?? '',
+      /npm run build:products/u,
+      `${caller} 没走同一条构建链：${caller}=${JSON.stringify(scripts[caller])}`,
+    )
+  }
+  const chain = scripts['build:products'] ?? ''
+  const steps = [
+    ['引擎构建', /pnpm --filter pf-core build/u],
+    ['类型', /npm run types(?![\w:])/u],
+    ['宿主半身', /npm run bundle(?![\w:])/u],
+    ['浏览器半身', /npm run bundle:client/u],
+  ]
+  for (const [label, pattern] of steps) {
+    assert.match(chain, pattern, `build:products 里少了${label}这一步：build:products=${JSON.stringify(chain)}`)
+  }
+})
+
+/*
+ * Both spellings of the types entry — the manifest's `types` and `exports['.'].types` — must land
+ * inside `files`. They are read by different tooling (a path reader and an exports resolver), so one
+ * of them dropping out of the package loses types for half the callers with nothing failing.
+ */
+test('包面：类型入口的两处写法都落在 files 里', () => {
+  const files = manifest.files ?? []
+  for (const target of [manifest.types, manifest.exports?.['.']?.types]) {
+    assert.equal(typeof target, 'string', `清单没有写类型入口：${JSON.stringify(target)}`)
+    const rel = target.replace(/^\.\//u, '')
+    assert.ok(
+      files.some((pattern) => covered(pattern, rel)),
+      `${rel} 没有被 files 里任何一条盖住：files=${JSON.stringify(files)}`,
+    )
+  }
+})
+
+/*
+ * The three runtime mouths are the package's whole face at runtime: the host hand (`.`), the browser
+ * hand (`./client`), the locale metadata (`./locale/*.json`). The two non-code entries ride along so
+ * a profile layer and the manifest itself can be read out of the installed tree. A key appearing or
+ * vanishing here changes what an installer can reach, and no build step would notice.
+ */
+test('包面：exports 的键集是那三个运行时口子加 cordis.patch.yml 与 package.json', () => {
+  assert.deepEqual(
+    Object.keys(manifest.exports ?? {}).sort(),
+    ['.', './client', './cordis.patch.yml', './locale/*.json', './package.json'].sort(),
   )
 })
 

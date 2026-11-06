@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rolldown } from 'rolldown'
 import { cssBlocks } from './lib/cssrules.mjs'
-import { SHEETS } from './lib/sheets.mjs'
+import { LAYER_CLASSES, SHEETS } from './lib/sheets.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -49,7 +49,8 @@ function hasScopeClass(part, className) {
  * styling DSH's shell, so this step stops the build instead.
  *
  * @param css - The joined sheet body.
- * @param roots - Every layer class that ships (`.pf-page`, `.pf-wires`, `.pf-issue`).
+ * @param roots - Every layer class that ships, one per sheet — taken from the sheet table's own
+ *   `root` column (tools/lib/sheets.mjs), not written out again here.
  * @returns Selectors leading with no layer; empty list if none.
  */
 function assertScopedProduct(css, roots) {
@@ -71,7 +72,7 @@ const css = SHEETS
   .map(({ sheet }) => readFileSync(join(STYLES, sheet), 'utf8'))
   .filter((part) => part.trim().length > 0)
   .join('\n')
-const leaked = assertScopedProduct(css, [...new Set(SHEETS.map(({ root }) => root))])
+const leaked = assertScopedProduct(css, LAYER_CLASSES)
 if (leaked.length > 0) {
   throw new Error(`build-client: 产物里有选择器没落在面板那一层上（逃到宿主页面去了）：\n  ${leaked.join('\n  ')}`)
 }
@@ -111,8 +112,9 @@ const head = `window.__ModuleLoader__.load({ id: ${JSON.stringify(manifest.name)
   + 'var module = { exports: {} }; var exports = module.exports;\n'
 const tail = '\nreturn module.exports; } });\n'
 writeFileSync(join(root, 'lib/client.js'), head + body + tail)
-// The intermediate artifact is deleted on the spot; only the step above uses it. If kept, the
-// `lib/**/*.js` entry in `files` would bundle it too — the shell-wrapped copy already lives in
-// lib/client.js and this would be a pure duplicate.
+// The intermediate artifact is deleted on the spot: it is this step's input only — the plain bundle
+// before the loader shell goes around it, which nothing reads once lib/client.js is written. Kept, it
+// would just be a leftover under lib/ that no one removes; the shell-wrapped copy is the one that
+// lives there.
 rmSync(join(root, 'lib/client-body.js'))
 console.log(`build-client: lib/client.js written (${String(head.length + body.length + tail.length)} chars, ${String(css.length)} chars of css)`)
