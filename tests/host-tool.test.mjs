@@ -25,17 +25,24 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { apply } from '../src/host/index.ts'
+import { executorOf } from '../src/host/executor.ts'
 import {
   PATHFINDER_TOOL_NAME,
   SKILL_NAME_PREFIX,
   argvOf,
-  hasPipelineRecord,
-  installToolWake,
   toolDescriptionOf,
-  wakeAgent,
 } from '../src/host/tool.ts'
+import { hasPipelineRecord, installToolWake, wakeAgent } from '../src/host/wake.ts'
 import { pinHome } from './helpers/env.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
+
+/**
+ * The host face a wake reads: the context, and the opener seam a word that opens a session travels
+ * through. Production hands the same pair (`index.ts` passes the tracked seam the relay uses).
+ */
+function toolHost(ctx) {
+  return { ctx, executorOf: (sessionId, root) => executorOf(ctx, sessionId, root) }
+}
 
 /* Loading this line places the shipped skills into the DSH skill root; the root these
  * cases would write into is pinned to a temp home here, never the machine's own. */
@@ -178,7 +185,7 @@ test('事实唤醒：工作区没有 .pf 就不点亮；记录出现之后，下
 test('工具的形状：名字、描述字节数、参数与输出都是声明的面', () => {
   const { ctx } = context()
   const { agent, registered } = fakeAgent()
-  wakeAgent(agent, { ctx })
+  wakeAgent(agent, toolHost(ctx))
 
   const tool = registered[0]
   assert.equal(tool.name, PATHFINDER_TOOL_NAME)
@@ -207,7 +214,7 @@ test('工具的四层帮助：argv 由 word / args / help 拼出，help 与 args
 
   const { ctx } = context()
   const { agent, registered } = fakeAgent()
-  wakeAgent(agent, { ctx })
+  wakeAgent(agent, toolHost(ctx))
   const answer = await registered[0].execute({ help: true }, { agent })
   assert.equal(answer.code, 0, answer.stderr)
   assert.match(answer.stdout, /pathfinder -- the agent pipeline/u, '空手问它，答的是整张索引')
@@ -244,7 +251,7 @@ test('名字锁：注册名、README 的拼法来自同一个常量；技能正�
   }
   walkSkills(pluginsRoot)
   assert.ok(files.length >= 60, `随包技能正文都在（走到 ${files.length} 篇，至少 60）`)
-  // The tool is a word, not a directory: `MANIFEST_DIR` in `src/host/skills.ts` happens
+  // The tool is a word, not a directory: `MANIFEST_DIR` in `src/host/skill-paths.ts` happens
   // to spell `pathfinder` too, and a tool rename must not force the doc path to move. Keep
   // only path-free tokens — not preceded by a slash or a backslash, not followed by a
   // slash — so `<dshHome>/pathfinder/skills.json` is a path, not a spelling of the tool.
@@ -281,7 +288,7 @@ test('卸下：线的 effect 把两条触发线一起收走；agent 的 effect �
 
   // The agent's own effect: the registration disposer is collected there.
   const { ctx: ctx2, events: events2 } = context()
-  installToolWake(ctx2)
+  installToolWake(toolHost(ctx2))
   const holder = []
   const agent2 = {
     id: 'agent-2',
@@ -305,3 +312,4 @@ test('卸下：线的 effect 把两条触发线一起收走；agent 的 effect �
   agent2.dispose()
   assert.equal(holder.length, 0, 'agent 走了，工具跟着走')
 })
+

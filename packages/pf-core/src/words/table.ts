@@ -1,3 +1,4 @@
+import { INSTRUCTION_SCOPES } from './lines';
 import type { TableTop, WordRow } from './types';
 
 /**
@@ -1804,11 +1805,7 @@ export const COMMANDS = {
           "--scope"
         ],
         "metavar": "{global,cycle,node}",
-        "choices": [
-          "global",
-          "cycle",
-          "node"
-        ],
+        "choices": INSTRUCTION_SCOPES,
         "help": "Where this instruction is visible from (`instruction --help`): global = everywhere; cycle = the cycle it is recorded in, out of sight once that cycle ends; node = the node it is recorded in, out of sight once that node is completed. The cycle/node it binds to come from the state, or from --cycle / --node when the state cannot name one; a cycle/node entry that nothing binds is refused. (default: global -- the noisy side of a coin flip is the safe one)",
         "invocation": "--scope {global,cycle,node}"
       },
@@ -1908,11 +1905,7 @@ export const COMMANDS = {
           "--scope"
         ],
         "metavar": "{global,cycle,node}",
-        "choices": [
-          "global",
-          "cycle",
-          "node"
-        ],
+        "choices": INSTRUCTION_SCOPES,
         "help": "Account view narrowed to one scope. `--scope global` reads out the global entries",
         "invocation": "--scope {global,cycle,node}"
       },
@@ -3393,11 +3386,7 @@ export const GROUPS = {
               "--scope"
             ],
             "metavar": "{global,cycle,node}",
-            "choices": [
-              "global",
-              "cycle",
-              "node"
-            ],
+            "choices": INSTRUCTION_SCOPES,
             "help": "Where this instruction is visible from (`instruction --help`): global = everywhere; cycle = the cycle it is recorded in, out of sight once that cycle ends; node = the node it is recorded in, out of sight once that node is completed. The cycle/node it binds to come from the state, or from --cycle / --node when the state cannot name one; a cycle/node entry that nothing binds is refused. (default: global -- the noisy side of a coin flip is the safe one)",
             "invocation": "--scope {global,cycle,node}"
           },
@@ -3497,11 +3486,7 @@ export const GROUPS = {
               "--scope"
             ],
             "metavar": "{global,cycle,node}",
-            "choices": [
-              "global",
-              "cycle",
-              "node"
-            ],
+            "choices": INSTRUCTION_SCOPES,
             "help": "Account view narrowed to one scope. `--scope global` reads out the global entries",
             "invocation": "--scope {global,cycle,node}"
           },

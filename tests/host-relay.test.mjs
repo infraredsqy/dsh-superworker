@@ -15,8 +15,9 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dispatchCell, installRelay } from '../src/host/relay.ts'
@@ -91,12 +92,16 @@ function fakeAgents({ idleGate } = {}) {
 }
 
 /** A workspace-files port that reads the real record directory, the way the real gateway does. */
-function fsPort(root) {
+function fsPort(root, seen) {
   return {
-    async list(_scope, dir) {
+    async list(scope, dir) {
+      /* The scope the engine read through is the reading this port keeps: the opener resolves the
+       * record off `scope.workspaceRoot`, so a call that skips canonicalising shows up here. */
+      const base = scope?.workspaceRoot ?? root
+      if (seen !== undefined) seen.push(base)
       let entries
       try {
-        entries = readdirSync(join(root, dir), { withFileTypes: true })
+        entries = readdirSync(join(base, dir), { withFileTypes: true })
       } catch {
         throw absentError(dir)
       }
@@ -109,10 +114,12 @@ function fsPort(root) {
         truncated: false,
       }
     },
-    async read(_scope, path, range) {
+    async read(scope, path, range) {
+      const base = scope?.workspaceRoot ?? root
+      if (seen !== undefined) seen.push(base)
       let text
       try {
-        text = await readFile(join(root, path), 'utf8')
+        text = await readFile(join(base, path), 'utf8')
       } catch {
         throw absentError(path)
       }
@@ -123,10 +130,10 @@ function fsPort(root) {
   }
 }
 
-/** The host context stand-in: the real record directory behind the port, the live session header naming it, an event bus, a logger the relay's refusals land on, and the settings surface the switch is read from (the object is shared, so a flip is seen live). */
-function context({ root, agents, config } = {}) {
+/** The host context stand-in: the real record directory behind the port, the live session header naming it, an event bus, a logger the relay's refusals land on, and the settings surface the switch is read from (the object is shared, so a flip is seen live). `seen` collects every workspace root the port was read through. */
+function context({ root, agents, config, seen } = {}) {
   return fakeContext({
-    port: fsPort(root),
+    port: fsPort(root, seen),
     sessionCwd: root,
     sandboxRoot: root,
     config,
@@ -405,5 +412,29 @@ test('格子派发不成：拒绝带引擎的原话，认领不落盘，一个�
     assert.ok(!existsSync(claimPath(root, 'c-1', 'n-1')), '没有会话就没有认领')
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('派发拿别名开出去：照常开成，引擎读记录用的是那个根的实路径', async () => {
+  const root = rigRecordRoot(['n-1'])
+  const alias = join(tmpdir(), `pf-relay-alias-${randomUUID()}`)
+  symlinkSync(root, alias, 'junction')
+  const seen = []
+  const agents = fakeAgents()
+  const { ctx } = context({ root, agents, seen })
+  const real = realpathSync(root)
+  try {
+    const outcome = await dispatchCell(ctx, 'caller', alias, 'c-1', 'n-1')
+    assert.equal(outcome.ok, true, JSON.stringify(outcome))
+    assert.ok(seen.length > 0, '派发把提示读进来了：这些读就是这条读数的来源')
+    assert.deepEqual(
+      [...new Set(seen)],
+      [real],
+      '入口链交给引擎的那个根是实路径：两次读都落在它上面，没有一次按调用方的写法读',
+    )
+    assert.ok(existsSync(claimPath(real, 'c-1', 'n-1')), '认领落在实路径那棵树上')
+  } finally {
+    rmSync(alias, { recursive: true, force: true })
+    assert.ok(existsSync(root), '收走别名不带走它指的根')
   }
 })

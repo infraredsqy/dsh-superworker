@@ -35,18 +35,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadPlugins, skillFolders } from 'pf-core'
 import { apply } from '../src/host/index.ts'
-import {
-  DEFAULT_LANGUAGE,
-  SKILL_ROOT_RANK,
-  confirmSkillsInView,
-  installPluginSkills,
-  installSkillsWhenReady,
-  manifestPathOf,
-  placedSkills,
-  readSkillFile,
-  shippedPluginsDir,
-  skillRootOf,
-} from '../src/host/skills.ts'
+import { SKILL_ROOT_RANK, manifestPathOf, shippedPluginsDir, skillRootOf } from '../src/host/skill-paths.ts'
+import { readSkillFile } from '../src/host/skills/frontmatter.ts'
+import { placedSkills } from '../src/host/skills/manifest.ts'
+import { DEFAULT_LANGUAGE, installPluginSkills, installSkillsWhenReady } from '../src/host/skills/place.ts'
+import { confirmSkillsInView } from '../src/host/skills/view.ts'
 import { pinTo } from './helpers/env.mjs'
 import { PRESET_SCOPE, fakeFileSystemProvider, fakeSkillRegistry } from './helpers/skill-catalog.mjs'
 

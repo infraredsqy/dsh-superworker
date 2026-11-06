@@ -13,6 +13,18 @@ export { SimulatedExecutor } from './executor';
    *process* (doctor, version, the merge driver's hand-off) stay with the transport. */
 export { answer, describe, topHelp } from './words/router';
 export { COMMANDS, GROUPS, specOf } from './words/spec';
+/* The lines a caller spells at the panel's edge, built by the layer that owns their vocabulary: the
+   instruction scopes (the command table's `--scope` choices read this one list) and the panel words
+   that name an engine call (`archive` is `instruction resolve --state withdrawn`). A caller forwards
+   a scope, or asks here for the line, and never keeps a second copy of the vocabulary. */
+export {
+  INSTRUCTION_SCOPES,
+  instructionAddLine,
+  instructionArchiveLine,
+  instructionRemoveLine,
+  instructionReviveLine,
+} from './words/lines';
+export type { InstructionAddLineInput, InstructionLine, InstructionLineRefusalCode } from './words/lines';
 export { helpText, parse, usageError } from './words/argparse';
 export { LONG_RESULT_LIMIT, longResultPointerOf } from './words/out';
 export type { WordsIndex } from './words/router';

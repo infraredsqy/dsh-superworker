@@ -39,11 +39,12 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { open, type Executor } from 'pf-core'
-import { canonicalWorkspaceRoot, openNodeSession, type SessionOpenOutcome } from './executor.ts'
+import { open, type Executor, type Pf } from 'pf-core'
+import { canonicalWorkspaceRoot, executorOf, type SessionOpenOutcome } from './executor.ts'
 import type { PfRefusalCode } from './failure.ts'
+import { busOf, logLineOf, messageOf } from './seams.ts'
 import { PANEL_PREF_FIELDS } from './settings-fields.ts'
-import { shippedPluginsDir } from './skills.ts'
+import { shippedPluginsDir } from './skill-paths.ts'
 
 /** The one refusal this layer adds: the engine (or the opener inside it) said no. */
 export type DispatchRefusalCode = PfRefusalCode | 'dispatch-refused'
@@ -61,22 +62,22 @@ export type DispatchOutcome = SessionOpenOutcome
 const tracked = new Map<string, string>()
 
 /**
+ * The one writer of that table: a session this relay opened, and the root it
+ * opened it for. Both paths that learn of an open — the opener's `onOpened`, a
+ * dispatch receipt, an advance receipt — come through here, so the table has a
+ * single spelling of "one of mine".
+ */
+function remember(session: string | undefined, workspaceRoot: string): void {
+  if (session === undefined || session.length === 0) return
+  tracked.set(session, workspaceRoot)
+}
+
+/**
  * The in-flight dispatch, process-wide: each call is appended to the tail of
  * the previous one, so two triggers never interleave their engine calls. A
  * refusal in front does not poison the line — the next call runs anyway.
  */
 let inFlight: Promise<unknown> = Promise.resolve()
-
-/** Why an open inside the dispatch failed, as the message the refusal carries. */
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-/** The logger a real host carries, fetched structurally; stand-ins may lack it. */
-function loggerOf(ctx: Context): { warn(line: string): void } | undefined {
-  const held = (ctx as { logger?: { warn?(line: string): void } }).logger
-  return typeof held?.warn === 'function' ? { warn: held.warn.bind(held) } : undefined
-}
 
 /**
  * The line's resolved settings, captured when the line loaded: the switch is
@@ -106,40 +107,46 @@ function relayOn(): boolean {
 }
 
 /**
- * The executor seam for one dispatch: the native opener hung on the engine.
- * The engine hands the request over after its own gates and preparation; the
- * opener reads the prompt it landed and creates the session. A refusal throws
- * — the engine then writes no claim and hands the reason back as the
- * dispatch's own refusal detail. The words layer's tool opens sessions through
- * this same seam, which is why it is exported.
+ * The executor seam one dispatch runs through: the native opener, with every
+ * session it mints remembered in this relay's table the moment it exists —
+ * before its opening round can settle. An open does not return until that round
+ * does, so a registration on the return would always lose the round's own
+ * turn-end event, and the relay would never hear a session it opened itself.
  *
- * A request that carries `dryRun` is a drill: the call is answered with a
- * receipt that says so and nothing is opened here — no agent, no note. The
- * receipt carries no session id, which is also what keeps the relay's
- * tracking table from treating a rehearsal as one of its own live sessions.
+ * The words layer's tool opens sessions through this same seam, which is why it
+ * is exported: a cell opened from a tool call is as real to the plan — and to
+ * the trigger — as one the panel's button opened.
  */
-export function executorOf(ctx: Context, sessionId: SessionId, workspaceRoot: string): Executor {
-  return {
-    async dispatch(request) {
-      const cycle = request.cycle ?? ''
-      const node = request.node ?? ''
-      if (cycle.length === 0 || node.length === 0) {
-        throw new Error('the dispatch request named no cell (cycle and node are both required here)')
-      }
-      if (request.dryRun === true) return { host: 'drill' }
-      /* Register the opened session the moment it exists — before its opening
-       * round can settle. This open does not return until that round does, so
-       * a registration on the return would always lose the round's own
-       * turn-end event, and the relay would never hear a session it opened
-       * itself. */
-      const outcome = await openNodeSession(ctx, sessionId, workspaceRoot, cycle, node, {
-        onOpened: (session) => { tracked.set(session, workspaceRoot) },
-        ...(request.model === undefined ? {} : { model: request.model }),
-      })
-      if (!outcome.ok) throw new Error(outcome.detail ?? outcome.code)
-      return { sessionId: outcome.session, host: 'dsh' }
-    },
-  }
+export function trackedExecutorOf(ctx: Context, sessionId: SessionId, workspaceRoot: string): Executor {
+  return executorOf(ctx, sessionId, workspaceRoot, (session) => remember(session, workspaceRoot))
+}
+
+/**
+ * The engine handle one dispatch-side call reads: the opener seam above, the
+ * plugin folder this package ships (so the shipped plugin set — the `issue`
+ * command surface and the two closing guards — answers here too, the same set
+ * the skills placement reads; a project's own `plugins/` folder is not
+ * consulted through this path), and the one table that remembers what it
+ * opened. Every dispatch-side call — `dispatch`, `advance`, the read-only
+ * `next` — builds its handle here, so the option set has one spelling.
+ */
+function dispatchHandleOf(ctx: Context, sessionId: SessionId, workspaceRoot: string): Pf {
+  return open(workspaceRoot, {
+    executor: trackedExecutorOf(ctx, sessionId, workspaceRoot),
+    pluginsDir: shippedPluginsDir(),
+  })
+}
+
+/** What a dispatch receipt carries once a session is really out. */
+interface OpenedReceipt {
+  readonly action?: string
+  readonly session?: { readonly sessionId?: string }
+}
+
+/** Remember whatever a receipt says was opened, the same way the opener's own callback does. */
+function rememberReceipt(receipt: OpenedReceipt, workspaceRoot: string): void {
+  if (receipt.action !== 'opened') return
+  remember(receipt.session?.sessionId, workspaceRoot)
 }
 
 /** The dispatch itself, run strictly one at a time. */
@@ -154,14 +161,8 @@ async function runDispatch(
    * key and `cwd`, and the workspace this dispatch remembers are one string. */
   const root = await canonicalWorkspaceRoot(workspaceRoot)
   try {
-    /* The handle names the plugin folder this package ships, so the shipped plugin set (the `issue`
-     * command surface and the two closing guards) answers here too — the same set the skills
-     * placement reads. A project's own `plugins/` folder is not consulted through this path. */
-    const pf = open(root, { executor: executorOf(ctx, sessionId, root), pluginsDir: shippedPluginsDir() })
-    const receipt = await pf.conductor.dispatch({ cycle, node })
-    if (receipt.action === 'opened' && receipt.session?.sessionId !== undefined) {
-      tracked.set(receipt.session.sessionId, root)
-    }
+    const receipt = await dispatchHandleOf(ctx, sessionId, root).conductor.dispatch({ cycle, node })
+    rememberReceipt(receipt, root)
     return { ok: true, session: receipt.session?.sessionId ?? '' }
   } catch (error) {
     /* The engine's own words ride as the detail, verbatim: they name the cell,
@@ -210,16 +211,8 @@ export function advanceLine(
      * the workspace the relay remembers. */
     const root = await canonicalWorkspaceRoot(workspaceRoot)
     try {
-      const pf = open(root, {
-        executor: executorOf(ctx, sessionId, root),
-        pluginsDir: shippedPluginsDir(),
-      })
-      const receipt = await pf.conductor.advance({ cycle })
-      for (const cell of receipt.dispatches) {
-        if (cell.receipt.action === 'opened' && cell.receipt.session?.sessionId !== undefined) {
-          tracked.set(cell.receipt.session.sessionId, root)
-        }
-      }
+      const receipt = await dispatchHandleOf(ctx, sessionId, root).conductor.advance({ cycle })
+      for (const cell of receipt.dispatches) rememberReceipt(cell.receipt, root)
       const first = receipt.dispatches[0]?.receipt
       return { ok: true, session: first?.session?.sessionId ?? '' }
     } catch (error) {
@@ -246,14 +239,13 @@ async function judge(ctx: Context, sessionId: SessionId, workspaceRoot: string):
   /* The root already arrives canonical from the dispatch that tracked it, and the entry takes it
    * once more so a plan read can never disagree with the root a dispatch would use. */
   const root = await canonicalWorkspaceRoot(workspaceRoot)
-  const plan = await open(root, { executor: executorOf(ctx, sessionId, root), pluginsDir: shippedPluginsDir() })
-    .conductor.next({})
+  const plan = await dispatchHandleOf(ctx, sessionId, root).conductor.next({})
   if (plan.action !== 'dispatch' && plan.action !== 'open_node' && plan.action !== 'stop_pipeline') return
   const cycle = typeof plan.cycle === 'string' ? plan.cycle : ''
   if (cycle === '') return
   const outcome = await advanceLine(ctx, sessionId, root, cycle)
   if (!outcome.ok) {
-    loggerOf(ctx)?.warn(`dispatch relay could not advance ${cycle}: ${outcome.detail ?? outcome.code}`)
+    logLineOf(ctx, 'warn', `dispatch relay could not advance ${cycle}: ${outcome.detail ?? outcome.code}`)
   }
 }
 
@@ -274,10 +266,8 @@ async function judge(ctx: Context, sessionId: SessionId, workspaceRoot: string):
  */
 export function installRelay(ctx: Context, config?: unknown): () => void {
   lineConfig = config
-  const bus = ctx as unknown as {
-    on?: (event: string, listener: (...args: never[]) => void) => unknown
-  }
-  if (typeof bus.on !== 'function') return () => undefined
+  const bus = busOf(ctx)
+  if (bus === undefined) return () => undefined
   const offs: (() => void)[] = []
   const keep = (off: unknown): void => {
     if (typeof off === 'function') offs.push(off as () => void)
@@ -286,7 +276,7 @@ export function installRelay(ctx: Context, config?: unknown): () => void {
     void judge(ctx, id as SessionId, root).catch((error: unknown) => {
       /* A refused trigger is a log line, never a throw into the event bus:
        * the plan's own note (or the panel's button) is where a person acts. */
-      loggerOf(ctx)?.warn(`dispatch relay judged and refused: ${messageOf(error)}`)
+      logLineOf(ctx, 'warn', `dispatch relay judged and refused: ${messageOf(error)}`)
     })
   }
   keep(bus.on('session/event', (...args: never[]) => {

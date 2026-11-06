@@ -24,9 +24,10 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-session'
 import { Config } from './config.ts'
 import { PathfinderRecordsGateway } from './gateway.ts'
-import { installSkillsWhenReady } from './skills.ts'
-import { installRelay } from './relay.ts'
-import { installToolWake } from './tool.ts'
+import { installSkillsWhenReady } from './skills/place.ts'
+import { installRelay, trackedExecutorOf } from './relay.ts'
+import { effectOf } from './seams.ts'
+import { installToolWake } from './wake.ts'
 import type { PathfinderRecords } from './contract.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -84,11 +85,15 @@ export function apply(ctx: Context, config?: unknown): unknown {
    * line's own resolved config rides along: that object is where the relay's
    * switch is read (the context proxy itself refuses undeclared reads). */
   const relayOff = installRelay(ctx, config)
-  const wakeOff = installToolWake(ctx)
-  const effect = (ctx as { effect?: (make: () => unknown, label?: string) => unknown }).effect
-  if (typeof effect === 'function') {
-    effect.call(ctx, () => relayOff, 'dsh-pathfinder: dispatch relay')
-    effect.call(ctx, () => wakeOff, 'dsh-pathfinder: tool wake')
-  }
+  /* The tool's wake is armed with the opener seam this line tracks its own
+   * sessions with, so a session opened from a tool call is as real to the
+   * trigger as one the panel's button opened. */
+  const wakeOff = installToolWake({
+    ctx,
+    executorOf: (sessionId, root) => trackedExecutorOf(ctx, sessionId, root),
+  })
+  const own = effectOf(ctx)
+  own?.(() => relayOff, 'dsh-pathfinder: dispatch relay')
+  own?.(() => wakeOff, 'dsh-pathfinder: tool wake')
   return installSkillsWhenReady(ctx)
 }

@@ -29,12 +29,16 @@ const schemastery: Schemastery | null = await import('@deepseek-ai/schemastery')
  * fields — an entry with none would vanish from settings entirely, while
  * marking extra ones is harmless. Older builds (3.18.1 era) lack
  * `.volatile()`, and calling it there would break module evaluation and take
- * the reading side down with it, so probe first — if the probe fails, hand
- * the fields through unchanged, at the cost of them not showing in settings.
+ * the reading side down with it, so each field is probed before it is marked —
+ * the declaration states the method as optional, which is what makes that probe
+ * a real branch rather than dead code. If a host lacks it, the fields are handed
+ * through unchanged, at the cost of them not showing in settings.
  */
 export function buildConfig(z: Schemastery): Schema<Record<string, unknown>> {
-  const canMark = typeof z.boolean().volatile === 'function'
-  const live = <T extends Schema>(field: T): T => (canMark ? (field.volatile() as T) : field)
+  const live = <T extends Schema>(field: T): T => {
+    const mark: Schema['volatile'] = field.volatile
+    return typeof mark === 'function' ? (mark.call(field) as T) : field
+  }
   return z.object({
     [PANEL_PREF_FIELDS.sideWidth]: live(
       z.number().min(SIDE_MIN).max(SIDE_MAX).default(PANEL_PREF_DEFAULTS.sideWidth),

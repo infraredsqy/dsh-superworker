@@ -15,8 +15,10 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { answer, open } from 'pf-core'
 import { apply } from '../src/host/index.ts'
-import { shippedPluginsDir } from '../src/host/skills.ts'
-import { PATHFINDER_TOOL_NAME, toolDescriptionOf, wakeAgent } from '../src/host/tool.ts'
+import { executorOf } from '../src/host/executor.ts'
+import { shippedPluginsDir } from '../src/host/skill-paths.ts'
+import { PATHFINDER_TOOL_NAME, toolDescriptionOf } from '../src/host/tool.ts'
+import { wakeAgent } from '../src/host/wake.ts'
 import { fakeContext } from './helpers/host-context.mjs'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
@@ -41,7 +43,7 @@ function toolOver(workspaceRoot) {
       effect: () => undefined,
     },
   }
-  wakeAgent(agent, { ctx })
+  wakeAgent(agent, { ctx, executorOf: (sessionId, root) => executorOf(ctx, sessionId, root) })
   assert.equal(registered.length, 1)
   return registered[0]
 }

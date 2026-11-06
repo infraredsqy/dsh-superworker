@@ -22,8 +22,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { canonicalWorkspaceRoot, openNodeSession } from '../src/host/executor.ts'
-import { executorOf } from '../src/host/relay.ts'
+import { canonicalWorkspaceRoot, executorOf, openNodeSession } from '../src/host/executor.ts'
 import { PATHFINDER_TOOL_NAME } from '../src/host/tool.ts'
 import { pinHome } from './helpers/env.mjs'
 import { until, flush } from './helpers/wait.mjs'
@@ -315,7 +314,10 @@ test('规范拼写：一个根两种写法排同一条线，第二个开等第�
   }
 })
 
-test('规范拼写：取不到实路径的根照原样交回，不为一种写法拒绝开会话', async () => {
+/* The name says what this case asserts: the fallback spelling. The other half of the old name —
+ * 「不为一种写法拒绝开会话」— is pinned by the two cases above, where an open through a junction
+ * spelling comes back `ok` with the real path in hand. */
+test('规范拼写：取不到实路径的根照原样交回', async () => {
   const missing = join(tmpdir(), `pf-executor-missing-${randomUUID()}`)
   assert.equal(await canonicalWorkspaceRoot(missing), missing)
 })
@@ -763,6 +765,55 @@ test('会话侧诊断：这份在会话视角里赢了自己的名字时，只�
     assert.equal(lines.length, 1, `开会话该留一行诊断读数：${lines.join(' / ')}`)
     assert.match(lines[0], /^info: plugin skills checked/u)
     assert.match(lines[0], /\(diagnostic only\)$/u, '读数没写明 (diagnostic only)，读者会误把它当验收结论')
+  } finally {
+    clearPlacement()
+  }
+})
+
+
+/* ---- the queue holds the workspace-touching stretch only (K: the diagnostic left it) ---- */
+
+test('目录诊断不在队列里：catalog 读不回来时，同一个根的下一次开照常进 create', async () => {
+  const name = 'pf-issue-repair'
+  placeOneSkill(name)
+  try {
+    const rigging = rig({ files: { [promptPath('c1', 'n2')]: '/pf-conduct n2 [pipeline]\n' } })
+    let releaseCatalog
+    const catalogGate = new Promise((resolve) => { releaseCatalog = resolve })
+    let firstSettled = false
+    const ctx = {
+      ...rigging.ctx,
+      get(service) {
+        if (service === 'skills') {
+          /* The read the session-side diagnostic makes, held open: a catalog that takes its time (or
+           * never answers) is exactly the shape the queue must not wait behind. */
+          return {
+            async list() {
+              await catalogGate
+              return []
+            },
+          }
+        }
+        return rigging.ctx.get(service)
+      },
+    }
+    const first = openNodeSession(ctx, 's1', rigging.root, 'c1', 'n1').then((outcome) => {
+      firstSettled = true
+      return outcome
+    })
+    await opened(rigging.agents.created)
+    rigging.agents.created[0].whenIdle.resolve()
+    /* 第一开已经交回队列、正在等那一次目录读：第二次开同一个根，必须在它等着的这段时间里进 create。 */
+    const second = openNodeSession(ctx, 's1', rigging.root, 'c1', 'n2')
+    await opened(rigging.agents.created, 2)
+    assert.equal(rigging.agents.created.length, 2, '目录诊断在队列外：同一个根的下一次开照常进 create')
+    assert.equal(firstSettled, false, '第一开仍在等目录读——这条线正是旧写法把队列堵住的那一段')
+    rigging.agents.created[1].whenIdle.resolve()
+    releaseCatalog()
+    const one = await first
+    const two = await second
+    assert.equal(one.ok, true, JSON.stringify(one))
+    assert.equal(two.ok, true, JSON.stringify(two))
   } finally {
     clearPlacement()
   }

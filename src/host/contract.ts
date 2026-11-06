@@ -59,6 +59,13 @@ export const RECORD_SESSIONS = `${RECORD_DIR}/meta/sessions`
  */
 export const RECORD_LAUNCH = `${RECORD_DIR}/meta/launch`
 
+/**
+ * The file holding one cell's launch prompt, under the cell's own directory
+ * (`<launch>/<line>/<node>/`): the plan's first instruction, read verbatim. Named
+ * here so the launch layer's shape is stated in this one module.
+ */
+export const LAUNCH_PROMPT_FILE = 'prompt.txt'
+
 /** Options that may accompany a read. */
 export interface PathfinderReadOptions {
   readonly signal?: AbortSignal

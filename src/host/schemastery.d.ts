@@ -18,8 +18,14 @@ declare module '@deepseek-ai/schemastery' {
     readonly dict: Readonly<Record<string, Schema>> | undefined
     /** The shape handed to the settings service. */
     toJSON(): unknown
-    /** Mark as editable live in the settings page. */
-    volatile(): Schema<T>
+    /**
+     * Mark as editable live in the settings page.
+     *
+     * Optional on purpose: older builds (3.18.1 era) do not carry it, and a caller
+     * must be able to test for it before calling. The two host shapes are stated here
+     * once — the callers probe rather than assume.
+     */
+    volatile?(): Schema<T>
     default(value: T): Schema<T>
     min(value: number): Schema<T>
     max(value: number): Schema<T>

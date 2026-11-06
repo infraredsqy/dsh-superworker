@@ -28,12 +28,17 @@
 ```text
 COMMANDS
 GROUPS
+INSTRUCTION_SCOPES
 LONG_RESULT_LIMIT
 PLUGIN_SKILL_FILE
 SimulatedExecutor
 answer
 describe
 helpText
+instructionAddLine
+instructionArchiveLine
+instructionRemoveLine
+instructionReviveLine
 loadPlugins
 longResultPointerOf
 open
@@ -45,7 +50,7 @@ topHelp
 usageError
 ```
 
-`PLUGIN_SKILL_FILE` 是技能文件名（`SKILL.md`）；`SimulatedExecutor` 是执行者接缝；`open` 是句柄入口。
+`PLUGIN_SKILL_FILE` 是技能文件名（`SKILL.md`）；`SimulatedExecutor` 是执行者接缝；`open` 是句柄入口；`INSTRUCTION_SCOPES` 是指令能绑的 scope 词表（命令表里 `--scope` 的选项读的就是这一份），`instruction*Line` 是面板那几个动作到词面那一行的构造（`archive` 就是 `instruction resolve --state withdrawn`）。
 `loadPlugins` / `skillFolders` / `skillProblems` 读的是插件自带技能——`loadPlugins` 装载插件目录，
 `skillFolders` 交出一个插件带的技能目录，`skillProblems` 说出它与声明对不上的两种情形（度量点名的
 方法没有技能、一个技能名被两个插件交出）。读的是同一个插件目录，判什么由调用方定：引擎只交结论，

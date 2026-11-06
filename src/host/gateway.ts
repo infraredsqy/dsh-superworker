@@ -15,20 +15,30 @@ import type {} from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { bindTypertRemote, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type { TypertGatewayBinding } from '@deepseek-ai/dsh-typert-protocol'
+import {
+  INSTRUCTION_SCOPES,
+  instructionAddLine,
+  instructionArchiveLine,
+  instructionRemoveLine,
+  instructionReviveLine,
+} from 'pf-core'
 import type { PathfinderReading, PathfinderReadOptions, PathfinderRecords } from './contract.ts'
 import type { SessionOpenOutcome } from './executor.ts'
 import type { PfOutcome } from './failure.ts'
 import { parseConfigList, type PathfinderConfigReading } from './project-config.ts'
 import { dispatchCell } from './relay.ts'
 import { readReading } from './records.ts'
+import { aliveAgentIds, workspaceRootOf } from './seams.ts'
 import { readClaims, readSessionNotes, type PathfinderSessionsReading } from './sessions.ts'
 import { runPf } from './write.ts'
 
-/** The three scopes an instruction can bind to: global / a cycle / a node. */
-export type InstructionScope = 'global' | 'cycle' | 'node'
+/**
+ * The scopes an instruction can bind to, as the engine spells them: this side keeps no list of its
+ * own — a fourth scope lands in the engine's table and here at the same time, and the write path
+ * below forwards the word instead of pre-judging it.
+ */
+export type InstructionScope = (typeof INSTRUCTION_SCOPES)[number]
 
-/** The three scopes this write path accepts, verbatim as the tool spells them. */
-export const INSTRUCTION_SCOPES: readonly InstructionScope[] = ['global', 'cycle', 'node']
 
 /** Endpoint table: each method listed here gets an endpoint of the same name; a method on the class missing from this table fails construction on the spot. */
 const REMOTE_METHODS: readonly string[] = [
@@ -129,10 +139,12 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * Record an instruction: the user's words are copied verbatim, with the
    * scope named.
    *
-   * The words may be any free-form sentence, so the whole sentence is one
-   * argument on the line, appended last — see `write.ts`. Which cycle or node
-   * the scope binds to is the panel's call: pass it when named, otherwise the
-   * words layer resolves it from the records.
+   * The line itself is the engine's to spell (`instructionAddLine`): the scope
+   * vocabulary, the switch order, and the refusal of a scope outside it are all
+   * facts about that call, so this side forwards the words and reports the
+   * engine's own code. Which cycle or node the scope binds to is the panel's
+   * call: pass it when named, otherwise the words layer resolves it from the
+   * records.
    *
    * The parameter list stays on one line with no trailing comma: the gateway
    * splits method parameters from source, same reason as `read` above.
@@ -141,14 +153,11 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * @param node - Which node to bind, by node id; pass an empty string for other scopes.
    */
   async addInstruction(sessionId: SessionId, workspaceRoot: string, text: string, scope: InstructionScope, cycle: string, node: string): Promise<PfOutcome> {
-    if (!INSTRUCTION_SCOPES.includes(scope)) return { ok: false, code: 'scope-unknown', detail: scope }
-    if (typeof text !== 'string' || text.trim().length === 0) return { ok: false, code: 'empty-text' }
-    const args = ['instruction', 'add', '--scope', scope]
-    if (scope === 'cycle' && cycle.length > 0) args.push('--cycle', cycle)
-    if (scope === 'node' && node.length > 0) args.push('--node', node)
-    /* `--text` goes last: the item after it is the verbatim sentence, and all other switches come before it. */
-    args.push('--text')
-    return this.#pf(sessionId, workspaceRoot, args, text)
+    const line = instructionAddLine({ text, scope, cycle, node })
+    if (!line.ok) {
+      return { ok: false, code: line.code, ...(line.detail.length > 0 ? { detail: line.detail } : {}) }
+    }
+    return this.#pf(sessionId, workspaceRoot, line.argv)
   }
 
   /**
@@ -157,7 +166,7 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    */
   async archiveInstruction(sessionId: SessionId, workspaceRoot: string, id: string): Promise<PfOutcome> {
-    return this.#pf(sessionId, workspaceRoot, ['instruction', 'resolve', id, '--state', 'withdrawn'])
+    return this.#pf(sessionId, workspaceRoot, instructionArchiveLine(id))
   }
 
   /**
@@ -165,7 +174,7 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    */
   async reviveInstruction(sessionId: SessionId, workspaceRoot: string, id: string): Promise<PfOutcome> {
-    return this.#pf(sessionId, workspaceRoot, ['instruction', 'revive', id])
+    return this.#pf(sessionId, workspaceRoot, instructionReviveLine(id))
   }
 
   /**
@@ -173,7 +182,7 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    */
   async removeInstruction(sessionId: SessionId, workspaceRoot: string, id: string): Promise<PfOutcome> {
-    return this.#pf(sessionId, workspaceRoot, ['instruction', 'rm', id])
+    return this.#pf(sessionId, workspaceRoot, instructionRemoveLine(id))
   }
 
   /**
@@ -293,31 +302,6 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
 }
 
 /**
- * Which sessions have a live agent in this host right now: the registry's
- * own list, ids only. `null` when this host exposes no agent registry — a
- * host that cannot say does not claim every session is gone.
- */
-function aliveAgentIds(ctx: Context): readonly string[] | null {
-  const read = (ctx as { get?: (name: string) => unknown }).get
-  const agents = typeof read === 'function' ? (read.call(ctx, 'agents') as { list?: () => unknown } | undefined) : undefined
-  if (agents === undefined || agents === null || typeof agents.list !== 'function') return null
-  try {
-    const ids: string[] = []
-    /* The session identity sits on the agent's own `id` (the DSH agent contract spells
-     * `Agent { readonly id: SessionId }`; there is no `sessionId` field to read). Reading any
-     * other field would filter every live agent out and answer "no live sessions" while the
-     * registry is up — an answer the stranded judgment would take as "gone". */
-    for (const agent of agents.list() as readonly { id?: unknown }[]) {
-      const id = typeof agent?.id === 'string' ? agent.id : ''
-      if (id.length > 0) ids.push(id)
-    }
-    return ids
-  } catch {
-    return null
-  }
-}
-
-/**
  * Which workspace root this operation touches: use the caller-named one when
  * given; only when not named (empty string, or the parameter absent entirely)
  * resolve it from the session identity.
@@ -329,20 +313,4 @@ function aliveAgentIds(ctx: Context): readonly string[] | null {
 export async function rootFor(ctx: Context, sessionId: SessionId, workspaceRoot: string): Promise<string> {
   if (typeof workspaceRoot === 'string' && workspaceRoot.length > 0) return workspaceRoot
   return workspaceRootOf(ctx, sessionId)
-}
-
-/**
- * Resolve the workspace root from the session identity: ask the live session
- * first, and only if there is no live session header consult the persisted
- * one; when neither has a cwd (including a session nobody recognizes), fall
- * back to the root recorded by the sandbox policy. The workspace file
- * gateway's own resolution follows the same order, so the root resolved here
- * is the same one it reads files from.
- */
-export async function workspaceRootOf(ctx: Context, sessionId: SessionId): Promise<string> {
-  const live = ctx.sessions.get(sessionId)?.header
-  const stored = live === undefined ? await ctx.get('sessionPersistence')?.stat(sessionId) : undefined
-  const cwd = (live ?? stored?.header)?.cwd
-  if (typeof cwd === 'string' && cwd.length > 0) return cwd
-  return ctx.sandboxPolicy.workspaceRoot
 }

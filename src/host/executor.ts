@@ -32,25 +32,40 @@
  * workspace create their sessions strictly one after another and their notes
  * never interleave mid-write. The listeners are armed before the first
  * instruction goes in: a loop that finishes its round instantly must not
- * outrun its own settlement. The settlement wait runs outside the queue: a
- * slow first round must not hold the next open of the same workspace
- * hostage.
+ * outrun its own settlement. The settlement wait — and the skill placement's
+ * session-side diagnostic, which is one catalog read and can never fail the
+ * open — run outside the queue: a slow first round or a slow catalog read must
+ * not hold the next open of the same workspace hostage.
+ *
+ * The engine's own executor seam ({@link executorOf}) lives here too, beside the
+ * open it drives: a dispatch's opener is this file and nothing else, and the
+ * caller that wants to watch its sessions passes `onOpened` instead of wrapping
+ * the open.
  */
 import { randomUUID } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 /* The declaration merges for `agents` and the agent events live on the package entries; type-only, nothing enters the runtime. */
 import type {} from '@deepseek-ai/dsh-agent'
-import type { Agent, AgentOptions, AgentRegistry, AgentSetup } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentRegistry, AgentSetup } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createUserMessage } from '@deepseek-ai/dsh-llm/message'
-import { RECORD_DIR } from './contract.ts'
+import type { Executor } from 'pf-core'
+import { LAUNCH_PROMPT_FILE, RECORD_LAUNCH } from './contract.ts'
 import type { PfFailure, PfRefusalCode } from './failure.ts'
 import { isAbsent, readWholeFile, type PathfinderScope } from './records.ts'
+import {
+  agentsOf,
+  logLineOf,
+  messageOf,
+  modelSelectionOf,
+  presetPortOf,
+  skillHostOf,
+  workspaceRegistryOf,
+} from './seams.ts'
 import { noteOpenedSession } from './session-note.ts'
-import { confirmSkillsForWorkspace, reportSkillView } from './skills.ts'
-import { wakeAgent } from './tool.ts'
-import type { SkillCatalogPort, SkillHostContext } from './skills.ts'
+import { confirmSkillsForWorkspace, reportSkillView } from './skills/view.ts'
+import { wakeAgent } from './wake.ts'
 
 /** What one open brought back: the session now working this node. The id is an address for the panel's navigation, not a word a reader is shown. */
 export type SessionOpenOutcome =
@@ -75,6 +90,13 @@ export interface SessionOpenOptions {
    * round's own turn end). Best effort: a throwing hook does not fail the open.
    */
   readonly onOpened?: (session: string) => void
+  /**
+   * The opener seam the session's own `pathfinder` tool opens through. A dispatched session arms its
+   * tool before its first step; when that tool opens a session of its own (`dag open`), the opener
+   * watches it the same way, so a caller passes its own seam here and the nesting keeps the watcher.
+   * Absent: this module's plain {@link executorOf}, unwatched.
+   */
+  readonly openerOf?: (sessionId: SessionId, workspaceRoot: string) => Executor
 }
 
 /**
@@ -92,159 +114,21 @@ function segmentFailure(value: string): PfFailure | undefined {
   return undefined
 }
 
-/** Which pieces of the host's session side this open needs, fetched on the spot. */
-interface SessionSide {
-  readonly agents: AgentRegistry
-}
-
-/**
- * The preset side of one open, as a narrow local face. The session-controller composes its own
- * sessions through the standing agent preset — the mount is what gives a session its scoped
- * world (tools, skills, the lot). This line opens the sessions that work nodes, so it composes
- * them the same way: resolve the standing preset and hand the mount in as creation-time setup.
- * The service is fetched by name and anything answering another shape counts as absent: a
- * headless composition without the roster keeps the bare open it always had.
- */
-interface PresetPort {
-  resolve(presetId?: string): Promise<{ readonly id: string }>
-  mount(agentCtx: Context, id: string): Promise<void>
-}
-
-/** The preset roster this context carries, when it answers the shape above. */
-function presetPortOf(ctx: Context): PresetPort | undefined {
-  const read = (ctx as { get?: (name: string) => unknown }).get
-  const held = typeof read === 'function' ? read.call(ctx, 'agentPresets') : undefined
-  if (held === null || typeof held !== 'object') return undefined
-  const resolve = (held as { resolve?: unknown }).resolve
-  const mount = (held as { mount?: unknown }).mount
-  if (typeof resolve !== 'function' || typeof mount !== 'function') return undefined
-  return {
-    async resolve(presetId?: string): Promise<{ readonly id: string }> {
-      return (await (resolve as (presetId?: string) => Promise<unknown>).call(held, presetId)) as { readonly id: string }
-    },
-    async mount(agentCtx: Context, id: string): Promise<void> {
-      await (mount as (agentCtx: Context, id: string) => Promise<unknown>).call(held, agentCtx, id)
-    },
-  }
-}
-
 /**
  * Probe the host's session side before anything else: the `sessions` store is
  * an inject requirement of this line, and an open needs the `agents` registry
  * itself — a deployment without it gets a refusal naming the piece. An open
  * that never happened must not read as one that failed halfway.
  */
-function sessionSideOf(ctx: Context): SessionSide | PfFailure {
-  const agents = ctx.get('agents')
-  if (agents === undefined || agents === null) return { ok: false, code: 'no-session-service', detail: 'agents' }
-  return { agents: agents as AgentRegistry }
-}
-
-/**
- * The workspace side of one open, as a narrow local face. The installed host
- * exposes a workspace registry: `create` answers the entity for a canonical
- * path (repeating it for the same path answers the same entity unchanged), and
- * `attachSession` is what joins a live session to it. Neither is a declared
- * dependency of this line — a headless composition mounts no workspace layer —
- * so the service is fetched by name and anything that answers another shape
- * counts as absent.
- */
-interface WorkspacePort {
-  attachSession(session: SessionId): Promise<void>
-}
-
-interface WorkspaceRegistryPort {
-  /** The workspace at one canonical path; `undefined` when the entity names no `attachSession`. */
-  create(path: string): Promise<WorkspacePort | undefined>
-}
-
-/** The workspace registry this context carries, when it answers the shape above. */
-function workspaceRegistryOf(ctx: Context): WorkspaceRegistryPort | undefined {
-  const read = (ctx as { get?: (name: string) => unknown }).get
-  const held = typeof read === 'function' ? read.call(ctx, 'workspaceRegistry') : undefined
-  if (held === null || typeof held !== 'object') return undefined
-  const create = (held as { create?: unknown }).create
-  if (typeof create !== 'function') return undefined
-  return {
-    async create(path: string): Promise<WorkspacePort | undefined> {
-      const workspace = await (create as (path: string) => Promise<unknown>).call(held, path)
-      if (workspace === null || typeof workspace !== 'object') return undefined
-      const attach = (workspace as { attachSession?: unknown }).attachSession
-      if (typeof attach !== 'function') return undefined
-      return {
-        async attachSession(session: SessionId): Promise<void> {
-          await (attach as (session: SessionId) => Promise<unknown>).call(workspace, session)
-        },
-      }
-    },
-  }
-}
-
-/** The logging face this open reads; every level is optional, like the skill host's. */
-interface LogPort {
-  info?(line: string): void
-  warn?(line: string): void
-}
-
-/** One line through the host's logger, when it carries one; a logger that throws never takes the open down. */
-function logLine(ctx: Context, line: string): void {
-  const held = (ctx as { logger?: LogPort }).logger
-  if (held === undefined || held === null) return
-  const write = held.warn ?? held.info
-  if (write === undefined) return
-  try {
-    write.call(held, line)
-  } catch {
-    /* The logger is the composition's, and the open has its own answer to give. */
-  }
+function sessionSideOf(ctx: Context): AgentRegistry | PfFailure {
+  const agents = agentsOf(ctx)
+  if (agents === undefined) return { ok: false, code: 'no-session-service', detail: 'agents' }
+  return agents
 }
 
 /** Say that the session is open and stays un-attached, naming the cell and the workspace it missed. */
 function reportUnattached(ctx: Context, cycle: string, node: string, root: string, reason: string): void {
-  logLine(ctx, `could not attach the session opened for ${cycle}/${node} to the workspace at ${root}: ${reason}; the session stays cwd-only`)
-}
-
-/**
- * The model selection a fresh session opens with: the route the dispatch named when it named one,
- * else the deployment's current choice (the same one a session opened through the host's own surface
- * gets). The service that knows the default is asked for by name on the spot, structurally — a host
- * without it (or one whose answer cannot be read) omits the selection and the loop's own defaults apply.
- *
- * The route arrives in the ecosystem's spelling, `provider/model`, carried whole by the engine: the
- * split happens here, at the one place that hands it to the session. A route with no slash is read as
- * the model alone (the host's own default provider), which is what a bare model word means elsewhere.
- */
-function routeOf(word: string | undefined): AgentOptions | undefined {
-  if (word === undefined) return undefined
-  const text = word.trim()
-  if (text.length === 0) return undefined
-  const at = text.indexOf('/')
-  if (at > 0 && at < text.length - 1) {
-    return { provider: text.slice(0, at), model: text.slice(at + 1) }
-  }
-  return { model: text }
-}
-
-function modelSelectionOf(ctx: Context, named?: string): AgentOptions | undefined {
-  const source = ctx.get('agentDefaultModel') as { currentSelection?: () => unknown } | undefined
-  if (source === undefined || typeof source.currentSelection !== 'function') return routeOf(named)
-  let picked: unknown
-  try {
-    picked = source.currentSelection()
-  } catch {
-    return routeOf(named)
-  }
-  const asked = routeOf(named)
-  if (asked !== undefined) return asked
-  if (picked === null || typeof picked !== 'object') return undefined
-  const held = picked as { provider?: unknown; model?: unknown }
-  const provider = typeof held.provider === 'string' && held.provider.length > 0 ? held.provider : undefined
-  const model = typeof held.model === 'string' && held.model.length > 0 ? held.model : undefined
-  if (provider === undefined && model === undefined) return undefined
-  return {
-    ...(provider === undefined ? {} : { provider }),
-    ...(model === undefined ? {} : { model }),
-  }
+  logLineOf(ctx, 'warn', `could not attach the session opened for ${cycle}/${node} to the workspace at ${root}: ${reason}; the session stays cwd-only`)
 }
 
 /**
@@ -287,33 +171,53 @@ function openFailure(reason: string): { ok: false; code: PfRefusalCode; detail: 
   return { ok: false, code: 'open-failed', detail: reason }
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 /**
- * The host's own skill catalog and logger, fetched structurally rather than declared as
- * dependencies: this line loads on hosts that mount no skill service, and the session-view
- * diagnostic on such a host refuses (naming the missing service) instead of claiming anything about
- * a catalog.
+ * The engine's executor seam for one dispatch: the native opener hung on the engine.
+ *
+ * The engine hands the request over after its own gates and preparation; the opener reads the
+ * prompt it landed and creates the session. A refusal throws — the engine then writes no claim and
+ * hands the reason back as the dispatch's own refusal detail. A caller that wants to watch the
+ * sessions this seam opens hands `onOpened` in; the open calls it the moment a session is minted.
+ *
+ * A request that carries `dryRun` is a drill: the call is answered with a receipt that says so and
+ * nothing is opened here — no agent, no note. The receipt carries no session id, which is also what
+ * keeps a watcher's table from treating a rehearsal as one of its own live sessions.
  */
-function skillHostOf(ctx: Context): SkillHostContext {
-  const read = (ctx as { get?: (name: string) => unknown }).get
-  const skills = typeof read === 'function' ? (read.call(ctx, 'skills') as SkillCatalogPort | undefined) : undefined
-  const logger = (ctx as { logger?: SkillHostContext['logger'] }).logger
+export function executorOf(
+  ctx: Context,
+  sessionId: SessionId,
+  workspaceRoot: string,
+  onOpened?: (session: string) => void,
+): Executor {
   return {
-    ...(skills === undefined || skills === null ? {} : { skills }),
-    ...(logger === undefined ? {} : { logger }),
+    async dispatch(request) {
+      const cycle = request.cycle ?? ''
+      const node = request.node ?? ''
+      if (cycle.length === 0 || node.length === 0) {
+        throw new Error('the dispatch request named no cell (cycle and node are both required here)')
+      }
+      if (request.dryRun === true) return { host: 'drill' }
+      /* The seam this opener hands its sessions own tools: this one, with the same watcher, so a
+       * session opened from a tool call is watched by whoever watched the session that called it. */
+      const openerOf = (id: SessionId, at: string) => executorOf(ctx, id, at, onOpened)
+      const outcome = await openNodeSession(ctx, sessionId, workspaceRoot, cycle, node, {
+        ...(onOpened === undefined ? {} : { onOpened }),
+        openerOf,
+        ...(request.model === undefined ? {} : { model: request.model }),
+      })
+      if (!outcome.ok) throw new Error(outcome.detail ?? outcome.code)
+      return { sessionId: outcome.session, host: 'dsh' }
+    },
   }
 }
 
 /**
  * Open the session that works one node, and settle its opening round.
  *
- * The plan's launch prompt (`<pf>/meta/launch/<line>/<node>/prompt.txt`) is
- * the first instruction, read verbatim out of the record store; the note
- * naming the session is written by this side once the session exists. See
- * the module comment for the whole order and why the queue holds only the
+ * The plan's launch prompt (`<launch>/<line>/<node>/<file>`) is the first
+ * instruction, read verbatim out of the record store; the note naming the
+ * session is written by this side once the session exists. See the module
+ * comment for the whole order and why the queue holds only the
  * workspace-touching stretch.
  */
 export async function openNodeSession(
@@ -338,7 +242,7 @@ export async function openNodeSession(
   const scope: PathfinderScope = { sessionId, workspaceRoot: root }
   let prompt: string
   try {
-    prompt = await readWholeFile(ctx.workspaceFiles, scope, `${RECORD_DIR}/meta/launch/${cycle}/${node}/prompt.txt`, signal)
+    prompt = await readWholeFile(ctx.workspaceFiles, scope, `${RECORD_LAUNCH}/${cycle}/${node}/${LAUNCH_PROMPT_FILE}`, signal)
   } catch (error) {
     if (isAbsent(error)) return { ok: false, code: 'prompt-missing', detail: `${cycle}/${node}` }
     return openFailure(messageOf(error))
@@ -367,9 +271,10 @@ export async function openNodeSession(
 
   /* The workspace-touching stretch, queued: create the session under the root, join it to that one workspace, arm the round's listeners, hand the prompt over, then note the session while the line still holds. */
   let settlement: Settlement
+  let agent: Agent
   try {
-    settlement = await inLine(root, async () => {
-      const handle = await side.agents.create({
+    const lane = await inLine(root, async () => {
+      const handle = await side.create({
         sessionId: opened,
         meta: { cwd: root, ...(standing === undefined ? {} : { agentPreset: standing.id }) },
         ...(selection === undefined ? {} : { agentOptions: selection }),
@@ -405,8 +310,13 @@ export async function openNodeSession(
        * paths cannot see a dispatched session — `agent/pre-step` carries no agent in its
        * payload, and the pipeline skills are not model-invocable, so no skill-tool load can
        * ever carry them. The opener knows the agent it just minted, so it arms it here,
-       * before the first step's tool set resolves. */
-      wakeAgent(handle.agent, { ctx })
+       * before the first step's tool set resolves. The opener seam the tool may call back
+       * through is this file's own `executorOf`: a word the tool runs that opens a session
+       * lands on the same opener, watched by whoever handed `onOpened` in. */
+      wakeAgent(handle.agent, {
+        ctx,
+        executorOf: options?.openerOf ?? ((id: SessionId, at: string) => executorOf(ctx, id, at)),
+      })
       /* The caller's earliest watch point: the session exists and its first instruction has
        * not gone in — registration here lands ahead of every event the opening round emits. */
       try {
@@ -420,23 +330,29 @@ export async function openNodeSession(
           source: { kind: 'user' },
         }))
         await noteOpenedSession(root, node, opened)
-        /* The placement's session-side diagnostic. This is the one stretch that knows both the
-         * workspace and the live session's own scope, so a same-name copy in a project root
-         * (rank 100/200 — DSH's own per-workspace override, outside this node's judgement) gets a
-         * name and both places in one log line rather than passing silently. Neither call can fail
-         * the open: the check hands back a code and the report writes a line. This diagnostic is not
-         * an acceptance reading anyone can point at — the session's own catalog is. */
-        reportSkillView(skillHostOf(ctx), await confirmSkillsForWorkspace(skillHostOf(ctx), root, handle.agent))
       } catch (error) {
         armed.drop()
         throw error
       }
-      return armed
+      return { armed, agent: handle.agent }
     })
+    settlement = lane.armed
+    agent = lane.agent
   } catch (error) {
     /* The session may be out already and the note missing: say so plainly instead of letting the next open run a second session on this cell. */
     return openFailure(messageOf(error))
   }
+
+  /* The placement's session-side diagnostic, taken once outside the queue. This is the one stretch
+   * that knows both the workspace and the live session's own scope, so a same-name copy in a project
+   * root (rank 100/200 — DSH's own per-workspace override, outside this node's judgement) gets a name
+   * and both places in one log line rather than passing silently. One catalog read is real IO: held
+   * inside the queue it would block the next open of this workspace for as long as the catalog takes,
+   * and it cannot fail the open (the check hands back a code, the report writes a line), so nothing
+   * downstream waits on it. This diagnostic is not an acceptance reading anyone can point at — the
+   * session's own catalog is. */
+  const skills = skillHostOf(ctx)
+  reportSkillView(skills, await confirmSkillsForWorkspace(skills, root, agent))
 
   try {
     await settlement.wait(signal)
