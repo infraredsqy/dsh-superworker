@@ -12,7 +12,15 @@ import type {
   WaitPlan,
 } from './conductor';
 import { cycleHoldingIds, cyclePolicy, readStateLedger } from './cycles';
-import { createDagNamespace } from './dag';
+import {
+  eisenhowerOrder,
+  inTagScope,
+  nodeReady,
+  rankScores,
+  short,
+  tagsOf,
+  type NodeMap,
+} from './graph';
 import { instructionInScope, isLive } from './instruct';
 import { readJsonFile } from './jsonio';
 import {
@@ -65,8 +73,6 @@ async function readRecord(path: string, label: string): Promise<Record<string, u
 }
 
 /** The node table: the `nodes` table of ideas.json, where a missing `mode` means `auto` (the same default as the graph side). */
-type NodeMap = Record<string, NodeRecord>;
-
 async function loadNodes(paths: PfPaths): Promise<NodeMap> {
   const data = await readRecord(paths.ideasJson, 'ideas.json');
   const table = asObject(data?.nodes);
@@ -98,6 +104,85 @@ async function loadSignal(
   return readRecord(signalPath(paths, cycleId, nodeId), `signals/${cycleId}/${nodeId}.json`);
 }
 
+/**
+ * The two facts of one cell that decide a dispatch, read in one place: **the material** (is this
+ * cell's prompt already landed?) and **the claim** (is a session already out for it, the `started`
+ * marker?). The dispatch gate is this pair — a prompt on disk with no `started` stamp is a dispatch
+ * of its own — and the plan, the real dispatch and its rehearsal all read the cell through here, so
+ * the three cannot drift apart.
+ */
+export interface CellMaterial {
+  /** The prompt this cell's dispatch hands over is already at its location. */
+  readonly prompt_on_disk: boolean;
+  /** This cell's `started` claim is on disk: a session is out for it, and it is not dispatchable again. */
+  readonly started: boolean;
+}
+
+/**
+ * One cell's state: the material and the claim above, plus the ticket as it is (`null` when absent).
+ * The ticket is the plan's business — the dispatch and its rehearsal take `CellMaterial` and spend no
+ * read on it.
+ */
+export interface CellState extends CellMaterial {
+  /** The ticket on disk, as it is; `null` when it is absent (or holds something that is not a table). */
+  readonly ticket: Record<string, unknown> | null;
+}
+
+/** Read one cell's material and claim (`CellMaterial`): two `exists` calls, no record read. */
+export async function materialOf(
+  root: string,
+  cycleId: string,
+  nodeId: string,
+): Promise<CellMaterial> {
+  const paths = pfPaths(root);
+  return {
+    prompt_on_disk: existsSync(launchPromptPath(paths, cycleId, nodeId)),
+    started: existsSync(startedMarkerPath(paths, cycleId, nodeId)),
+  };
+}
+
+/** Read one cell's state (`CellState`): the material and the claim, plus the ticket. */
+export async function cellState(
+  root: string,
+  cycleId: string,
+  nodeId: string,
+): Promise<CellState> {
+  return {
+    ...(await materialOf(root, cycleId, nodeId)),
+    ticket: await loadSignal(pfPaths(root), cycleId, nodeId),
+  };
+}
+
+/**
+ * The gate's answer: open, with the ticket in hand; or closed, with the one sentence saying why.
+ * Handing the ticket back on the open side is the point — no caller narrows a `null` of its own.
+ */
+export type SettleGate =
+  | { readonly ok: true; readonly ticket: Record<string, unknown> }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * The one gate of "is there a verdict to settle": a ticket that is absent, or one still stating
+ * `pending` (the mark a re-run leaves), has said nothing — and this is also the one sentence that says
+ * so. The write side folds it into its refusal (`nothing_to_settle`) and the plan folds it into a
+ * `wait`; the criterion, the sentence and the reading of what an open gate carries are not written a
+ * second time on either side.
+ */
+export function settleGate(
+  cycleId: string,
+  nodeId: string,
+  ticket: Record<string, unknown> | null,
+): SettleGate {
+  if (ticket !== null && ticket.status !== 'pending') return { ok: true, ticket };
+  return {
+    ok: false,
+    reason:
+      `${short(nodeId)} has not handed in a verdict yet ` +
+      `(signals/${cycleId}/${short(nodeId)}….json is absent, or still pending) -- ` +
+      'there is nothing to settle',
+  };
+}
+
 /** The node's own `mode`, a missing key meaning `auto`; an unrecognised word is read as it is (only the write side refuses it). */
 function normalizeMode(mode: unknown): NodeMode {
   const word = typeof mode === 'string' ? mode : '';
@@ -120,13 +205,6 @@ function nodeHolders(cycles: CycleRecord[]): Map<string, string> {
     }
   }
   return holders;
-}
-
-/** The tag reading of a node: string words only, empties dropped. */
-function tagsOf(node: { tags?: unknown }): string[] {
-  const tags = node.tags;
-  if (!Array.isArray(tags)) return [];
-  return tags.filter((tag): tag is string => typeof tag === 'string');
 }
 
 // ── quoting and list spellings in the body ───────────────────────────────────
@@ -163,10 +241,8 @@ function pyBare(value: unknown): string {
   return String(value);
 }
 
-/** The short spelling of a node id: the eight characters the plan and the run doc use to cite it. */
-export function short(id: string): string {
-  return id.slice(0, 8);
-}
+/** The short spelling of a node id: the eight characters the plan and the run doc use to cite it (the graph layer's one spelling). */
+export { short } from './graph';
 
 // ── readiness, ordering and picking ──────────────────────────────────────────
 
@@ -176,57 +252,6 @@ export interface ReadyRow {
   title: string;
   mode: NodeMode;
   tags: string[];
-}
-
-/**
- * The three criteria of ready (THE one): **the node itself is todo** (`completed` and `shelved` are both out
- * of the game), **every dependency is delivered** (a dangling dependency counts as delivered — that is what
- * `validate` should name, and it should not stall the whole line), and **no other line holds it** (`running`
- * and `ready` are mutually exclusive, and that criterion deletes rows inside `rankedReady`). `assumeCompleted`
- * is the reading of the closing moment: the node being closed has not been written back to its status yet, and
- * reading it as delivered is what keeps the downstream it just unlocked from being hidden.
- */
-function readyNodes(nodes: NodeMap, assumed: ReadonlySet<string>): ReadyRow[] {
-  const out: ReadyRow[] = [];
-  for (const [uid, node] of Object.entries(nodes)) {
-    if (node.status === 'completed' || node.status === 'shelved' || assumed.has(uid)) continue;
-    const deps = Array.isArray(node.dependencies) ? node.dependencies : [];
-    const ready = deps.every((dep) => {
-      if (!(dep in nodes)) return true;
-      if (assumed.has(dep)) return true;
-      return nodes[dep]!.status === 'completed';
-    });
-    if (!ready) continue;
-    out.push({
-      id: uid,
-      title: node.title ?? '',
-      mode: normalizeMode(node.mode),
-      tags: tagsOf(node),
-    });
-  }
-  return out;
-}
-
-/** Whether this line's picking range sees this node: no filter set means the whole graph is in range; a node without tags is visible everywhere. */
-function nodeInTagScope(row: { tags?: readonly string[] }, cycleTags: readonly string[]): boolean {
-  if (cycleTags.length === 0) return true;
-  const tags = row.tags ?? [];
-  if (tags.length === 0) return true;
-  return tags.some((tag) => cycleTags.includes(tag));
-}
-
-/**
- * The graph's ordering as {node: position}. The full ordering has one source — `dag.list()` (urgency ×
- * importance, ties keeping the on-disk order, and completed and shelved nodes sinking with no score); it is
- * only used here to order the ready set, never to rewrite the scoring.
- */
-async function rankingOrder(root: string): Promise<Map<string, number>> {
-  const order = new Map<string, number>();
-  const rows = await createDagNamespace(root).list();
-  rows.forEach((row, index) => {
-    if (typeof row?.id === 'string' && row.id !== '') order.set(row.id, index);
-  });
-  return order;
 }
 
 /** The group of conditions used when picking. */
@@ -239,48 +264,52 @@ interface RankOptions {
 }
 
 /**
- * The ready set ordered by the graph's order, with exactly two deletions: the readiness criteria (see
- * `readyNodes`) and the named exclusions.
+ * The ready set, ordered by the graph's ordering: the graph layer's one ready criterion (`nodeReady`)
+ * with the closing moment's `assumeCompleted`, and — this is all this layer adds — the named
+ * exclusions.
  *
- * The holding and the picking-range deletions are left to the three readers below, each deleting its own rows:
- * one ordering serves three uses (what can be picked, what the range keeps out, what another line holds), and
- * the ordering is computed once, in one place.
+ * The holding and the picking-range deletions are left to the three readers below, each deleting its
+ * own rows: one ordering serves three uses (what can be picked, what the range keeps out, what
+ * another line holds), and the ordering is computed once, from the node table already in hand.
  */
-async function rankedRows(
-  root: string,
+function readyRows(
   nodes: NodeMap,
   options: RankOptions = {},
-): Promise<ReadyRow[]> {
+): ReadyRow[] {
   const assumed = new Set((options.assumeCompleted ?? []).filter((id) => id !== ''));
-  let ready = readyNodes(nodes, assumed);
+  const scores = rankScores(nodes);
   const drop = new Set(options.excludeMany ?? []);
   if (options.exclude !== undefined && options.exclude !== null) drop.add(options.exclude);
-  if (drop.size > 0) ready = ready.filter((row) => !drop.has(row.id));
-  if (ready.length === 0) return [];
-  const order = await rankingOrder(root);
-  const fallback = order.size + 1;
-  ready = [...ready].sort(
-    (left, right) => (order.get(left.id) ?? fallback) - (order.get(right.id) ?? fallback),
-  );
-  return ready;
+  const rows: ReadyRow[] = [];
+  for (const [uid, node] of Object.entries(nodes)) {
+    if (drop.has(uid)) continue;
+    if (!nodeReady(uid, nodes, { assumeCompleted: assumed })) continue;
+    rows.push({
+      id: uid,
+      title: node.title ?? '',
+      mode: normalizeMode(node.mode),
+      tags: tagsOf(node),
+    });
+  }
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return eisenhowerOrder(rows.map((row) => row.id), scores).map((id) => byId.get(id)!);
 }
 
 /**
  * The ready set this line can pick right now, ordered by the graph's order.
  *
- * Four deletions, none of them touching the ordering: the readiness criteria (see `readyNodes`), the named
- * exclusions, **nodes another line holds right now** (that line has it, so this one cannot pick it), and this
- * line's own picking range (which only deletes rows, never reorders). `limit` counts slots: it cuts a stretch
- * as wide as the slots this line can occupy at once (the line's own `parallel`), and the graph's order still
- * runs from the top.
+ * Four deletions, none of them touching the ordering: the readiness criteria (`nodeReady`), the named
+ * exclusions, **nodes another line holds right now** (that line has it, so this one cannot pick it),
+ * and this line's own picking range (which only deletes rows, never reorders). `limit` counts slots:
+ * it cuts a stretch as wide as the slots this line can occupy at once (the line's own `parallel`), and
+ * the graph's order still runs from the top.
  */
-async function rankedReady(
-  root: string,
+function rankedReady(
   nodes: NodeMap,
   cycles: CycleRecord[],
   options: RankOptions = {},
-): Promise<ReadyRow[]> {
-  const ready = await rankedRows(root, nodes, options);
+): ReadyRow[] {
+  const ready = readyRows(nodes, options);
   if (ready.length === 0) return [];
   const drop = new Set(options.excludeMany ?? []);
   if (options.exclude !== undefined && options.exclude !== null) drop.add(options.exclude);
@@ -288,7 +317,7 @@ async function rankedReady(
   // A named exclusion is "the caller's own", and must not be counted as "somebody else holds it" a second time.
   const free = ready.filter((row) => drop.has(row.id) || !holders.has(row.id));
   const tags = options.tags ?? [];
-  const visible = free.filter((row) => nodeInTagScope(row, tags));
+  const visible = free.filter((row) => inTagScope(row.tags, tags));
   return options.limit === undefined ? visible : visible.slice(0, options.limit);
 }
 
@@ -317,30 +346,28 @@ export async function pinSlots(root: string, cycle: CycleRecord): Promise<ReadyR
   const view = await readLedger(pfPaths(root));
   const line = view.cycles.find((row) => String(row.id) === String(cycle.id)) ?? cycle;
   const tags = Array.isArray(line.tags) ? line.tags : [];
-  return rankedReady(root, view.nodes, view.cycles, { limit: slots, tags });
+  return rankedReady(view.nodes, view.cycles, { limit: slots, tags });
 }
 
 /** The nodes that are ready but kept outside by this line's picking range (always empty when there is no filter set). */
-async function tagBlockedReady(
-  root: string,
+function tagBlockedReady(
   nodes: NodeMap,
   tags: readonly string[],
   options: RankOptions = {},
-): Promise<ReadyRow[]> {
+): ReadyRow[] {
   if (tags.length === 0) return [];
-  const ranked = await rankedRows(root, nodes, options);
-  return ranked.filter((row) => !nodeInTagScope(row, tags));
+  const ranked = readyRows(nodes, options);
+  return ranked.filter((row) => !inTagScope(row.tags, tags));
 }
 
 /** The nodes that are ready but another line holds right now: this one cannot pick them, and they should not be told as "hidden by a tag". */
-async function holdingReady(
-  root: string,
+function holdingReady(
   nodes: NodeMap,
   cycles: CycleRecord[],
   options: RankOptions = {},
-): Promise<ReadyRow[]> {
+): ReadyRow[] {
   const holders = nodeHolders(cycles);
-  const ranked = await rankedRows(root, nodes, options);
+  const ranked = readyRows(nodes, options);
   return ranked.filter((row) => holders.has(row.id));
 }
 
@@ -459,17 +486,20 @@ function stopCriterion(
       // "stop after N nodes": this close is the N-th — by now all N are delivered.
       const done = (Array.isArray(cycle.path) ? cycle.path.length : 0) + 1;
       if (done >= cap) {
-        return [true, `instruction "${textOf(entry).slice(0, 40)}": stop after ${cap} nodes`];
+        return [true, `instruction "${stringCellOf((entry as { text?: unknown }).text).slice(0, 40)}": stop after ${cap} nodes`];
       }
     }
   }
   return [false, ''];
 }
 
-/** The instruction text; absent reads as an empty string (a missing key and an empty string mean the same). */
-function textOf(entry: InstructionRecord): string {
-  const text = (entry as { text?: unknown }).text;
-  return typeof text === 'string' ? text : '';
+/**
+ * One cell read as a string, with "not there" reading as the empty string: a missing key and an empty
+ * string mean the same thing on every read side. The one reader of such a cell — the planner's own
+ * sentences, the run doc's instruction lines and the closing reason all come through it.
+ */
+export function stringCellOf(value: unknown): string {
+  return typeof value === 'string' ? value : '';
 }
 
 // ── the action bags ──────────────────────────────────────────────────────────
@@ -753,15 +783,15 @@ async function readLedger(paths: PfPaths): Promise<LedgerView> {
  * The ordering decides unattended at every close, so a line's first pick and its slot-filling use the same rows;
  * nodes kept out by the range and nodes another line holds each state their own reason (see `blockedReason`).
  */
-async function pickNext(root: string, cycle: CycleRecord, view: LedgerView): Promise<NextPlan> {
+async function pickNext(cycle: CycleRecord, view: LedgerView): Promise<NextPlan> {
   const tags = Array.isArray(cycle.tags) ? cycle.tags : [];
   const parallel = cyclePolicy(cycle).parallel;
   const slots = typeof parallel === 'number' ? parallel : 1;
-  const ready = await rankedReady(root, view.nodes, view.cycles, { limit: slots, tags });
+  const ready = rankedReady(view.nodes, view.cycles, { limit: slots, tags });
   if (ready.length > 0) return openAction(cycle, ready);
   const holders = nodeHolders(view.cycles);
-  const tagged = await tagBlockedReady(root, view.nodes, tags);
-  const holding = await holdingReady(root, view.nodes, view.cycles);
+  const tagged = tagBlockedReady(view.nodes, tags);
+  const holding = holdingReady(view.nodes, view.cycles);
   if (tagged.length > 0 || holding.length > 0) {
     return stopAction(view.nodes, cycle, blockedReason(holders, tags, tagged, holding));
   }
@@ -822,7 +852,7 @@ export async function settleClose(
   signal: Record<string, unknown>,
 ): Promise<CloseSettlement> {
   const view = await readLedger(pfPaths(root));
-  return settleAnswers(root, cycle, nodeId, signal, cycle.status === 'active', view);
+  return settleAnswers(cycle, nodeId, signal, cycle.status === 'active', view);
 }
 
 /**
@@ -831,7 +861,6 @@ export async function settleClose(
  * records, and neither side copies a second one.
  */
 async function settleAnswers(
-  root: string,
   cycle: CycleRecord,
   nodeId: string,
   signal: Record<string, unknown>,
@@ -863,7 +892,7 @@ async function settleAnswers(
   // ── filling the slots: one node per empty slot ────────────────────────────
   let filled: ReadyRow[] = [];
   if (carryOn && decision === 'continue' && slots > 0) {
-    filled = await rankedReady(root, nodes, view.cycles, {
+    filled = rankedReady(nodes, view.cycles, {
       limit: slots,
       exclude: nodeId,
       excludeMany: others,
@@ -930,7 +959,7 @@ async function settleAnswers(
         : '';
     let reason: string;
     if (!delivered && !policyCarries) {
-      const slipped = textOf2(signal.summary) || '(no reason written)';
+      const slipped = stringCellOf(signal.summary) || '(no reason written)';
       reason = `this node did not deliver (${outcome}): ${slipped}`;
     } else if (stopWhy !== '') {
       reason = stopWhy;
@@ -955,12 +984,12 @@ async function settleAnswers(
         // On a single-node line the node delivered by this close is this node: the downstream it just unlocked is
         // the work the reader is looking for. A multi-node close reads the graph as it is on disk at this moment.
         const assumedForBlocked = several ? [] : assumed;
-        const tagged = await tagBlockedReady(root, nodes, tags, {
+        const tagged = tagBlockedReady(nodes, tags, {
           exclude: nodeId,
           excludeMany: others,
           assumeCompleted: assumedForBlocked,
         });
-        const holding = await holdingReady(root, nodes, view.cycles, {
+        const holding = holdingReady(nodes, view.cycles, {
           exclude: nodeId,
           excludeMany: others,
           assumeCompleted: assumedForBlocked,
@@ -1008,14 +1037,13 @@ async function settleAnswers(
  * the closing rehearsal (`next` with `after`) and the write side share the same answer, neither copying the other.
  */
 async function closeOwnNode(
-  root: string,
   cycle: CycleRecord,
   nodeId: string,
   signal: Record<string, unknown>,
   lineActive: boolean,
   view: LedgerView,
 ): Promise<NextPlan> {
-  const settle = await settleAnswers(root, cycle, nodeId, signal, lineActive, view);
+  const settle = await settleAnswers(cycle, nodeId, signal, lineActive, view);
   const nodes = view.nodes;
   const parallelRaw = cyclePolicy(cycle).parallel;
   const several = (typeof parallelRaw === 'number' ? parallelRaw : 1) > 1;
@@ -1045,11 +1073,6 @@ async function closeOwnNode(
     },
     settling: true as const,
   };
-}
-
-/** The readable string of one cell (an absent one is the empty string), used when the body is concatenated. */
-function textOf2(value: unknown): string {
-  return typeof value === 'string' ? value : '';
 }
 
 /**
@@ -1098,7 +1121,7 @@ export async function planNext(root: string, query: NextQuery = {}): Promise<Nex
 
   // Nothing in hand: the line just opened, or everything it held is settled. Both cases ask the same question, and
   // the answer follows the same rule.
-  if (holding.length === 0) return pickNext(root, cycle, view);
+  if (holding.length === 0) return pickNext(cycle, view);
 
   if (selfVerified) {
     // A session's own close: settle the node that has already written its ticket. The other nodes the same line
@@ -1114,39 +1137,35 @@ export async function planNext(root: string, query: NextQuery = {}): Promise<Nex
           'there is nothing to settle.',
       };
     }
-    const signal = await loadSignal(paths, String(cycle.id), closing);
+    const cell = await cellState(root, String(cycle.id), closing);
     // A session's own close **is** the "close me" request, so a ticket that already states a result is enough:
     // `completed` and `failed` / `stopped` all have said their piece, and whichever it is does not stand in the way
-    // of settling. Only a missing or still `pending` ticket is left to wait.
-    const status = signal?.status;
-    if (signal === null || status === 'pending') {
+    // of settling. Only a missing or still `pending` ticket is left to wait — the same gate, and the same
+    // sentence, the write side refuses with.
+    const gate = settleGate(String(cycle.id), closing, cell.ticket);
+    if (!gate.ok) {
       return {
         action: 'wait',
         cycle: String(cycle.id),
         node_id: closing,
-        note:
-          `${short(closing)} has not handed in a note yet ` +
-          `(signals/${cycle.id}/${short(closing)}….json is absent, or still ` +
-          'pending) -- there is nothing to settle.',
+        note: `${gate.reason}.`,
       };
     }
-    return closeOwnNode(root, cycle, closing, signal, cycle.status === 'active', view);
+    return closeOwnNode(cycle, closing, gate.ticket, cycle.status === 'active', view);
   }
 
   // Every node in hand already has a ticket in a terminal state: this batch is over, and the close is what consumes
   // them (one at a time, always that stable state). A node whose ticket is not written yet is a dispatch target (the
   // session that writes the ticket is already running); a `pending` ticket is the re-run case, with nothing to open.
-  const signals = new Map<string, Record<string, unknown> | null>();
-  for (const nodeId of holding) signals.set(nodeId, await loadSignal(paths, String(cycle.id), nodeId));
+  const cells = new Map<string, CellState>();
+  for (const nodeId of holding) cells.set(nodeId, await cellState(root, String(cycle.id), nodeId));
   const terminal = holding.filter((nodeId) => {
-    const status = signals.get(nodeId)?.status;
+    const status = cells.get(nodeId)!.ticket?.status;
     return status !== undefined && status !== null && status !== 'pending';
   });
   if (terminal.length > 0) return ticketWait(cycle, terminal[0]!, holding);
-  const fresh = holding.filter((nodeId) => signals.get(nodeId) === null);
-  const waiting = fresh.filter(
-    (nodeId) => !existsSync(startedMarkerPath(paths, String(cycle.id), nodeId)),
-  );
+  const fresh = holding.filter((nodeId) => cells.get(nodeId)!.ticket === null);
+  const waiting = fresh.filter((nodeId) => !cells.get(nodeId)!.started);
   if (waiting.length > 0) {
     return dispatchAction(paths, cycle, waiting, view.nodes);
   }

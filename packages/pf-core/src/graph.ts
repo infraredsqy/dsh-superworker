@@ -32,8 +32,47 @@ export async function readGraphSnapshot(paths: PfPaths): Promise<{ readonly node
   return { nodes };
 }
 
+// ── tags ─────────────────────────────────────────────────────────────────────
+// The one reading of a tag list and of a picking range: a tag is a word with the blanks taken off,
+// the empty word is not a tag, and a node without tags is visible to every range. Every reader
+// (the graph's own filter, a line's picking range, the plan's rows) goes through these two.
+
+/** Normalise a tag list: trim each word, drop the empty ones, keep the given order, drop duplicates. */
+export function normalizeTags(raw: Iterable<unknown>): string[] {
+  const out: string[] = [];
+  for (const item of raw) {
+    const tag = typeof item === 'string' ? item.trim() : '';
+    if (tag && !out.includes(tag)) out.push(tag);
+  }
+  return out;
+}
+
+/** The tags one record carries, normalised; a record with no tags (or none spelled as words) carries none. */
+export function tagsOf(node: { tags?: unknown }): string[] {
+  return normalizeTags(Array.isArray(node.tags) ? (node.tags as unknown[]) : []);
+}
+
+/** Whether a node's tags fall inside a picking range: a shared tag is a hit, and a node without tags is visible everywhere. Both sides are normalised first, so a tag spelled with blanks meets one spelled without. */
+export function inTagScope(nodeTags: readonly string[], range: readonly string[]): boolean {
+  const wanted = normalizeTags(range);
+  if (wanted.length === 0) return true;
+  const tags = normalizeTags(nodeTags);
+  if (tags.length === 0) return true;
+  return tags.some((tag) => wanted.includes(tag));
+}
+
 /** The adjacency table: {node: [the nodes it depends on, ...]}. */
 export type Adjacency = Record<string, string[]>;
+
+/**
+ * The short spelling of an id: the eight characters the plan, the receipt and a line record cite a
+ * node by. The one definition of the width: `words/out`'s printer and the other print faces of the
+ * word layer cite this rule rather than slicing an id themselves; the merge driver's own id cells
+ * (`ledgermerge/`) are a separate face and still spell their own.
+ */
+export function short(id: string): string {
+  return id.slice(0, 8);
+}
 
 /**
  * Resolve an id spelling the caller gives back to a key of a table: a full id is taken as it is, and
@@ -162,18 +201,71 @@ export function importanceScores(adj: Adjacency): Record<string, number> {
   return scores;
 }
 
-/** Ready means every dependency is delivered (or absent); an absent dependency counts as delivered. */
-function isReady(deps: string[], allNodes: NodeMap): boolean {
-  for (const dep of deps) {
-    const node = allNodes[dep];
-    if (node !== undefined && node.status !== 'completed') return false;
+// ── the ordering of the unfinished subgraph ──────────────────────────────────
+
+/** The two readings of the unfinished subgraph (completed nodes are not ranked), computed once for everything that orders by them. */
+export interface RankScores {
+  readonly urgency: Record<string, number>;
+  readonly importance: Record<string, number>;
+}
+
+/** Read urgency and importance off the unfinished subgraph: the one place either score is computed. */
+export function rankScores(nodes: NodeMap): RankScores {
+  const notCompleted: NodeMap = {};
+  for (const [uid, node] of Object.entries(nodes)) {
+    if (node.status !== 'completed') notCompleted[uid] = node;
+  }
+  const adj = adjacency(notCompleted);
+  return { urgency: urgencyScores(adj), importance: importanceScores(adj) };
+}
+
+/**
+ * The Eisenhower ordering of a set of ids: importance first, urgency after. An id with no score
+ * (completed, shelved, or absent from the table) counts as 0, and ties keep the order the ids came
+ * in — `Array.prototype.sort` is stable. The one ordering rule of the graph layer: `dag.list`,
+ * `dag.info` and a line's ranking all read from here.
+ */
+export function eisenhowerOrder(ids: readonly string[], scores: RankScores): string[] {
+  const order = [...ids];
+  order.sort(
+    (a, b) =>
+      (scores.importance[b] ?? 0) - (scores.importance[a] ?? 0) ||
+      (scores.urgency[b] ?? 0) - (scores.urgency[a] ?? 0),
+  );
+  return order;
+}
+
+// ── ready ────────────────────────────────────────────────────────────────────
+
+/**
+ * The one reading of ready: **the node itself is todo** (an absent status reads todo, as `api.md`
+ * says; only a node that left todo is out of the game), **every dependency is delivered** (a
+ * dangling dependency counts as delivered — that is what `validate` should name, and it must not
+ * stall the whole line), and — when the caller names the closing moment — a node in
+ * `assumeCompleted` reads as already delivered.
+ *
+ * `assumeCompleted` is the closing reading: the node being closed has not been written back to its
+ * status yet, so counting it delivered is what shows the downstream it just unlocked; the same set
+ * also drops the closing node itself from the ready set. The criterion is not copied anywhere else:
+ * `dag.list` / `dag.search` / `dag.info`, a line's ranking and the planner all call this.
+ */
+export function nodeReady(uid: string, allNodes: NodeMap, options: ReadyOptions = {}): boolean {
+  const assumed = options.assumeCompleted;
+  if (assumed !== undefined && assumed.has(uid)) return false;
+  const node = allNodes[uid];
+  if (node === undefined) return false;
+  if ((node.status ?? 'todo') !== 'todo') return false;
+  for (const dep of node.dependencies ?? []) {
+    if (!(dep in allNodes)) continue; // a dangling dependency: delivered
+    if (assumed !== undefined && assumed.has(dep)) continue;
+    if ((allNodes[dep]!.status ?? 'todo') !== 'completed') return false;
   }
   return true;
 }
 
-/** The one reading of ready: the node itself is todo and every dependency is completed (or absent). */
-export function nodeReady(node: NodeRecord, allNodes: NodeMap): boolean {
-  return node.status === 'todo' && isReady(node.dependencies ?? [], allNodes);
+/** The reading of ready a caller may narrow: the nodes of the closing moment, which count as delivered. */
+export interface ReadyOptions {
+  readonly assumeCompleted?: ReadonlySet<string>;
 }
 
 /** Three-colour DFS for cycles; on finding one it returns (true, cycle path), whose ends are the same node. */

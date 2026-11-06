@@ -2,5 +2,5 @@
   "action": "wait",
   "cycle": "c1",
   "node_id": "@node-a@",
-  "note": "@short-a@ has not handed in a note yet (signals/c1/@short-a@….json is absent, or still pending) -- there is nothing to settle."
+  "note": "@short-a@ has not handed in a verdict yet (signals/c1/@short-a@….json is absent, or still pending) -- there is nothing to settle."
 }

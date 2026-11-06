@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { open } from '../src/open';
 import { jsonOptionsForRecord } from '../src/jsonio';
+import { nodeReady } from '../src/graph';
 
 /**
  * Graph invariants: whole-graph validation (cycles / dangling / duplicate edges), the upstream
@@ -239,6 +240,60 @@ describe('list: the ordering rule and filtering', () => {
     expect(await pf.ledger.dag.list()).toHaveLength(3);
   });
 
+  it('a tag spelled with blanks meets the same word, and a tag of blanks only is no tag', async () => {
+    // The on-disk shapes a hand merge leaves: a tag written with a leading blank, and one that is only
+    // blanks. The read side trims both, so the first meets the word `coding` and the second reads as a
+    // node without tags (visible in every picking range). A line's own range has to answer the same.
+    const padded = 'aaaaaaaa-1111-4111-8111-111111111111';
+    const blanks = 'bbbbbbbb-2222-4222-8222-222222222222';
+    const other = 'cccccccc-3333-4333-8333-333333333333';
+    await plantNodes({
+      [padded]: { ...nodeOf('标签带空白', []), tags: [' coding'] },
+      [blanks]: { ...nodeOf('只有空白的标签', []), tags: ['  '] },
+      [other]: { ...nodeOf('别的范围', []), tags: ['writing'] },
+    });
+
+    const coding = await pf.ledger.dag.list({ tags: ['coding'] });
+    expect(coding.map((row) => row.id).sort()).toEqual([padded, blanks].sort());
+    // The padded word is printed normalised, and the blank-only tag is not a tag at all.
+    expect(coding.find((row) => row.id === padded)!.tags).toEqual(['coding']);
+    expect(coding.find((row) => row.id === blanks)!.tags).toBeUndefined();
+
+    // The same two words decide what a line pins: the padded tag is inside the range, the blank-only
+    // tag is no tag (visible everywhere), and the writing one is kept out.
+    const line = await pf.ledger.cycles.start({ id: 'c1', tags: ['coding'], parallel: 2 });
+    expect(line.holding.map((held) => held.id).sort()).toEqual([padded, blanks].sort());
+  });
+
+  it('importance runs before urgency: more dependents outranks more urgent', async () => {
+    // Five nodes whose two readings disagree. base holds the most dependents (importance 3) and the top
+    // urgency (2); middle holds two dependents (importance 2) but sits one level in (urgency 1); the
+    // isolated head holds no dependents (importance 0) yet is as urgent as base (2); the two leaves are
+    // the least urgent (0) and have nothing depending on them.
+    const base = 'aaaaaaaa-1111-4111-8111-111111111111';
+    const middle = 'bbbbbbbb-2222-4222-8222-222222222222';
+    const leafA = 'cccccccc-3333-4333-8333-333333333333';
+    const leafB = 'dddddddd-4444-4444-8444-444444444444';
+    const alone = 'eeeeeeee-5555-4555-8555-555555555555';
+    await plantNodes({
+      [base]: nodeOf('地基', []),
+      [middle]: nodeOf('中层', [base]),
+      [leafA]: nodeOf('顶层甲', [middle]),
+      [leafB]: nodeOf('顶层乙', [middle]),
+      [alone]: nodeOf('孤岛', []),
+    });
+
+    const rows = await pf.ledger.dag.list();
+    expect(rows.map((row) => row.id)).toEqual([base, middle, alone, leafA, leafB]);
+    expect(rows.map((row) => row.importance_score)).toEqual([3, 2, 0, 0, 0]);
+    expect(rows.map((row) => row.urgency_level)).toEqual([2, 1, 2, 0, 0]);
+    // The discriminating pair is middle vs alone: importance says middle first, urgency says alone first
+    // (2 > 1). Importance is the leading key, so middle keeps its place above the isolated head.
+    expect(rows.findIndex((row) => row.id === middle)).toBeLessThan(
+      rows.findIndex((row) => row.id === alone),
+    );
+  });
+
   it('the summary skeleton: tags and weight appear only when they really have content', async () => {
     const plain = await pf.ledger.dag.add({ title: '素节点' });
     const light = await pf.ledger.dag.add({ title: '轻节点', tags: ['art'], weight: 'light' });
@@ -249,6 +304,68 @@ describe('list: the ordering rule and filtering', () => {
     expect(plainRow.weight).toBeUndefined();
     expect(lightRow.tags).toEqual(['art']);
     expect(lightRow.weight).toBe('light');
+  });
+});
+
+describe('ready: an absent status reads todo, in every reader', () => {
+  /**
+   * The criterion `api.md` states — "a node with no status reads `todo`" — as a disk can really carry it:
+   * a node with no `status` key at all, and one written as `null`. Both are todo, so both are ready; a
+   * word outside the three states is not todo and is not ready. Every reader of ready (the listing, the
+   * detail, the line's own ranking and the plan) has to answer that way, or the two sides of the flow
+   * disagree about who can run.
+   */
+  it('list, info, the line ranking and the plan answer the same about a status-less node', async () => {
+    const bare = 'aaaaaaaa-1111-4111-8111-111111111111'; // no status key
+    const nulled = 'bbbbbbbb-2222-4222-8222-222222222222'; // status: null
+    const odd = 'cccccccc-3333-4333-8333-333333333333'; // a word outside the three states
+    const done = 'dddddddd-4444-4444-8444-444444444444'; // completed
+    const child = 'eeeeeeee-5555-4555-8555-555555555555'; // waits on the status-less node
+    await plantNodes({
+      [bare]: withoutStatus(nodeOf('无状态', [])),
+      [nulled]: { ...nodeOf('空状态', []), status: null },
+      [odd]: { ...nodeOf('未知状态词', []), status: 'waiting' },
+      [done]: { ...nodeOf('已完成', []), status: 'completed' },
+      [child]: nodeOf('等无状态的那格', [bare]),
+    });
+
+    const rows = await pf.ledger.dag.list();
+    const readyOf = (id: string) => rows.find((row) => row.id === id)!.ready;
+    expect(readyOf(bare)).toBe(true);
+    expect(readyOf(nulled)).toBe(true);
+    // An unknown word is not todo: only an absent cell reads todo, never any cell at all.
+    expect(readyOf(odd)).toBe(false);
+    expect(readyOf(done)).toBe(false);
+    // The dependency side reads an absent status as todo too, so the dependent is not delivered to.
+    expect(readyOf(child)).toBe(false);
+
+    // The detail is the second reader of the same criterion.
+    for (const [id, wanted] of [
+      [bare, true],
+      [nulled, true],
+      [odd, false],
+      [done, false],
+      [child, false],
+    ] as const) {
+      expect((await pf.ledger.dag.info(id)).ready).toBe(wanted);
+    }
+
+    // The line's own ranking (what `cycles start` pins) answers the same two nodes: both read todo, so
+    // both are pinnable, and the unknown word and the delivered one stay out.
+    const line = await pf.ledger.cycles.start({ id: 'c1', tags: ['coding'], parallel: 2 });
+    expect(line.holding.map((held) => held.id)).toEqual([bare, nulled]);
+
+    // And the plan hands the head of that same list to the dispatch step.
+    const plan = await open(root).conductor.next({ cycle: 'c1' });
+    expect(plan.action).toBe('dispatch');
+    if (plan.action !== 'dispatch') return;
+    expect(plan.node_id).toBe(bare);
+  });
+
+  it('a cell with no reading at all is not ready', () => {
+    // The other end of the criterion, asked of the one function every reader uses: an id the table does
+    // not hold has no reading, and an unreadable cell never counts as runnable.
+    expect(nodeReady('ffffffff-6666-4666-8666-666666666666', {})).toBe(false);
   });
 });
 
@@ -310,6 +427,13 @@ describe('search: a regex over titles and descriptions', () => {
     await expect(pf.ledger.dag.search('(')).rejects.toThrow('invalid regex');
   });
 });
+
+/** The same node record with the `status` cell taken off: a hand merge can leave the key out entirely. */
+function withoutStatus(node: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...node };
+  delete copy.status;
+  return copy;
+}
 
 /** The smallest node record in on-disk shape (key order is left to the writer's sorting). */
 function nodeOf(title: string, dependencies: string[]): Record<string, unknown> {

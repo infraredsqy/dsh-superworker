@@ -719,7 +719,7 @@ export async function dagHelpVerb(call: VerbCall) {
 /** One layer's printed label. */
 function layerLabel(source: unknown, cycle: unknown, node: unknown): string {
   if (source === 'cycle') return `cycle ${typeof cycle === 'string' ? cycle : (cycle as { id?: unknown } | undefined)?.id ?? '?'}`;
-  if (source === 'node') return `node ${String(node ?? '?').slice(0, 8)}`;
+  if (source === 'node') return `node ${short(node ?? '?')}`;
   if (source === 'builtin') return 'factory default';
   if (source === 'project') return 'project .pf/config.json';
   if (source === 'global') return 'global ~/.pf/config.json';

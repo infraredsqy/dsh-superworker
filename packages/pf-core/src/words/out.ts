@@ -9,12 +9,17 @@ import { readFileSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { open } from '../open';
 import type { Pf } from '../open';
+import { short as shortOf } from '../graph';
 import type { WordsIO, WordProject } from './types';
 
 const encoder = new TextEncoder();
 
-/** The first eight characters of an id: the short form the lines print. */
-export const short = (id: unknown): string => String(id).slice(0, 8);
+/**
+ * The first eight characters of an id: the short form the lines print. The width is the graph layer's
+ * one rule (`graph.short`) and is cited from here rather than written a second time; a cell that is
+ * not a string yet is spelled first, which is all this wrapper adds.
+ */
+export const short = (id: unknown): string => shortOf(String(id));
 
 /** A path the way the listings spell it: forward slashes, on every platform. */
 export const posix = (path: unknown): string => String(path).split('\\').join('/');

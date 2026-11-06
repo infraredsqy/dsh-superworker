@@ -34,12 +34,16 @@ import {
   adjacency,
   canReach,
   detectCycle,
-  importanceScores,
+  eisenhowerOrder,
+  inTagScope,
   nodeReady,
+  normalizeTags,
+  rankScores,
   resolveNodeId,
   reverseAdjacency,
-  urgencyScores,
+  tagsOf,
   type NodeMap,
+  type RankScores,
 } from './graph';
 
 /**
@@ -93,33 +97,9 @@ interface IdeasLedger {
   nodes: NodeMap;
 }
 
-/** Tag normalisation: trim whitespace, drop empty words, keep the given order, drop duplicates. */
-function normalizeTags(raw: Iterable<string>): string[] {
-  const out: string[] = [];
-  for (const item of raw) {
-    const tag = typeof item === 'string' ? item.trim() : '';
-    if (tag && !out.includes(tag)) out.push(tag);
-  }
-  return out;
-}
-
-/** The tags a node carries: never tagged means an empty table (visible to every filter set). */
-function tagsOf(node: NodeRecord): string[] {
-  const tags = node.tags;
-  if (!Array.isArray(tags)) return [];
-  return tags.filter((t): t is string => typeof t === 'string' && t.trim() !== '');
-}
-
 /** The weight reading of a node: only light ever landed on disk; everything else is standard. */
 function weightOf(node: NodeRecord): NodeWeight {
   return node.weight === 'light' ? 'light' : DEFAULT_WEIGHT;
-}
-
-/** Whether this node is inside this filter set: a shared tag is a hit; a node without tags is visible everywhere. */
-function inTagScope(nodeTags: string[], wanted: string[]): boolean {
-  if (wanted.length === 0) return true;
-  if (nodeTags.length === 0) return true;
-  return nodeTags.some((tag) => wanted.includes(tag));
 }
 
 /** Add dep to uid's dependencies and look for a cycle; a self-edge is refused, a duplicate edge comes back as false as it was (no-op), and a cycle is rolled back and refused. */
@@ -562,14 +542,9 @@ export function createDagNamespace(root: string): DagNamespace {
         dependedBy.push(edge);
       }
 
-      // Both readings are the graph layer's own (non-completed subgraph), exactly as `list` computes them.
-      const notCompleted: NodeMap = {};
-      for (const [otherId, other] of Object.entries(nodes)) {
-        if (other.status !== 'completed') notCompleted[otherId] = other;
-      }
-      const adj = adjacency(notCompleted);
-      const urgency = urgencyScores(adj);
-      const importance = importanceScores(adj);
+      // Both readings come off the graph layer's one ranking (the unfinished subgraph), exactly as
+      // `list` computes them; a shelved node is not ranked, so both read 0.
+      const scores = rankScores(nodes);
       // A shelved node is out of play: it is not ranked and both readings are 0.
       const blocked = (node.status ?? 'todo') === 'shelved';
 
@@ -583,9 +558,9 @@ export function createDagNamespace(root: string): DagNamespace {
         description: node.description ?? '',
         depends_on: dependsOn,
         depended_by: dependedBy,
-        ready: nodeReady(node, nodes),
-        urgency_level: blocked ? 0 : (urgency[uid] ?? 0),
-        importance_score: blocked ? 0 : (importance[uid] ?? 0),
+        ready: nodeReady(uid, nodes),
+        urgency_level: blocked ? 0 : (scores.urgency[uid] ?? 0),
+        importance_score: blocked ? 0 : (scores.importance[uid] ?? 0),
       };
       if (weightOf(node) === 'light') info.weight = 'light';
       if (verbose) {
@@ -693,7 +668,7 @@ export function createDagNamespace(root: string): DagNamespace {
           id: uid,
           title,
           status: node.status,
-          ready: nodeReady(node, nodes),
+          ready: nodeReady(uid, nodes),
         };
         if (description !== '') {
           if (inTitle) hit.description = description;
@@ -720,14 +695,10 @@ export function createDagNamespace(root: string): DagNamespace {
         }
       }
 
-      // Urgency and importance are computed only on the unfinished subgraph (completed nodes sink); filtering only drops rows, it does not change what the ordering is computed on.
-      const notCompleted: NodeMap = {};
-      for (const [uid, node] of Object.entries(nodes)) {
-        if (node.status !== 'completed') notCompleted[uid] = node;
-      }
-      const adj = adjacency(notCompleted);
-      const urgency = urgencyScores(adj);
-      const importance = importanceScores(adj);
+      // The two scores are computed only on the unfinished subgraph (completed nodes sink), through
+      // the graph layer's one ranking; filtering only drops rows, it does not change what the
+      // ordering is computed on.
+      const scores = rankScores(nodes);
 
       const rows: NodeSummary[] = [];
       for (const [uid, node] of Object.entries(selected)) {
@@ -738,32 +709,37 @@ export function createDagNamespace(root: string): DagNamespace {
           title: node.title ?? '',
           status,
           mode: node.mode ?? DEFAULT_MODE,
-          ready: nodeReady(node, nodes),
+          ready: nodeReady(uid, nodes),
         };
         const tags = tagsOf(node);
         if (tags.length > 0) entry.tags = tags;
         if (weightOf(node) === 'light') entry.weight = 'light';
         if (status !== 'completed' && !blocked) {
-          entry.urgency_level = urgency[uid] ?? 0;
-          entry.importance_score = importance[uid] ?? 0;
+          entry.urgency_level = scores.urgency[uid] ?? 0;
+          entry.importance_score = scores.importance[uid] ?? 0;
         }
         rows.push(entry);
       }
 
-      const wanted = normalizeTags(filter.tags ?? []);
       const filtered = rows
         .filter((entry) => filter.ready !== true || entry.ready)
-        .filter((entry) => inTagScope(entry.tags ?? [], wanted));
+        .filter((entry) => inTagScope(entry.tags ?? [], filter.tags ?? []));
 
-      // The Eisenhower reading: importance first, urgency after; the ones with no score (completed and shelved) sink.
-      filtered.sort(
-        (a, b) =>
-          (b.importance_score ?? 0) - (a.importance_score ?? 0) ||
-          (b.urgency_level ?? 0) - (a.urgency_level ?? 0),
+      // The Eisenhower reading: importance first, urgency after; the ones with no score (completed
+      // and shelved) sink. The ordering itself is the graph layer's own; the cells it orders by are the
+      // ones the rows carry, so a row that emits no score ties at 0 like it always did.
+      const orderScores: RankScores = { urgency: {}, importance: {} };
+      for (const entry of filtered) {
+        orderScores.urgency[entry.id] = entry.urgency_level ?? 0;
+        orderScores.importance[entry.id] = entry.importance_score ?? 0;
+      }
+      const byId = new Map(filtered.map((entry) => [entry.id, entry]));
+      const ordered = eisenhowerOrder(filtered.map((entry) => entry.id), orderScores).map(
+        (id) => byId.get(id)!,
       );
 
       const limit = filter.limit ?? 0;
-      return limit > 0 ? filtered.slice(0, limit) : filtered;
+      return limit > 0 ? ordered.slice(0, limit) : ordered;
     },
 
     async specPath(id: string): Promise<string> {

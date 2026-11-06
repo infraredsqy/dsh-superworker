@@ -10,7 +10,7 @@ import { assertLedgerInitialized } from './initledger';
 import { atomicWriteBytes, exclusiveCreateBytes, EOL } from './jsonio';
 import { launchPromptPath, nodeRunDocPath, nodeSpecPath, pfPaths } from './paths';
 import type { PfPaths } from './paths';
-import { planNext, promptTextOf, pyList, short } from './planner';
+import { planNext, promptTextOf, pyList, short, stringCellOf } from './planner';
 import { loadPlugins, pluginsDirOf } from './plugins/scan';
 import { declaredKnobSpecs, readingsOf } from './plugins/tables';
 import type { PluginAssembly } from './plugins/assembly';
@@ -103,12 +103,6 @@ function shown(value: ConfigValue | null): string {
   return value === null ? 'null' : String(value);
 }
 
-/** The instruction text; absent reads as an empty string (the same reading as the planner layer). */
-function instructionTextOf(entry: InstructionRecord): string {
-  const text = (entry as { text?: unknown }).text;
-  return typeof text === 'string' ? text : '';
-}
-
 /** The binding word of an instruction: global; `cycle <line>`; `node <eight-digit short id>`. */
 function scopeWord(entry: InstructionRecord): string {
   const scope = entryScope(entry);
@@ -124,7 +118,7 @@ function instructionLine(entry: InstructionRecord, index: number): string {
   if (typeof entry.stop_after_nodes === 'number') {
     words.push(`stop_after_nodes=${entry.stop_after_nodes}`);
   }
-  return `  ${index + 1}. ${instructionTextOf(entry)}（${words.join('，')}）`;
+  return `  ${index + 1}. ${stringCellOf((entry as { text?: unknown }).text)}（${words.join('，')}）`;
 }
 
 /**

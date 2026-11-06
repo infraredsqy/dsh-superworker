@@ -24,7 +24,16 @@ import type {
   NodeResult,
   SecondsTimestamp,
 } from './types';
-import { adjacency, importanceScores, nodeReady, urgencyScores, type NodeMap } from './graph';
+import {
+  eisenhowerOrder,
+  inTagScope,
+  nodeReady,
+  normalizeTags,
+  rankScores,
+  short,
+  tagsOf,
+  type NodeMap,
+} from './graph';
 
 /**
  * The real implementation of the cycles namespace: set up a line, start it, rename it, bring it into and
@@ -145,14 +154,9 @@ export function holdingCycles(ledger: StateLedger, nodeId: string): CycleRecord[
   return ledger.cycles.filter((record) => holdingIds(record).includes(nodeId));
 }
 
-/** Split a list of tags: trim, drop empty words, keep the order, dedupe; the vocabulary is only a human convention, and the engine takes whatever it is given. */
+/** Split a list of tags: the graph layer's one normalisation (trim, drop empty words, keep the order, dedupe); the vocabulary is only a human convention, and the engine takes whatever it is given. */
 function parseCycleTags(raw: Iterable<string>): string[] {
-  const out: string[] = [];
-  for (const item of raw) {
-    const tag = typeof item === 'string' ? item.trim() : '';
-    if (tag && !out.includes(tag)) out.push(tag);
-  }
-  return out;
+  return normalizeTags(raw);
 }
 
 /** Parse one policy value by kind: a value that fails this gate is refused on the spot (the write side gates, the read side tolerates). */
@@ -260,13 +264,6 @@ export function cycleHoldingIds(record: CycleRecord): string[] {
 /** Write the canonical shape back onto this line: `holding` has exactly one shape. */
 function setHolding(record: CycleRecord, items: CycleHolding[]): void {
   record.holding = items.map((item) => ({ id: item.id, since: item.since ?? null }));
-}
-
-/** Whether this node is inside the line's picking range: a shared tag is a hit, and a node without tags is visible everywhere. */
-function inTagScope(nodeTags: string[], wanted: string[]): boolean {
-  if (wanted.length === 0) return true;
-  if (nodeTags.length === 0) return true;
-  return nodeTags.some((tag) => wanted.includes(tag));
 }
 
 /** Both timestamp spellings parse into epoch microseconds, null when unrecognisable (comparisons are only made on these two shapes). */
@@ -386,33 +383,18 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
   }
 
   /**
-   * The ranking of ready nodes: todo and every dependency delivered; importance first, urgency after (the
-   * same ordering rule as `dag list`, and the stable sort keeps the on-disk order); nodes another line holds right now
-   * do not enter the ranking; the line's tags only delete rows, they never reorder.
+   * The ranking of ready nodes: todo and every dependency delivered (the graph layer's one ready
+   * criterion); importance first, urgency after (the graph layer's one ordering, the same rule as
+   * `dag list`, and the stable sort keeps the on-disk order); nodes another line holds right now do
+   * not enter the ranking; the line's tags only delete rows, they never reorder.
    */
   function rankedReadyNodes(nodes: NodeMap, busyElsewhere: Set<string>, tags: string[]): string[] {
-    const notCompleted: NodeMap = {};
-    for (const [uid, node] of Object.entries(nodes)) {
-      if (node.status !== 'completed') notCompleted[uid] = node;
-    }
-    const urgency = urgencyScores(adjacency(notCompleted));
-    const importance = importanceScores(adjacency(notCompleted));
     const ready = Object.entries(nodes)
-      .filter(([, node]) => nodeReady(node, nodes))
+      .filter(([uid]) => nodeReady(uid, nodes))
       .filter(([uid]) => !busyElsewhere.has(uid))
-      .filter(([, node]) =>
-        inTagScope(
-          (node.tags ?? []).filter((tag): tag is string => typeof tag === 'string'),
-          tags,
-        ),
-      )
+      .filter(([, node]) => inTagScope(tagsOf(node), tags))
       .map(([uid]) => uid);
-    // A stable sort (Array.prototype.sort is stable anyway): tied scores keep the on-disk order.
-    ready.sort(
-      (a, b) =>
-        (importance[b] ?? 0) - (importance[a] ?? 0) || (urgency[b] ?? 0) - (urgency[a] ?? 0),
-    );
-    return ready;
+    return eisenhowerOrder(ready, rankScores(nodes));
   }
 
   /** The nodes another line holds right now: the reading of claim exclusivity, which the ranking of a starting line has to subtract first. */
@@ -481,7 +463,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
           // subtract "held by another line" — something held by another line is the topic "go start that
           // line", and calling it "no work on the graph" would report the direction backwards.
           const blocked = rankedReadyNodes(nodes, new Set<string>(), []);
-          if (blocked.some((uid) => !inTagScope((nodes[uid]!.tags ?? []).filter((t): t is string => typeof t === 'string'), tags))) {
+          if (blocked.some((uid) => !inTagScope(tagsOf(nodes[uid]!), tags))) {
             throw new Error(
               `--tags ${tags.join(',')}: this filter set has no ready node; there are ready ` +
                 'nodes in the graph kept out by tag. Widen tags (a node with no tag is in every range).',
@@ -673,7 +655,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
         const holding = holdingOf(record);
         const item = holding.find((entry) => entry.id === input.node);
         if (item === undefined) {
-          const names = holding.map((entry) => entry.id.slice(0, 8)).join(', ') || 'nothing';
+          const names = holding.map((entry) => short(entry.id)).join(', ') || 'nothing';
           throw new Error(
             `cycle "${id}" is not holding ${input.node} (it holds ${names}); nothing was changed.`,
           );
