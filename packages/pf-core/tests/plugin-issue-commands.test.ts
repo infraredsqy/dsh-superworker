@@ -166,6 +166,114 @@ describe('status moves: update / resolve / reject / acknowledge / remove / open-
   });
 });
 
+describe('the batch shapes: many ids on one line, and update --from-file', () => {
+  it('resolve takes many ids: one line per id in argument order, both resolved under one stamp', async () => {
+    seed({ a: row({ id: 'a' }), b: row({ id: 'b' }) });
+    const text = await out(['resolve', 'b', 'a']);
+    expect(text.trim().split(/\r?\n/)).toEqual(['Issue resolved: b', 'Issue resolved: a']);
+    const stored = poolData().issues;
+    expect(stored.a.status).toBe('resolved');
+    expect(stored.b.status).toBe('resolved');
+    expect(stored.a.updated_at).toBe(stored.b.updated_at);
+    expect(stored.a.updated_at).not.toBe(stored.a.discovered);
+  });
+
+  it('a repeated id names one record: the line answers it once, the way hold treats a repeated id', async () => {
+    seed({ a: row({ id: 'a' }) });
+    expect((await out(['resolve', 'a', 'a'])).trim()).toBe('Issue resolved: a');
+    expect((await out(['update', 'a', 'a', '--severity', 'P1'])).trim().split(/\r?\n/))
+      .toEqual(['Issue updated: a', '  ~ severity']);
+  });
+
+  it('reject / acknowledge / remove share one reason and one line per id, while a ghost id stops the whole batch unwritten', async () => {
+    seed({ a: row({ id: 'a' }), b: row({ id: 'b' }) });
+    expect((await out(['reject', 'a', 'b', '--reason', 'wontfix'])).trim().split(/\r?\n/))
+      .toEqual(['Issue rejected: a', 'Issue rejected: b']);
+    expect(poolData().issues.a.reason).toBe('wontfix');
+    expect(poolData().issues.b.reason).toBe('wontfix');
+    expect((await out(['acknowledge', 'a', 'b'])).trim().split(/\r?\n/))
+      .toEqual(['Issue acknowledged: a', 'Issue acknowledged: b']);
+    expect((await out(['remove', 'a', 'b'])).trim().split(/\r?\n/))
+      .toEqual(['Issue removed: a', 'Issue removed: b']);
+    expect(poolData().issues).toEqual({});
+
+    seed({ a: row({ id: 'a' }) });
+    const before = readFileSync(POOL(), 'utf8');
+    expect(await err(['resolve', 'a', 'ghost'])).toContain('issue "ghost" not found');
+    expect(readFileSync(POOL(), 'utf8')).toBe(before);
+    expect(poolData().issues.a.status).toBe('open');
+  });
+
+  it('update applies one shared patch to every id, stamps the batch once, and names an unchanged id', async () => {
+    seed({
+      a: row({ id: 'a' }),
+      b: row({ id: 'b', decision: 'autofix' }),
+      c: row({ id: 'c', decision: 'external', reason: 'x' }),
+    });
+    const lines = (await out(['update', 'a', 'b', 'c', '--decision', 'external', '--reason', 'x']))
+      .trim().split(/\r?\n/);
+    expect(lines).toContain('Issue updated: a');
+    expect(lines).toContain('Issue updated: b');
+    expect(lines).toContain('No changes: c');
+    const stored = poolData().issues;
+    expect(stored.a.decision).toBe('external');
+    expect(stored.b.decision).toBe('external');
+    expect(stored.a.reason).toBe('x');
+    expect(stored.a.updated_at).toBe(stored.b.updated_at);
+    expect(stored.c.updated_at).toBe(stored.c.discovered);
+  });
+
+  it('a batch update where nothing changed still answers No changes specified', async () => {
+    seed({ a: row({ id: 'a', decision: 'external' }), b: row({ id: 'b', decision: 'external' }) });
+    expect((await out(['update', 'a', 'b', '--decision', 'external'])).trim()).toBe('No changes specified');
+  });
+
+  it('update --from-file gives each row its own patch and appends one summary line', async () => {
+    seed({ a: row({ id: 'a' }), b: row({ id: 'b' }) });
+    const rows = join(root, 'rows.json');
+    writeFileSync(rows, JSON.stringify([
+      { id: 'a', severity: 'P1', reason: 'first' },
+      { id: 'b', reason: 'second' },
+    ]), 'utf8');
+    const text = await out(['update', '--from-file', 'rows.json']);
+    expect(text).toContain('Issue updated: a');
+    expect(text).toContain('Issue updated: b');
+    expect(text).toContain('Batch update: 2 updated, 0 unchanged');
+    const stored = poolData().issues;
+    expect(stored.a.reason).toBe('first');
+    expect(stored.b.reason).toBe('second');
+    expect(stored.a.severity).toBe('P1');
+    expect(stored.a.updated_at).toBe(stored.b.updated_at);
+
+    writeFileSync(rows, JSON.stringify([{ id: 'a', reason: 'first' }, { id: 'b', reason: 'second' }]), 'utf8');
+    expect(await out(['update', '--from-file', 'rows.json'])).toContain('Batch update: 0 updated, 2 unchanged');
+  });
+
+  it('a rows file naming an id outside the pool, an unknown field, or an invalid value refuses the whole file', async () => {
+    seed({ a: row({ id: 'a' }) });
+    const rows = join(root, 'rows.json');
+    const before = readFileSync(POOL(), 'utf8');
+
+    writeFileSync(rows, JSON.stringify([{ id: 'a', reason: 'first' }, { id: 'ghost', severity: 'P1' }]), 'utf8');
+    expect(await err(['update', '--from-file', 'rows.json'])).toContain('issue "ghost" not found');
+    writeFileSync(rows, JSON.stringify([{ id: 'a', wat: 1 }]), 'utf8');
+    expect(await err(['update', '--from-file', 'rows.json'])).toContain('row 1: unknown field "wat"');
+    writeFileSync(rows, JSON.stringify([{ id: 'a', severity: 'P9' }]), 'utf8');
+    expect(await err(['update', '--from-file', 'rows.json'])).toContain('row 1: invalid severity "P9"');
+
+    expect(readFileSync(POOL(), 'utf8')).toBe(before);
+    expect(poolData().issues.a.reason).toBeNull();
+  });
+
+  it('help prints <id…> for the verbs that take many ids', async () => {
+    const usage = await out(['help']);
+    expect(usage).toContain('<id…>');
+    for (const verb of ['update', 'resolve', 'reject', 'acknowledge', 'remove']) {
+      expect(usage).toContain(`${verb} <id…>`);
+    }
+  });
+});
+
 describe('weight: the formula for how heavy the pool is', () => {
   it('counts only open/acknowledged/resolving, never external or settled issues; the bare run prints the number, -v breaks it down', async () => {
     seed({

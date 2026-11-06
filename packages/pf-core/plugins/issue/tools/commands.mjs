@@ -152,15 +152,25 @@ const FLAGS = {
   verbose: { long: '--verbose', short: '-v', kind: 'flag' },
 };
 
-/** One verb's option table: which flags it knows and how many positional arguments it takes. */
+/**
+ * The pool cells `update` writes: the flags its argument surface takes and, exactly, the fields one
+ * `--from-file` row may carry beside its `id`.
+ */
+const UPDATE_FIELDS = ['severity', 'decision', 'status', 'module', 'title', 'description', 'suggestion', 'reason', 'files', 'functions', 'plan_path'];
+
+/**
+ * One verb's option table: which flags it knows and how many positional arguments it takes.
+ * `suppliedBy` names the option whose rows carry the positional arguments themselves (`--from-file`),
+ * so a line taking that option needs none.
+ */
 const SPECS = {
   add: { options: ['id', 'from_file', 'auto_id', 'severity', 'decision', 'source', 'module', 'title', 'description', 'suggestion', 'reason', 'files', 'functions', 'plan_path'], positional: { min: 0, max: 0 } },
   list: { options: ['status', 'severity', 'decision', 'source', 'module', 'limit', 'brief'], positional: { min: 0, max: 0 } },
-  update: { options: ['severity', 'decision', 'status', 'module', 'title', 'description', 'suggestion', 'reason', 'files', 'functions', 'plan_path'], positional: { min: 1, max: 1 } },
-  resolve: { options: ['reason', 'plan_path'], positional: { min: 1, max: 1 } },
-  reject: { options: ['reason'], positional: { min: 1, max: 1 } },
-  acknowledge: { options: ['reason'], positional: { min: 1, max: 1 } },
-  remove: { options: [], positional: { min: 1, max: 1 } },
+  update: { options: ['from_file', ...UPDATE_FIELDS], positional: { min: 1, max: Number.POSITIVE_INFINITY, suppliedBy: 'from_file' } },
+  resolve: { options: ['reason', 'plan_path'], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
+  reject: { options: ['reason'], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
+  acknowledge: { options: ['reason'], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
+  remove: { options: [], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
   'open-plan': { options: [], positional: { min: 1, max: 1 } },
   status: { options: ['verbose'], positional: { min: 0, max: 0 } },
   weight: { options: ['verbose'], positional: { min: 0, max: 0 } },
@@ -282,7 +292,12 @@ function parseArgs(argv, spec) {
     options[name] = raw;
   }
   const count = positional.length;
-  if (count < spec.positional.min || count > spec.positional.max) {
+  // An option that carries the positionals in its own rows (a batch file names its ids) answers the
+  // minimum positional count for the whole line.
+  const minimum = spec.positional.suppliedBy !== undefined && options[spec.positional.suppliedBy] !== undefined
+    ? 0
+    : spec.positional.min;
+  if (count < minimum || count > spec.positional.max) {
     throw new Error(
       `this verb wants ${positionalWanted(spec)} positional argument(s), got ${count} (run \`issue help\`)`,
     );
@@ -441,86 +456,245 @@ async function cmdList(args, ctx) {
   return args.options.brief ? jsonText(issues.map(briefIssue), 0) : jsonText(issues);
 }
 
-async function cmdUpdate(args, ctx) {
-  const data = readPool(ctx.root);
-  const uid = args.positional[0];
-  const issue = get(uid, data);
-  const moment = now();
+// ═══ Update: one patch, one record or a batch ════════════════════════════════
+
+/** One update patch: the cells the argument surface or a batch row names; an absent cell stays out of the patch. */
+function updatePatch(source) {
+  const patch = {};
+  for (const field of UPDATE_FIELDS) patch[field] = source[field];
+  return patch;
+}
+
+/** Apply one patch to one record in memory: an empty `plan_path` clears that cell; the fields that really changed come back as a set. */
+function applyUpdatePatch(issue, patch) {
   const changed = new Set();
-  const fieldMap = {
-    severity: args.options.severity,
-    decision: args.options.decision,
-    status: args.options.status,
-    module: args.options.module,
-    title: args.options.title,
-    description: args.options.description,
-    suggestion: args.options.suggestion,
-    files: args.options.files,
-    functions: args.options.functions,
-    reason: args.options.reason,
-  };
-  for (const [field, value] of Object.entries(fieldMap)) {
+  for (const field of UPDATE_FIELDS) {
+    const value = patch[field];
     if (value === undefined) continue;
     const before = issue[field];
-    issue[field] = value;
+    issue[field] = field === 'plan_path' ? (value ? value : null) : value;
     if (!valueEqual(before, issue[field])) changed.add(field);
   }
-  if (args.options.plan_path !== undefined) {
-    const before = issue.plan_path;
-    issue.plan_path = args.options.plan_path ? args.options.plan_path : null;
-    if (args.options.plan_path) ensurePlanDir(ctx.root, args.options.plan_path);
-    if (!valueEqual(before, issue.plan_path)) changed.add('plan_path');
+  return changed;
+}
+
+/** The plan directories a set of patches asks for: each distinct path once. */
+function ensurePatchPlanDirs(root, patches) {
+  const wanted = new Set();
+  for (const patch of patches) {
+    if (patch.plan_path) wanted.add(patch.plan_path);
   }
-  if (changed.size === 0) return `No changes specified${EOL}`;
-  issue.updated_at = moment;
+  for (const planPath of wanted) ensurePlanDir(root, planPath);
+}
+
+/** Read the JSON array a `--from-file` spelling names; the path resolves from the project root. */
+function readRowsFile(root, spelling) {
+  const path = resolveFrom(root, spelling);
+  let text;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(readFileSync(path));
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error));
+  }
+  let rows;
+  try {
+    rows = JSON.parse(text);
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error));
+  }
+  if (!Array.isArray(rows)) throw new Error('file must contain a JSON array');
+  return rows;
+}
+
+/** One batch row's value checks, all ahead of any change: a single bad cell refuses the whole file. */
+function validateUpdateRow(row, where) {
+  const closed = { severity: VALID_SEVERITIES, decision: VALID_DECISIONS, status: VALID_STATUSES };
+  for (const [field, valid] of Object.entries(closed)) {
+    const value = row[field];
+    if (value === undefined) continue;
+    if (!valid.includes(value)) {
+      throw new Error(`${where}: invalid ${field} "${value}", valid: ${[...valid].sort().join(', ')}`);
+    }
+  }
+  for (const field of ['module', 'title', 'description', 'suggestion']) {
+    const value = row[field];
+    if (value !== undefined && typeof value !== 'string') {
+      throw new Error(`${where}: "${field}" must be a string, got ${describe(value)}`);
+    }
+  }
+  for (const field of ['reason', 'plan_path']) {
+    const value = row[field];
+    if (value !== undefined && value !== null && typeof value !== 'string') {
+      throw new Error(`${where}: "${field}" must be a string or null, got ${describe(value)}`);
+    }
+  }
+  for (const field of ['files', 'functions']) {
+    const value = row[field];
+    if (value === undefined) continue;
+    if (!Array.isArray(value)) throw new Error(`${where}: "${field}" must be a list, got ${describe(value)}`);
+    if (value.some((entry) => typeof entry !== 'string')) {
+      throw new Error(`${where}: "${field}" must hold strings`);
+    }
+  }
+}
+
+/** The per-id answer of an update batch: a changed record lists its cells, an unchanged one is named once. */
+function updateLines(results) {
+  const lines = [];
+  for (const { id, changed } of results) {
+    if (changed.size === 0) {
+      lines.push(`No changes: ${id}`);
+      continue;
+    }
+    lines.push(`Issue updated: ${id}`);
+    for (const field of [...changed].sort()) lines.push(`  ~ ${field}`);
+  }
+  return lines;
+}
+
+/**
+ * The ids one line names, each once and in the order given: `resolve a a` names one record, so it
+ * answers one line and takes one write, the way `hold` treats a repeated id.
+ */
+function uniqueIds(positional) {
+  const seen = new Set();
+  const ids = [];
+  for (const uid of positional) {
+    if (seen.has(uid)) continue;
+    seen.add(uid);
+    ids.push(uid);
+  }
+  return ids;
+}
+
+async function cmdUpdate(args, ctx) {
+  if (args.options.from_file !== undefined) return cmdUpdateFromFile(args, ctx);
+  const data = readPool(ctx.root);
+  const ids = uniqueIds(args.positional);
+  const patch = updatePatch(args.options);
+  for (const uid of ids) get(uid, data);
+  const moment = now();
+  ensurePatchPlanDirs(ctx.root, [patch]);
+  const results = [];
+  for (const uid of ids) {
+    const issue = get(uid, data);
+    const changed = applyUpdatePatch(issue, patch);
+    if (changed.size > 0) issue.updated_at = moment;
+    results.push({ id: uid, changed });
+  }
+  const changedCount = results.filter((entry) => entry.changed.size > 0).length;
+  if (changedCount === 0) return `No changes specified${EOL}`;
   await writePool(ctx.root, data);
-  const lines = [`Issue updated: ${uid}`];
-  for (const field of [...changed].sort()) lines.push(`  ~ ${field}`);
+  return `${updateLines(results).join(EOL)}${EOL}`;
+}
+
+async function cmdUpdateFromFile(args, ctx) {
+  if (args.positional.length > 0) throw new Error('--from-file carries its own ids; drop the positional arguments');
+  for (const field of UPDATE_FIELDS) {
+    if (args.options[field] !== undefined) {
+      throw new Error(`--from-file carries its own fields; drop ${FLAGS[field].long}`);
+    }
+  }
+  const rows = readRowsFile(ctx.root, args.options.from_file);
+  const data = readPool(ctx.root);
+  const allowed = new Set(['id', ...UPDATE_FIELDS]);
+  const entries = [];
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const where = `row ${index + 1}`;
+    if (row === null || typeof row !== 'object' || Array.isArray(row)) {
+      throw new Error(`${where} is not an object`);
+    }
+    for (const key of Object.keys(row)) {
+      if (!allowed.has(key)) throw new Error(`${where}: unknown field "${key}"`);
+    }
+    const uid = row.id;
+    if (typeof uid !== 'string' || uid.trim() === '') throw new Error(`${where} missing "id" field`);
+    get(uid, data);
+    validateUpdateRow(row, where);
+    entries.push({ id: uid, patch: updatePatch(row) });
+  }
+  const moment = now();
+  ensurePatchPlanDirs(ctx.root, entries.map((entry) => entry.patch));
+  const results = [];
+  for (const entry of entries) {
+    const issue = get(entry.id, data);
+    const changed = applyUpdatePatch(issue, entry.patch);
+    if (changed.size > 0) issue.updated_at = moment;
+    results.push({ id: entry.id, changed });
+  }
+  const changedCount = results.filter((entry) => entry.changed.size > 0).length;
+  const lines = changedCount === 0 ? ['No changes specified'] : updateLines(results);
+  lines.push(`Batch update: ${changedCount} updated, ${results.length - changedCount} unchanged`);
+  if (changedCount > 0) await writePool(ctx.root, data);
   return `${lines.join(EOL)}${EOL}`;
 }
 
 async function cmdResolve(args, ctx) {
   const data = readPool(ctx.root);
-  const uid = args.positional[0];
-  const issue = get(uid, data);
-  issue.status = 'resolved';
-  issue.reason = args.options.reason ? args.options.reason : issue.reason;
-  issue.updated_at = now();
-  if (args.options.plan_path) issue.plan_path = args.options.plan_path;
+  const ids = uniqueIds(args.positional);
+  for (const uid of ids) get(uid, data);
+  const moment = now();
+  if (args.options.plan_path) ensurePlanDir(ctx.root, args.options.plan_path);
+  const lines = [];
+  for (const uid of ids) {
+    const issue = get(uid, data);
+    issue.status = 'resolved';
+    issue.reason = args.options.reason ? args.options.reason : issue.reason;
+    issue.updated_at = moment;
+    if (args.options.plan_path) issue.plan_path = args.options.plan_path;
+    lines.push(`Issue resolved: ${uid}`);
+  }
   await writePool(ctx.root, data);
-  return `Issue resolved: ${uid}${EOL}`;
+  return `${lines.join(EOL)}${EOL}`;
 }
 
 async function cmdReject(args, ctx) {
   if (!args.options.reason) throw new Error('--reason is required for reject');
   const data = readPool(ctx.root);
-  const uid = args.positional[0];
-  const issue = get(uid, data);
-  issue.status = 'rejected';
-  issue.reason = args.options.reason;
-  issue.updated_at = now();
+  const ids = uniqueIds(args.positional);
+  for (const uid of ids) get(uid, data);
+  const moment = now();
+  const lines = [];
+  for (const uid of ids) {
+    const issue = get(uid, data);
+    issue.status = 'rejected';
+    issue.reason = args.options.reason;
+    issue.updated_at = moment;
+    lines.push(`Issue rejected: ${uid}`);
+  }
   await writePool(ctx.root, data);
-  return `Issue rejected: ${uid}${EOL}`;
+  return `${lines.join(EOL)}${EOL}`;
 }
 
 async function cmdAcknowledge(args, ctx) {
   const data = readPool(ctx.root);
-  const uid = args.positional[0];
-  const issue = get(uid, data);
-  issue.status = 'acknowledged';
-  issue.reason = args.options.reason ? args.options.reason : issue.reason;
-  issue.updated_at = now();
+  const ids = uniqueIds(args.positional);
+  for (const uid of ids) get(uid, data);
+  const moment = now();
+  const lines = [];
+  for (const uid of ids) {
+    const issue = get(uid, data);
+    issue.status = 'acknowledged';
+    issue.reason = args.options.reason ? args.options.reason : issue.reason;
+    issue.updated_at = moment;
+    lines.push(`Issue acknowledged: ${uid}`);
+  }
   await writePool(ctx.root, data);
-  return `Issue acknowledged: ${uid}${EOL}`;
+  return `${lines.join(EOL)}${EOL}`;
 }
 
 async function cmdRemove(args, ctx) {
   const data = readPool(ctx.root);
-  const uid = args.positional[0];
-  get(uid, data);
-  delete data.issues[uid];
+  const ids = uniqueIds(args.positional);
+  for (const uid of ids) get(uid, data);
+  const lines = [];
+  for (const uid of ids) {
+    delete data.issues[uid];
+    lines.push(`Issue removed: ${uid}`);
+  }
   await writePool(ctx.root, data);
-  return `Issue removed: ${uid}${EOL}`;
+  return `${lines.join(EOL)}${EOL}`;
 }
 
 /** The pool's reading of "not settled yet": `weight` and `status` both count these. */
