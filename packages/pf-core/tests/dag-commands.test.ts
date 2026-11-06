@@ -145,6 +145,25 @@ describe('link / unlink: dependency edges', () => {
     expect(after!.updated_at > b.updated_at).toBe(true);
   });
 
+  it('link takes a list as one batch: every edge lands, and one missing dependency refuses all of them', async () => {
+    const first = await pf.ledger.dag.add({ title: '第一个' });
+    const second = await pf.ledger.dag.add({ title: '第二个' });
+    const node = await pf.ledger.dag.add({ title: '批量依赖的' });
+
+    await pf.ledger.dag.link(node.id, [first.id, second.id]);
+    const wired = await pf.ledger.dag.get(node.id);
+    expect(wired!.dependencies).toEqual([first.id, second.id]);
+
+    const stale = wired!.updated_at;
+    await expect(
+      pf.ledger.dag.link(node.id, [first.id, 'missing']),
+    ).rejects.toThrow('node missing not found');
+    const afterRefusal = await pf.ledger.dag.get(node.id);
+    // Nothing of the refused batch is written: not the timestamp, and not the edge that did resolve.
+    expect(afterRefusal!.dependencies).toEqual([first.id, second.id]);
+    expect(afterRefusal!.updated_at).toBe(stale);
+  });
+
   it('a dependency that does not exist is rejected', async () => {
     const node = await pf.ledger.dag.add({ title: '甲' });
     await expect(pf.ledger.dag.link(node.id, 'missing')).rejects.toThrow('node missing not found');

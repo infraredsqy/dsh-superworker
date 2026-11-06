@@ -943,7 +943,7 @@ export const COMMANDS = {
       {
         "name": "title",
         "metavar": "title",
-        "required": true,
+        "required": false,
         "help": "Node title"
       },
       {
@@ -1011,6 +1011,14 @@ export const COMMANDS = {
         "metavar": "TAGS",
         "help": "Comma-separated tags: writing / coding / art. Untagged = never filtered",
         "invocation": "--tags TAGS"
+      },
+      {
+        "flags": [
+          "--from-file"
+        ],
+        "metavar": "FILE",
+        "help": "Register a batch from a JSON file instead of a title: one node per row. A row may carry a `ref` that this batch's own `depends_on` can name; the whole batch is one graph write, and any bad row, unknown dependency or cycle refuses all of it",
+        "invocation": "--from-file FILE"
       }
     ],
     "group": "dag",
@@ -1156,7 +1164,7 @@ export const COMMANDS = {
         ],
         "metavar": "ON",
         "required": true,
-        "help": "Dependency UUID",
+        "help": "Comma-separated dependency ids: `--on a,b,c` (one batch, one write)",
         "invocation": "--on ON"
       }
     ],
@@ -2508,7 +2516,7 @@ export const GROUPS = {
           {
             "name": "title",
             "metavar": "title",
-            "required": true,
+            "required": false,
             "help": "Node title"
           },
           {
@@ -2576,6 +2584,14 @@ export const GROUPS = {
             "metavar": "TAGS",
             "help": "Comma-separated tags: writing / coding / art. Untagged = never filtered",
             "invocation": "--tags TAGS"
+          },
+          {
+            "flags": [
+              "--from-file"
+            ],
+            "metavar": "FILE",
+            "help": "Register a batch from a JSON file instead of a title: one node per row. A row may carry a `ref` that this batch's own `depends_on` can name; the whole batch is one graph write, and any bad row, unknown dependency or cycle refuses all of it",
+            "invocation": "--from-file FILE"
           }
         ],
         "group": "dag",
@@ -2721,7 +2737,7 @@ export const GROUPS = {
             ],
             "metavar": "ON",
             "required": true,
-            "help": "Dependency UUID",
+            "help": "Comma-separated dependency ids: `--on a,b,c` (one batch, one write)",
             "invocation": "--on ON"
           }
         ],

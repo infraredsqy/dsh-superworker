@@ -77,6 +77,7 @@ export type {
   CycleStartInput,
   CyclesNamespace,
   DagAddInput,
+  DagAddManyRow,
   DagInfo,
   DagInfoEdge,
   DagInfoOptions,

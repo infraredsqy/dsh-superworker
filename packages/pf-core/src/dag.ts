@@ -11,6 +11,7 @@ import { assertLedgerInitialized } from './initledger';
 import type {
   AddedNode,
   DagAddInput,
+  DagAddManyRow,
   DagInfo,
   DagInfoEdge,
   DagInfoOptions,
@@ -71,6 +72,18 @@ const VALID_STATUSES: readonly NodeStatus[] = ['todo', 'shelved', 'completed'];
 const DEFAULT_MODE: NodeMode = 'auto';
 /** A missing key (or an unrecognised word) always reads as standard: better to send one person too many than to let a node skip the standard path. */
 const DEFAULT_WEIGHT: NodeWeight = 'standard';
+const VALID_MODES: readonly NodeMode[] = ['auto', 'checkpoint', 'manual'];
+const VALID_WEIGHTS: readonly NodeWeight[] = ['light', 'standard'];
+/** The cells one batch row may carry; any other key is a typo the batch is refused for. */
+const BATCH_ROW_KEYS: readonly string[] = ['ref', 'title', 'description', 'mode', 'weight', 'tags', 'depends_on'];
+
+/** One row's string-array cell: anything but an array of strings is a bad row. */
+function stringArrayCell(value: unknown, field: string, row: number): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new Error(`row ${row}: ${field} must be an array of strings`);
+  }
+  return value as string[];
+}
 
 interface IdeasLedger {
   /** The whole document object of ideas.json: the graph owns only the `nodes` table, and every other top-level
@@ -215,6 +228,110 @@ export function createDagNamespace(root: string): DagNamespace {
       });
     },
 
+    /**
+     * Register a batch of nodes as one graph write. Every row is validated and every node is shaped in
+     * memory first, then the edges are wired (a `depends_on` naming a row's `ref` points at that row;
+     * anything else is resolved against the graph), and only then are the node directories set up, the
+     * whole document written once and the session notes appended. So a bad row, an unknown dependency or
+     * a cycle leaves not one byte behind: the node directories are not even created.
+     */
+    async addMany(rows: readonly DagAddManyRow[]): Promise<Array<AddedNode & { ref?: string }>> {
+      return mutate(async (ledger) => {
+        const { nodes } = ledger;
+        if (!Array.isArray(rows) || rows.length === 0) {
+          throw new Error('a batch needs a non-empty array of rows (one object per node)');
+        }
+        const now = nowMicro();
+        const prepared: Array<{ uid: string; ref?: string; node: NodeRecord; dependsOn: string[] }> = [];
+        const byRef = new Map<string, string>();
+
+        for (const [index, raw] of rows.entries()) {
+          const at = index + 1;
+          if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+            throw new Error(`row ${at}: expected an object with a title`);
+          }
+          const cells = raw as unknown as Record<string, unknown>;
+          for (const key of Object.keys(cells)) {
+            if (!BATCH_ROW_KEYS.includes(key)) {
+              throw new Error(`row ${at}: unknown field "${key}" (allowed: ${BATCH_ROW_KEYS.join(', ')})`);
+            }
+          }
+          if (typeof cells.title !== 'string' || cells.title === '') {
+            throw new Error(`row ${at}: title cannot be empty`);
+          }
+          if (cells.description !== undefined && typeof cells.description !== 'string') {
+            throw new Error(`row ${at}: description must be a string`);
+          }
+          if (cells.mode !== undefined && !VALID_MODES.includes(cells.mode as NodeMode)) {
+            throw new Error(`row ${at}: mode must be one of ${VALID_MODES.join(', ')}`);
+          }
+          if (cells.weight !== undefined && !VALID_WEIGHTS.includes(cells.weight as NodeWeight)) {
+            throw new Error(`row ${at}: weight must be one of ${VALID_WEIGHTS.join(', ')}`);
+          }
+          const tags = cells.tags === undefined ? [] : stringArrayCell(cells.tags, 'tags', at);
+          const dependsOn = cells.depends_on === undefined
+            ? []
+            : stringArrayCell(cells.depends_on, 'depends_on', at);
+          const ref = cells.ref;
+          if (ref !== undefined) {
+            if (typeof ref !== 'string' || ref === '') {
+              throw new Error(`row ${at}: ref must be a non-empty string`);
+            }
+            if (byRef.has(ref)) throw new Error(`row ${at}: ref "${ref}" is carried by an earlier row`);
+            if (ref in nodes) throw new Error(`row ${at}: ref "${ref}" is already a node id on the graph`);
+          }
+
+          const uid = randomUUID();
+          const node: NodeRecord = {
+            title: cells.title,
+            description: typeof cells.description === 'string' ? cells.description : '',
+            status: 'todo',
+            mode: (cells.mode as NodeMode | undefined) ?? DEFAULT_MODE,
+            dependencies: [],
+            created_at: now,
+            updated_at: now,
+          };
+          // The same shape a single add writes: tags and weight land as keys only when there is really something.
+          const normalized = normalizeTags(tags);
+          if (normalized.length > 0) node.tags = normalized;
+          if (cells.weight === 'light') node.weight = 'light';
+          nodes[uid] = node;
+          if (ref !== undefined) byRef.set(ref, uid);
+          prepared.push({ uid, ...(ref === undefined ? {} : { ref }), node, dependsOn });
+        }
+
+        // Edges come after every row is a node, so a row may name a ref any later row carries; the batch's
+        // own ref table is consulted first, and the graph's prefix resolution after it.
+        for (const row of prepared) {
+          for (const dep of normalizeTags(row.dependsOn)) {
+            tryAddDependency(nodes, row.uid, byRef.get(dep) ?? resolveNodeId(dep, nodes));
+          }
+        }
+
+        // Only now does anything land: one directory per node, one write of the whole document.
+        for (const row of prepared) mkdirSync(nodeDir(paths, row.uid), { recursive: true });
+        await writeIdeas(ledger);
+        // The session these nodes were born in is noted per node, best effort: failing to write a note
+        // must not undo nodes that already landed.
+        const session = envSessionId();
+        if (session !== undefined) {
+          for (const row of prepared) {
+            try {
+              await appendSessionNote(root, row.uid, 'discussion', session);
+            } catch {
+              // The note is local corroboration that can be rebuilt from the session at hand.
+            }
+          }
+        }
+
+        return prepared.map((row) => ({
+          ...row.node,
+          id: row.uid,
+          ...(row.ref === undefined ? {} : { ref: row.ref }),
+        }));
+      });
+    },
+
     async remove(id: string, options: DagRemoveOptions = {}): Promise<void> {
       return mutate(async (ledger) => {
         const { nodes } = ledger;
@@ -286,13 +403,19 @@ export function createDagNamespace(root: string): DagNamespace {
       });
     },
 
-    async link(id: string, dependsOn: string): Promise<void> {
+    /**
+     * Add dependency edges. One graph write covers the whole call: every dependency is resolved first,
+     * so a spelling the graph does not hold refuses before an edge is touched, and an array lands all
+     * its edges or none of them. An existing edge is a no-op, but the timestamp is touched and the
+     * record is written just the same.
+     */
+    async link(id: string, dependsOn: string | readonly string[]): Promise<void> {
       return mutate(async (ledger) => {
         const { nodes } = ledger;
         const uid = resolveNodeId(id, nodes);
-        const dep = resolveNodeId(dependsOn, nodes);
-        // An existing edge is a no-op, but the timestamp is touched and the record is written just the same.
-        tryAddDependency(nodes, uid, dep);
+        const spellings = typeof dependsOn === 'string' ? [dependsOn] : [...dependsOn];
+        const deps = spellings.map((spelling) => resolveNodeId(spelling, nodes));
+        for (const dep of deps) tryAddDependency(nodes, uid, dep);
         nodes[uid]!.updated_at = nowMicro();
         await writeIdeas(ledger);
       });

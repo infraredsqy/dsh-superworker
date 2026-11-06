@@ -9,7 +9,7 @@ const docs = readFileSync(fileURLToPath(new URL('../docs/api.md', import.meta.ur
 
 const FROZEN_METHODS = [
   'ledger.init', 'ledger.register',
-  'ledger.dag.add', 'ledger.dag.remove', 'ledger.dag.update', 'ledger.dag.link',
+  'ledger.dag.add', 'ledger.dag.addMany', 'ledger.dag.remove', 'ledger.dag.update', 'ledger.dag.link',
   'ledger.dag.unlink', 'ledger.dag.setStatus', 'ledger.dag.approve', 'ledger.dag.revive',
   'ledger.dag.get', 'ledger.dag.info', 'ledger.dag.context', 'ledger.dag.search', 'ledger.dag.list',
   'ledger.dag.specPath', 'ledger.dag.validate',

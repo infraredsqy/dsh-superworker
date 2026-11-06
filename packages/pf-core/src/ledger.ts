@@ -35,6 +35,22 @@ export interface DagAddInput {
   depends_on?: string[];
 }
 
+/**
+ * One row of a batch registration: the same cells as a single add, plus a `ref` this batch's own
+ * `depends_on` may name instead of the id the engine generates.
+ */
+export interface DagAddManyRow {
+  /** A name for this row inside the batch: unique among the rows, and never an id already on the graph. */
+  ref?: string;
+  title: string;
+  description?: string;
+  mode?: NodeMode;
+  weight?: NodeWeight;
+  tags?: string[];
+  /** Dependency ids, or refs of other rows of this batch. */
+  depends_on?: string[];
+}
+
 /** Change one node: whichever key is given is the key that changes. */
 export interface DagUpdateInput {
   title?: string;
@@ -177,13 +193,22 @@ export interface DagInfo {
   approved_at?: MicroTimestamp;
 }
 
-/** The graph namespace: reading and writing nodes and edges, these fifteen verbs. */
+/** The graph namespace: reading and writing nodes and edges, these sixteen verbs. */
 export interface DagNamespace {
   add(input: DagAddInput): Promise<AddedNode>;
+  /**
+   * Register a batch of nodes as one graph write: the rows may name one another by `ref`, and a bad
+   * row, an unknown dependency or a cycle refuses the whole batch, writing not one byte.
+   */
+  addMany(rows: readonly DagAddManyRow[]): Promise<Array<AddedNode & { ref?: string }>>;
   remove(id: string, options?: DagRemoveOptions): Promise<void>;
   update(id: string, patch: DagUpdateInput): Promise<NodeRecord>;
-  /** Add one dependency edge (id depends on dependsOn); it checks for cycles itself and refuses on one. */
-  link(id: string, dependsOn: string): Promise<void>;
+  /**
+   * Add dependency edges (id depends on dependsOn); the edge is checked for cycles itself and refused
+   * on one. An array is one batch, one write: every dependency is resolved first, and all or none of
+   * them land.
+   */
+  link(id: string, dependsOn: string | readonly string[]): Promise<void>;
   /** Take one dependency edge off. */
   unlink(id: string, dependency: string): Promise<void>;
   /** Change the status; landing completed writes completed_at, leaving completed takes it off. */

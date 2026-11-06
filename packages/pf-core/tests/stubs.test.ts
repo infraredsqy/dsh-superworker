@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { open } from '../src/open';
 
 /**
- * No stub left on the surface: all fifty-six verbs across the seven namespaces are methods, and
+ * No stub left on the surface: all fifty-seven verbs across the seven namespaces are methods, and
  * the source tree has no "not implemented yet" path either.
  * The probe handle's root is a made-up address; the assertions here touch only methods and source
  * text, and nothing lands on disk.
@@ -35,14 +35,14 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
 }
 
 describe('verbs on the handle', () => {
-  it('seven namespaces, fifty-six verbs, none missing', () => {
+  it('seven namespaces, fifty-seven verbs, none missing', () => {
     let count = 0;
     for (const [, ns] of SURFACE) {
       for (const value of Object.values(ns)) {
         if (typeof value === 'function') count += 1;
       }
     }
-    expect(count).toBe(3 + 15 + 13 + 5 + 5 + 3 + 13);
+    expect(count).toBe(3 + 16 + 13 + 5 + 5 + 3 + 13);
   });
 
   it("each level's verb names match the frozen surface", () => {
@@ -58,7 +58,7 @@ describe('verbs on the handle', () => {
     expect(names).toEqual({
       ledger: ['cleanTemp', 'init', 'register'],
       'ledger.dag': [
-        'add', 'approve', 'context', 'get', 'info', 'link', 'list', 'remove', 'revive',
+        'add', 'addMany', 'approve', 'context', 'get', 'info', 'link', 'list', 'remove', 'revive',
         'search', 'setStatus', 'specPath', 'unlink', 'update', 'validate',
       ].sort(),
       'ledger.cycles': [

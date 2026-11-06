@@ -8,12 +8,14 @@
  * longer.
  */
 import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ConfigLayer } from '../config';
-import type { CyclePolicyValue, InstructionReaderRow } from '../ledger';
+import type { CyclePolicyValue, DagAddManyRow, InstructionReaderRow } from '../ledger';
 import { runMergeDriver } from '../ledgermerge/driver';
 import type { CycleStatus, InstructionRecord, NodeResult, NodeStatus } from '../types';
+import { usageError } from './argparse';
 import {
   guarded,
   handleOf,
@@ -465,12 +467,62 @@ export const cycleRetryVerb = guarded(async (call: VerbCall) => {
 
 // ═══ dag: the graph ══════════════════════════════════════════════════════════
 
-/** `dag add`. */
+/**
+ * `dag add`: one node from a title, or a whole batch from a file. The file form is the same graph
+ * write for every row: each row prints its id (and its `ref`, when it carried one) and where its
+ * spec.md would go.
+ */
 export const dagAddVerb = guarded(async (call: VerbCall) => {
   const { values, positionals } = call;
-  const title = positionals[0]![0] ?? '';
+  const titleWords = positionals[0] ?? [];
+  const title = titleWords[0] ?? '';
   const description = (positionals[1] ?? []).join(' ') || values.desc;
-  const { pf } = await project(values.project, call.io);
+  if (values.from_file === undefined && titleWords.length === 0) {
+    // The title cell is optional on the row because the file form carries the titles instead: a call
+    // with neither is refused with the same sentence the required cell used to answer with.
+    return { code: 2, stderr: usageError(call.spec, 'the following arguments are required: title') };
+  }
+  const { root, pf } = await project(values.project, call.io);
+  if (values.from_file !== undefined) {
+    if (titleWords.length > 0) return refuse('give either a title or --from-file', 2);
+    // A batch carries the rows' own fields: a per-node option alongside it has nothing to shape.
+    const alongside = ['desc', 'mode', 'weight', 'tags', 'depends_on']
+      .filter((cell) => values[cell] !== undefined)
+      .map((cell) => `--${cell.replace(/_/gu, '-')}`);
+    if (alongside.length > 0) {
+      return refuse(
+        `--from-file takes the rows' own fields; drop ${alongside.join(', ')} (the rows carry them)`,
+        2,
+      );
+    }
+    const file = resolve(root, String(values.from_file));
+    let text: string;
+    try {
+      text = await readFile(file, 'utf8');
+    } catch (error) {
+      return refuse(`--from-file ${file} could not be read (${messageOf(error)})`);
+    }
+    let rows: unknown;
+    try {
+      rows = JSON.parse(text);
+    } catch (error) {
+      return refuse(`--from-file ${file} is not valid JSON (${messageOf(error)})`);
+    }
+    if (!Array.isArray(rows)) {
+      return refuse(`--from-file ${file} must hold a JSON array of rows (one object per node)`);
+    }
+    const added = await pf.ledger.dag.addMany(rows as DagAddManyRow[]);
+    const lines: string[] = [];
+    for (const node of added) {
+      lines.push(
+        node.ref === undefined
+          ? `Node created: ${node.id}`
+          : `Node created: ${node.id}  (ref ${node.ref})`,
+      );
+      lines.push(`Spec path (nonexistent): ${posix(await pf.ledger.dag.specPath(node.id))}`);
+    }
+    return { stdout: lines.join('\n') };
+  }
   const node = await pf.ledger.dag.add({
     title,
     ...(description === undefined || description === '' ? {} : { description }),
@@ -511,13 +563,23 @@ export const dagUpdateVerb = guarded(async (call: VerbCall) => {
   return {};
 }, 1);
 
-/** `dag depend` / `dag undepend`: the edge edits, silent on success. */
+/**
+ * `dag depend` / `dag undepend`: the edge edits. `--on` takes a comma-separated list: the whole list
+ * is one batch and one graph write, so a missing id refuses every edge of it. One edge stays silent
+ * as it always was; a list answers the receipt a batch needs, since the whole call is one write and
+ * there is otherwise nothing to confirm it landed.
+ */
 export const dagDependVerb = guarded(async (call: VerbCall) => {
   const { values, positionals } = call;
   const id = positionals[0]![0];
+  const deps = splitTags(values.on);
+  if (deps.length === 0) {
+    return refuse('dag depend needs --on with at least one dependency id: `--on a,b,c`', 2);
+  }
   const { pf } = await project(values.project, call.io);
-  await pf.ledger.dag.link(id, values.on);
-  return {};
+  await pf.ledger.dag.link(id, deps);
+  if (deps.length === 1) return {};
+  return { stdout: `Linked ${short(id)} → ${deps.length} dependencies: ${deps.map(short).join(', ')}` };
 }, 1);
 
 export const dagUndependVerb = guarded(async (call: VerbCall) => {

@@ -14,7 +14,7 @@
   （设置声明的并入、插件命令、doctor 与两道时机门读的都是它）：点名优先于 `PF_PLUGINS_DIR`，两者都压过
   缺省的 `<root>/plugins`；不点名时读法照旧。
 - `Pf { root: string; ledger; conductor; config; sessions }` —— `root` 是打开时给的项目根，原样保存。
-- `pf.ledger.dag` 十五动词、`pf.ledger.cycles` 十三动词、`pf.ledger.instructions` 五动词、
+- `pf.ledger.dag` 十六动词、`pf.ledger.cycles` 十三动词、`pf.ledger.instructions` 五动词、
   `pf.config` 五动词、`ledger.init` / `ledger.register` / `ledger.cleanTemp`、`pf.sessions` 三动词与
   `conductor.next` / `conductor.close` / `conductor.advance` / `conductor.settle` / `conductor.settlePreview` /
   `conductor.dispatch` / `conductor.dispatchPreview` / `conductor.doctor` / `conductor.handoff` /
@@ -137,14 +137,15 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 
 ### pf.ledger.dag
 
-图：节点与边的读写，十五个动词。
+图：节点与边的读写，十六个动词。
 
 | 动作 | 签名 | 一句话语义 |
 | --- | --- | --- |
 | `ledger.dag.add` | `add(input)` | 登记一个节点：标题必填，依赖、标签、模式、重量可选 |
+| `ledger.dag.addMany` | `addMany(rows)` | 一批登记为一次图的写：行可带 `ref`，坏行 / 悬空依赖 / 成环拒整批，一个字节不落 |
 | `ledger.dag.remove` | `remove(id, options?)` | 把节点取下图，它的会话档一并删掉；还有依赖者时拒绝，除非 `force` |
 | `ledger.dag.update` | `update(id, patch)` | 改节点的标题 / 描述 / 模式 / 标签 / 重量 |
-| `ledger.dag.link` | `link(id, dependsOn)` | 加一条依赖边；自查环，成环即拒绝 |
+| `ledger.dag.link` | `link(id, dependsOn \| dependsOn[])` | 加依赖边；自查环，成环即拒绝；交数组时是一批、一次写入，全部落或一条都不落 |
 | `ledger.dag.unlink` | `unlink(id, dependency)` | 摘一条依赖边 |
 | `ledger.dag.setStatus` | `setStatus(id, status)` | 改状态；落 completed 时写完成时刻，离开即摘除 |
 | `ledger.dag.approve` | `approve(id, at?)` | 记人对本次交付的认可；时刻不得早于完成时刻 |
@@ -156,6 +157,13 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 | `ledger.dag.list` | `list(filter?)` | 按状态 / 就绪 / 标签列出，重要与紧急排序 |
 | `ledger.dag.specPath` | `specPath(id)` | 节点 spec.md 的落点路径 |
 | `ledger.dag.validate` | `validate()` | 查环、悬空引用与重复边；孤立点点名不翻红 |
+
+**`addMany(rows)` 是一批的一次写入。** 每一行与 `add` 同形，多一格 `ref`：这一批自己的
+`depends_on` 先点 `ref`，点不到才按图上的 id 解析；交回按行的次序，带 `id` 与行上有过的 `ref`。
+整批先校验每一行、先在内存里连边，最后才立节点目录、写一次图——坏行（不认得的字段、空标题、
+认不得的 `mode` / `weight`、不是字符串数组的 `tags` / `depends_on`、重复或撞上已有 id 的 `ref`）、
+点不到的依赖、成环，三者任一都拒整批，一个字节都不落。`link` 交一个数组时是同一把尺子：每一条
+依赖先解析完再逐条连边，一次写入，全部落或一条都不落。
 
 **`info(id, options?)` 是节点详情。** `get` 原样交回记录；`info` 多给只有图能回答的那几格。它的选项是 `DagInfoOptions { verbose?: boolean }`，交回 `DagInfo`，键序固定：
 

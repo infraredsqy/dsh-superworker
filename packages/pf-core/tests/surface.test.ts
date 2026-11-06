@@ -8,7 +8,7 @@ import { open } from '../src/open';
  */
 
 const DAG_METHODS = [
-  'add', 'remove', 'update', 'link', 'unlink', 'setStatus', 'approve', 'revive',
+  'add', 'addMany', 'remove', 'update', 'link', 'unlink', 'setStatus', 'approve', 'revive',
   'get', 'info', 'context', 'search', 'list', 'specPath', 'validate',
 ];
 const CYCLE_METHODS = [
@@ -42,7 +42,7 @@ describe('pf.ledger', () => {
     expect(typeof pf.ledger.register).toBe('function');
     expect(typeof pf.ledger.cleanTemp).toBe('function');
   });
-  it('dag has all fifteen verbs', () => {
+  it('dag has all sixteen verbs', () => {
     expect(Object.keys(pf.ledger.dag).sort()).toEqual([...DAG_METHODS].sort());
   });
   it('cycles has all thirteen verbs', () => {
