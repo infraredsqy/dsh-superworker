@@ -10,21 +10,21 @@
 
 ### 合并同类查询
 
-`search` 支持正则表达式，相关关键词用 `|` 一次查完：
+`dag search` 支持正则表达式，相关关键词用 `|` 一次查完：
 
 ```
 # 坏：5 次调用
-search 合并
-search 集成
-search 迁移
-search 整合
-search 主项目
+dag search 合并
+dag search 集成
+dag search 迁移
+dag search 整合
+dag search 主项目
 
 # 好：1 次调用
-search '合并|集成|迁移|整合|主项目'
+dag search '合并|集成|迁移|整合|主项目'
 ```
 
-同理，`info` / `open` / `context` 不能并成一行，但互不依赖的几行可以放进**同一条消息**——工具按你给的顺序一条条跑，结果一起回来。一次只发一行、等结果再发下一行，才是多出来的往返。
+同理，`dag info` / `dag open` / `dag context` 不能并成一行，但互不依赖的几行可以放进**同一条消息**——工具按你给的顺序一条条跑，结果一起回来。一次只发一行、等结果再发下一行，才是多出来的往返。
 
 ### 同一动作套 N 条：用词自己的批量形状
 
@@ -40,14 +40,14 @@ search '合并|集成|迁移|整合|主项目'
 
 ### 优先定向查询，list 是最后手段
 
-`list` 输出全量节点 JSON，DAG 大时信息冗余且消耗上下文。定向查询始终优先：
+`dag list` 输出全量节点 JSON，DAG 大时信息冗余且消耗上下文。定向查询始终优先：
 
-- 搜节点 → `search <regex>`
-- 看详情 → `info <id>`
-- 看拓扑 → `context <id>`
+- 搜节点 → `dag search <regex>`
+- 看详情 → `dag info <id>`
+- 看拓扑 → `dag context <id>`
 
-只有需要全图排序（如推荐下一步）时才用 `list`，且加 `--limit N` 控制条数。**不要用 `list | grep` 做定向搜索——那是 `search` 的事。**
+只有需要全图排序（如推荐下一步）时才用 `dag list`，且加 `--limit N` 控制条数。**不要用 `dag list | grep` 做定向搜索——那是 `dag search` 的事。**
 
 ### pattern 引号
 
-所有 pattern 参数（search 的 regex、add 的 title/description）用双引号包起来，防止 shell 解析特殊字符。
+所有 pattern 参数（`dag search` 的 regex、`dag add` 的 title/description）用双引号包起来，防止 shell 解析特殊字符。

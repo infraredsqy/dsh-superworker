@@ -7,17 +7,8 @@
 
 ## 交付形态：预构建产物随包走
 
-用户端不跑构建。四份产物在本仓构建一次：
-
-```sh
-pnpm install --frozen-lockfile
-pnpm --filter pf-core build   # packages/pf-core/dist/**（引擎的产物：并入宿主半身的那份代码，外加 git 合并驱动的入口）
-npm run types                 # lib/types/**（宿主入口的类型）
-npm run bundle                # lib/host/index.js（宿主半身）
-npm run bundle:client         # lib/client.js（浏览器半身）
-```
-
-这四条绑在 `prepack` 上（引擎排头，后面三样跟着），`npm pack` 与 `npm publish` 会自己跑一遍。
+用户端不跑构建。四份产物在本仓构建一次，构建链的正本就是 `package.json` 的 `prepack`（引擎排头，types 与
+两份 bundle 跟后）——本页不抄第二份；`npm pack` 与 `npm publish` 会自己把它跑一遍。
 
 `package.json` 的 `files` 只收这几样：两个运行时入口、`lib/types/**/*.d.ts`、`locale/*.json`、
 `cordis.patch.yml`、`packages/pf-core/dist/**/*`（引擎的产物：并入宿主半身的那份代码，加上 git 合并驱动要跑的入口），
@@ -113,7 +104,7 @@ gh run watch
 npm view dsh-pathfinder version --registry=https://registry.npmjs.org
 ```
 
-`prepack` 也在 CI 上现跑一遍引擎构建 + types + bundle + bundle:client，所以装出去的就是这份预构建产物。
+`prepack` 也在 CI 上现跑一遍（构建链的正本见 `package.json`），所以装出去的就是这份预构建产物。
 `tools/testbed/` 那条要一个真实 DSH 实例，留在本机手动跑。
 
 新包名第一次发布会先落一个**公开的占位版本** `0.0.0-stage`：它一直留在 `versions` 列表里，真版本随后就公开；

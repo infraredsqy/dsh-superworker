@@ -2,6 +2,6 @@
 
 > 本文件是路牌，上限 15 行：一行一条——只说这一层有什么、什么时候看。
 
-- `plugin.json` — 声明：名字、摘要与引擎要求的那一格时机（`timing` / `action`）；这个插件不带任何要插的东西，摘要里就这么写。唯一权威，先读它
-- `impl.mjs` — 实现入口：收尾那道门上只答一句「这一轮没有要插的东西」；用处全在 `skills/` 里
-- `skills/` — 随插件装与卸的技能，zh / en 各一套：conduct 带一个节点跑到收尾、route 改图、instruct 记一条约束；每份自带它引用的 `shared/pf/` 单页与 `docs/` 设计文档
+- `plugin.json` — 声明：名字、摘要与引擎要求的那一格时机（`timing` / `action`）。唯一权威，先读它
+- `impl.mjs` — 实现入口：这格时机是为过声明校验而占的（引擎的声明语法没有「只有技能」的形状），收尾那道门上永远答「没有要插的东西」；用处全在 `skills/` 里
+- `skills/` — 随插件装与卸的技能，zh / en 各一套：conduct 带一个节点跑到收尾、route 改图、instruct 记一条约束；每份自带它引用的 `shared/pf/` 单页；`docs/` 设计文档只在 pf-conduct 存一份，pf-route 用 `../pf-conduct/` 相对链接指回；技能文本里写命令词必须带组名（写 `dag search`，不写裸 `search`）

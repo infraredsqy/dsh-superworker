@@ -29,8 +29,8 @@ disable-model-invocation: true
 | 配置项 | 取值 | 从哪读 | 改哪一步 |
 |---|---|---|---|
 | `.pf/` 档 | 提交 / 本地 | 第 0 步同步时判定 | 第 0 步拉几次、收尾的合回与提交推送到哪（见「收尾」） |
-| 模式 | `manual` / `checkpoint` / `auto` | `info` | 停不停、问不问人（见「模式」） |
-| 先看重量 | `light` / 没写＝`standard` | `info` 的 `weight` | 执行那一步的活谁干（见「先看重量」） |
+| 模式 | `manual` / `checkpoint` / `auto` | `dag info` | 停不停、问不问人（见「模式」） |
+| 先看重量 | `light` / 没写＝`standard` | `dag info` 的 `weight` | 执行那一步的活谁干（见「先看重量」） |
 | 方法 | spec 里的 `method: <技能名>` 一行；没写＝没有 | read `spec.md` | 这个节点这一趟谁跑、按哪个技能跑（见「方法」） |
 | 测试档与验证 | `full` / `minimal` | `config get test_tier` | 每步验什么、写不写测试（见「测试档与验证」） |
 | worktree 档 | `off` / `fork` / `reuse` | `config get worktree_mode` | 准备的 fork 与收尾的合回这两个步骤（见「并行：worktree」） |
@@ -42,7 +42,7 @@ disable-model-invocation: true
 
 ### 模式
 
-mode 是节点自己的属性，由 pf-route 落笔写在 `--mode` 里；你照 `info` 读出来的那一档走。
+mode 是节点自己的属性，由 pf-route 落笔写在 `--mode` 里；你照 `dag info` 读出来的那一档走。
 
 | mode | 循环 | 你这一趟怎么走 |
 |---|---|---|
@@ -113,7 +113,7 @@ tag 说清一个节点属于哪条线：`writing`（文案）、`coding`（代�
 
 | 进法 | 目标节点 | 收尾 |
 |---|---|---|
-| 用户直接敲 `/pf-conduct <节点 id 或关键词>` | 参数里的节点；没给就用 `search` 定位，命中多个摆出来让用户挑 | 报结果给用户，不跑收尾命令 |
+| 用户直接敲 `/pf-conduct <节点 id 或关键词>` | 参数里的节点；没给就用 `dag search` 定位，命中多个摆出来让用户挑 | 报结果给用户，不跑收尾命令 |
 | 管线派发（调用行带 `[pipeline]`） | 调用行上的节点 id | 「收尾」那条链 |
 
 **再看从哪个节点起**，先 `cycle list` 一眼：
@@ -166,8 +166,8 @@ instruction list --project <项目根绝对路径>
 **2｜读**，一口气读完再动手：
 
 1. `dag --help` 确认命令全集
-2. `info <id> --verbose` 看节点详情与直接依赖，`context <id>` 看完整上下游
-3. `open <id>` 拿 `spec.md` 路径，read；文件不存在说明该节点还没写过需求——停下来，请用户去 pf-route 写 spec，补需求不是本流程的活
+2. `dag info <id> --verbose` 看节点详情与直接依赖，`dag context <id>` 看完整上下游
+3. `dag open <id>` 拿 `spec.md` 路径，read；文件不存在说明该节点还没写过需求——停下来，请用户去 pf-route 写 spec，补需求不是本流程的活
 4. spec 里有 `method: <技能名>` 一行 → read `~/.dsh/skills/<名>/SKILL.md`，按「方法」那一节定这个节点谁跑
 5. 读 spec 里「参考」「上下游」两节点名的文件（那是这个节点真正的输入）
 6. 读项目 CLAUDE.md、docs/ 里与本节点相关的文档
@@ -424,8 +424,8 @@ git worktree add .pf/worktrees/<节点短id> -b pf/<节点短id>
 派发这一步由**宿主**开新会话：面板的那一格与它的自动接力走同一条路（`src/host/relay.ts` 的 `dispatchCell`），原生 opener 把这个节点的 prompt 交给新会话（`src/host/executor.ts`）。引擎先把这一格的材料落盘（prompt 不在盘上时才落），会话真的开出来之后才写 `started` 认领——认领落了盘，这一格就不会再被派第二次。**宿主这一半现在负责落实**：它开出去的会话一结束这一轮，宿主自己跑一遍 `advance`。所以干活的那个会话的路子不变：`handoff` → `settle` → 提交推送 → 宿主开出下一个会话（没有宿主时，`advance` 自己来）。谁调它、断了看哪儿，见 `docs/conduct-dsh-dispatch.md`。
 
 **没有 opener 的进程里没有开会话的接缝**：`dispatch <cycle>` 读一眼盘上的 `started` 就够——不在就
-当场拒，退出码 2，一个字节都不写，句子里点名面板（寻路中心）、每一份 prompt 该落的位置，以及先跑
-`prepare --cycle <cycle>` 把材料写出来这条路；`advance` 照印计划、照钉节点，材料不落（那是派发那一步
+当场拒，退出码 2，一个字节都不写，句子里点名面板（寻路中心）、每一份 prompt 该落的位置，以及材料
+由面板派发那一步落盘这条路；`advance` 照印计划、照钉节点，材料不落（那是派发那一步
 的事），开会话那一步只回 `spawn_error`，一个节点都不认领。演练走 `DSH_CONDUCT_SPAWN_DRY_RUN=1`：调用
 照走完、答案照回，会话不开、`started` 认领也不落盘——所以演练过的那一格什么都不用撤，直接真派即可。
 补发之前工具会自己挡双派发，见到拒绝先查那个节点是不是已经有会话在跑，别硬闯。

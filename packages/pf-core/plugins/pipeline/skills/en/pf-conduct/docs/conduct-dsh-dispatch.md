@@ -63,7 +63,7 @@ The verbs in the engine's words layer (`answer()`) that can open a session read 
 - `dispatch <cycle>`: it reads the `started` claim first, node by node — one on disk counts as "already opened";
   only when none is there does it go on. Having confirmed this process has no opener, **it refuses before the engine
   is reached**: exit code 2, not one byte written, and the sentence names the panel (寻路中心), where each prompt
-  would land, and the way to write the material first (`prepare --cycle <cycle>`), then gives the two ways a person
+  would land, and the panel landing the material when it dispatches that cell, then gives the two ways a person
   finishes this cell by hand (dispatch it in the panel, or open a new session and paste that line in). When no node
   is left to dispatch there is another sentence: a node already opened is not dispatched again.
 - `advance`: the plan still prints, the nodes still get pinned, no material lands (that is the dispatch's step), and

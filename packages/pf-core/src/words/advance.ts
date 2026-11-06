@@ -98,8 +98,8 @@ function noOpenerSentence(root: string, cycleId: unknown, nodeIds: readonly unkn
   const where = prompts.length === 0 ? 'the plan names no cell' : `the material goes to ${prompts.join(', ')}`;
   return (
     'no session can be opened from this process: the opener is the panel (寻路中心), and a command ' +
-    `line carries none. ${where}; \`prepare --cycle ${String(cycleId)}\` writes it, then dispatch that ` +
-    'cell in the panel, or start a new session and paste its prompt line in.'
+    `line carries none. ${where}; the panel lands it and opens the session when it dispatches that ` +
+    'cell, or start a new session and paste its prompt line in.'
   );
 }
 

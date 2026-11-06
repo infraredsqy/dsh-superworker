@@ -216,6 +216,20 @@ test('自足：三份核心技能装进去后各自带着它引用的单页，�
   }
 })
 
+test('共享单页两份拷贝逐字节相同：subagents.md 在 pf-conduct 与 pf-route 各存一份，zh 与 en 各自成对', () => {
+  /* The placement rule ("each skill carries the sheets it references") keeps this page duplicated
+   * on purpose — the guard here is that the copies never drift. A link cannot replace the second
+   * copy: the sheet has to travel inside the method's own folder. */
+  const plugins = shippedPluginsDir()
+  for (const lang of ['zh', 'en']) {
+    const pages = ['pf-conduct', 'pf-route'].map(
+      (method) => join(plugins, 'pipeline', 'skills', lang, method, 'shared', 'pf', 'subagents.md'),
+    )
+    for (const page of pages) assert.ok(existsSync(page), `${lang}: ${page} 不在盘上`)
+    assert.deepEqual(readFileSync(pages[0]), readFileSync(pages[1]), `${lang}: 两份 subagents.md 字节漂了`)
+  }
+})
+
 test('会话视角（C1）：rank 400 压过旧手抄副本 500，那个名字只剩插件这份；旧副本的文件没动', async () => {
   const h = homes()
   try {

@@ -37,8 +37,8 @@ them in `run.md`'s "Facts checked".
 | Setting | Values | Read from | Which step it changes |
 |---|---|---|---|
 | The `.pf/` flavour | commit / local | judged at step 0's sync | how many pulls step 0 does, and where the close's merge-back and commit-push go (see "Close out") |
-| Mode | `manual` / `checkpoint` / `auto` | `info` | whether it stops, and whether it asks a human (see "Mode") |
-| Look at the weight first | `light` / absent = `standard` | `info`'s `weight` | who does the work at the execute step (see "Look at the weight first") |
+| Mode | `manual` / `checkpoint` / `auto` | `dag info` | whether it stops, and whether it asks a human (see "Mode") |
+| Look at the weight first | `light` / absent = `standard` | `dag info`'s `weight` | who does the work at the execute step (see "Look at the weight first") |
 | Method | the `method: <skill name>` line in the spec; absent = none | read `spec.md` | who runs this node this run, and under which skill (see "Method") |
 | Test tier and verification | `full` / `minimal` | `config get test_tier` | what each step verifies, and whether tests get written (see "Test tier and verification") |
 | worktree mode | `off` / `fork` / `reuse` | `config get worktree_mode` | the two steps, prepare's fork and the close's merge-back (see "Parallel: worktree") |
@@ -55,7 +55,7 @@ its own.
 ### Mode
 
 mode is the node's own property, written down by pf-route through `--mode`; you follow the one
-`info` reads out.
+`dag info` reads out.
 
 | mode | The loop | How this run goes |
 |---|---|---|
@@ -186,7 +186,7 @@ its own children open at the same time, and together they may not cross it.
 
 | How it came in | The target node | The close |
 |---|---|---|
-| The user typed `/pf-conduct <node id or keyword>` | the node in the argument; with none, locate it with `search`, and when several hit, lay them out for the user to pick | report the result to the user, run no close commands |
+| The user typed `/pf-conduct <node id or keyword>` | the node in the argument; with none, locate it with `dag search`, and when several hit, lay them out for the user to pick | report the result to the user, run no close commands |
 | A pipeline dispatch (the call line carries `[pipeline]`) | the node id on the call line | the chain under "Close out" |
 
 **Then, which node to start from** — take one look with `cycle list`:
@@ -293,9 +293,9 @@ instruction list --project <absolute path to the project root>
 **2 | Read**, in one go before touching anything:
 
 1. `dag --help` to confirm the full set of commands
-2. `info <id> --verbose` for the node's detail and its direct dependencies, `context <id>` for the
+2. `dag info <id> --verbose` for the node's detail and its direct dependencies, `dag context <id>` for the
    full up- and downstream
-3. `open <id>` for the `spec.md` path, and read it; a missing file means this node has no
+3. `dag open <id>` for the `spec.md` path, and read it; a missing file means this node has no
    requirements written yet — stop and ask the user to write the spec through pf-route, since
    filling in requirements is not this flow's job
 4. a `method: <skill name>` line in the spec → read `~/.dsh/skills/<name>/SKILL.md`, and the
@@ -822,8 +822,8 @@ run `advance` yourself). For who calls it, and where to look when it breaks, see
 
 **A process with no opener has no seam for opening a session**: `dispatch <cycle>` reads
 the `started` claim alone, and without one it refuses outright — exit code 2, not one byte
-written, naming the panel (寻路中心), where each prompt would land, and the way to write the
-material first (`prepare --cycle <cycle>`); `advance` prints the plan, pins the nodes and lands no
+written, naming the panel (寻路中心), where each prompt would land, and the panel landing the
+material when it dispatches that cell; `advance` prints the plan, pins the nodes and lands no
 material (that is the dispatch's step), and its opening step answers `spawn_error` only,
 claiming nothing. A rehearsal runs under `DSH_CONDUCT_SPAWN_DRY_RUN=1`: the call is made and
 answered, no session opens, and the `started` claim does not land either — so nothing has to be

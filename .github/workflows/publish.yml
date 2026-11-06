@@ -43,6 +43,6 @@ jobs:
       - name: Style check
         run: node tools/css-check.mjs
 
-      # prepack 自己会跑 types + bundle + bundle:client，装出去的就是预构建产物
+      # 构建链的正本在 package.json 的 prepack；这里只调 npm publish，装出去的就是预构建产物
       - name: Publish
         run: npm publish
