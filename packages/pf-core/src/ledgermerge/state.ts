@@ -20,11 +20,12 @@ import {
   type MergeReport,
   asRecord,
   extendOrUnion,
-  isRecord,
+  indexBy,
   mergeCollection,
   mergeMapping,
   plainField,
   stampField,
+  stampOf,
   threeWay,
 } from './generic';
 
@@ -35,28 +36,21 @@ export function mergeState(
   theirs: unknown,
   report: MergeReport,
 ): Record<string, unknown> {
-  return mergeCollection('state.json', base, ours, theirs, report, {
-    key: 'cycles',
-    resolveEntry: mergeCycle,
-    indexOf: indexCycles,
-    asList: true,
+  return mergeCollection(base, ours, theirs, report, {
+    slots: [
+      {
+        key: 'cycles',
+        resolveEntry: mergeCycle,
+        indexOf: indexCycles,
+        asList: true,
+      },
+    ],
   });
 }
 
 /** The line table read as "id → line": on disk it is a list, and a hand-written mapping is accepted too. */
 function indexCycles(cycles: unknown): Map<string, unknown> {
-  const out = new Map<string, unknown>();
-  if (Array.isArray(cycles)) {
-    for (const cycle of cycles) {
-      if (!isRecord(cycle)) continue;
-      const id = cycle['id'];
-      if (id === undefined || id === null || id === '') continue;
-      out.set(String(id), cycle);
-    }
-  } else if (isRecord(cycles)) {
-    for (const [id, cycle] of Object.entries(cycles)) out.set(id, cycle);
-  }
-  return out;
+  return indexBy(cycles, (cycle) => cycle['id']);
 }
 
 /** One line: field by field, with two rules of its own, for path and for status. */
@@ -124,9 +118,4 @@ function cyclePath(
       `the same node ${tag.slice(0, 8)} has different results on the two sides` +
       ` (ours=${JSON.stringify(previous['result'])} theirs=${JSON.stringify(step['result'])})`,
   });
-}
-
-/** One timestamp field: an empty string and null both count as not written (the `or` reading). */
-function stampOf(value: unknown): string | null {
-  return typeof value === 'string' && value !== '' ? value : null;
 }

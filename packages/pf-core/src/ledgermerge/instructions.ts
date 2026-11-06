@@ -17,22 +17,23 @@
  *   there is nothing to order them by — a conflict. `note` deliberately stays outside the group: a sentence a person
  *   wrote is never quietly overwritten, so a `note` both sides changed is a conflict.
  * - both sides adding the same `id` with different content is an addition collision: a conflict.
+ *
+ * The two tables this record carries are two slots of one generic walk: same key order, same entry-by-entry walk,
+ * same "drop what the rule answered `MISSING` for". Nothing of that skeleton lives here.
  */
 
 import {
-  MISSING,
-  UNDECIDED,
   type FieldResolver,
   type MergeReport,
+  type NewerSideOptions,
   asRecord,
   get,
-  isRecord,
-  keyOrder,
-  mergeEntries,
+  indexBy,
+  mergeCollection,
   mergeMapping,
+  newerSideWins,
   plainField,
   stampField,
-  threeWay,
 } from './generic';
 
 /** The two fields one resolution act writes together; the driver judges them as one group. */
@@ -48,61 +49,28 @@ export function mergeInstructions(
   theirs: unknown,
   report: MergeReport,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const field of keyOrder(ours, theirs)) {
-    if (field === 'instructions') {
-      const merged = mergeEntries(
-        get(base, field),
-        get(ours, field),
-        get(theirs, field),
-        report,
-        mergeInstruction,
-        indexById,
-        true,
-      );
-      out[field] = [...merged.values()];
-    } else if (field === REMOVED) {
-      const merged = mergeEntries(
-        get(base, field),
-        get(ours, field),
-        get(theirs, field),
-        report,
-        mergeTombstone,
-        indexById,
-      );
-      out[field] = [...merged.values()];
-    } else {
-      out[field] = plainField(
-        'instructions.json',
-        field,
-        get(base, field),
-        get(ours, field),
-        get(theirs, field),
-        report,
-      );
-    }
-  }
-  const merged: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(out)) {
-    if (value !== MISSING) merged[key] = value;
-  }
-  return merged;
+  return mergeCollection(base, ours, theirs, report, {
+    slots: [
+      {
+        key: 'instructions',
+        resolveEntry: mergeInstruction,
+        indexOf: indexById,
+        propagateDelete: true,
+        asList: true,
+      },
+      {
+        key: REMOVED,
+        resolveEntry: mergeTombstone,
+        indexOf: indexById,
+        asList: true,
+      },
+    ],
+  });
 }
 
 /** A group indexed by `id`: the entries themselves, or their removal traces. */
 function indexById(items: unknown): Map<string, unknown> {
-  const out = new Map<string, unknown>();
-  if (Array.isArray(items)) {
-    for (const entry of items) {
-      if (!isRecord(entry)) continue;
-      const id = entry['id'];
-      if (id === undefined || id === null || id === '') continue;
-      out.set(String(id), entry);
-    }
-  } else if (isRecord(items)) {
-    for (const [id, entry] of Object.entries(items)) out.set(id, entry);
-  }
-  return out;
+  return indexBy(items, (entry) => entry['id']);
 }
 
 /** One instruction: the resolution group follows its own rule, the remaining fields follow the ordinary ones. */
@@ -145,6 +113,25 @@ function mergeTombstone(
   return mergeMapping(asRecord(base), asRecord(ours), asRecord(theirs), resolve);
 }
 
+/**
+ * The resolution group: the side that acted later wins the group as a whole, and two acts that cannot be ordered need
+ * a person. The moment is `resolved_at`; the two sentences are all this record adds to the shared rule.
+ */
+const LATER_RESOLUTION: NewerSideOptions = {
+  stampOf: (entry) => get(entry, 'resolved_at'),
+  winnerNote: (label, _key, winner) =>
+    `${label}: both sides changed this instruction's resolution -> take the side with ` +
+    `the newer resolved_at (${winner.side} ${winner.later})`,
+  cannotOrderNote: (_label, _key, at) =>
+    at === 'ours' || at === 'theirs'
+      ? // Putting an entry back **clears** that timestamp, and a cleared timestamp only meets one with a value when both
+        // sides touched this group: two owner acts on two machines, and neither record has a timestamp to order them by.
+        // Say that out loud — "resolved_at cannot order the two" would send the reader looking for two timestamps.
+        'one side put this entry back in force (clearing the moment it was withdrawn) while ' +
+        'the other side changed it again -- two owner acts collided'
+      : 'resolved_at cannot order the two',
+};
+
 /** The resolution group: the side with the newer `resolved_at` wins the group as a whole; two timestamps that cannot be ordered need a person. */
 function resolution(
   label: string,
@@ -156,31 +143,14 @@ function resolution(
   theirs: unknown,
   report: MergeReport,
 ): unknown {
-  const got = threeWay(baseValue, oursValue, theirsValue);
-  if (got !== UNDECIDED) return got;
-  const oursStamp = get(ours, 'resolved_at');
-  const theirsStamp = get(theirs, 'resolved_at');
-  if (
-    typeof oursStamp === 'string' &&
-    typeof theirsStamp === 'string' &&
-    oursStamp !== theirsStamp
-  ) {
-    const oursIsLater = oursStamp > theirsStamp;
-    const later = oursIsLater ? oursStamp : theirsStamp;
-    report.decide(
-      `${label}: both sides changed this instruction's resolution -> take the side with ` +
-        `the newer resolved_at (${oursIsLater ? 'ours' : 'theirs'} ${later})`,
-    );
-    return get(oursIsLater ? ours : theirs, key);
-  }
-  // Putting an entry back **clears** that timestamp, and a cleared timestamp only meets one with a value when both
-  // sides touched this group: two owner acts on two machines, and neither record has a timestamp to order them by.
-  // Say that out loud — "resolved_at cannot order the two" would send the reader looking for two timestamps.
-  const note =
-    (oursStamp === null) !== (theirsStamp === null)
-      ? 'one side put this entry back in force (clearing the moment it was withdrawn) while ' +
-        'the other side changed it again -- two owner acts collided'
-      : 'resolved_at cannot order the two';
-  report.conflict(label, key, oursValue, theirsValue, note);
-  return MISSING;
+  return newerSideWins(
+    label,
+    key,
+    baseValue,
+    oursValue,
+    theirsValue,
+    { ours, theirs },
+    report,
+    LATER_RESOLUTION,
+  );
 }

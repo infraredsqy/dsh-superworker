@@ -4,6 +4,8 @@
  * this" and "how does a decision get said out loud".
  *
  * Nothing here knows the fields of any one record; the four engines beside it are the ones that recognise fields.
+ * The one table of the four records (`RECORD_KINDS`) lives here, so "which record is this", "what is it called"
+ * and "where does it land" are read from one row each, not spelled out again in every arm that asks.
  *
  * The decision reading (fixed point by point):
  *
@@ -17,6 +19,8 @@
  * side touched is asked about by nobody.
  */
 
+import { IDEAS_FILE_NAME, INSTRUCTIONS_FILE_NAME, SIGNALS_DIR_NAME, STATE_FILE_NAME } from '../paths';
+
 /** The kind words of a record: graph (nodes) / lines / instructions / handoff ticket. */
 export const KIND_IDEAS = 'ideas';
 export const KIND_STATE = 'state';
@@ -29,6 +33,63 @@ export type MergeKind =
   | typeof KIND_STATE
   | typeof KIND_INSTRUCTIONS
   | typeof KIND_SIGNAL;
+
+/**
+ * One record kind, whole: what it is called, the file it lands in, the table it carries, how one of its entries is
+ * named on a conflict line, and how its own content is recognised when no file name is there.
+ *
+ * Every arm that asks "which record is this" reads this table: a fifth record is a row here (plus its engine in the
+ * driver's dispatch, which cannot sit in this table — the engines read this file).
+ */
+export interface RecordKindRow {
+  readonly kind: MergeKind;
+  /** The file name `paths.ts` lands this record under, or null for the one record kept in a directory of its own. */
+  readonly fileName: string | null;
+  /** The collection key this record carries, or null for the one record that is a single entry. */
+  readonly collectionKey: string | null;
+  /** How one table row of this record is named on a conflict line. */
+  readonly entryLabel: (key: string) => string;
+  /** How this record's content recognises itself: a table by its collection key, a ticket by "a status, and nothing collected underneath". */
+  readonly shapedLike: (data: Record<string, unknown>) => boolean;
+}
+
+export const RECORD_KINDS: ReadonlyArray<RecordKindRow> = [
+  {
+    kind: KIND_IDEAS,
+    fileName: IDEAS_FILE_NAME,
+    collectionKey: 'nodes',
+    entryLabel: (key) => `Node ${key.slice(0, 8)}`,
+    shapedLike: (data) => 'nodes' in data,
+  },
+  {
+    kind: KIND_STATE,
+    fileName: STATE_FILE_NAME,
+    collectionKey: 'cycles',
+    entryLabel: (key) => `cycle '${key}'`,
+    shapedLike: (data) => 'cycles' in data,
+  },
+  {
+    kind: KIND_INSTRUCTIONS,
+    fileName: INSTRUCTIONS_FILE_NAME,
+    collectionKey: 'instructions',
+    entryLabel: (key) => `instruction ${key}`,
+    shapedLike: (data) => 'instructions' in data,
+  },
+  {
+    kind: KIND_SIGNAL,
+    fileName: null,
+    collectionKey: null,
+    entryLabel: () => 'note',
+    shapedLike: (data) => Boolean(data['status']) && ('timestamp' in data || 'outputs' in data),
+  },
+];
+
+/** The row of one kind; every `MergeKind` has one (a missing row is a programming error, not a record a person wrote). */
+export function kindRow(kind: MergeKind): RecordKindRow {
+  const row = RECORD_KINDS.find((each) => each.kind === kind);
+  if (row === undefined) throw new Error(`merge-ledger: no table row for ${String(kind)}`);
+  return row;
+}
 
 /** The three outcomes the driver hands back: merged / needs a person / a usage or read error. */
 export const EXIT_OK = 0;
@@ -67,19 +128,18 @@ export type EntryResolver = (
   report: MergeReport,
 ) => unknown;
 
-/** Read one on-disk table as "identity → entry"; a shape it cannot recognise reads as an empty table. */
+/**
+ * Read one on-disk table as "identity → entry"; a shape it cannot recognise reads as an empty table.
+ *
+ * A record's reader is `indexBy` with its own one-cell "how is this entry's identity taken" (`nodes` also accepts a
+ * hand-written `uuid`), so the three list-or-mapping readings cannot drift apart on what an entry without an
+ * identity means.
+ */
 export type IndexReader = (value: unknown) => EntryIndex;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  which record this is
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/** Collection key → kind: when the file name cannot be recognised, the shape is what recognises it. */
-const COLLECTION_KINDS: ReadonlyArray<readonly [string, MergeKind]> = [
-  ['nodes', KIND_IDEAS],
-  ['cycles', KIND_STATE],
-  ['instructions', KIND_INSTRUCTIONS],
-];
 
 /**
  * Which record a path is, recognised by file name.
@@ -92,10 +152,10 @@ export function kindOf(name: string | null | undefined): MergeKind | null {
   if (name === null || name === undefined || name === '') return null;
   const parts = String(name).replace(/\\/g, '/').split('/');
   const base = parts[parts.length - 1] ?? '';
-  if (base === 'ideas.json') return KIND_IDEAS;
-  if (base === 'state.json') return KIND_STATE;
-  if (base === 'instructions.json') return KIND_INSTRUCTIONS;
-  if (base.endsWith('.json') && parts.slice(0, -1).includes('signals')) return KIND_SIGNAL;
+  for (const row of RECORD_KINDS) {
+    if (row.fileName !== null && base === row.fileName) return row.kind;
+  }
+  if (base.endsWith('.json') && parts.slice(0, -1).includes(SIGNALS_DIR_NAME)) return KIND_SIGNAL;
   return null;
 }
 
@@ -105,17 +165,21 @@ export function kindOf(name: string | null | undefined): MergeKind | null {
  * Under git there often is no name: `%O`/`%A`/`%B` are its temporary files. The three collection files each carry
  * that collection key, so they cannot be mistaken; a handoff ticket is the one record that "has a status and no
  * collection underneath". Everything else is refused, not guessed.
+ *
+ * The tables are asked first: a collection key is a stronger signature than a ticket's own shape, so a ticket-shaped
+ * side does not name a record that another side says is a table.
  */
 export function kindFromShape(...sides: unknown[]): MergeKind | null {
   for (const data of sides) {
     if (!isRecord(data)) continue;
-    for (const [key, kind] of COLLECTION_KINDS) {
-      if (key in data) return kind;
+    for (const row of RECORD_KINDS) {
+      if (row.collectionKey !== null && row.shapedLike(data)) return row.kind;
     }
   }
   for (const data of sides) {
-    if (isRecord(data) && data['status'] && ('timestamp' in data || 'outputs' in data)) {
-      return KIND_SIGNAL;
+    if (!isRecord(data)) continue;
+    for (const row of RECORD_KINDS) {
+      if (row.collectionKey === null && row.shapedLike(data)) return row.kind;
     }
   }
   return null;
@@ -165,10 +229,7 @@ export function fmt(value: unknown): string {
 
 /** The name of one record on a conflict line. */
 export function entryLabel(kind: MergeKind, key: string): string {
-  if (kind === KIND_IDEAS) return `Node ${key.slice(0, 8)}`;
-  if (kind === KIND_STATE) return `cycle '${key}'`;
-  if (kind === KIND_INSTRUCTIONS) return `instruction ${key}`;
-  return 'note';
+  return kindRow(kind).entryLabel(key);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -270,6 +331,34 @@ export function mergeMapping(
 }
 
 /**
+ * One table read as "identity → entry".
+ *
+ * `identity` says how one entry's own identity is taken — the one cell each record fills in (lines and instructions
+ * read `id`, the graph also accepts a hand-written `uuid`). An entry with no identity (`undefined`, `null` or the
+ * empty string) is left out: an identity that addresses nothing must not land in the merged result as a row keyed by
+ * nothing. A hand-written mapping is taken as it is, its own keys being the identities.
+ */
+export function indexBy(
+  items: unknown,
+  identity: (entry: Record<string, unknown>) => unknown,
+): EntryIndex {
+  const out: EntryIndex = new Map();
+  if (isRecord(items)) {
+    for (const [key, entry] of Object.entries(items)) out.set(key, entry);
+    return out;
+  }
+  if (Array.isArray(items)) {
+    for (const entry of items) {
+      if (!isRecord(entry)) continue;
+      const id = identity(entry);
+      if (id === undefined || id === null || id === '') continue;
+      out.set(String(id), entry);
+    }
+  }
+  return out;
+}
+
+/**
  * One table, three-way merged entry by entry: the union of keys, keeping this side's order.
  *
  * A key only one side has is taken whole from that side — there is no field on the other side to compare.
@@ -361,20 +450,31 @@ function keepOrDelete(
 }
 
 /**
- * One record file as a whole: the collection key is walked entry by entry, the remaining fields follow the ordinary
- * rules.
+ * One table inside a record file: its collection key, how its entries merge, how they are read off the three sides,
+ * and whether the merged result goes back as a list.
  *
- * `key` is this file's collection key (`nodes` / `cycles` / `instructions`), `indexOf` reads that field as
- * "identity → entry", `asList` says whether the merged result has to be turned back into a list when written,
- * `propagateDelete` belongs to `mergeEntries`, and `after` is what still has to be checked once the whole result is
- * there (the graph's dangling dependencies).
+ * `key` is this slot's collection key (`nodes` / `cycles` / `instructions`, or `removed` in the instruction record —
+ * the one record that carries two tables), `indexOf` reads that field as "identity → entry", `asList` says whether
+ * that field is list-shaped on disk, and `propagateDelete` belongs to `mergeEntries`.
  */
-export interface MergeCollectionOptions {
+export interface CollectionSlot {
   readonly key: string;
   readonly resolveEntry: EntryResolver;
   readonly indexOf: IndexReader;
   readonly propagateDelete?: boolean;
   readonly asList?: boolean;
+}
+
+/**
+ * One record file as a whole: every table it carries is walked entry by entry, the remaining fields follow the
+ * ordinary rules, and `after` is what still has to be checked once the whole result is there (the graph's dangling
+ * dependencies).
+ *
+ * The file's name on a conflict line comes from the kind table (`kindRow(report.kind).fileName`): the record already
+ * says which kind it is, so no caller spells the name a second time.
+ */
+export interface MergeCollectionOptions {
+  readonly slots: readonly CollectionSlot[];
   readonly after?: (
     merged: Record<string, unknown>,
     ours: unknown,
@@ -384,26 +484,27 @@ export interface MergeCollectionOptions {
 }
 
 export function mergeCollection(
-  label: string,
   base: unknown,
   ours: unknown,
   theirs: unknown,
   report: MergeReport,
   options: MergeCollectionOptions,
 ): Record<string, unknown> {
+  const label = kindRow(report.kind).fileName ?? '?';
   const out: Record<string, unknown> = {};
   for (const field of keyOrder(ours, theirs)) {
-    if (field === options.key) {
+    const slot = options.slots.find((each) => each.key === field);
+    if (slot !== undefined) {
       const entries = mergeEntries(
         get(base, field),
         get(ours, field),
         get(theirs, field),
         report,
-        options.resolveEntry,
-        options.indexOf,
-        options.propagateDelete === true,
+        slot.resolveEntry,
+        slot.indexOf,
+        slot.propagateDelete === true,
       );
-      out[field] = options.asList === true ? [...entries.values()] : Object.fromEntries(entries);
+      out[field] = slot.asList === true ? [...entries.values()] : Object.fromEntries(entries);
     } else {
       out[field] = plainField(
         label,
@@ -470,6 +571,90 @@ export function stampField(
   }
   const keepOurs = pick === 'max' ? oursValue >= theirsValue : oursValue <= theirsValue;
   return keepOurs ? oursValue : theirsValue;
+}
+
+/** One moment read off a record: a non-empty string is a moment, anything else means that side carries none. */
+export function stampOf(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null;
+}
+
+/** Which side of the merge: this one, or the other one. */
+export type Side = 'ours' | 'theirs';
+
+/** The two moments, as each side's own reader handed them over (an absent key and a cleared one are not the same thing to a note). */
+export interface Moments {
+  readonly ours: unknown;
+  readonly theirs: unknown;
+}
+
+/** Which side's moment is later, and that moment. */
+export interface Winner {
+  readonly side: Side;
+  readonly later: string;
+  readonly moments: Moments;
+}
+
+/**
+ * Why two moments cannot order the two sides: both carry the same one, one side carries none at all (`ours` / `theirs`
+ * — an explicitly cleared moment), neither does (`none`), or one side's value is not a moment to begin with (`other`:
+ * the key is absent, or it holds something that is not a string).
+ */
+export type Unorderable = 'same' | 'ours' | 'theirs' | 'none' | 'other';
+
+/**
+ * The rule "the side that wrote later wins, whole": the two moments order the sides, the later side's value is taken,
+ * and two moments that cannot be ordered are a person's call.
+ *
+ * The record fills in two cells only — how it reads one side's moment (`stampOf`, handed the entry itself), and the
+ * sentences it says (`winnerNote`, `cannotOrderNote`). Everything else — which side is later, what happens when neither
+ * can be ordered, that nothing is guessed — is decided once, here.
+ */
+export interface NewerSideOptions {
+  /** How one side's moment is read: a string is a moment, anything else means that side carries none (a reader that treats an empty string as "nothing was written" hands back `null`). */
+  readonly stampOf: (entry: unknown) => unknown;
+  /** What is said when the moments do order the two sides. */
+  readonly winnerNote: (label: string, key: string, winner: Winner) => string;
+  /** What is said when they do not; `at` says why, and `moments` are the two readings. */
+  readonly cannotOrderNote: (label: string, key: string, at: Unorderable, moments: Moments) => string;
+}
+
+export function newerSideWins(
+  label: string,
+  key: string,
+  baseValue: unknown,
+  oursValue: unknown,
+  theirsValue: unknown,
+  entries: { readonly ours: unknown; readonly theirs: unknown },
+  report: MergeReport,
+  options: NewerSideOptions,
+): unknown {
+  const got = threeWay(baseValue, oursValue, theirsValue);
+  if (got !== UNDECIDED) return got;
+
+  const moments: Moments = {
+    ours: options.stampOf(entries.ours),
+    theirs: options.stampOf(entries.theirs),
+  };
+  const oursStamp = typeof moments.ours === 'string' ? moments.ours : null;
+  const theirsStamp = typeof moments.theirs === 'string' ? moments.theirs : null;
+  if (oursStamp !== null && theirsStamp !== null && oursStamp !== theirsStamp) {
+    const side: Side = oursStamp > theirsStamp ? 'ours' : 'theirs';
+    const winner: Winner = { side, later: side === 'ours' ? oursStamp : theirsStamp, moments };
+    report.decide(options.winnerNote(label, key, winner));
+    return side === 'ours' ? oursValue : theirsValue;
+  }
+  const at: Unorderable =
+    oursStamp !== null && theirsStamp !== null
+      ? 'same'
+      : moments.ours === null && moments.theirs === null
+        ? 'none'
+        : moments.ours === null
+          ? 'ours'
+          : moments.theirs === null
+            ? 'theirs'
+            : 'other';
+  report.conflict(label, key, oursValue, theirsValue, options.cannotOrderNote(label, key, at, moments));
+  return MISSING;
 }
 
 /** The rule on one field of an append-style record: when one side is a prefix of the other take the longer one, when both have tails take the union, and when the same thing disagrees it is a conflict. */

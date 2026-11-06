@@ -16,13 +16,14 @@
  */
 
 import {
-  MISSING,
   UNDECIDED,
   type FieldResolver,
   type MergeReport,
+  type NewerSideOptions,
   asRecord,
-  bothChanged,
   mergeMapping,
+  newerSideWins,
+  stampOf,
   threeWay,
 } from './generic';
 
@@ -32,6 +33,21 @@ import {
  */
 export const TERMINAL_SIGNAL_STATUSES = ['completed', 'failed', 'stopped'];
 
+/**
+ * The ticket's own `timestamp` orders every field of the record: the later attempt wins whole, and the two sentences
+ * below are the only thing this record adds (`note` is what a ticket is called on a conflict line).
+ */
+const LATER_TICKET: NewerSideOptions = {
+  stampOf: (ticket) => stampOf(asRecord(ticket)['timestamp']),
+  winnerNote: (label, what, winner) =>
+    `${label}: ${what} both sides changed it -> take the later ticket by its own timestamp ` +
+    `(${winner.side}; ${String(winner.moments.ours)} vs ${String(winner.moments.theirs)})`,
+  cannotOrderNote: (_label, _what, at, moments) =>
+    at === 'same'
+      ? `both attempts carry the timestamp ${String(moments.ours)}, so they cannot be ordered`
+      : `${at === 'ours' ? 'this side carries no timestamp' : at === 'theirs' ? 'the other side carries no timestamp' : 'neither side carries a timestamp'}, so the two attempts cannot be ordered`,
+};
+
 /** One handoff ticket: the later attempt wins, and a terminal status wins over a non-terminal one. */
 export function mergeSignal(
   base: unknown,
@@ -39,24 +55,22 @@ export function mergeSignal(
   theirs: unknown,
   report: MergeReport,
 ): Record<string, unknown> {
-  const oursStamp = stampOf(ours);
-  const theirsStamp = stampOf(theirs);
   const resolve: FieldResolver = (key, baseValue, oursValue, theirsValue) => {
     if (key === 'status') {
-      return signalStatus(baseValue, oursValue, theirsValue, report, oursStamp, theirsStamp);
+      return signalStatus(baseValue, oursValue, theirsValue, { ours, theirs }, report);
     }
-    if (bothChanged(baseValue, oursValue, theirsValue)) {
-      return laterTicket(report, key, oursValue, theirsValue, oursStamp, theirsStamp);
-    }
-    return threeWay(baseValue, oursValue, theirsValue);
+    return newerSideWins(
+      'note',
+      key,
+      baseValue,
+      oursValue,
+      theirsValue,
+      { ours, theirs },
+      report,
+      LATER_TICKET,
+    );
   };
   return mergeMapping(asRecord(base), asRecord(ours), asRecord(theirs), resolve);
-}
-
-/** The ticket's own `timestamp`; null when that side has no usable one. */
-function stampOf(value: unknown): string | null {
-  const stamp = asRecord(value)['timestamp'];
-  return typeof stamp === 'string' && stamp !== '' ? stamp : null;
 }
 
 /** Status: terminal beats non-terminal; only within the same tier does the ticket's own timestamp decide. */
@@ -64,9 +78,8 @@ function signalStatus(
   baseValue: unknown,
   oursValue: unknown,
   theirsValue: unknown,
+  tickets: { readonly ours: unknown; readonly theirs: unknown },
   report: MergeReport,
-  oursStamp: string | null,
-  theirsStamp: string | null,
 ): unknown {
   const got = threeWay(baseValue, oursValue, theirsValue);
   if (got !== UNDECIDED) return got;
@@ -80,50 +93,18 @@ function signalStatus(
     );
     return winner;
   }
-  return laterTicket(report, 'status, same tier', oursValue, theirsValue, oursStamp, theirsStamp);
+  return newerSideWins(
+    'note',
+    'status, same tier',
+    baseValue,
+    oursValue,
+    theirsValue,
+    tickets,
+    report,
+    LATER_TICKET,
+  );
 }
 
 function isTerminal(value: unknown): boolean {
   return typeof value === 'string' && TERMINAL_SIGNAL_STATUSES.includes(value);
-}
-
-/**
- * Both sides changed the same field to two values: take the ticket whose own `timestamp` is later.
- * Two sides that cannot be ordered — no timestamp on one of them, or the same timestamp on both —
- * go to a person instead of a coin being tossed.
- */
-function laterTicket(
-  report: MergeReport,
-  what: string,
-  oursValue: unknown,
-  theirsValue: unknown,
-  oursStamp: string | null,
-  theirsStamp: string | null,
-): unknown {
-  if (oursStamp === null || theirsStamp === null) {
-    const why =
-      oursStamp === null && theirsStamp === null
-        ? 'neither side carries a timestamp'
-        : oursStamp === null
-          ? 'this side carries no timestamp'
-          : 'the other side carries no timestamp';
-    report.conflict('note', what, oursValue, theirsValue, `${why}, so the two attempts cannot be ordered`);
-    return MISSING;
-  }
-  if (oursStamp === theirsStamp) {
-    report.conflict(
-      'note',
-      what,
-      oursValue,
-      theirsValue,
-      `both attempts carry the timestamp ${oursStamp}, so they cannot be ordered`,
-    );
-    return MISSING;
-  }
-  const theirsIsLater = theirsStamp > oursStamp;
-  report.decide(
-    `note: ${what} both sides changed it -> take the later ticket by its own timestamp ` +
-      `(${theirsIsLater ? 'theirs' : 'ours'}; ${oursStamp} vs ${theirsStamp})`,
-  );
-  return theirsIsLater ? theirsValue : oursValue;
 }

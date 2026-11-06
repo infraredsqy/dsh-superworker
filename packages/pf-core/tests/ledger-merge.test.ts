@@ -858,6 +858,110 @@ describe('the side branches of the decision: each branch has a case of its own',
 });
 
 /**
+ * How a table is read off the three sides: one reading for every record, so a hand-written shape cannot be read one
+ * way by the graph and another way by the lines.
+ *
+ * An entry without an identity is the case that tells the readings apart. The writers lay entries down in a table
+ * keyed by their id, so only a hand-written list can carry `id: ''` — and keying that under nothing is how a conflict
+ * line once read "Node  field (the whole record)": it named no node at all.
+ */
+describe('the tables: one reading of a list-or-mapping shape', () => {
+  /** A graph node with the writer's fields, plus whatever a hand edit added. */
+  function idea(title: string, extra: Record<string, unknown> = {}) {
+    return {
+      title,
+      description: '',
+      status: 'todo',
+      mode: 'auto',
+      dependencies: [] as string[],
+      created_at: '2026-02-01T00:00:00.000000Z',
+      updated_at: '2026-02-01T00:00:00.000000Z',
+      ...extra,
+    };
+  }
+
+  it('a graph list entry whose id and uuid are both empty is left out, not keyed under nothing', async () => {
+    const emptyId = { id: '', uuid: '' };
+    const base = JSON.stringify({ nodes: [idea('甲', emptyId)] }, null, 2);
+    const ours = JSON.stringify({ nodes: [idea('甲侧', emptyId)] }, null, 2);
+    const theirs = JSON.stringify({ nodes: [] }, null, 2);
+    const run1 = await run({ base, ours, theirs, path: '.pf/ideas.json' });
+    expect(run1.code).toBe(0);
+    expect(JSON.parse(run1.oursBytes.toString('utf8'))).toEqual({ nodes: {} });
+  });
+
+  it('a hand-written list entry with no identity is left out of the instruction table too, and the entry with an id merges beside it', async () => {
+    /** One instruction with the writer's fields; `id` and the resolution act are what a case varies. */
+    const instruction = (id: string, text: string, state: string, resolved: string | null) => ({
+      id,
+      text,
+      scope: 'global',
+      target: 'stage',
+      state,
+      cycle: null,
+      node: null,
+      said_by: 'user',
+      at: '2026-02-01T00:00:00Z',
+      resolved_at: resolved,
+      note: null,
+    });
+    const base = JSON.stringify(
+      { instructions: [instruction('1', '第一条', 'live', null)], removed: [] },
+      null,
+      2,
+    );
+    const ours = JSON.stringify(
+      {
+        instructions: [
+          instruction('', '没有身份的一条', 'live', null),
+          instruction('1', '第一条', 'withdrawn', '2026-02-01T02:00:00Z'),
+        ],
+        removed: [],
+      },
+      null,
+      2,
+    );
+    const theirs = JSON.stringify(
+      { instructions: [instruction('1', '第一条', 'withdrawn', '2026-02-01T01:00:00Z')], removed: [] },
+      null,
+      2,
+    );
+    const run1 = await run({ base, ours, theirs, path: '.pf/instructions.json' });
+    expect(run1.code).toBe(0);
+    const merged = JSON.parse(run1.oursBytes.toString('utf8')) as {
+      instructions: { id: string; state: string; resolved_at: string | null }[];
+    };
+    expect(merged.instructions.map((entry) => entry.id)).toEqual(['1']);
+    // The group still comes whole from the side that acted later (nothing about the empty entry changes that).
+    expect(merged.instructions[0]).toMatchObject({
+      state: 'withdrawn',
+      resolved_at: '2026-02-01T02:00:00Z',
+    });
+  });
+
+  it('a hand-written mapping is taken as it is: the line table merges by its key and lands as a list', async () => {
+    const cycle = (status: string) => ({
+      id: 'pf-core',
+      title: '主线程',
+      status,
+      holding: [] as string[],
+      path: [] as unknown[],
+      created_at: '2026-02-01T00:00:00Z',
+      updated_at: '2026-02-01T00:10:00Z',
+    });
+    const base = JSON.stringify({ cycles: { 'pf-core': cycle('active') } }, null, 2);
+    const ours = JSON.stringify({ cycles: { 'pf-core': cycle('inactive') } }, null, 2);
+    const theirs = JSON.stringify({ cycles: { 'pf-core': cycle('active') } }, null, 2);
+    const run1 = await run({ base, ours, theirs, path: '.pf/state.json' });
+    expect(run1.code).toBe(0);
+    const merged = JSON.parse(run1.oursBytes.toString('utf8')) as {
+      cycles: { id: string; status: string }[];
+    };
+    expect(merged.cycles).toEqual([{ ...cycle('inactive') }]);
+  });
+});
+
+/**
  * The writing half of the driver: the landing spot, and the record lock that comes after the
  * write gate. Other cases only ever reach the write gate (with the record directory never
  * init-ed it stops before the lock), so only this place reaches the lock and the default

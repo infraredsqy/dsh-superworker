@@ -20,12 +20,15 @@ import {
   UNDECIDED,
   type FieldResolver,
   type MergeReport,
+  type NewerSideOptions,
   asRecord,
   fmt,
   get,
+  indexBy,
   isRecord,
   mergeCollection,
   mergeMapping,
+  newerSideWins,
   plainField,
   sameValue,
   stampField,
@@ -45,11 +48,15 @@ export function mergeIdeas(
   theirs: unknown,
   report: MergeReport,
 ): Record<string, unknown> {
-  return mergeCollection('ideas.json', base, ours, theirs, report, {
-    key: 'nodes',
-    resolveEntry: mergeNode,
-    indexOf: indexNodes,
-    propagateDelete: true,
+  return mergeCollection(base, ours, theirs, report, {
+    slots: [
+      {
+        key: 'nodes',
+        resolveEntry: mergeNode,
+        indexOf: indexNodes,
+        propagateDelete: true,
+      },
+    ],
     after: flagBrokenDependency,
   });
 }
@@ -114,17 +121,7 @@ function wasBroken(side: unknown, id: string, dependency: unknown): boolean {
 
 /** The node table read as "uuid → node"; a hand-written list shape is indexed by each entry's own id. */
 function indexNodes(nodes: unknown): Map<string, unknown> {
-  if (isRecord(nodes)) return new Map(Object.entries(nodes));
-  const out = new Map<string, unknown>();
-  if (Array.isArray(nodes)) {
-    for (const node of nodes) {
-      if (!isRecord(node)) continue;
-      const id = node['id'] || node['uuid'];
-      if (id === undefined || id === null) continue;
-      out.set(String(id), node);
-    }
-  }
-  return out;
+  return indexBy(nodes, (node) => node['id'] || node['uuid']);
 }
 
 /** One node: field by field, with three rules of its own and the direction of two timestamps. */
@@ -241,6 +238,14 @@ function contains(list: readonly unknown[], value: unknown): boolean {
 }
 
 /** The three fields people write: both sides changed one, and the side with the later `updated_at` is the later write. */
+const LATER_WRITE: NewerSideOptions = {
+  stampOf: (node) => get(node, 'updated_at'),
+  winnerNote: (label, key, winner) =>
+    `${label}: ${key} both sides changed it -> take the side with the newer updated_at ` +
+    `(${winner.side} ${winner.later})`,
+  cannotOrderNote: () => 'updated_at cannot order the two',
+};
+
 function textField(
   label: string,
   key: string,
@@ -251,23 +256,14 @@ function textField(
   theirs: unknown,
   report: MergeReport,
 ): unknown {
-  const got = threeWay(baseValue, oursValue, theirsValue);
-  if (got !== UNDECIDED) return got;
-  const oursStamp = get(ours, 'updated_at');
-  const theirsStamp = get(theirs, 'updated_at');
-  if (
-    typeof oursStamp === 'string' &&
-    typeof theirsStamp === 'string' &&
-    oursStamp !== theirsStamp
-  ) {
-    const oursIsLater = oursStamp > theirsStamp;
-    const later = oursIsLater ? oursStamp : theirsStamp;
-    report.decide(
-      `${label}: ${key} both sides changed it -> take the side with the newer updated_at ` +
-        `(${oursIsLater ? 'ours' : 'theirs'} ${later})`,
-    );
-    return oursIsLater ? oursValue : theirsValue;
-  }
-  report.conflict(label, key, oursValue, theirsValue, 'updated_at cannot order the two');
-  return MISSING;
+  return newerSideWins(
+    label,
+    key,
+    baseValue,
+    oursValue,
+    theirsValue,
+    { ours, theirs },
+    report,
+    LATER_WRITE,
+  );
 }

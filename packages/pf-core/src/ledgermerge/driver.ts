@@ -263,6 +263,23 @@ export async function runMergeDriver(
   return EXIT_OK;
 }
 
+/**
+ * Which engine merges which record.
+ *
+ * The identity of a record — its name, its file, its collection key, its conflict-line label — is one row of the
+ * kind table in `generic.ts`; the engine is the one column that table cannot carry (the engines read `generic`, so a
+ * table holding them would close the circle). `Record<MergeKind, Engine>` is what keeps the two in step: a fifth kind
+ * compiles only once it has an engine here.
+ */
+type Engine = (base: unknown, ours: unknown, theirs: unknown, report: MergeReport) => unknown;
+
+const ENGINES: Record<MergeKind, Engine> = {
+  [KIND_IDEAS]: mergeIdeas,
+  [KIND_STATE]: mergeState,
+  [KIND_INSTRUCTIONS]: mergeInstructions,
+  [KIND_SIGNAL]: mergeSignal,
+};
+
 /** Hand the record kind to its engine. */
 function mergeByKind(
   kind: MergeKind,
@@ -271,11 +288,9 @@ function mergeByKind(
   theirs: unknown,
   report: MergeReport,
 ): unknown {
-  if (kind === KIND_IDEAS) return mergeIdeas(base, ours, theirs, report);
-  if (kind === KIND_STATE) return mergeState(base, ours, theirs, report);
-  if (kind === KIND_INSTRUCTIONS) return mergeInstructions(base, ours, theirs, report);
-  if (kind === KIND_SIGNAL) return mergeSignal(base, ours, theirs, report);
-  throw new Error(`merge-ledger: no engine for ${String(kind)}`);
+  const engine = ENGINES[kind];
+  if (engine === undefined) throw new Error(`merge-ledger: no engine for ${String(kind)}`);
+  return engine(base, ours, theirs, report);
 }
 
 /**

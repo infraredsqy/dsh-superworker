@@ -30,6 +30,16 @@ import { PfError } from './errors.ts';
 /** The name of the record directory, hung under the project root. */
 export const PF_DIR_NAME = '.pf';
 
+/**
+ * The three record file names and the handoff tickets' directory name: `pfPaths` builds every location from
+ * these, and the merge driver recognises a record by the same names (a second spelling of them is a second
+ * landing table, which is exactly what the driver must not have).
+ */
+export const STATE_FILE_NAME = 'state.json';
+export const IDEAS_FILE_NAME = 'ideas.json';
+export const INSTRUCTIONS_FILE_NAME = 'instructions.json';
+export const SIGNALS_DIR_NAME = 'signals';
+
 /** Every location of one record tree. `root` is the project root open received, kept as it is. */
 export interface PfPaths {
   readonly root: string;
@@ -58,12 +68,12 @@ export function pfPaths(projectRoot: string): PfPaths {
   return {
     root: projectRoot,
     pfDir,
-    stateJson: join(pfDir, 'state.json'),
-    ideasJson: join(pfDir, 'ideas.json'),
-    instructionsJson: join(pfDir, 'instructions.json'),
+    stateJson: join(pfDir, STATE_FILE_NAME),
+    ideasJson: join(pfDir, IDEAS_FILE_NAME),
+    instructionsJson: join(pfDir, INSTRUCTIONS_FILE_NAME),
     issuesJson: join(pfDir, 'issues', 'issues.json'),
     configJson: join(pfDir, 'config.json'),
-    signalsDir: join(pfDir, 'signals'),
+    signalsDir: join(pfDir, SIGNALS_DIR_NAME),
     nodesDir: join(pfDir, 'nodes'),
     worktreesDir: join(pfDir, 'worktrees'),
     metaDir: join(pfDir, 'meta'),
