@@ -2,7 +2,7 @@
   "action": "stop_pipeline",
   "cycle": "c1",
   "node_id": "@node-a@",
-  "reason": "node mode=checkpoint: this round is done, and the next node opens only once you say continue; to carry on: cycle status c1 active, then next --cycle c1 --spawn --json",
+  "reason": "node mode=checkpoint: this round is done, and the next node opens only once you say continue; to carry on: cycle status c1 active, then advance --cycle c1",
   "note": "cycle parked; nothing more to do without a human",
   "attention": [],
   "settling": true

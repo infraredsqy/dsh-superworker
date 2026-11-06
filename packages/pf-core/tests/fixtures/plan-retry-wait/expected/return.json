@@ -2,5 +2,5 @@
   "action": "wait",
   "cycle": "c1",
   "node_id": "@node-a@",
-  "note": "The note for @short-a@ is still pending (no verdict yet, or somebody cleared the note to retry); do not poll. Three commands unwind it: cycle retry c1 @node-a@ --drop --summary \"retry\", then cycle hold c1 @node-a@, then next --spawn --json."
+  "note": "The note for @short-a@ is still pending (no verdict yet, or somebody cleared the note to retry); do not poll. Three commands unwind it: cycle retry c1 @node-a@ --drop --summary \"retry\", then cycle hold c1 @node-a@, then dispatch c1."
 }

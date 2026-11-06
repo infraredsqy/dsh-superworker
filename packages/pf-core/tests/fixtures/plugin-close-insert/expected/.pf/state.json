@@ -3,8 +3,13 @@
     {
       "id": "c1",
       "title": "对拍线",
-      "status": "inactive",
-      "holding": [],
+      "status": "active",
+      "holding": [
+        {
+          "id": "@node-b@",
+          "since": "@t4@"
+        }
+      ],
       "path": [
         {
           "node": "@node-a@",

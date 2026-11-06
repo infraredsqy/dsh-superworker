@@ -17,7 +17,7 @@ import {
   verifyPlugins,
 } from './plugins/registry';
 import type { DispatchRequest, Executor, OpenedSession } from './executor';
-import { envSpawnDryRun, envSpawner, zcodeDataDir } from './env';
+import { envModel, envSpawnDryRun, envSpawner, zcodeDataDir } from './env';
 import { PfError } from './errors';
 import type { GitResult, GitRunner } from './git';
 import { atomicWriteBytes, atomicWriteJson, EOL, jsonOptionsForRecord, readJsonFile } from './jsonio';
@@ -29,7 +29,7 @@ import {
   readAbsoluteForm,
   resolvesOnPath,
 } from './initledger';
-import { planNext, promptTextOf, settleClose, settleCloseWithAnswers } from './planner';
+import { pinSlots, planNext, promptTextOf, settleClose } from './planner';
 import { prepareDispatch, ticketReadings } from './prepare';
 import type { PreparedDispatch } from './prepare';
 import { launchPromptPath, PF_DIR_NAME, pfPaths, signalPath, startedMarkerPath, type PfPaths } from './paths';
@@ -63,13 +63,46 @@ export interface ConductorTarget {
 }
 
 /**
- * What one dispatch names on the call itself: the line, the node, and the spawner. The spawner is the
- * most specific answer for this one dispatch — it beats the line's `spawner` policy, and that beats the
- * machine's own `DSH_CONDUCT_SPAWNER`. A bare word (`dsh` / `zcode`) or a path both count; left out,
- * the executor's own default opens the session.
+ * What one dispatch names on the call itself: the line, the node, the spawner and the model route. Both
+ * words resolve the most specific answer first: the call's own name beats the line's policy (`spawner`,
+ * `model`), which beats the machine's switch (`DSH_CONDUCT_SPAWNER`, `DSH_CONDUCT_MODEL`); left out, the
+ * executor's own default opens the session. The spawner is a bare word (`dsh` / `zcode`) or a path; the
+ * model is the ecosystem's route spelling (`provider/model`), carried whole.
  */
 export interface ConductorDispatchInput extends ConductorTarget {
   spawner?: string;
+  model?: string;
+}
+
+/**
+ * What one advance names on the call itself: which line, and — handed down to every session it opens — the
+ * spawner and the model route. The line defaults to the one active line, as every verb of this namespace does.
+ */
+export interface ConductorAdvanceInput extends ConductorTarget {
+  spawner?: string;
+  model?: string;
+  /**
+   * Whether this step opens sessions. alse claims the free slots and lands their material only — what a
+   * process with no opener can do, and what close asks for. Absent means 	rue.
+   */
+  openSessions?: boolean;
+}
+
+/**
+ * What one advance did, step by step: the nodes it claimed for the line, the cells it handed to the
+ * executor (with their receipts), whether it turned the line out of service, and the plan read after the
+ * steps — the line's state as the next caller will read it.
+ */
+export interface AdvanceReceipt {
+  readonly cycle: string;
+  /** The nodes this call pinned (empty when there was no free slot, or nothing in the picking range). */
+  readonly pinned: readonly string[];
+  /** The cells this call dispatched, in plan order; `receipt.action` says opened or already open. */
+  readonly dispatches: ReadonlyArray<{ node_id: string; receipt: DispatchReceipt }>;
+  /** Whether this call parked the line (a stop with nothing left in hand). */
+  readonly parked: boolean;
+  /** The plan read after these steps. */
+  readonly plan: NextPlan;
 }
 
 /**
@@ -95,31 +128,24 @@ export interface DispatchReceipt {
 }
 
 /**
- * One query of `next`: the read-only mode, plus one closing rehearsal.
+ * One query of `next`: which line, and the closing rehearsal.
  *
- * - `plan` — the explicit spelling of the "read-only, do not execute" mode: in the words layer it is
- *   `next --plan`. This one word takes only `true` here (read-only is the default); writing `false`
- *   is refused on the spot, because the action that carries the next step out is called
- *   `conductor.dispatch`, the two actions each go through their own gate, and there is no "execute it on
- *   the way" fork on the `next` path.
+ * - `cycle` — the line to read; without a name the one active line is taken.
  * - `after` — the closing rehearsal: name the node whose work is already handed back (the ticket is on
- *   disk) and ask "settling on it, where would this line go". Taking the node and landing the prompt
- *   are write-side matters, and `next` only computes the verdict.
- * - `decision` / `note` / `node` — the answers of the closing step (continue / stop, one line of reason,
- *   which node to name instead). They only have something to answer when `after` is present; given on
- *   their own they are accepted all the same and have no effect.
+ *   disk) and ask "settling on it, where would this line go". Nothing is written on this path: the
+ *   rehearsal is a reading of the criteria the settle itself uses, and the settle is `conductor.settle`.
+ *
+ * There is no "execute it on the way" mode here: this action reads the records and hands back what the
+ * next step is, and the action that carries a step out is `conductor.advance` (or `dispatch`).
  */
 export interface NextQuery extends ConductorTarget {
-  plan?: boolean;
   after?: string;
-  decision?: 'continue' | 'stop';
-  note?: string;
 }
 
 /**
  * The next step: a plan that can be read and explained and is not executed.
  *
- * The literals of the action bag and their key order are fixed (the output of `next --plan --json`), and
+ * The literals of the action bag and their key order are fixed (the output of `plan --json`), and
  * the byte-for-byte comparison rests on exactly that; the six actions each take one word:
  *
  * - `dispatch` — the node is pinned and the prompt's location is named too: hand this step to the executor.
@@ -235,17 +261,6 @@ export interface ConductorHandoffInput {
   outputs?: Record<string, unknown>;
 }
 
-/**
- * The closing answers a settle can carry: which way the closing call decided, one line of reason, and the
- * node to run instead of the ranking's pick. The same answers the closing rehearsal of `next` takes.
- */
-export interface ConductorCloseAnswers extends ConductorTarget {
-  readonly decision?: 'continue' | 'stop';
-  readonly note?: string;
-  /** Run this node instead of the ranking's pick (a full id or a prefix). */
-  readonly named?: string;
-}
-
 /** One reading slot the ticket shape of a line asks for: the key, and the question the declaration carries. */
 export interface HandoffFormReading {
   key: string;
@@ -340,13 +355,21 @@ export interface ConductorNamespace {
   dispatch(input?: ConductorDispatchInput): Promise<DispatchReceipt>;
   /** Write one handoff ticket, landing at "line id / node id" under signals. */
   handoff(input: ConductorHandoffInput): Promise<HandoffRecord>;
-  /** Close out the line and settle. */
+  /**
+   * Settle one node, and nothing else: the verdict goes into the line's `path`, the claim is laid down, the
+   * graph node lands `completed` / `shelved`, and the close-time plugin seam runs (an offer may put a node
+   * into the graph). No slot is claimed, no line is parked, no material lands and no session opens; those
+   * are `advance`'s steps (and `close`'s, which settles and then takes them without a session).
+   */
+  settle(input?: ConductorTarget): Promise<CycleRecord>;
+  /** The settle plus the applier's steps with no session opened: claim the freed slots, park a stopped line. */
   close(input?: ConductorTarget): Promise<CycleRecord>;
   /**
-   * Close out the line and settle, with the closing answers the caller carries: continue / stop, one line of
-   * reason, or a node named instead of the ranking's pick. Everything else is the same settle `close` lands.
+   * Carry the line one step: claim the nodes it has free slots for, hand the cells in hand to the executor
+   * (one session per cell), park a line that stopped with nothing left. The composed entry — its name says
+   * what it does, and every step in it is one of the primitives above.
    */
-  closeWith(input?: ConductorCloseAnswers): Promise<CycleRecord>;
+  advance(input?: ConductorAdvanceInput): Promise<AdvanceReceipt>;
   /**
    * Route one plugin command: the word and the rest of the line go to the installed plugin that declares it,
    * run in this process through the plugin contract, and its answer comes back — the text it answered with,
@@ -545,15 +568,20 @@ export function createConductorNamespace(
   }
 
   /**
-   * The settle both closing verbs land: the gates, the plugin half asked before the lock, one
-   * transaction over the records, and the closing insertion seam. `answers` is what a closing call
-   * may carry (continue / stop, one line of reason, a named node); without them the criteria decide
-   * on their own.
+   * The settle: one node's end, recorded — and nothing else.
+   *
+   * The gates first (the line must hold the node; the ticket must be on disk with a verdict), then the
+   * plugin half of the close asked **before the lock** on one snapshot of the scene, then one transaction
+   * over the records: the verdict into `path`, the claim laid down, the graph node marked, and the closing
+   * insertion seam. No slot is filled, no line is parked, no material lands and no session opens — those
+   * are the applier's steps (`applySteps`), and which node they touch is the plan's answer.
+   *
+   * The seam's target is the node this close **would have opened next** — the head of the slot-filling
+   * list the criteria name, read before anything is inserted. An offered node is wired in front of it, so
+   * the ordinary ranking picks the inserted node before the work that was going to run: the close decides
+   * the ordering by what it puts into the graph, not by claiming anything.
    */
-  const settleNode = async (
-    input: (ConductorCloseAnswers | ConductorTarget) | undefined,
-    answers?: ConductorCloseAnswers,
-  ): Promise<CycleRecord> => {
+  const settleNode = async (input: ConductorTarget | undefined): Promise<CycleRecord> => {
     assertLedgerInitialized(paths);
     const cycle = await resolveCycle(input?.cycle);
     const cycleId = String(cycle.id ?? '');
@@ -608,11 +636,10 @@ export function createConductorNamespace(
       const line = await resolveCycle(cycleId);
       const ticket = await ticketOf(cycleId, nodeId);
       if (ticket === null || ticket.status === 'pending') throw nothingToSettle(cycleId, nodeId);
-      // The settling criteria are shared with the plan (settleClose): the verdict word, walk or stop, the slot
-      // list, and whether the line parks.
-      const settle = answers === undefined
-        ? await settleClose(root, line, nodeId, ticket)
-        : await settleCloseWithAnswers(root, line, nodeId, ticket, answers);
+      // The settling criteria are shared with the plan (settleClose): the verdict word, whether the line carries
+      // on, the slot list its freed slots open, and whether it parks. The head of that list is the seam's target.
+      const settle = await settleClose(root, line, nodeId, ticket);
+      const target = settle.filled[0]?.id ?? null;
       // Transactional: a snapshot is taken before the records move, and a mid-way failure puts them back by the
       // snapshot — no half record is left.
       const before = [
@@ -620,27 +647,17 @@ export function createConductorNamespace(
         await snapshotRecord(paths.ideasJson),
       ];
       try {
-        // The mechanical steps of the settle, in the order of the closing command list: first record the step (the
-        // verdict goes into path, the claim is laid down), then mark the graph (a delivery lands completed, a
-        // non-delivery lands shelved), then pin the filled slots one by one or turn the line out of service. When
-        // the line is not in service, only the recording happens (settle.parkLine=false, no slot is filled).
+        // The mechanical steps of the settle, and only these: the step goes into path (the verdict with it), the
+        // graph node is marked (a delivery lands completed, a non-delivery lands shelved), and the record's own
+        // status is what it was. What fills the freed slots, parks a stopped line, lands material or opens a
+        // session belongs to the applier, and the plan is where it is read.
         await cycles.close(cycleId, { node: nodeId, result: settle.outcome });
         await dag.setStatus(nodeId, settle.delivered ? 'completed' : 'shelved');
-        if (settle.decision === 'continue' && settle.filled.length > 0) {
-          for (const slot of settle.filled) {
-            await cycles.hold(cycleId, slot.id);
-          }
-        } else if (settle.parkLine) {
-          await cycles.setStatus(cycleId, 'inactive');
-        }
-        // The closing insertion seam (zero semantic change): once the settle is fixed, an offer of the close timing
-        // lands in the graph through the core mechanism as before; the offers were asked before the lock, and a
-        // broken plugin folds into one WARNING line and does not take part this round, while the main flow goes on
-        // as usual.
+        // The closing insertion seam: the offers were asked before the lock, and a broken plugin folds into one
+        // WARNING line and does not take part this round, while the main flow goes on as usual.
         for (const offer of offers) {
           try {
-            // The closing seam has no picking step yet: the insertion hangs behind the node being closed, with no before.
-            await applyInsertion(root, dag, offer, nodeId, null, warnings);
+            await applyInsertion(root, dag, offer, nodeId, target, warnings);
           } catch (error) {
             warnings.push(warnLine(offer.plugin, 'failed', error));
           }
@@ -657,16 +674,70 @@ export function createConductorNamespace(
     });
   };
 
-  return {
+  /**
+   * Which model route this dispatch opens with: the call's own name > the line's `model` policy > the
+   * machine's `DSH_CONDUCT_MODEL`, and nothing named leaves the executor's own default in force. Carried
+   * as one word in the ecosystem's spelling (`provider/model`); this layer never splits it.
+   */
+  function modelOf(line: CycleRecord, named: string | undefined): string | undefined {
+    if (named !== undefined && named !== '') return named;
+    const policy = cyclePolicy(line).model;
+    if (typeof policy === 'string' && policy !== '') return policy;
+    return envModel();
+  }
+
+  /**
+   * The mechanical steps behind a plan, in one place: claim the nodes the line has free slots for, hand the
+   * cells in hand to the executor, and park a line that stopped with nothing left to run.
+   *
+   * One reading, then the steps in this order: `pinSlots` says who may be claimed (the head of the graph's
+   * ordering, as many as the line's `parallel` has room for), the claims are written, the plan is read on
+   * that state (a `dispatch` is the cells in hand whose session is not out yet), and the executor is called
+   * when this caller opens sessions. A stop with nothing in hand turns the line inactive, which is how a
+   * stopped line reads from then on.
+   *
+   * The executor is handed in as a function by the caller (`advance` passes the namespace's own dispatch),
+   * so this one implementation serves `close` (no session) and `advance` (with sessions) alike.
+   */
+  async function applySteps(
+    cycleId: string,
+    options: {
+      openSessions: boolean;
+      spawner?: string;
+      model?: string;
+      dispatch?: (nodeId: string) => Promise<DispatchReceipt>;
+    },
+  ): Promise<AdvanceReceipt> {
+    const line = await resolveCycle(cycleId);
+    const pinned: string[] = [];
+    if (line.status === 'active') {
+      for (const pick of await pinSlots(root, line)) {
+        await cycles.hold(cycleId, pick.id);
+        pinned.push(pick.id);
+      }
+    }
+    const plan = await planNext(root, { cycle: cycleId });
+    const dispatches: Array<{ node_id: string; receipt: DispatchReceipt }> = [];
+    let parked = false;
+    if (plan.action === 'dispatch' && options.openSessions && options.dispatch !== undefined) {
+      for (const cell of plan.nodes) {
+        dispatches.push({ node_id: cell.node_id, receipt: await options.dispatch(cell.node_id) });
+      }
+    } else if (plan.action === 'stop_pipeline') {
+      const current = await resolveCycle(cycleId);
+      const inHand = Array.isArray(current.holding) ? current.holding.length : 0;
+      if (current.status === 'active' && inHand === 0) {
+        await cycles.setStatus(cycleId, 'inactive');
+        parked = true;
+      }
+    }
+    const after = await planNext(root, { cycle: cycleId });
+    return { cycle: cycleId, pinned, dispatches, parked, plan: after };
+  }
+
+  const base: Omit<ConductorNamespace, 'advance'> = {
     next: async (input) => {
       const query = input ?? {};
-      if (query.plan === false) {
-        throw new Error(
-          'conductor.next is a read-only plan (the `next --plan` mode): it reads the records and hands ' +
-            'back what the next step is, writing not one byte. The action that carries the next step out is ' +
-            'conductor.dispatch.',
-        );
-      }
       return planNext(root, query);
     },
 
@@ -822,30 +893,36 @@ export function createConductorNamespace(
       // receipt, not a result: the session is open, and the result will arrive as a ticket from the worker.
       // Which spawner opens this session is the most specific answer: what this call named, then the line's
       // own `spawner` policy, then the machine's switch; with nothing said the cell is absent and the
-      // executor's default speaks. The drill switch and the ZCode host's data root ride along the same seam,
-      // both read at this call (never cached).
+      // executor's default speaks. The model route resolves the same way (call > line policy > machine). The
+      // drill switch and the ZCode host's data root ride along the same seam, both read at this call.
       const policySpawner = cyclePolicy(cycle).spawner;
       const namedSpawner = input?.spawner
         ?? (typeof policySpawner === 'string' ? policySpawner : undefined)
         ?? envSpawner();
+      const model = modelOf(cycle, input?.model);
+      const dryRun = envSpawnDryRun();
       const request: DispatchRequest = {
         cycle: cycleId,
         node: nodeId,
         role: 'execute',
         prompt: material.prompt_text,
         ...(namedSpawner === undefined ? {} : { spawner: namedSpawner }),
+        ...(model === undefined ? {} : { model }),
         ...(namedSpawner === 'zcode' ? { zcodeDataDir: zcodeDataDir() } : {}),
-        ...(envSpawnDryRun() ? { dryRun: true } : {}),
+        ...(dryRun ? { dryRun: true } : {}),
       };
       const session = await executor.dispatch(request);
       // The claim of this dispatch: the session is out, so the marker lands and the plan stops counting this
       // cell as dispatchable. Success is never handed back without it — a missing claim would let the next
       // dispatch open a second session on a node that already has one, so a claim that cannot be written throws
-      // with the session id in the message instead of folding into a warning.
-      try {
-        await writeStartedMarker(cycleId, nodeId);
-      } catch (error) {
-        throw claimMissingError(nodeId, session, error);
+      // with the session id in the message instead of folding into a warning. A drill opens no session at all,
+      // so it claims nothing either: the cell stays dispatchable, and a rehearsal never has to be unwound.
+      if (!dryRun) {
+        try {
+          await writeStartedMarker(cycleId, nodeId);
+        } catch (error) {
+          throw claimMissingError(nodeId, session, error);
+        }
       }
       const receipt: DispatchReceipt = {
         action: 'opened',
@@ -860,9 +937,22 @@ export function createConductorNamespace(
       return receipt;
     },
 
-    close: async (input) => await settleNode(input),
+    /** The settle, on its own: record this node's end, mark the graph, run the close-time seam. */
+    settle: async (input) => await settleNode(input),
 
-    closeWith: async (input) => await settleNode(input, input),
+    /**
+     * The settle plus the applier's steps, with no session opened: claim the freed slots, land nothing, park
+     * a stopped line. The caller that opens the sessions itself is `advance`.
+     */
+    close: async (input) => {
+      const settled = await settleNode(input);
+      const cycleId = String(settled.id ?? '');
+      await applySteps(cycleId, { openSessions: false });
+      const after = await cycles.show(cycleId);
+      // The WARNING lines belong to the record this call hands back: the settle's own reading is carried over.
+      warningsByResult.set(after, warningsOf(settled));
+      return after;
+    },
 
     pluginCommand: async (input) => {
       const word = String(input?.word ?? '');
@@ -966,6 +1056,30 @@ export function createConductorNamespace(
       return { ok: checks.every((check) => check.ok), checks };
     },
   };
+
+  /**
+   * The whole step: fill the line's free slots, hand the cells in hand to the executor, and park a line that
+   * stopped with nothing left. This is the one composed word of this namespace, and its name says so — it is
+   * `close`'s steps plus the session, called as one thing by a person, the relay and the shell alike.
+   *
+   * It does not settle anything: a line advances on the state it reads, and the node whose work ended is
+   * recorded by `settle` (or by `close`, which settles and then takes these same steps without a session).
+   */
+  const advance = async (input?: ConductorAdvanceInput): Promise<AdvanceReceipt> => {
+    const cycle = await resolveCycle(input?.cycle);
+    const cycleId = String(cycle.id ?? '');
+    const shared = {
+      ...(input?.spawner === undefined ? {} : { spawner: input.spawner }),
+      ...(input?.model === undefined ? {} : { model: input.model }),
+    };
+    return applySteps(cycleId, {
+      openSessions: input?.openSessions !== false,
+      ...shared,
+      dispatch: (nodeId) => base.dispatch({ cycle: cycleId, node: nodeId, ...shared }),
+    });
+  };
+
+  return { ...base, advance };
 }
 
 /** The four layout files `init` sets up: one short of them and this record directory is incomplete. */

@@ -2,6 +2,6 @@
   "action": "wait",
   "cycle": "c1",
   "node_id": "@node-a@",
-  "close_with": "next --after @node-a@ --json",
-  "note": "The note for @short-a@ is already on disk, but this node has not been closed out yet -- do not poll, and do not move the state yourself. Closing it out is one command: next --after @node-a@ --json (the tool reads this node's note, closes it, and then tells you whether the next slot is `dispatch` or `stop_pipeline`). Dispatch comes after this run's commit and push: `dispatch c1`."
+  "close_with": "settle @node-a@",
+  "note": "The note for @short-a@ is already on disk, but this node has not been closed out yet -- do not poll, and do not move the state yourself. Closing it out is one command: settle @node-a@ (the tool reads this node's note, records it in the line and on the graph, and runs the close-time plugin seam; it pins nothing and opens nothing). The next session comes after this run's commit and push: `advance --cycle c1` pins the free slots and dispatches them (the host does that by itself when it runs this line)."
 }

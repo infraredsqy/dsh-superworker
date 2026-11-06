@@ -12,13 +12,15 @@
  * One child run, six legs:
  *
  * - the empty target project has no `.pf/`, and `help` answers the word index there (exit 0);
- * - `init` → `dag add` ×2 → `cycle create` → `cycle start` → `next` → `dispatch` → `handoff` →
- *   `close` → `next` again, every word exit 0 with an empty stderr. The words layer's own spelling is
- *   used: `cycle start` opens the line (a created line cannot be started — the engine refuses the
- *   duplicate), the pipeline's closing call is `next --after <node>` (the receipt `handoff` prints),
- *   and the two `dag add` calls are the graph the flow has to run on. Each step's answer is recorded;
- * - `dispatch` hands the node to the engine's `SimulatedExecutor` (the seam where a host's own opener
- *   lands) and the claim `started` is on disk afterwards — the record shows the one call it received;
+ * - `init` → `dag add` ×2 → `cycle create` → `cycle start` → `plan` → `advance` → `handoff` →
+ *   `settle` → `plan` again → `advance` again, every word exit 0 with an empty stderr. The words
+ *   layer's own spelling is used: `cycle start` opens the line (a created line cannot be started —
+ *   the engine refuses the duplicate), the pipeline's closing call is `settle <node>` (the receipt
+ *   `handoff` prints names it), and the two `dag add` calls are the graph the flow has to run on.
+ *   Each step's answer is recorded;
+ * - `advance` claims the free slot, lands the material and hands the node to the engine's
+ *   `SimulatedExecutor` (the seam where a host's own opener lands); the claim `started` is on disk
+ *   afterwards — the record shows the one call it received;
  * - the host bundle applies to a minimal stand-in context from inside the release tree: it registers
  *   **no tool** by itself, and the tool appears only after a `skill` tool call settles;
  * - the skills the shipped plugins carry land under the child's own temp DSH home, not the machine's;
@@ -209,18 +211,20 @@ await step('dag add (second leg)', ['dag', 'add', 'second leg'])
  * 'cycle start' opens and pins. --force is the engine's stated way to run a second line. */
 await step('cycle create', ['cycle', 'create', 'seed', '--tags', 'coding', '--title', 'the empty line'])
 await step('cycle start', ['cycle', 'start', 'c-1', '--tags', 'coding', '--force', '--title', 'the flow'])
-await step('next', ['next', '--cycle', 'c-1'])
+await step('plan', ['plan', '--cycle', 'c-1'])
 await step('dispatch', ['dispatch', 'c-1'])
 record.held = JSON.parse(readFileSync(join(project, '.pf', 'state.json'), 'utf8'))
   .cycles.find((cycle) => cycle.id === 'c-1')
   .holding.map((entry) => entry.id)
 record.executor = snapshot(executor.dispatched)
 await step('handoff', ['handoff', 'c-1', record.held[0], 'completed', '-s', 'leg one done'])
-/* The closing call: the pipeline settlement is 'next --after <node>' (the receipt 'handoff' prints
- * names it). 'cycle close' only settles the line's record; it neither closes the node nor consumes
- * the ticket, and the plan then pins the same node again. */
-await step('close', ['next', '--cycle', 'c-1', '--after', record.held[0], '--json'])
-await step('next (the next leg)', ['next', '--cycle', 'c-1'])
+/* The closing word is 'settle': it records this node's end and nothing else -- no claim, no prompt, no
+ * session, no parking. What the line would do next is 'plan''s answer; claiming it is 'cycle hold', and
+ * opening its session is 'dispatch'. The composed 'advance' is the same three moves as one word. */
+await step('settle', ['settle', record.held[0], '--cycle', 'c-1', '--json'])
+record.planAfterSettle = JSON.parse((await step('plan (the next leg)', ['plan', '--cycle', 'c-1', '--json'])).stdout)
+await step('cycle hold (the next leg)', ['cycle', 'hold', 'c-1', record.planAfterSettle.node_id])
+await step('dispatch (the next leg)', ['dispatch', 'c-1'])
 record.executorFinal = snapshot(executor.dispatched)
 
 /* The host bundle, from the release tree, over a stand-in context shaped like the host's: the four
@@ -425,11 +429,13 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
         ['dag add (second leg)', ['dag', 'add', 'second leg']],
         ['cycle create', ['cycle', 'create', 'seed', '--tags', 'coding', '--title', 'the empty line']],
         ['cycle start', ['cycle', 'start', 'c-1', '--tags', 'coding', '--force', '--title', 'the flow']],
-        ['next', ['next', '--cycle', 'c-1']],
+        ['plan', ['plan', '--cycle', 'c-1']],
         ['dispatch', ['dispatch', 'c-1']],
         ['handoff', ['handoff', 'c-1', record.held[0], 'completed', '-s', 'leg one done']],
-        ['close', ['next', '--cycle', 'c-1', '--after', record.held[0], '--json']],
-        ['next (the next leg)', ['next', '--cycle', 'c-1']],
+        ['settle', ['settle', record.held[0], '--cycle', 'c-1', '--json']],
+        ['plan (the next leg)', ['plan', '--cycle', 'c-1', '--json']],
+        ['cycle hold (the next leg)', ['cycle', 'hold', 'c-1', record.planAfterSettle.node_id]],
+        ['dispatch (the next leg)', ['dispatch', 'c-1']],
       ],
     )
     for (const step of record.steps) {
@@ -439,10 +445,10 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
     }
     const byLabel = Object.fromEntries(record.steps.map((step) => [step.label, step]))
     assert.match(byLabel.init.stdout, /^Ledger: /mu, 'init answers where it put the ledger')
-    assert.match(byLabel['cycle create'].stdout, /^CREATED: cycle "seed"/mu)
+    assert.match(byLabel.plan.stdout, /^action: dispatch$/mu, 'cycle start pinned a node, so the plan asks to dispatch it')
+    assert.match(byLabel.plan.stdout, /^cycle:\s+c-1$/mu)
     assert.match(byLabel['cycle start'].stdout, /^STARTED: cycle "c-1"/mu)
-    assert.match(byLabel.next.stdout, /^action: dispatch$/mu)
-    assert.match(byLabel.dispatch.stdout, /^opened sess-1$/mu)
+    assert.match(byLabel.dispatch.stdout, /^opened /mu)
     assert.match(byLabel.handoff.stdout, /^handoff: /mu)
 
     /* init wrote the four layout files; the graph holds the two nodes. */
@@ -455,14 +461,14 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
     assert.deepEqual(seed.holding, [], 'the line `cycle create` opened must stay empty: it is not the line the flow runs on')
     assert.equal(record.held.length, 1, `the flow line must hold exactly one node: ${JSON.stringify(record.held)}`)
 
-    /* dispatch claimed the node and asked the executor — not a process — to open the session. */
+    /* `cycle start` claimed the node; `dispatch` asked the executor — not a process — to open its session. */
     const node = record.held[0]
     assert.equal(record.executor.length, 1, `exactly one dispatch reached the executor: ${JSON.stringify(record.executor)}`)
     assert.equal(record.executor[0].node, node)
     assert.equal(record.executor[0].cycle, 'c-1')
     assert.match(record.executor[0].prompt, new RegExp(`^/pf-conduct ${node} \\[pipeline\\]`, 'u'), 'the executor was handed the prompt the engine landed')
     const launch = join(project, '.pf', 'meta', 'launch', 'c-1', node)
-    assert.ok(existsSync(join(launch, 'started')), 'the dispatch claim must be on disk after dispatch')
+    assert.ok(existsSync(join(launch, 'started')), 'the started claim must be on disk after dispatch')
     assert.ok(existsSync(join(launch, 'prompt.txt')), 'dispatch preparation lands the prompt')
     assert.equal(
       readFileSync(join(launch, 'prompt.txt'), 'utf8').replace(/\r\n/gu, '\n').trim(),
@@ -470,32 +476,41 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
       'the executor got the prompt that is on disk',
     )
 
-    /* handoff wrote the ticket; close settled it and pinned the next leg; next reads that plan. */
+    /* handoff wrote the ticket; settle recorded it and released the hand (the receipt's own plan asks for the
+     * next claim); cycle hold claimed that pick; dispatch landed its material and opened its session. */
     const ticket = JSON.parse(readFileSync(join(project, '.pf', 'signals', 'c-1', `${node}.json`), 'utf8'))
     assert.equal(ticket.node, node)
     assert.equal(ticket.status, 'completed')
     assert.equal(ticket.summary, 'leg one done')
     const settled = JSON.parse(readFileSync(join(project, '.pf', 'state.json'), 'utf8')).cycles.find((cycle) => cycle.id === 'c-1')
-    assert.equal(settled.path.length, 1, 'close puts exactly one step in the line\'s path')
+    assert.equal(settled.path.length, 1, 'settle puts exactly one step in the line\'s path')
     assert.equal(settled.path[0].node, node)
     assert.equal(settled.path[0].result, 'completed')
-    assert.equal(settled.holding.length, 1, 'the relay pinned the next node')
-    const nextLeg = settled.holding[0].id
-    assert.notEqual(nextLeg, node, 'the next leg is a different node')
     const ideas = JSON.parse(readFileSync(join(project, '.pf', 'ideas.json'), 'utf8')).nodes
     assert.equal(ideas[node].status, 'completed', 'the settled node is completed on the graph')
-    assert.equal(ideas[nextLeg].status, 'todo', 'the next leg is still to do')
-    /* The closing call's answer is the plan: it names the next leg and says it settled this one. */
-    const closePlan = JSON.parse(byLabel.close.stdout)
-    assert.equal(closePlan.action, 'dispatch')
-    assert.equal(closePlan.node_id, nextLeg, 'the closing call answers the next leg')
-    assert.ok(closePlan.did.some((line) => /settled/u.test(line)), `the closing call must say it settled the node: ${JSON.stringify(closePlan.did)}`)
-    assert.match(byLabel['next (the next leg)'].stdout, /^action: dispatch$/mu)
-    assert.match(byLabel['next (the next leg)'].stdout, new RegExp(`^node:.*\\(${nextLeg}\\)$`, 'mu'), 'the plan names the next node')
-    const nextLaunch = join(project, '.pf', 'meta', 'launch', 'c-1', nextLeg)
-    assert.ok(existsSync(join(nextLaunch, 'prompt.txt')), 'the fresh plan landed the next leg\'s prompt')
-    assert.equal(existsSync(join(nextLaunch, 'started')), false, 'planning a leg opens nothing: no claim until a dispatch')
-    assert.equal(record.executorFinal.length, 1, 'the relay\'s plan read never opens a session by itself')
+    assert.equal(record.planAfterSettle.action, 'open_node', 'the plan asks for the next claim')
+    const nextLeg = record.planAfterSettle.nodes[0]
+    assert.ok(nextLeg === undefined || typeof nextLeg === 'string')
+    /* The settle receipt carries the plan it leaves behind: it names the line and the verdict, and claims
+     * nothing -- an open_node plan is the evidence, since a claim would read as dispatch. */
+    const settleReceipt = JSON.parse(byLabel.settle.stdout)
+    assert.equal(settleReceipt.action, 'settle')
+    assert.equal(settleReceipt.result, 'completed')
+    assert.equal(settleReceipt.plan.action, 'open_node')
+    /* cycle hold claimed the next leg; dispatch opened its session: the material is on disk and the claim too. */
+    const afterNext = JSON.parse(readFileSync(join(project, '.pf', 'state.json'), 'utf8')).cycles.find((cycle) => cycle.id === 'c-1')
+    assert.equal(afterNext.holding.length, 1, 'cycle hold claimed the next node')
+    const claimed = afterNext.holding[0].id
+    assert.equal(claimed, record.planAfterSettle.node_id, 'the claim is the node the plan named')
+    assert.notEqual(claimed, node, 'the next leg is a different node')
+    assert.equal(ideas[claimed].status, 'todo', 'the next leg is still to do')
+    assert.match(byLabel['cycle hold (the next leg)'].stdout, /^CURRENT_NODE: c-1 /mu)
+    assert.match(byLabel['dispatch (the next leg)'].stdout, /^opened /mu)
+    const nextLaunch = join(project, '.pf', 'meta', 'launch', 'c-1', claimed)
+    assert.ok(existsSync(join(nextLaunch, 'prompt.txt')), 'the dispatch landed the next leg\'s prompt')
+    assert.ok(existsSync(join(nextLaunch, 'started')), 'the dispatch opened the next leg\'s session')
+    assert.equal(record.executorFinal.length, 2, 'the second dispatch opened the next leg')
+    assert.equal(record.executorFinal[1].node, claimed)
 
     /* Step 6: the host bundle applies, registers nothing by itself, and arms the wake. */
     assert.equal(record.host.service, 'object', 'apply installed the pathfinder service')

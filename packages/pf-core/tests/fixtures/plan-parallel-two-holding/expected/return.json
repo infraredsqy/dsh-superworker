@@ -24,6 +24,6 @@
   "prompt_text": "",
   "steps": [
     "write each node's prompt text to its own prompt.txt under @root@\\.pf\\meta\\launch\\c1",
-    "DSH: spawn one session per node (`dispatch <cycle>` does all of them; `next --spawn` is the one-shot spelling of the same call)"
+    "DSH: spawn one session per node (`dispatch <cycle>` does all of them; `advance --cycle <cycle>` is the one-shot spelling: pin the free slots, then dispatch)"
   ]
 }

@@ -2,7 +2,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 /**
- * The six runtime environment switches, in the one place that reads them.
+ * The seven runtime environment switches, in the one place that reads them.
  *
  * A switch is read **on every call**, never cached at import time: a sandbox that moves the
  * machine layer or the plugin folder between two calls is answered on the second call. The
@@ -20,6 +20,8 @@ import { join } from 'node:path';
  * - `DSH_CONDUCT_SPAWNER` — which spawner opens the next session: a bare word (`dsh` / `zcode`)
  *   or a path. A per-call name wins over it, and a line's own `spawner` policy wins over both.
  * - `DSH_CONDUCT_SPAWN_DRY_RUN` — the drill switch: anything but `''`, `0`, `false`, `False` is on.
+ * - `DSH_CONDUCT_MODEL` — the model route this machine hands the sessions it opens (`provider/model`);
+ *   a per-call name wins over it, and a line's own `model` policy wins over both.
  * - `DSH_SESSION_ID` — the session id of this process itself: a node registered here notes the
  *   conversation it was born in under that id.
  * - `ZCODE_DATA_BASE_DIR` — the ZCode host's data root; `.zcode` hangs under it, and the path is
@@ -30,6 +32,7 @@ const PF_HOME_DIR = 'PF_HOME_DIR';
 const PF_PLUGINS_DIR = 'PF_PLUGINS_DIR';
 const DSH_CONDUCT_SPAWNER = 'DSH_CONDUCT_SPAWNER';
 const DSH_CONDUCT_SPAWN_DRY_RUN = 'DSH_CONDUCT_SPAWN_DRY_RUN';
+const DSH_CONDUCT_MODEL = 'DSH_CONDUCT_MODEL';
 const DSH_SESSION_ID = 'DSH_SESSION_ID';
 const ZCODE_DATA_BASE_DIR = 'ZCODE_DATA_BASE_DIR';
 
@@ -75,6 +78,16 @@ export function envSpawner(): string | undefined {
 export function envSpawnDryRun(): boolean {
   const raw = process.env[DSH_CONDUCT_SPAWN_DRY_RUN];
   return raw !== undefined && !DRY_RUN_OFF.includes(raw);
+}
+
+/**
+ * `DSH_CONDUCT_MODEL`: the model route this machine's sessions open with, or `undefined`.
+ *
+ * The value is carried as one word in the ecosystem's own spelling, `provider/model`; this layer
+ * neither splits it nor knows providers — whoever opens the session does.
+ */
+export function envModel(): string | undefined {
+  return switched(DSH_CONDUCT_MODEL);
 }
 
 /** `DSH_SESSION_ID`: the session id of this process itself, or `undefined` when nothing names one. */

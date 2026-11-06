@@ -68,9 +68,10 @@ const LINE_POLICIES = {
   when_shelved: { kind: 'word', values: ['stop', 'continue'], default: 'stop' },
   parallel: { kind: 'integer', default: 1 },
   spawner: { kind: 'word', values: ['dsh', 'zcode'], default: null },
+  model: { kind: 'text', default: null },
 } as const;
 
-type PolicyKind = 'word' | 'integer';
+type PolicyKind = 'word' | 'integer' | 'text';
 type PolicySpec = { kind: PolicyKind; values?: readonly string[]; default: string | number | null };
 type PolicyTable = Record<string, PolicySpec>;
 
@@ -78,6 +79,7 @@ const POLICY_TABLE: PolicyTable = {
   when_shelved: LINE_POLICIES.when_shelved,
   parallel: LINE_POLICIES.parallel,
   spawner: LINE_POLICIES.spawner,
+  model: LINE_POLICIES.model,
 };
 
 /** The defaults of the two always-present policies: they go underneath when reading the effective set, and a value written on the line is parsed by kind and laid on top. */
@@ -160,6 +162,16 @@ function policyValueForRecord(key: string, value: CyclePolicyValue): string | nu
       throw new Error(`policy ${key} must be at least 1 (a line holds at least one node)`);
     }
     return parsed;
+  }
+  if (spec.kind === 'text') {
+    if (typeof value !== 'string') {
+      throw new Error(`policy ${key} takes one word, got ${JSON.stringify(value)}`);
+    }
+    const text = value.trim();
+    if (text === '' || /\s/u.test(text)) {
+      throw new Error(`policy ${key} takes one word without blanks, got ${JSON.stringify(value)}`);
+    }
+    return text;
   }
   if (typeof value !== 'string' || !spec.values!.includes(value)) {
     throw new Error(

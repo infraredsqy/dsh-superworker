@@ -112,7 +112,7 @@ export const zh = {
   'node.open': '开会话',
   /* The stranded dispatch: the claim is on disk, the session is gone. The sentence names the two
    * record words the remedy names, and the exact word line, so it can be followed as it is read. */
-  'cell.stranded': '这一格的认领还在盘上，会话已经不在了：请 `cycle retry {cycle} {node} --drop` 清掉认领，再 `next --cycle {cycle} --spawn --json` 重开这一棒。',
+  'cell.stranded': '这一格的认领还在盘上，会话已经不在了：请 `cycle retry {cycle} {node} --drop` 清掉认领，再 `advance --cycle {cycle}` 重钉并重开这一棒。',
 
   /* ── The instruction ledger ───────────────────────────────────────────────────────────────── */
   'notes.scroll.aria': '用户指令',

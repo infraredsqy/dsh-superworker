@@ -109,7 +109,7 @@ export interface WordsIO {
   readonly homeDir?: string;
   /** The plugin folder the handles scan; the engine's default (`<root>/plugins`) when absent. */
   readonly pluginsDir?: string;
-  /** Whether this call may really open a session (the `next` opening switch and `dispatch` answer honestly without one). */
+  /** Whether this call may really open a session (`dispatch` and `advance` answer honestly without one). */
   readonly openerAvailable?: boolean;
 }
 

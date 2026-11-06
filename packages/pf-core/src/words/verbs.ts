@@ -185,8 +185,8 @@ export const handoffVerb = guarded(async (call: VerbCall) => {
   });
   return {
     stdout:
-      `handoff: ${ticket.node} ticket written; the node is not closed yet -- finish it with ` +
-      `\`next --after ${ticket.node} --json\` (no session was opened)`,
+      `handoff: ${ticket.node} ticket written; the node is not closed yet -- record it with ` +
+      `\`settle ${ticket.node}\` (no session is opened by that)`,
   };
 }, 2);
 
@@ -1005,4 +1005,6 @@ export const mergeLedgerVerb = guarded(async (call: VerbCall) => {
   return { code, stdout: out.join(''), stderr: err.join('') };
 });
 
-export { nextVerb, dispatchVerb } from './next';
+export { planVerb } from './plan';
+export { settleVerb } from './settle';
+export { advanceVerb, dispatchVerb } from './advance';

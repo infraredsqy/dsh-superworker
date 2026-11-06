@@ -14,7 +14,8 @@ import { SimulatedExecutor } from '../src/executor';
  * - `ledger.cycles.policies` hands back the effective set (the defaults, then what the line states);
  * - `ledger.cycles.standing` tells held-now / walked-before / nothing, plus the ticket on disk;
  * - `conductor.prepare` lands one dispatch's material and opens no session;
- * - `conductor.closeWith` lands the same settle `close` lands, with the caller's own closing answer;
+ * - `conductor.settle` records one node's end and nothing else, and `close` adds the applier's
+ *   slots on top of it without opening a session;
  * - `conductor.pluginCommand` routes a declared word into the plugin that declares it, in this
  *   process, and answers "nobody claims this word" for anything else;
  * - `conductor.handoffForm` names the reading slots this line asks for, and writes nothing.
@@ -151,31 +152,65 @@ describe('ledger.cycles: the two readings the words print', () => {
 });
 
 describe('conductor: the closing answers, the plugin words and the ticket shape', () => {
-  it('closeWith lands the settle close lands, and a decided stop parks the line', async () => {
-    const lab = makeLab('pf-add-closewith-');
-    try {
-      await lab.pf.ledger.init();
-      const node = await lab.pf.ledger.dag.add({ title: NODE_TITLE });
-      await lab.pf.ledger.cycles.create({ id: 'c1', title: 'One', tags: ['coding'] });
-      await lab.pf.ledger.cycles.hold('c1', node.id);
-      await lab.pf.conductor.handoff({
-        cycle: 'c1',
-        node: node.id,
-        status: 'completed',
-        summary: 'delivered it',
-      });
+  /** One line holding one node whose ticket is already on disk. */
+  async function heldWithTicket(lab: ReturnType<typeof makeLab>) {
+    await lab.pf.ledger.init();
+    const node = await lab.pf.ledger.dag.add({ title: NODE_TITLE });
+    await lab.pf.ledger.cycles.create({ id: 'c1', title: 'One', tags: ['coding'] });
+    await lab.pf.ledger.cycles.hold('c1', node.id);
+    await lab.pf.conductor.handoff({
+      cycle: 'c1',
+      node: node.id,
+      status: 'completed',
+      summary: 'delivered it',
+    });
+    return node;
+  }
 
-      const settled = await lab.pf.conductor.closeWith({
-        cycle: 'c1',
-        node: node.id,
-        decision: 'stop',
-        note: 'the human said stop here',
-      });
-      expect(settled.status).toBe('inactive');
+  it('settle records one end and stops nothing: the verdict lands, the hand is released, the line keeps its status', async () => {
+    const lab = makeLab('pf-add-settle-');
+    try {
+      const node = await heldWithTicket(lab);
+      // The closing rehearsal says where the line would go; it writes nothing.
+      const before = await lab.pf.conductor.next({ cycle: 'c1', after: node.id });
+      expect(before.action).toBe('stop_pipeline');
+      const settled = await lab.pf.conductor.settle({ cycle: 'c1', node: node.id });
+      expect(settled.status).toBe('active');
+      expect(settled.holding).toEqual([]);
       expect((settled.path ?? []).map((step) => step.result)).toEqual(['completed']);
       expect((await lab.pf.ledger.dag.get(node.id))?.status).toBe('completed');
-      // The plain `close` keeps its own signature and still answers the criteria's decision.
-      expect(typeof lab.pf.conductor.close).toBe('function');
+    } finally {
+      lab.cleanup();
+    }
+  });
+
+  it('close is settle plus the applier: nothing is left to run, so the line is parked', async () => {
+    const lab = makeLab('pf-add-close-');
+    try {
+      const node = await heldWithTicket(lab);
+      const closed = await lab.pf.conductor.close({ cycle: 'c1', node: node.id });
+      expect(closed.status).toBe('inactive');
+      expect((await lab.pf.ledger.dag.get(node.id))?.status).toBe('completed');
+    } finally {
+      lab.cleanup();
+    }
+  });
+
+  it('advance parks an exhausted line too, and opens no session for it', async () => {
+    const lab = makeLab('pf-add-advance-park-');
+    try {
+      const node = await heldWithTicket(lab);
+      const sim = new SimulatedExecutor();
+      const opened = open(lab.root, { executor: sim });
+      await opened.conductor.settle({ cycle: 'c1', node: node.id });
+      expect((await opened.conductor.next({ cycle: 'c1' })).action).toBe('stop_pipeline');
+      const receipt = await opened.conductor.advance({ cycle: 'c1' });
+      expect(receipt.parked).toBe(true);
+      expect(receipt.pinned).toEqual([]);
+      expect(receipt.dispatches).toEqual([]);
+      expect(receipt.plan.action).toBe('ask_user');
+      expect(sim.dispatched).toEqual([]);
+      expect((await opened.ledger.cycles.show('c1')).status).toBe('inactive');
     } finally {
       lab.cleanup();
     }

@@ -3,11 +3,16 @@
     {
       "id": "c1",
       "title": "问题池对拍线",
-      "status": "inactive",
+      "status": "active",
       "tags": [
         "coding"
       ],
-      "holding": [],
+      "holding": [
+        {
+          "id": "@node-b@",
+          "since": "@t8@"
+        }
+      ],
       "path": [
         {
           "node": "@node-a@",

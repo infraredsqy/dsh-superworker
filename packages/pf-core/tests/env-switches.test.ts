@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -10,13 +10,13 @@ import { pluginAssemblyOf } from '../src/plugins/assembly';
 import { pluginsDirOf } from '../src/plugins/registry';
 
 /**
- * The six runtime switches: each one is read on the call that needs it, and an explicit option on
+ * The seven runtime switches: each one is read on the call that needs it, and an explicit option on
  * that call always wins over the environment. One case per switch pins the reading; the cases
  * together also pin the rule that matters when nothing is set — the behaviour is the one it had
  * before these switches existed (no word on the dispatch request, the default home and plugin
  * folder, no session note).
  *
- * Every case clears all six names first and puts the machine's own values back afterwards, so the
+ * Every case clears all seven names first and puts the machine's own values back afterwards, so the
  * suite never depends on what the machine happened to export.
  */
 
@@ -25,6 +25,7 @@ const NAMES = [
   'PF_PLUGINS_DIR',
   'DSH_CONDUCT_SPAWNER',
   'DSH_CONDUCT_SPAWN_DRY_RUN',
+  'DSH_CONDUCT_MODEL',
   'DSH_SESSION_ID',
   'ZCODE_DATA_BASE_DIR',
 ] as const;
@@ -203,6 +204,45 @@ describe('DSH_CONDUCT_SPAWNER: which spawner opens the next session', () => {
   });
 });
 
+describe('DSH_CONDUCT_MODEL: the model route the next session opens with', () => {
+  it('rides on the dispatch request as one word; the call and the line policy both beat it', async () => {
+    process.env.DSH_CONDUCT_MODEL = 'deepseek/deepseek-v4.1-flash';
+
+    // The switch alone: the whole route is carried to the opener as one word.
+    const first = await station();
+    const sim = new SimulatedExecutor();
+    await open(first.root, { executor: sim }).conductor.dispatch({ cycle: 'main' });
+    expect(sim.dispatched[0]).toEqual(expect.objectContaining({ model: 'deepseek/deepseek-v4.1-flash' }));
+
+    // The call's own route is the most specific answer for this one dispatch.
+    const second = await station();
+    const simCall = new SimulatedExecutor();
+    await open(second.root, { executor: simCall })
+      .conductor.dispatch({ cycle: 'main', model: 'qianfan/ernie' });
+    expect(simCall.dispatched[0]!.model).toBe('qianfan/ernie');
+
+    // The line's own policy beats the machine's switch.
+    const third = await station();
+    await open(third.root).ledger.cycles.setPolicy('main', 'model', 'deepseek/deepseek-v4.1');
+    const simLine = new SimulatedExecutor();
+    await open(third.root, { executor: simLine }).conductor.dispatch({ cycle: 'main' });
+    expect(simLine.dispatched[0]!.model).toBe('deepseek/deepseek-v4.1');
+  });
+
+  it('a route is one word: a value with a blank in it is refused when the line policy is written', async () => {
+    const { root: dir } = await station();
+    await expect(open(dir).ledger.cycles.setPolicy('main', 'model', 'deepseek flash')).rejects.toThrow();
+    await expect(open(dir).ledger.cycles.setPolicy('main', 'model', 'not a route')).rejects.toThrow();
+  });
+
+  it('with nothing said the request carries no model word at all', async () => {
+    const { root: dir } = await station();
+    const sim = new SimulatedExecutor();
+    await open(dir, { executor: sim }).conductor.dispatch({ cycle: 'main' });
+    expect('model' in sim.dispatched[0]!).toBe(false);
+  });
+});
+
 describe('DSH_CONDUCT_SPAWN_DRY_RUN: the drill switch', () => {
   it('is on for anything but the four off words, and the request carries dryRun only when it is on', async () => {
     for (const off of ['', '0', 'false', 'False']) {
@@ -218,6 +258,17 @@ describe('DSH_CONDUCT_SPAWN_DRY_RUN: the drill switch', () => {
     const sim = new SimulatedExecutor();
     await open(dir, { executor: sim }).conductor.dispatch({ cycle: 'main' });
     expect(sim.dispatched[0]).toEqual(expect.objectContaining({ dryRun: true }));
+  });
+
+  it('a rehearsal never strands the cell: no `started` claim lands, and the plan still says dispatch', async () => {
+    process.env.DSH_CONDUCT_SPAWN_DRY_RUN = '1';
+    const { root: dir, node } = await station();
+    const pf = open(dir, { executor: new SimulatedExecutor() });
+    const receipt = await pf.conductor.dispatch({ cycle: 'main' });
+    expect(receipt.action).toBe('opened');
+    const claim = join(dir, '.pf', 'meta', 'launch', 'main', node, 'started');
+    expect(existsSync(claim)).toBe(false);
+    expect((await pf.conductor.next({ cycle: 'main' })).action).toBe('dispatch');
   });
 });
 

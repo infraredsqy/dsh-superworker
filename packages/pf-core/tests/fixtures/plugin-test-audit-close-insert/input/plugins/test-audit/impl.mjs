@@ -236,7 +236,8 @@ function offerText(ctx, cycle, hit) {
     `and the inserted node is not pinned: which node the next dispatch picks is the usual ` +
     `ranking's call (on a line that fills several slots, this same close may have pinned ` +
     `the rest of its fill). After committing and pushing: ` +
-    `\`next --cycle ${cycle.id} --spawn --json\`.`;
+    `\`plan --cycle ${cycle.id} --json\`, then \`cycle hold ${cycle.id} <that node>\` and ` +
+    `\`dispatch ${cycle.id}\` — or the composed \`advance --cycle ${cycle.id}\`.`;
   return {
     title: hit.title,
     tags: [hit.tag, ...lineTags(cycle)],
@@ -316,7 +317,7 @@ function spec(hit, specPath) {
     '## Closing out\n' +
     '\n' +
     'Follow the "closing out" section of pf-conduct: get a freshly printed note form, then ' +
-    'write the note -> close -> commit and push -> dispatch.\n' +
+    'hand the ticket in -> `settle` the node -> commit and push -> `dispatch` the next cell.\n' +
     closingReading(hit) +
     `\n(this spec lands at: ${specPath})\n`
   );

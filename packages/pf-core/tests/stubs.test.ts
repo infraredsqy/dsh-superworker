@@ -42,7 +42,7 @@ describe('verbs on the handle', () => {
         if (typeof value === 'function') count += 1;
       }
     }
-    expect(count).toBe(3 + 15 + 13 + 5 + 5 + 3 + 10);
+    expect(count).toBe(3 + 15 + 13 + 5 + 5 + 3 + 11);
   });
 
   it("each level's verb names match the frozen surface", () => {
@@ -69,8 +69,8 @@ describe('verbs on the handle', () => {
       config: ['get', 'keys', 'list', 'set', 'unset'].sort(),
       sessions: ['list', 'note', 'show'],
       conductor: [
-        'close', 'closeWith', 'dispatch', 'doctor', 'handoff', 'handoffForm', 'next',
-        'pluginCommand', 'pluginCommands', 'prepare',
+        'advance', 'close', 'dispatch', 'doctor', 'handoff', 'handoffForm', 'next',
+        'pluginCommand', 'pluginCommands', 'prepare', 'settle',
       ],
     });
   });

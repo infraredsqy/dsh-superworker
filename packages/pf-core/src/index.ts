@@ -118,7 +118,8 @@ export type {
 export type { SessionNoteRole, SessionNoteSummary, SessionShow, SessionsNamespace } from './sessions';
 export type { PreparedDispatch, PreparedNode } from './prepare';
 export type {
-  ConductorCloseAnswers,
+  AdvanceReceipt,
+  ConductorAdvanceInput,
   ConductorDispatchInput,
   ConductorDoctorOptions,
   ConductorHandoffInput,

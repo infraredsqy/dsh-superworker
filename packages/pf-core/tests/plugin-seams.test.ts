@@ -81,8 +81,10 @@ describe('close: settlement and the insertion seam each land their own part', ()
       expect(record!.description).toBe(JSON.stringify(SPEC_A));
       expect(record!.dependencies).toEqual([nodeId]);
       expect(readFileSync(join(pfPaths(lab.root).nodesDir, inserted!.id, 'spec.md'), 'utf8')).toBe(SPEC_A);
-      // Settlement and insertion in one close: the verdict enters path, the hold drops, and the closed node lands completed.
-      expect(returned.holding).toEqual([]);
+      // Settlement and insertion in one close: the verdict enters path, the closed node lands completed, and the
+      // freed slot is claimed for the inserted node — it precedes the next pick in the ranking, so the open hand
+      // fills with it rather than with the work that was going to run.
+      expect(returned.holding.map((item) => item.id)).toEqual([inserted!.id]);
       expect(returned.path).toHaveLength(1);
       expect(returned.path[0]).toMatchObject({ node: nodeId, result: 'completed' });
       expect((await lab.pf.ledger.dag.get(nodeId))!.status).toBe('completed');

@@ -22,10 +22,12 @@
  *   `already_open`), and the chain keeps the calls from even interleaving.
  * - **The trigger.** The relay listens to `turn/end` of the sessions **this
  *   host opened** (tracked here when a dispatch returns), reads the plan
- *   read-only after each turn, and dispatches only when the plan says
- *   `dispatch` — a plan that says `wait` is never overridden, so a dead cell
- *   cannot be driven through. The switch (`autoRelay`, default on) turns the
- *   trigger off; the button keeps working whatever the switch says.
+ *   read-only after each turn, and carries the line on when the plan asks for
+ *   it — claim the free slots, land each cell's material, open one session per
+ *   cell (`conductor.advance`), or park a line with nothing left. A plan that
+ *   says `wait` is never overridden, so a dead cell cannot be driven through.
+ *   The switch (`autoRelay`, default on) turns the trigger off; the button
+ *   keeps working whatever the switch says.
  *
  * The relay never throws into the event bus: a refused trigger logs one line
  * and the panel's button reports its own refusal to the reader.
@@ -127,6 +129,7 @@ export function executorOf(ctx: Context, sessionId: SessionId, workspaceRoot: st
        * itself. */
       const outcome = await openNodeSession(ctx, sessionId, workspaceRoot, cycle, node, {
         onOpened: (session) => { tracked.set(session, workspaceRoot) },
+        ...(request.model === undefined ? {} : { model: request.model }),
       })
       if (!outcome.ok) throw new Error(outcome.detail ?? outcome.code)
       return { sessionId: outcome.session, host: 'dsh' }
@@ -183,21 +186,59 @@ export function dispatchCell(
 }
 
 /**
- * The relay's answer to one turn end: read the plan read-only, and only a
- * plan that says `dispatch` opens the next round. The switch is read on the
- * spot — turning it off stops the next round, not a dispatch already in
- * flight. A dispatch that refuses is a log line, never a throw into the
- * event bus: the plan's own note (or the panel's button) is where a person
- * acts.
+ * Carry one line a step, on the host's own executor: the applier's work (`plan` → claim the free
+ * slots → land the material → open a session per cell → park a stopped line) is the engine's
+ * `advance`, and this is the host's one caller of it. Calls join the process-wide chain for the same
+ * reason `dispatchCell` does: two triggers never interleave their engine calls.
+ */
+export function advanceLine(
+  ctx: Context,
+  sessionId: SessionId,
+  workspaceRoot: string,
+  cycle: string,
+): Promise<DispatchOutcome> {
+  const step = async (): Promise<DispatchOutcome> => {
+    try {
+      const pf = open(workspaceRoot, {
+        executor: executorOf(ctx, sessionId, workspaceRoot),
+        pluginsDir: shippedPluginsDir(),
+      })
+      const receipt = await pf.conductor.advance({ cycle })
+      for (const cell of receipt.dispatches) {
+        if (cell.receipt.action === 'opened' && cell.receipt.session?.sessionId !== undefined) {
+          tracked.set(cell.receipt.session.sessionId, workspaceRoot)
+        }
+      }
+      const first = receipt.dispatches[0]?.receipt
+      return { ok: true, session: first?.session?.sessionId ?? '' }
+    } catch (error) {
+      return { ok: false, code: 'dispatch-refused', detail: messageOf(error) }
+    }
+  }
+  const mine = inFlight.then(step, step)
+  inFlight = mine.then(() => undefined, () => undefined)
+  return mine
+}
+
+/**
+ * The relay's answer to one turn end: read the plan read-only, and carry the line on when the plan
+ * asks for it (`dispatch` / `open_node` to open or claim the next cell, `stop_pipeline` to park a line
+ * that has nothing left). A plan that says `wait` is never overridden — the ticket owed, or the
+ * session already out, is the caller's business — so a dead cell cannot be driven through. The switch
+ * is read on the spot — turning it off stops the next round, not a step already in flight. A refusal
+ * is a log line, never a throw into the event bus: the plan's own note (or the panel's button) is
+ * where a person acts.
  */
 async function judge(ctx: Context, sessionId: SessionId, workspaceRoot: string): Promise<void> {
   if (!relayOn()) return
   const plan = await open(workspaceRoot, { executor: executorOf(ctx, sessionId, workspaceRoot), pluginsDir: shippedPluginsDir() })
-    .conductor.next({ plan: true })
-  if (plan.action !== 'dispatch') return
-  const outcome = await dispatchCell(ctx, sessionId, workspaceRoot, plan.cycle, plan.node_id)
+    .conductor.next({})
+  if (plan.action !== 'dispatch' && plan.action !== 'open_node' && plan.action !== 'stop_pipeline') return
+  const cycle = typeof plan.cycle === 'string' ? plan.cycle : ''
+  if (cycle === '') return
+  const outcome = await advanceLine(ctx, sessionId, workspaceRoot, cycle)
   if (!outcome.ok) {
-    loggerOf(ctx)?.warn(`dispatch relay did not open ${plan.cycle}/${plan.node_id}: ${outcome.detail ?? outcome.code}`)
+    loggerOf(ctx)?.warn(`dispatch relay could not advance ${cycle}: ${outcome.detail ?? outcome.code}`)
   }
 }
 

@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
  * record, which is data, so it is let past; the bare verb spawn may not appear even once in the
  * code or the comments of the source.
  * **String literals do not count as source**: the plan the planning step hands back carries copied
- * call text (things like `next --spawn --json`), which is deliverable body, a sentence
+ * call text (things like `dispatch <cycle>`), which is deliverable body, a sentence
  * for a reader, and has nothing to do with whether the engine launches processes; the shape that
  * really must be blocked -- a `spawn(` call -- is checked separately, before literals are stripped.
  * Writing the function name into a string key (`(process as any)['spawn'](...)`) is the same thing

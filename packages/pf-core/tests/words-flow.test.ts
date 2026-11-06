@@ -1,0 +1,152 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { SimulatedExecutor } from '../src/executor';
+import { open } from '../src/open';
+import { answer } from '../src/words/router';
+import type { WordsIO } from '../src/words/types';
+
+/**
+ * The flow's words, at the words layer: one operation each, and the standard order spelled out.
+ *
+ * `plan` reads a byte and writes none; `settle` records one node's end and nothing else; `cycle hold`
+ * claims; `dispatch` lands the cell's material (when the claim left none) and opens the session. The
+ * composed `advance` is those three moves in one word, and it lands the same marks on disk.
+ */
+
+const dirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+function project(): { root: string; io: WordsIO; executor: SimulatedExecutor } {
+  const root = mkdtempSync(join(tmpdir(), 'pf-words-flow-'));
+  dirs.push(root);
+  const executor = new SimulatedExecutor();
+  const io: WordsIO = { root, homeDir: join(root, '_home'), executor, openerAvailable: true };
+  return { root, io, executor };
+}
+
+async function call(io: WordsIO, argv: readonly string[]): Promise<{ code: number; stdout: string }> {
+  const result = await answer(argv, io);
+  expect(result.code, `${argv.join(' ')} answered ${result.code}: ${result.stderr}`).toBe(0);
+  return { code: result.code, stdout: result.stdout };
+}
+
+/** A line holding one of two ready nodes, with the layout in place; the held node's id comes back. */
+async function station(io: WordsIO): Promise<string> {
+  await call(io, ['init']);
+  await call(io, ['dag', 'add', 'the first node']);
+  await call(io, ['dag', 'add', 'the second node']);
+  await call(io, ['cycle', 'start', 'c1', '--force', '--tags', 'coding']);
+  return JSON.parse(readFileSync(join(io.root, '.pf', 'state.json'), 'utf8'))
+    .cycles.find((cycle: { id: string }) => cycle.id === 'c1').holding[0].id as string;
+}
+
+function state(io: WordsIO) {
+  return JSON.parse(readFileSync(join(io.root, '.pf', 'state.json'), 'utf8'))
+    .cycles.find((cycle: { id: string }) => cycle.id === 'c1');
+}
+
+describe('plan: the reading word', () => {
+  it('answers where the line goes and writes not one byte', async () => {
+    const { root, io } = project();
+    const node = await station(io);
+    const before = readFileSync(join(root, '.pf', 'state.json'));
+    const plan = await call(io, ['plan', '--cycle', 'c1', '--json']);
+    expect(JSON.parse(plan.stdout).action).toBe('dispatch');
+    expect(JSON.parse(plan.stdout).node_id).toBe(node);
+    expect(readFileSync(join(root, '.pf', 'state.json')).equals(before)).toBe(true);
+  });
+});
+
+describe('settle: the closing word, and nothing past it', () => {
+  it('records the end, claims nothing and opens nothing; the plan asks for the next claim', async () => {
+    const { root, io } = project();
+    const node = await station(io);
+    await call(io, ['handoff', 'c1', node, 'completed', '-s', 'done']);
+    const receipt = JSON.parse((await call(io, ['settle', node, '--cycle', 'c1', '--json'])).stdout);
+    expect(receipt.action).toBe('settle');
+    expect(receipt.plan.action).toBe('open_node');
+    const line = state(io);
+    expect(line.path.map((step: { node: string }) => step.node)).toEqual([node]);
+    expect(line.holding).toEqual([]);
+    expect(existsSync(join(root, '.pf', 'meta', 'launch', 'c1'))).toBe(false);
+  });
+});
+
+describe('the standard flow: plan, cycle hold, dispatch', () => {
+  it('claims the pick, lands its material and opens its session', async () => {
+    const { root, io, executor } = project();
+    const node = await station(io);
+    await call(io, ['handoff', 'c1', node, 'completed', '-s', 'done']);
+    await call(io, ['settle', node, '--cycle', 'c1']);
+    const plan = JSON.parse((await call(io, ['plan', '--cycle', 'c1', '--json'])).stdout);
+    expect(plan.action).toBe('open_node');
+    await call(io, ['cycle', 'hold', 'c1', plan.node_id]);
+    expect(state(io).holding.map((item: { id: string }) => item.id)).toEqual([plan.node_id]);
+    // The claim wrote the hand only: the material has not landed yet.
+    expect(existsSync(join(root, '.pf', 'meta', 'launch', 'c1', plan.node_id, 'prompt.txt'))).toBe(false);
+    await call(io, ['dispatch', 'c1']);
+    const launch = join(root, '.pf', 'meta', 'launch', 'c1', plan.node_id);
+    expect(existsSync(join(launch, 'prompt.txt'))).toBe(true);
+    expect(existsSync(join(launch, 'started'))).toBe(true);
+    expect(executor.dispatched.map((request) => request.node)).toEqual([plan.node_id]);
+  });
+});
+
+describe('advance: the composed word', () => {
+  it('claims the free slot, lands the material and opens the session, with the same marks as the three words', async () => {
+    const { root, io, executor } = project();
+    const node = await station(io);
+    await call(io, ['handoff', 'c1', node, 'completed', '-s', 'done']);
+    await call(io, ['settle', node, '--cycle', 'c1']);
+    const receipt = JSON.parse((await call(io, ['advance', '--cycle', 'c1', '--json'])).stdout);
+    expect(receipt.action).toBe('advance');
+    expect(receipt.pinned).toHaveLength(1);
+    const claimed = receipt.pinned[0];
+    expect(executor.dispatched.map((request) => request.node)).toEqual([claimed]);
+    const launch = join(root, '.pf', 'meta', 'launch', 'c1', claimed);
+    expect(existsSync(join(launch, 'prompt.txt'))).toBe(true);
+    expect(existsSync(join(launch, 'started'))).toBe(true);
+    expect(state(io).holding.map((item: { id: string }) => item.id)).toEqual([claimed]);
+  });
+});
+
+describe('a process without an opener', () => {
+  it('dispatch writes nothing and names the panel; advance pins but claims no session', async () => {
+    const { root, io } = project();
+    const node = await station(io);
+    const closed: WordsIO = { ...io, openerAvailable: false };
+    const refused = await answer(['dispatch', 'c1'], closed);
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toContain('寻路中心');
+    expect(existsSync(join(root, '.pf', 'meta', 'launch', 'c1', node, 'prompt.txt'))).toBe(false);
+
+    await call(closed, ['handoff', 'c1', node, 'completed', '-s', 'done']);
+    await call(closed, ['settle', node, '--cycle', 'c1']);
+    const advanced = await call(closed, ['advance', '--cycle', 'c1', '--json']);
+    const receipt = JSON.parse(advanced.stdout);
+    expect(receipt.spawn_error).toBeTruthy();
+    expect(receipt.spawned).toEqual([]);
+    expect(receipt.pinned).toHaveLength(1);
+    expect(existsSync(join(root, '.pf', 'meta', 'launch', 'c1', receipt.pinned[0], 'started'))).toBe(false);
+  });
+});
+
+describe('the engine and the words agree', () => {
+  it('the claim the words write is the claim the engine reads', async () => {
+    const { root, io } = project();
+    const node = await station(io);
+    await call(io, ['handoff', 'c1', node, 'completed', '-s', 'done']);
+    await call(io, ['settle', node, '--cycle', 'c1']);
+    const plan = JSON.parse((await call(io, ['plan', '--cycle', 'c1', '--json'])).stdout);
+    await call(io, ['cycle', 'hold', 'c1', plan.node_id]);
+    await call(io, ['dispatch', 'c1']);
+    const line = await open(root).ledger.cycles.show('c1');
+    expect(line.holding.map((item) => item.id)).toEqual([plan.node_id]);
+    expect((await open(root).conductor.next({ cycle: 'c1' })).action).not.toBe('open_node');
+  });
+});

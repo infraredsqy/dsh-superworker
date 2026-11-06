@@ -271,10 +271,18 @@ describe('planning: read only', () => {
     if (plan.action === 'wait') expect(plan.close_with).toContain(slips.id);
   });
 
-  it('plan: false is refused on the spot: the verb that carries the next step out is called dispatch', async () => {
+  it('the query names a line and a closing rehearsal, and nothing that would make it write', async () => {
     const root = freshRoot();
-    await open(root).ledger.init();
-    await expect(open(root).conductor.next({ plan: false })).rejects.toThrow(/read-only/);
+    const pf = open(root);
+    await pf.ledger.init();
+    const slips = await pf.ledger.dag.add({ title: 'slips' });
+    await pf.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
+    await pf.ledger.cycles.hold('c1', slips.id);
+    putSignal(root, 'c1', slips.id, 'completed');
+    const before = hashDirectory(join(root, '.pf'));
+    const rehearsal = await pf.conductor.next({ cycle: 'c1', after: slips.id });
+    expect(rehearsal.cycle).toBe('c1');
+    expect(hashDirectory(join(root, '.pf'))).toBe(before);
   });
 });
 

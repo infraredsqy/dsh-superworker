@@ -40,7 +40,9 @@ const SELF_VERBS: ReadonlyArray<readonly [string, string, string]> = [
 const VERB_ROUTES: Record<string, string> = {
   init: 'initVerb',
   register: 'registerVerb',
-  next: 'nextVerb',
+  plan: 'planVerb',
+  settle: 'settleVerb',
+  advance: 'advanceVerb',
   dispatch: 'dispatchVerb',
   'clean-temp': 'cleanTempVerb',
   handoff: 'handoffVerb',
@@ -101,7 +103,7 @@ const USAGE_WIDTH = 100;
 const USAGE_SHAPE = `pathfinder -- the agent pipeline's own words
 
   Level 2 is a verb: it acts on the project or on the pipeline itself. Level 3 is a noun -- a record
-  with an identity -- plus the verb that acts on it. So \`init\` and \`next\` are verbs, and
+  with an identity -- plus the verb that acts on it. So \`plan\` and \`settle\` are verbs, and
   \`cycle list\`, \`dag add\` are a group's verbs.
 `;
 
@@ -162,7 +164,9 @@ async function pluginCommands(io: WordsIO) {
 const VERB_SENSE: Record<string, string> = {
   init: 'put the ledger in place (run once per project)',
   register: "write the ledger's git merge driver into this project",
-  next: 'show (or do) the next pipeline action',
+  plan: 'read what the next step is, and write nothing',
+  settle: "record one node's end: the verdict, the graph mark, the close-time seam",
+  advance: 'carry the line one step: claim the free slots and open their sessions',
   dispatch: 'start the session for the node the cycle holds',
   'clean-temp': "list (or remove) every node's temp/ directory",
   handoff: "a worker's own closing call for the line it just ran",
@@ -211,7 +215,7 @@ export function describe(): WordsIndex {
   return {
     shape: USAGE_SHAPE,
     self: SELF_VERBS.map(([, display, blurb]) => [display, blurb] as const),
-    verbs: ['init', 'register', 'next', 'dispatch', 'clean-temp', 'handoff', 'merge-ledger'].map(
+    verbs: ['init', 'register', 'plan', 'settle', 'advance', 'dispatch', 'clean-temp', 'handoff', 'merge-ledger'].map(
       (word) => [word, verbSense(word)] as const,
     ),
     groups: ['cycle', 'dag', 'config', 'instruction', 'session'].map((word) => [word, groupSense(word)] as const),

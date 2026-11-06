@@ -68,18 +68,18 @@ test('字节锁一：工具描述 ≤400 字节', () => {
   assert.ok(bytes <= 400, `${bytes} bytes`)
 })
 
-test('字节锁二：整张索引 ≤2400 字节，且它就是顶层清单的文本', async () => {
+test('字节锁二：整张索引 ≤2600 字节，且它就是顶层清单的文本', async () => {
   const tool = toolOver('C:\\no-such-workspace')
   const answer = await tool.execute({ help: true }, { agent: { id: 'agent-tool' } })
   assert.equal(answer.code, 0, answer.stderr)
   const bytes = Buffer.byteLength(answer.stdout, 'utf8')
-  assert.ok(bytes <= 2400, `${bytes} bytes for the index`)
+  assert.ok(bytes <= 2600, `${bytes} bytes for the index`)
   assert.match(answer.stdout, /pathfinder -- the agent pipeline/u)
 })
 
 test('字节锁三：单词页 ≤4096 字节（最大的那一页也锁）', async () => {
   const tool = toolOver('C:\\no-such-workspace')
-  for (const word of ['next', 'dag', 'cycle', 'config', 'instruction', 'session', 'dispatch', 'handoff', 'init']) {
+  for (const word of ['plan', 'settle', 'advance', 'dag', 'cycle', 'config', 'instruction', 'session', 'dispatch', 'handoff', 'init']) {
     const answer = await tool.execute({ help: true, word }, { agent: { id: 'agent-tool' } })
     assert.equal(answer.code, 0, `${word}: ${answer.stderr}`)
     const size = Buffer.byteLength(answer.stdout, 'utf8')

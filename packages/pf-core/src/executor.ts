@@ -15,6 +15,14 @@ export interface DispatchRequest {
    */
   readonly spawner?: string;
   /**
+   * The model route this session opens with, in the ecosystem's own spelling (`provider/model`). Read
+   * at the call, in the most specific order — the dispatch's own `model` > the line's `model` policy >
+   * the machine's `DSH_CONDUCT_MODEL` — and absent when nothing names one (the executor's own default
+   * speaks). This layer never splits it: whoever opens the session owns the provider, and a host that
+   * knows no such route is the host's own failure to report.
+   */
+  readonly model?: string;
+  /**
    * The drill switch was on for this call: the call is made and its result is reported, but no session
    * may actually be opened. Absent means off (the ordinary state).
    */

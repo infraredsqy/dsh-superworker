@@ -22,7 +22,9 @@ export const TOP = {
   "verbs": [
     "init",
     "register",
-    "next",
+    "plan",
+    "settle",
+    "advance",
     "dispatch",
     "clean-temp",
     "handoff",
@@ -120,10 +122,10 @@ export const COMMANDS = {
       }
     ]
   },
-  "next": {
-    "word": "next",
-    "prog": "next",
-    "description": "The one entry point. plan: read-only, writes nothing. apply (no --plan): drive the pipeline to its next stable action -- consume a finished node's signal, do the bookkeeping, stop at the first thing a caller can act on. The actions a caller may have to act on are `dispatch` (spawn this node), `insert_node` (a node was just put into the graph and nothing was opened: commit and push, then run `next --spawn` again and the pick decides), `wait` (read its note / close_with and run that one command), `ask_user`, `stop_pipeline`, `no_cycle` (there is no cycle yet: opening one takes a human's intent). An `open_node` never reaches you -- it is the tool pinning the next node itself, and what you read is that slot's `dispatch`. The returned action NEVER carries commands to run: the tool runs them.",
+  "plan": {
+    "word": "plan",
+    "prog": "plan",
+    "description": "Read-only: what the next step is, writing not one byte. The answer is one action -- `dispatch` (a node is claimed: send it out, and it lands the cell''s material when the claim left none), `open_node` (the line holds no node: the head of the ranking is what a claim would pick -- `cycle hold` names it), `stop_pipeline` (nothing left, or the line was stopped), `wait` (a ticket is owed or a session is already out: read `note` / `close_with`, never poll), `ask_user`, `no_cycle` -- plus the cells a reader acts on. `--after <node>` asks the closing question instead: that node''s ticket is on disk, and settling it, where would the line go. Carrying any of it out is `dispatch` (the single op) or `advance` (claim, material and session in one word).",
     "positionals": [],
     "options": [
       {
@@ -131,7 +133,7 @@ export const COMMANDS = {
           "-h",
           "--help"
         ],
-        "help": "Print `next`'s help (the tail carries the full set of actions)",
+        "help": "Print `plan`'s help (the tail carries the full set of actions)",
         "invocation": "-h, --help"
       },
       {
@@ -152,10 +154,11 @@ export const COMMANDS = {
       },
       {
         "flags": [
-          "--plan"
+          "--after"
         ],
-        "help": "Read-only: never write prompt files or touch state",
-        "invocation": "--plan"
+        "metavar": "NODE_ID",
+        "help": "The closing rehearsal: this node has handed in its ticket, and settling it, where would the line go. Read-only all the same -- the writing half is `settle`",
+        "invocation": "--after NODE_ID"
       },
       {
         "flags": [
@@ -163,74 +166,117 @@ export const COMMANDS = {
         ],
         "help": "Print raw JSON",
         "invocation": "--json"
-      },
+      }
+    ],
+    "epilog": "the full set of actions `plan` returns (the discriminant is the `action` field):\n  dispatch        a node is claimed -- `dispatch <cycle>` lands its material if the claim left none and opens its session\n  open_node       the line holds no node and the ranking's head is what a claim would pick -- `cycle hold <cycle> <node>` claims it, then `dispatch <cycle>` opens it\n  stop_pipeline   nothing left to do, the line was stopped, or nothing is left in its picking range -- read `reason`\n  wait            it is not yet time to act -- read `note` / `close_with`, never poll\n  ask_user        the state cannot explain itself -- ask a human\n  no_cycle        there is no line yet -- opening one takes a human's intent\n\nthe standard flow is one word per operation: `plan` reads, `cycle hold` claims, `dispatch` opens; a node's end is `handoff` then `settle`. `advance` is those three moves as one word (claim, material, session) for the host that drives the line by itself.\n\nInvariant: the action is a reading of the records. The words that write are `settle`, `cycle hold`, `dispatch` and `advance`."
+  },
+  "settle": {
+    "word": "settle",
+    "prog": "settle",
+    "description": "Record one node''s end: read its handoff ticket, put the verdict into the line''s `path`, lay the claim down, mark the graph node `completed` / `shelved`, and run the close-time plugin seam (an offer may put a node into the graph, wired in front of the node this close would have opened next). It claims nothing, lands no prompt, opens no session and stops no line -- the next claim is `cycle hold`''s, the session is `dispatch`''s, and the plan printed underneath says who they touch. A missing ticket, or one still `pending`, is refused with nothing written.",
+    "positionals": [
       {
-        "flags": [
-          "--continue"
-        ],
-        "help": "Closing call: keep going (a stop rule that says stop still wins)",
-        "invocation": "--continue"
-      },
-      {
-        "flags": [
-          "--stop"
-        ],
-        "help": "Closing call: stop here (parks the cycle)",
-        "invocation": "--stop"
-      },
-      {
-        "flags": [
-          "--node"
-        ],
+        "name": "node",
         "metavar": "NODE",
-        "help": "Closing call: which ready node to run next",
-        "invocation": "--node NODE"
+        "required": true,
+        "help": "The node whose ticket is on disk. The line holding it is read off the claim table unless --cycle names one"
+      }
+    ],
+    "options": [
+      {
+        "flags": [
+          "-h",
+          "--help"
+        ],
+        "help": "show this help message and exit",
+        "invocation": "-h, --help"
       },
       {
         "flags": [
-          "--note"
+          "--cycle"
         ],
-        "metavar": "NOTE",
-        "help": "Why the closing call decided that",
-        "invocation": "--note NOTE"
+        "metavar": "CYCLE",
+        "help": "Cycle id (default: the line holding the node)",
+        "invocation": "--cycle CYCLE"
       },
       {
         "flags": [
-          "--after"
+          "--project"
         ],
-        "metavar": "NODE_ID",
-        "help": "The worker closing its own node: settle the node whose work just finished against the signal it already wrote, then dispatch or stop. A node still in flight answers `wait` instead of being read as delivered",
-        "invocation": "--after NODE_ID"
+        "metavar": "PROJECT",
+        "help": "Project root (default: current directory)",
+        "invocation": "--project PROJECT"
       },
       {
         "flags": [
-          "--spawn"
+          "--json"
         ],
-        "dest": "open_sessions",
-        "help": "If the resulting action is a dispatch, start that session too (makes the closing call one-and-done: settle, then spawn)",
-        "invocation": "--spawn"
+        "help": "Print raw JSON",
+        "invocation": "--json"
+      }
+    ],
+    "epilog": "settle is the write half of a worker''s close, and the whole of it: the line''s hand does not move. To stop the line: `cycle status <cycle> inactive`. To name the next node: `cycle hold <cycle> <node>`. To read what happens next without doing it: `plan --after <node>`."
+  },
+  "advance": {
+    "word": "advance",
+    "prog": "advance",
+    "description": "The composed word, and nothing new: claim the nodes the line has free slots for (the head of the graph''s ranking, as many as `parallel` allows), land each one''s prompt and run doc, then open one session per cell in hand; a line that stopped with nothing left is turned `inactive`. Every move in it is a word of its own (`cycle hold`, `dispatch`), so the same work can always be done one reading at a time. It settles nothing -- a node whose work ended is recorded by `settle` -- and it never moves a node''s status.",
+    "positionals": [],
+    "options": [
+      {
+        "flags": [
+          "-h",
+          "--help"
+        ],
+        "help": "show this help message and exit",
+        "invocation": "-h, --help"
+      },
+      {
+        "flags": [
+          "--cycle"
+        ],
+        "metavar": "CYCLE",
+        "help": "Cycle id (default: the single active cycle)",
+        "invocation": "--cycle CYCLE"
+      },
+      {
+        "flags": [
+          "--project"
+        ],
+        "metavar": "PROJECT",
+        "help": "Project root (default: current directory)",
+        "invocation": "--project PROJECT"
       },
       {
         "flags": [
           "--spawner"
         ],
         "metavar": "KIND|PATH",
-        "help": "Which spawner opens that session: `dsh`, `zcode`, or a path. Default: whichever host this shell runs under.",
+        "help": "Which spawner opens these sessions: `dsh`, `zcode`, or a path. Default: the line''s own `spawner` policy, then the machine''s switch, then whichever host this shell runs under.",
         "invocation": "--spawner KIND|PATH"
+      },
+      {
+        "flags": [
+          "--model"
+        ],
+        "metavar": "ROUTE",
+        "help": "The model route these sessions open with (`provider/model`). Default: the line''s own `model` policy, then the machine''s `DSH_CONDUCT_MODEL`, then the host''s default.",
+        "invocation": "--model ROUTE"
+      },
+      {
+        "flags": [
+          "--json"
+        ],
+        "help": "Print raw JSON",
+        "invocation": "--json"
       }
     ],
-    "exclusive": [
-      [
-        "--continue",
-        "--stop"
-      ]
-    ],
-    "epilog": "the full set of actions `next` returns (the discriminant is the `action` field):\n  dispatch        a node is pinned and the prompt has landed -- send it out (`dispatch <cycle>` is what does this; `next --spawn` is the same call done in one go)\n  open_node       the tool is pinning the next node itself -- what the caller reads is already that slot's dispatch\n  insert_node     a new node has just been put into the graph: it is created, its spec is written and its edges are wired, and **nothing was opened** -- no session, no prompt file, and the new node is not pinned. Which node runs next is the next dispatch's decision (`next --spawn` picks it up by the usual ranking)\n  stop_pipeline   nothing left to do / somebody called a halt / this line is not in service -- close out and tell the user how it ended\n  wait            it is not yet time to act -- read note / close_with, never poll\n  ask_user        the state is ambiguous -- ask a human\n  no_cycle        there is no cycle yet -- opening one takes a human's intent\n\nInvariant: the returned action **carries no `commands`** -- the tool runs the commands itself; the caller only reads `action` and does what only a session can do."
+    "epilog": "the composed step: claim (`cycle hold`), material (the dispatch preparation) and session (`dispatch`), in that order, for whatever the plan says. It is never required -- `plan` -> `cycle hold` -> `dispatch` is the same work with a reading between the moves -- and it is what the host runs when it drives a line with nobody in between."
   },
   "dispatch": {
     "word": "dispatch",
     "prog": "dispatch",
-    "description": "Dispatch and nothing else: read the node this cycle holds, then start the session whose prompt the step that pinned it already wrote at .pf/meta/launch/<cycle>/<node>/prompt.txt. No bookkeeping and no state change -- that is what makes \"commit and push first, then dispatch\" expressible: the next session boots in the same worktree and pulls. DSH_CONDUCT_SPAWN_DRY_RUN=1 makes the call and reports it without opening a session.",
+    "description": "Open the sessions of the nodes this cycle holds, and nothing else: land each cell''s material when it is not on disk yet (the prompt at .pf/meta/launch/<cycle>/<node>/prompt.txt, the run doc), hand it to the executor, and stamp the cell `started`. It never claims a node -- that is `cycle hold` -- and it never settles one; that makes \"commit and push first, then open the next session\" expressible as two commands. DSH_CONDUCT_SPAWN_DRY_RUN=1 makes the call and reports it without opening a session and without claiming the cell, so a rehearsal is never something to unwind.",
     "positionals": [
       {
         "name": "id",
@@ -268,8 +314,16 @@ export const COMMANDS = {
           "--spawner"
         ],
         "metavar": "KIND|PATH",
-        "help": "Which spawner opens that session: `dsh`, `zcode`, or a path. Default: whichever host this shell runs under.",
+        "help": "Which spawner opens that session: `dsh`, `zcode`, or a path. Default: the line's own `spawner` policy, then the machine's switch, then whichever host this shell runs under.",
         "invocation": "--spawner KIND|PATH"
+      },
+      {
+        "flags": [
+          "--model"
+        ],
+        "metavar": "ROUTE",
+        "help": "The model route this session opens with (`provider/model`). Default: the line's own `model` policy, then the machine's `DSH_CONDUCT_MODEL`, then the host's default.",
+        "invocation": "--model ROUTE"
       }
     ]
   },
@@ -389,14 +443,6 @@ export const COMMANDS = {
         "help": "Project root (default: cwd)",
         "invocation": "--project PROJECT"
       },
-      {
-        "flags": [
-          "--dry-run",
-          "--no-spawn"
-        ],
-        "help": "Accepted and ignored: this command opens no session, so \"spawn nothing\" is not a mode it has (kept so an existing caller's argv keeps working)",
-        "invocation": "--dry-run, --no-spawn"
-      }
     ]
   },
   "doctor": {
@@ -664,13 +710,14 @@ export const COMMANDS = {
         "required": true
       },
       {
-        "name": "{issue_pool,issue_pool_weight_limit,parallel,spawner,test_audit,test_seconds_limit,when_shelved}",
-        "metavar": "{issue_pool,issue_pool_weight_limit,parallel,spawner,test_audit,test_seconds_limit,when_shelved}",
+        "name": "{issue_pool,issue_pool_weight_limit,model,parallel,spawner,test_audit,test_seconds_limit,when_shelved}",
+        "metavar": "{issue_pool,issue_pool_weight_limit,model,parallel,spawner,test_audit,test_seconds_limit,when_shelved}",
         "required": true,
         "help": "",
         "choices": [
           "issue_pool",
           "issue_pool_weight_limit",
+          "model",
           "parallel",
           "spawner",
           "test_audit",
@@ -682,7 +729,7 @@ export const COMMANDS = {
         "name": "value",
         "metavar": "value",
         "required": true,
-        "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; spawner: dsh | zcode -- which spawner opens this line's sessions (words only, never a path: the cycle record merges across machines). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
+        "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; spawner: dsh | zcode -- which spawner opens this line's sessions (words only, never a path: the cycle record merges across machines); model: a route word -- which model the sessions this line opens use (`provider/model`, carried whole to the opener; a call's own --model wins over it). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
       }
     ],
     "options": [
@@ -2250,13 +2297,14 @@ export const GROUPS = {
             "required": true
           },
           {
-            "name": "{issue_pool,issue_pool_weight_limit,parallel,spawner,test_audit,test_seconds_limit,when_shelved}",
-            "metavar": "{issue_pool,issue_pool_weight_limit,parallel,spawner,test_audit,test_seconds_limit,when_shelved}",
+            "name": "{issue_pool,issue_pool_weight_limit,model,parallel,spawner,test_audit,test_seconds_limit,when_shelved}",
+            "metavar": "{issue_pool,issue_pool_weight_limit,model,parallel,spawner,test_audit,test_seconds_limit,when_shelved}",
             "required": true,
             "help": "",
             "choices": [
               "issue_pool",
               "issue_pool_weight_limit",
+          "model",
               "parallel",
               "spawner",
               "test_audit",
@@ -2268,7 +2316,7 @@ export const GROUPS = {
             "name": "value",
             "metavar": "value",
             "required": true,
-            "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; spawner: dsh | zcode -- which spawner opens this line's sessions (words only, never a path: the cycle record merges across machines). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
+            "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; spawner: dsh | zcode -- which spawner opens this line's sessions (words only, never a path: the cycle record merges across machines); model: a route word -- which model the sessions this line opens use (`provider/model`, carried whole to the opener; a call's own --model wins over it). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
           }
         ],
         "options": [

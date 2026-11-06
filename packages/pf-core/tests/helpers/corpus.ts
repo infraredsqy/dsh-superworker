@@ -627,10 +627,33 @@ export async function generateExpected(
   caseDir: string,
   run: CorpusRunner,
 ): Promise<string[]> {
+  return writeCaseExpectations(caseDir, run, false);
+}
+
+/**
+ * Regenerate one case's expected products from the current engine: stage the input, run the operation,
+ * and write back **every product the operation changed** — a file that appeared, or one whose bytes the
+ * operation rewrote (a close changes `ideas.json` and `state.json`; an insert adds a node directory).
+ * Files the operation left alone are not expectations and are not written, so the case keeps the corpus
+ * convention: `expected/` holds products, not a copy of the input.
+ *
+ * This is the repair path for a case whose recorded products predate a deliberate change: the products
+ * come from the engine, never from a hand edit.
+ */
+export async function rebuildExpected(caseDir: string, run: CorpusRunner): Promise<string[]> {
+  return writeCaseExpectations(caseDir, run, true);
+}
+
+/** The one writer behind both generation entries (`changed=false`: only new files, the creation-time reading; `changed=true`: new and rewritten ones). */
+async function writeCaseExpectations(
+  caseDir: string,
+  run: CorpusRunner,
+  changed: boolean,
+): Promise<string[]> {
   const expectedDir = join(caseDir, 'expected');
   const written: string[] = [];
   await withStagedCase(caseDir, async ({ op, root, maps }) => {
-    const before = new Set(listFilesUnder(root));
+    const before = new Map(listFilesUnder(root).map((rel) => [rel, readFileSync(join(root, ...rel.split('/')))] as const));
     await alignOpToSecondStart();
     const args = JSON.parse(substitute(JSON.stringify(op.args), maps, false, root)) as unknown[];
     const returned = await run(root, args);
@@ -642,8 +665,10 @@ export async function generateExpected(
       return out;
     };
     for (const rel of listFilesUnder(root)) {
-      if (before.has(rel)) continue;
-      const rawText = readFileSync(join(root, ...rel.split('/')), 'utf8');
+      const raw = readFileSync(join(root, ...rel.split('/')));
+      if (!changed && before.has(rel)) continue;
+      if (changed && before.has(rel) && Buffer.compare(before.get(rel)!, raw) === 0) continue;
+      const rawText = raw.toString('utf8');
       const tokenized = detokenize(rawText, maps, root);
       const kind = recordKindOf(rel);
       const text = kind !== null

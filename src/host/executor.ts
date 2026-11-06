@@ -58,6 +58,12 @@ export interface SessionOpenOptions {
   /** Stops the settlement wait; the session and its note stay whatever this decides. */
   readonly signal?: AbortSignal
   /**
+   * The model route this session opens with (`provider/model`, as the engine carries it): the
+   * dispatch's own name comes down here, and the engine has already resolved the call > line policy >
+   * machine-switch order. Absent leaves the deployment's own default in force.
+   */
+  readonly model?: string
+  /**
    * Runs once the session is minted and alive, before its first instruction
    * goes in — the earliest point a caller can start watching it, ahead of
    * every event the opening round will emit (the round may settle before this
@@ -195,21 +201,37 @@ function reportUnattached(ctx: Context, cycle: string, node: string, root: strin
 }
 
 /**
- * The model selection a fresh session opens with: the deployment's current
- * choice, the same one a session opened through the host's own surface gets.
- * The service that knows it is asked for by name on the spot, structurally —
- * a host without it (or one whose answer cannot be read) simply omits the
- * selection and the loop's own defaults apply.
+ * The model selection a fresh session opens with: the route the dispatch named when it named one,
+ * else the deployment's current choice (the same one a session opened through the host's own surface
+ * gets). The service that knows the default is asked for by name on the spot, structurally — a host
+ * without it (or one whose answer cannot be read) omits the selection and the loop's own defaults apply.
+ *
+ * The route arrives in the ecosystem's spelling, `provider/model`, carried whole by the engine: the
+ * split happens here, at the one place that hands it to the session. A route with no slash is read as
+ * the model alone (the host's own default provider), which is what a bare model word means elsewhere.
  */
-function modelSelectionOf(ctx: Context): AgentOptions | undefined {
+function routeOf(word: string | undefined): AgentOptions | undefined {
+  if (word === undefined) return undefined
+  const text = word.trim()
+  if (text.length === 0) return undefined
+  const at = text.indexOf('/')
+  if (at > 0 && at < text.length - 1) {
+    return { provider: text.slice(0, at), model: text.slice(at + 1) }
+  }
+  return { model: text }
+}
+
+function modelSelectionOf(ctx: Context, named?: string): AgentOptions | undefined {
   const source = ctx.get('agentDefaultModel') as { currentSelection?: () => unknown } | undefined
-  if (source === undefined || typeof source.currentSelection !== 'function') return undefined
+  if (source === undefined || typeof source.currentSelection !== 'function') return routeOf(named)
   let picked: unknown
   try {
     picked = source.currentSelection()
   } catch {
-    return undefined
+    return routeOf(named)
   }
+  const asked = routeOf(named)
+  if (asked !== undefined) return asked
   if (picked === null || typeof picked !== 'object') return undefined
   const held = picked as { provider?: unknown; model?: unknown }
   const provider = typeof held.provider === 'string' && held.provider.length > 0 ? held.provider : undefined
@@ -296,7 +318,7 @@ export async function openNodeSession(
 
   /* The session identity is this host's own mint, spelled the way the host spells its own: `session-` + a fresh uuid. The brand is a compile-time fact; the string is what crosses. */
   const opened = `session-${randomUUID()}` as SessionId
-  const selection = modelSelectionOf(ctx)
+  const selection = modelSelectionOf(ctx, options?.model)
 
   /* The standing preset this open composes through: the mount is what gives the session its
    * scoped world (tools, skills). A roster that cannot resolve its own default is an open
