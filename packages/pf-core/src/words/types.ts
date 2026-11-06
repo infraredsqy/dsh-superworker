@@ -111,6 +111,12 @@ export interface WordsIO {
   readonly pluginsDir?: string;
   /** Whether this call may really open a session (`dispatch` and `advance` answer honestly without one). */
   readonly openerAvailable?: boolean;
+  /**
+   * The bytes a word asked to read `-` takes as its input (`handoff -o -`). The caller's own source,
+   * handed in like every other seam: a call without one refuses `-` by name, because a word answered
+   * inside a long-lived process has no stream here that ever ends.
+   */
+  readonly readInput?: () => Promise<string>;
 }
 
 import type { Executor } from '../executor';

@@ -11,7 +11,7 @@ import type {
   StopPlan,
   WaitPlan,
 } from './conductor';
-import { cyclePolicy } from './cycles';
+import { cycleHoldingIds, cyclePolicy } from './cycles';
 import { createDagNamespace } from './dag';
 import { instructionInScope, isLive } from './instruct';
 import { readJsonFile } from './jsonio';
@@ -106,19 +106,6 @@ function normalizeMode(mode: unknown): NodeMode {
   return (word || 'auto') as NodeMode;
 }
 
-/** The nodes one line holds right now (both on-disk shapes are accepted — the canonical one and a bare id string). */
-function holdingIds(cycle: CycleRecord): string[] {
-  const holding: unknown = cycle.holding;
-  if (!Array.isArray(holding)) return [];
-  const out: string[] = [];
-  for (const item of holding) {
-    const entry = asObject(item);
-    if (entry !== null && typeof entry.id === 'string' && entry.id !== '') out.push(entry.id);
-    else if (typeof item === 'string' && item !== '') out.push(item);
-  }
-  return out;
-}
-
 /** The single active line by default; a named line that is not on the account hands back null. */
 function findCycle(cycles: CycleRecord[], cycleId: string | null): CycleRecord | null {
   if (cycleId !== null) return cycles.find((cycle) => cycle.id === cycleId) ?? null;
@@ -130,7 +117,7 @@ function findCycle(cycles: CycleRecord[], cycleId: string | null): CycleRecord |
 function nodeHolders(cycles: CycleRecord[]): Map<string, string> {
   const holders = new Map<string, string>();
   for (const cycle of cycles) {
-    for (const node of holdingIds(cycle)) {
+    for (const node of cycleHoldingIds(cycle)) {
       if (!holders.has(node)) holders.set(node, String(cycle.id));
     }
   }
@@ -314,7 +301,7 @@ async function rankedReady(
 export function freeSlots(cycle: CycleRecord): number {
   const parallel = cyclePolicy(cycle).parallel;
   const cap = typeof parallel === 'number' ? parallel : 1;
-  return Math.max(cap - holdingIds(cycle).length, 0);
+  return Math.max(cap - cycleHoldingIds(cycle).length, 0);
 }
 
 /**
@@ -860,7 +847,7 @@ async function settleAnswers(
   // `when_shelved` (stop by default).
   const policyCarries = policy.when_shelved === 'continue';
   let carryOn = delivered || policyCarries;
-  const others = holdingIds(cycle).filter((id) => id !== nodeId);
+  const others = cycleHoldingIds(cycle).filter((id) => id !== nodeId);
   if (!lineActive) carryOn = false;
   let decision: 'continue' | 'stop' = carryOn ? 'continue' : 'stop';
   const tags = Array.isArray(cycle.tags) ? cycle.tags : [];
@@ -1109,7 +1096,7 @@ export async function planNext(root: string, query: NextQuery = {}): Promise<Nex
     );
   }
 
-  const holding = holdingIds(cycle);
+  const holding = cycleHoldingIds(cycle);
 
   // Nothing in hand: the line just opened, or everything it held is settled. Both cases ask the same question, and
   // the answer follows the same rule.

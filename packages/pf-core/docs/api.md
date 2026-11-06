@@ -53,11 +53,12 @@ usageError
 
 `answer(argv, io)` 是词面（words layer）的唯一应答口：一行命令进来，交回
 `{ code, stdout, stderr }`——两个流已是命令面会写出的字节（非空、以换行收尾）。`io` 是本次调用的
-接缝（`WordsIO { root; executor?; git?; homeDir?; pluginsDir?; openerAvailable? }`）：`root`
+接缝（`WordsIO { root; executor?; git?; homeDir?; pluginsDir?; openerAvailable?; readInput? }`）：`root`
 替代「进程当前目录」这个隐含依赖（不接受 `--project` 的词读的就是它），`executor` /
 `git` 注入，`openerAvailable` 说出本调用能否真开会话（`dispatch` / `advance` 据此照实回答：开不出
 会话的进程里 `dispatch` 一个字节都不写就拒，`advance` 只钉节点、不落材料、不认领会话，两边都把
-面板（寻路中心）与那几份 prompt 的位置念出来）。本进程自己的三个词（checkout 的 doctor、version、合并驱动的进程交接）归命令面
+面板（寻路中心）与那几份 prompt 的位置念出来），`readInput` 是「取输入」的那条接缝：`handoff -o -`
+的字节从它来（调用方自己的流，词面不碰本进程），没给的调用按名字拒绝 `-` 并指向 `@path`。本进程自己的三个词（checkout 的 doctor、version、合并驱动的进程交接）归命令面
 的适配器答，词面不路由。`describe()` 交出词表的静态索引数据（`WordsIndex`：形状说明、三个
 自述词、动词与组的行、版式常数），顶层清单与 agent 面的帮助页渲染同一份；`topHelp(io)` 交出拼好的
 顶层清单文本（插件词按 `io` 现读）。`COMMANDS` / `GROUPS` / `specOf` / `helpText` / `parse` /

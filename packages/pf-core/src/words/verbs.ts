@@ -31,7 +31,7 @@ import {
   short,
   splitTags,
 } from './out';
-import type { VerbCall } from './types';
+import type { VerbCall, WordsIO } from './types';
 
 // ═══ the pipeline verbs ══════════════════════════════════════════════════════
 
@@ -174,7 +174,7 @@ export const handoffVerb = guarded(async (call: VerbCall) => {
       2,
     );
   }
-  const outputs = await readOutputs(values.outputs);
+  const outputs = await readOutputs(values.outputs, call.io);
   if (outputs.error !== undefined) return refuse(outputs.error, 1);
   const ticket = await pf.conductor.handoff({
     cycle: cycle,
@@ -190,19 +190,34 @@ export const handoffVerb = guarded(async (call: VerbCall) => {
   };
 }, 2);
 
-/** The `-o` cell: an inline object, `@path`, or stdin (`-`). */
-async function readOutputs(raw: unknown): Promise<{ error?: string; value?: Record<string, unknown> }> {
+/** The `-o` cell: an inline object, `@path`, or the caller's own input source (`-`). */
+async function readOutputs(
+  raw: unknown,
+  io: WordsIO,
+): Promise<{ error?: string; value?: Record<string, unknown> }> {
   const text = raw === undefined ? '{}' : String(raw);
   let payload = text;
   if (text === '-') {
-    payload = await new Promise((settle) => {
-      let held = '';
-      process.stdin.setEncoding('utf8');
-      process.stdin.on('data', (chunk) => {
-        held += chunk;
-      });
-      process.stdin.on('end', () => settle(held));
-    });
+    // The input comes in through the seam and nowhere else: this layer reads no stream of its own
+    // (`WordsIO` says so), because a call answered inside a long-lived process has no stdin whose
+    // end ever arrives — waiting on one is how `-o -` used to hang the whole call. A call that hands
+    // in no source is refused here, by name, instead of waiting.
+    if (io.readInput === undefined) {
+      return {
+        error:
+          '`-o -` takes the caller\'s input, and this call gave no input source; ' +
+          'name a file with `-o @path` (or give the object inline)',
+      };
+    }
+    try {
+      payload = await io.readInput();
+    } catch (error) {
+      return {
+        error:
+          `\`-o -\` could not read the caller's input (${messageOf(error)}); ` +
+          'name a file with `-o @path`',
+      };
+    }
   } else if (text.startsWith('@')) {
     const { readFile } = await import('node:fs/promises');
     payload = await readFile(text.slice(1), 'utf8');

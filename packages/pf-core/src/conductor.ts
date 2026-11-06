@@ -39,7 +39,7 @@ import type { DagNamespace } from './ledger';
 import type { CycleRecord, HandoffRecord, NodeMode, NodeResult } from './types';
 import type { PluginCommandEntry, PluginContext, PluginFolder } from './plugins/types';
 import { withLedgerLock } from './ledgerlock';
-import { createCyclesNamespace, cyclePolicy } from './cycles';
+import { createCyclesNamespace, cycleHoldingIds, cyclePolicy } from './cycles';
 
 /** The verdict words a handoff ticket takes: these three only (`pending` is the marker a re-run leaves, coming from the re-run verb, not from a session). */
 const HANDOFF_RESULTS: readonly NodeResult[] = ['completed', 'failed', 'stopped'];
@@ -565,9 +565,8 @@ export function createConductorNamespace(
   /** The node this step works on: the named one when one is named, otherwise the line's claim; with neither it stops. */
   function heldNodeId(cycle: CycleRecord, targetNode: string | undefined): string {
     if (targetNode !== undefined && targetNode !== '') return targetNode;
-    const holding = Array.isArray(cycle.holding) ? cycle.holding : [];
-    const first = holding.find((item) => item !== null && typeof item === 'object' && typeof item.id === 'string');
-    if (first !== undefined) return first.id as string;
+    const [first] = cycleHoldingIds(cycle);
+    if (first !== undefined) return first;
     throw new Error(
       `cycle "${String(cycle.id ?? '')}" holds no node to act on; name one with { node }`,
     );
@@ -652,13 +651,11 @@ export function createConductorNamespace(
       throw new Error(`node ${nodeId} not found`);
     }
     // Gate one of the closing: the node must be on this line's claim list (the same gate as the closing itself).
-    const inHand = (Array.isArray(cycle.holding) ? cycle.holding : []).some(
-      (item) => item !== null && typeof item === 'object' && (item as { id?: unknown }).id === nodeId,
-    );
+    // The claim is read in one place for every shape on disk (`cycleHoldingIds`): the canonical `[{ id, since }]`
+    // and the bare id string an older disc carries.
+    const inHand = cycleHoldingIds(cycle).includes(nodeId);
     if (!inHand) {
-      const names = (Array.isArray(cycle.holding) ? cycle.holding : [])
-        .map((item) => String((item as { id?: unknown }).id ?? '').slice(0, 8))
-        .filter((name) => name !== '');
+      const names = cycleHoldingIds(cycle).map((id) => id.slice(0, 8));
       throw new PfError(
         'not_holding',
         paths.stateJson,
@@ -877,16 +874,12 @@ export function createConductorNamespace(
       }
       // Two gates pass first, and the refusal writes nothing: the line must be on the account and the node must
       // be on its claim list — a ticket vouching for work nobody ran is worse than no ticket (the same gate as
-      // handoff).
+      // handoff, read off the one shape-tolerant reader every reader of a claim goes through).
       const cycle = await resolveCycle(cycleId);
-      const holding = Array.isArray(cycle.holding) ? cycle.holding : [];
-      const inHand = holding.some(
-        (item) => item !== null && typeof item === 'object' && (item as { id?: unknown }).id === nodeId,
-      );
+      const held = cycleHoldingIds(cycle);
+      const inHand = held.includes(nodeId);
       if (!inHand) {
-        const names = holding
-          .map((item) => String((item as { id?: unknown }).id ?? '').slice(0, 8))
-          .filter((name) => name !== '');
+        const names = held.map((id) => id.slice(0, 8));
         throw new PfError(
           'not_holding',
           paths.stateJson,
@@ -1267,9 +1260,10 @@ async function recordChecks(
   const dangling: string[] = [];
   for (const cycle of cycles) {
     if (cycle === null || typeof cycle !== 'object') continue;
-    for (const held of cycle.holding ?? []) {
-      const id = held !== null && typeof held === 'object' ? (held as { id?: unknown }).id : undefined;
-      if (typeof id === 'string' && !(id in snapshot.nodes)) {
+    // The claim is read off the one shape-tolerant reader (`cycleHoldingIds`), so a bare id string on an older
+    // disc is checked against the graph like any other claim instead of passing for an empty hand.
+    for (const id of cycleHoldingIds(cycle)) {
+      if (!(id in snapshot.nodes)) {
         dangling.push(`cycle "${cycle.id}" holds ${id}, which is not on the graph`);
       }
     }

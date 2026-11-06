@@ -162,6 +162,10 @@ export function definePathfinderTool(host: PathfinderToolHost): PathfinderToolDe
         openerAvailable: true,
         pluginsDir: shippedPluginsDir(),
         git: hostGitRunner(),
+        // The tool call carries its cells as argv and owns no stream: `-o -` has no source here, so
+        // it is answered with a named refusal instead of waiting on this process's stdin (which has
+        // no end coming inside the host, and used to hang the whole call).
+        readInput: () => Promise.reject(new Error('an agent tool call has no input stream')),
       })
       // The long-answer contract comes from the words layer, never restated here: an
       // oversized answer travels whole, with the pointer as its own last line. The word

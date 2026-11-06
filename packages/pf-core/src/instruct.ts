@@ -1,4 +1,5 @@
 import { nowSeconds } from './clock';
+import { cycleHoldingIds } from './cycles';
 import { atomicWriteJson, jsonOptionsForRecord, readJsonFile } from './jsonio';
 import { assertLedgerInitialized } from './initledger';
 import type {
@@ -11,7 +12,6 @@ import type {
 import { withLedgerLock } from './ledgerlock';
 import { pfPaths, type PfPaths } from './paths';
 import type {
-  CycleHolding,
   CycleRecord,
   InstructionRecord,
   InstructionRemovalTrace,
@@ -129,22 +129,6 @@ export function instructionInScope(
   return true;
 }
 
-/** The nodes a line holds (both on-disk shapes — the canonical one and the bare id string — are accepted; the read side tolerates them, the on-disk bytes are not touched). */
-function holdingIdsOf(record: CycleRecord | undefined): string[] {
-  const holding = record?.holding;
-  if (!Array.isArray(holding)) return [];
-  const out: string[] = [];
-  for (const item of holding) {
-    const entry = item as CycleHolding;
-    if (entry !== null && typeof entry === 'object' && typeof entry.id === 'string' && entry.id !== '') {
-      out.push(entry.id);
-    } else if (typeof item === 'string' && item !== '') {
-      out.push(item);
-    }
-  }
-  return out;
-}
-
 /** The tombstone table: a missing key, or a key that is not an array, reads as none. */
 function removedTracesOf(data: Record<string, unknown>): InstructionRemovalTrace[] {
   const traces = data[REMOVED_KEY];
@@ -167,7 +151,7 @@ function positionOf(
   if (active.length === 1) {
     cycle = active[0];
   } else if (namedNode !== null) {
-    const hits = active.filter((record) => holdingIdsOf(record).includes(namedNode));
+    const hits = active.filter((record) => cycleHoldingIds(record).includes(namedNode));
     if (hits.length !== 1) return { cycle: null, node: null };
     cycle = hits[0]!;
   } else {
@@ -176,7 +160,7 @@ function positionOf(
   const cycleId = typeof cycle!.id === 'string' ? cycle!.id : null;
   if (cycleId === null) return { cycle: null, node: null };
   if (namedNode !== null) return { cycle: cycleId, node: namedNode };
-  const holding = holdingIdsOf(cycle);
+  const holding = cycleHoldingIds(cycle);
   return { cycle: cycleId, node: holding.length > 0 ? holding[0]! : null };
 }
 
@@ -355,7 +339,7 @@ export function createInstructionsNamespace(root: string): InstructionsNamespace
 
     if (cycleId !== null && nodeId === null) {
       const record = cycles.find((entry) => entry.id === cycleId);
-      const holding = holdingIdsOf(record);
+      const holding = record === undefined ? [] : cycleHoldingIds(record);
       nodeId = holding.length > 0 ? holding[0]! : null;
     }
 

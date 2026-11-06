@@ -1,10 +1,12 @@
 import { readdirSync, statSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { cycleHoldingIds } from './cycles.ts';
 import { PfError } from './errors.ts';
 import { isMissingPath } from './fs-helpers.ts';
 import { readJsonFile } from './jsonio.ts';
 import { nodeTempDir, type PfPaths } from './paths.ts';
+import type { CycleRecord } from './types.ts';
 
 /**
  * The temp sweep (the piece `clean-temp` runs): list or delete each node's process-artifact
@@ -161,18 +163,9 @@ async function heldNodeIds(paths: PfPaths): Promise<ReadonlySet<string>> {
   if (!Array.isArray(cycles)) return held;
   for (const cycle of cycles) {
     if (cycle === null || typeof cycle !== 'object' || Array.isArray(cycle)) continue;
-    const holding = (cycle as Record<string, unknown>).holding;
-    if (!Array.isArray(holding)) continue;
-    for (const item of holding) {
-      if (typeof item === 'string' && item !== '') {
-        held.add(item);
-        continue;
-      }
-      if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
-        const id = (item as Record<string, unknown>).id;
-        if (typeof id === 'string' && id !== '') held.add(id);
-      }
-    }
+    // Both on-disk shapes of a claim are read in one place (`cycleHoldingIds`): the canonical
+    // `[{ id, since }]` and the bare id string an older disc carries.
+    for (const id of cycleHoldingIds(cycle as CycleRecord)) held.add(id);
   }
   return held;
 }

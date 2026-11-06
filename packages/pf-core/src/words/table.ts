@@ -464,7 +464,7 @@ export const COMMANDS = {
           "--outputs"
         ],
         "metavar": "OUTPUTS",
-        "help": "JSON object of key outputs. `@path` reads it from a file and `-` from stdin: an inline object keeps its quotes only where the shell leaves them alone, and the Windows `.cmd` shim does not",
+        "help": "JSON object of key outputs. `@path` reads it from a file and `-` from the caller's own input source: an inline object keeps its quotes only where the shell leaves them alone, and the Windows `.cmd` shim does not",
         "invocation": "-o, --outputs OUTPUTS"
       },
       {
