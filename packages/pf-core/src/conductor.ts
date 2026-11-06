@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createDagNamespace } from './dag';
 import { nowSeconds } from './clock';
@@ -22,15 +23,7 @@ import { envModel, envSpawnDryRun } from './env';
 import { PfError } from './errors';
 import type { GitRunner } from './git';
 import { atomicWriteBytes, atomicWriteJson, EOL, jsonOptionsForRecord, readJsonFile } from './jsonio';
-import {
-  assertLedgerInitialized,
-  LAYOUT_FILE_NAMES,
-  MERGE_DRIVER_NAME_FORM,
-  MERGE_DRIVER_PF_FORM,
-  namedDriverCommand,
-  readAbsoluteForm,
-  resolvesOnPath,
-} from './initledger';
+import { assertLedgerInitialized } from './initledger';
 import { materialOf, pinSlots, planNext, promptTextOf, settleClose, settleGate, short } from './planner';
 import { prepareDispatch, ticketReadings } from './prepare';
 import type { PreparedDispatch } from './prepare';
@@ -406,6 +399,11 @@ export interface ConductorNamespace {
   dispatchPreview(input?: ConductorDispatchInput): Promise<DispatchPreview>;
   /** Write one handoff ticket, landing at "line id / node id" under signals. */
   handoff(input: ConductorHandoffInput): Promise<HandoffRecord>;
+  /**
+   * Which of this line's held nodes already had their session started: the dispatch claim on disk,
+   * read here instead of letting a caller test the marker file itself. A read verb: no lock, no write.
+   */
+  startedHolding(input?: ConductorTarget): Promise<readonly string[]>;
   /**
    * Settle one node, and nothing else: the verdict goes into the line's `path`, the claim is laid down, the
    * graph node lands `completed` / `shelved`, and the close-time plugin seam runs (an offer may put a node
@@ -1054,6 +1052,18 @@ export function createConductorNamespace(
 
     /** The settle, on its own: record this node's end, mark the graph, run the close-time seam. */
     settle: async (input) => await settleNode(input),
+
+    /**
+     * The held nodes whose session is already out. The claim is the `started` marker the dispatch
+     * writes; a caller that needs to know whether a second dispatch would boot a second session asks
+     * here rather than reading that marker itself.
+     */
+    startedHolding: async (input) => {
+      assertLedgerInitialized(paths);
+      const cycle = await resolveCycle(input?.cycle);
+      const cycleId = String(cycle.id ?? '');
+      return cycleHoldingIds(cycle).filter((nodeId) => existsSync(startedMarkerPath(paths, cycleId, nodeId)));
+    },
 
     /**
      * The rehearsal of one settle: the two gates, the shared criteria and the close seam's own previews, answered

@@ -205,3 +205,27 @@ export function startedMarkerPath(paths: PfPaths, cycleId: string, nodeId: strin
 export function ledgerLockPath(paths: PfPaths): string {
   return join(paths.metaDir, 'ledger.lock');
 }
+
+/**
+ * The record tree's own locations as one read: the directory spellings, plus the two file builders a
+ * caller prints (a refusal naming the ticket it expected, a dispatch naming the prompt it wrote). A
+ * caller that has to print a location asks here instead of spelling `.pf` itself — the layout stays in
+ * this file.
+ */
+export interface PfLocations {
+  readonly paths: PfPaths;
+  /** One handoff ticket: `<pf>/signals/<line>/<node>.json`. */
+  signal(cycleId: string, nodeId: string): string;
+  /** One dispatch's prompt: `<pf>/meta/launch/<line>/<node>/prompt.txt`. */
+  launchPrompt(cycleId: string, nodeId: string): string;
+}
+
+/** The record tree's locations of one project root, as one read. */
+export function recordLocations(projectRoot: string): PfLocations {
+  const paths = pfPaths(projectRoot);
+  return {
+    paths,
+    signal: (cycleId, nodeId) => signalPath(paths, cycleId, nodeId),
+    launchPrompt: (cycleId, nodeId) => launchPromptPath(paths, cycleId, nodeId),
+  };
+}

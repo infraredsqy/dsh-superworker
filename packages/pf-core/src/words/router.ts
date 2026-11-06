@@ -10,15 +10,21 @@
  * Nothing here is a second implementation of anything: a word either lands on an engine action
  * (through the verbs modules) or on the plugin that declared it. The three words that are answers
  * about the *process* — the checkout's doctor, its version, and the merge driver's process hand-off —
- * belong to the transport layer that carries this library and are not routed here.
+ * are routed here like every other word; what the transport in front of this layer decides is whether
+ * it carries them, not whether this table does.
  */
-import { useConfigKnobs, specOf, rowFor, groupFor } from './spec';
-import { CORE_HELP_WORDS, CORE_SELF_VERBS } from './core-words';
-import { helpText, parse, usageError } from './argparse';
+import { specOf, rowFor, groupFor } from './spec';
+import { CORE_COMMAND_WORDS, CORE_HELP_WORDS, CORE_SELF_VERBS } from './core-words';
+import { helpText, listingBlock, parse, senseColumnOf, usageError, wrap } from './argparse';
+import type { ListingGeometry } from './argparse';
 import { handleOf, projectRootOf, refuse } from './out';
+import type { VerbHandler } from './out';
+import { TABLE_TOP } from './table';
 import * as verbs from './verbs';
-import type { WordRow, WordSpec } from './types';
-import type { WordsIO } from './types';
+import { planVerb } from './plan';
+import { settleVerb } from './settle';
+import { advanceVerb, dispatchVerb } from './advance';
+import type { VerbAnswer, VerbCall, WordRow, WordSpec, WordsIO } from './types';
 
 /** The words this layer answers before it consults any table: the listing and the two help flags (one spelling, shared with the core's own word set). */
 const HELP_WORDS = CORE_HELP_WORDS;
@@ -30,72 +36,75 @@ const CORE_CONFIG_KEYS = ['max_agents', 'test_tier', 'worktree_mode'];
 const SELF_VERBS = CORE_SELF_VERBS;
 
 /**
- * The verbs: word → the row found in the table (its flags and values come off that one table)
- * plus the handler that answers it. This is the verb layer; a group's verbs live one level in.
- * The merge driver's process hand-off is the transport layer's own word; it prints in the listing and
- * is answered there.
+ * Every routed word and the handler that answers it: the top-level verbs by their word, a group's
+ * verbs as `"<group> <verb>"`. The references are typed, so a renamed handler is a compile error
+ * rather than a word that only degrades to "not wired" at run time.
  */
-const VERB_ROUTES: Record<string, string> = {
-  init: 'initVerb',
-  register: 'registerVerb',
-  plan: 'planVerb',
-  hold: 'holdVerb',
-  settle: 'settleVerb',
-  advance: 'advanceVerb',
-  dispatch: 'dispatchVerb',
-  'clean-temp': 'cleanTempVerb',
-  handoff: 'handoffVerb',
-  doctor: 'doctorVerb',
-  version: 'versionVerb',
-  'merge-ledger': 'mergeLedgerVerb',
-};
-
-/** The handlers of a group's verbs, by `"<group> <verb>"`. */
-const GROUP_HANDLERS: Record<string, string> = {
-  'cycle create': 'cycleCreateVerb',
-  'cycle start': 'cycleStartVerb',
-  'cycle rename': 'cycleRenameVerb',
-  'cycle status': 'cycleStatusVerb',
-  'cycle policy': 'cyclePolicyVerb',
-  'cycle list': 'cycleListVerb',
-  'cycle current': 'cycleCurrentVerb',
-  'cycle show': 'cycleShowVerb',
-  'cycle close': 'cycleCloseVerb',
-  'cycle retry': 'cycleRetryVerb',
-  'dag add': 'dagAddVerb',
-  'dag rm': 'dagRmVerb',
-  'dag update': 'dagUpdateVerb',
-  'dag depend': 'dagDependVerb',
-  'dag undepend': 'dagUndependVerb',
-  'dag status': 'dagStatusVerb',
-  'dag approve': 'dagApproveVerb',
-  'dag revive': 'dagReviveVerb',
-  'dag list': 'dagListVerb',
-  'dag info': 'dagInfoVerb',
-  'dag context': 'dagContextVerb',
-  'dag search': 'dagSearchVerb',
-  'dag open': 'dagOpenVerb',
-  'dag validate': 'dagValidateVerb',
-  'dag help': 'dagHelpVerb',
-  'config get': 'configGetVerb',
-  'config set': 'configSetVerb',
-  'config unset': 'configUnsetVerb',
-  'config list': 'configListVerb',
-  'instruction add': 'instructionAddVerb',
-  'instruction list': 'instructionListVerb',
-  'instruction resolve': 'instructionResolveVerb',
-  'instruction rm': 'instructionRmVerb',
-  'instruction revive': 'instructionReviveVerb',
-  'session show': 'sessionShowVerb',
-  'session list': 'sessionListVerb',
-};
+const HANDLERS: Record<string, VerbHandler> = {
+  init: verbs.initVerb,
+  register: verbs.registerVerb,
+  plan: planVerb,
+  hold: verbs.holdVerb,
+  settle: settleVerb,
+  advance: advanceVerb,
+  dispatch: dispatchVerb,
+  'clean-temp': verbs.cleanTempVerb,
+  handoff: verbs.handoffVerb,
+  doctor: verbs.doctorVerb,
+  version: verbs.versionVerb,
+  'merge-ledger': verbs.mergeLedgerVerb,
+  'cycle create': verbs.cycleCreateVerb,
+  'cycle start': verbs.cycleStartVerb,
+  'cycle rename': verbs.cycleRenameVerb,
+  'cycle status': verbs.cycleStatusVerb,
+  'cycle policy': verbs.cyclePolicyVerb,
+  'cycle list': verbs.cycleListVerb,
+  'cycle current': verbs.cycleCurrentVerb,
+  'cycle show': verbs.cycleShowVerb,
+  'cycle close': verbs.cycleCloseVerb,
+  'cycle retry': verbs.cycleRetryVerb,
+  'dag add': verbs.dagAddVerb,
+  'dag rm': verbs.dagRmVerb,
+  'dag update': verbs.dagUpdateVerb,
+  'dag depend': verbs.dagDependVerb,
+  'dag undepend': verbs.dagUndependVerb,
+  'dag status': verbs.dagStatusVerb,
+  'dag approve': verbs.dagApproveVerb,
+  'dag revive': verbs.dagReviveVerb,
+  'dag list': verbs.dagListVerb,
+  'dag info': verbs.dagInfoVerb,
+  'dag context': verbs.dagContextVerb,
+  'dag search': verbs.dagSearchVerb,
+  'dag open': verbs.dagOpenVerb,
+  'dag validate': verbs.dagValidateVerb,
+  'dag help': verbs.dagHelpVerb,
+  'config get': verbs.configGetVerb,
+  'config set': verbs.configSetVerb,
+  'config unset': verbs.configUnsetVerb,
+  'config list': verbs.configListVerb,
+  'instruction add': verbs.instructionAddVerb,
+  'instruction list': verbs.instructionListVerb,
+  'instruction resolve': verbs.instructionResolveVerb,
+  'instruction rm': verbs.instructionRmVerb,
+  'instruction revive': verbs.instructionReviveVerb,
+  'session show': verbs.sessionShowVerb,
+  'session list': verbs.sessionListVerb,
+} satisfies Record<string, VerbHandler>;
 
 // ── the top-level listing ───────────────────────────────────────────────────
 
-/** The listing's numbers: where the word column opens, its floor, and where the sense wraps. */
-const USAGE_MARGIN = 12;
-const USAGE_COLUMN = 42;
-const USAGE_WIDTH = 100;
+/**
+ * The listing's own geometry: twelve spaces in, a hundred columns wide, one blank between the word
+ * cell and its sense, and a sense column that never opens left of 42. The rows are laid out by the
+ * same printer the help pages use (`listingBlock`), only with these numbers.
+ */
+const LISTING: ListingGeometry = {
+  margin: 12,
+  width: 100,
+  gap: 1,
+  floor: 42,
+  ceiling: Number.POSITIVE_INFINITY,
+};
 
 /** The shape description printed above the tables, then the tables grown from the router's rows. */
 const USAGE_SHAPE = `pathfinder -- the agent pipeline's own words
@@ -105,52 +114,11 @@ const USAGE_SHAPE = `pathfinder -- the agent pipeline's own words
   \`cycle list\`, \`dag add\` are a group's verbs.
 `;
 
-/** Where one table's sense column opens: the widest word of that table plus one blank. */
-function usageColumn(pairs: ReadonlyArray<readonly [string, string]>): number {
-  const widest = pairs.reduce((wide, [left]) => Math.max(wide, [...left].length), 0);
-  return USAGE_MARGIN + Math.max(USAGE_COLUMN - USAGE_MARGIN, widest + 1);
-}
-
-/** One sense as the lines it prints beside the word column. */
-function senseLines(text: unknown, column: number): string[] {
-  const room = USAGE_WIDTH - column;
-  if (room <= 0) return [String(text)];
-  const words = String(text).replace(/\s+/gu, ' ').trim().split(' ');
-  const lines: string[] = [];
-  let line = '';
-  for (const word of words) {
-    if (line === '') {
-      line = word;
-      continue;
-    }
-    if ([...line].length + 1 + [...word].length <= room) {
-      line += ` ${word}`;
-      continue;
-    }
-    lines.push(line);
-    line = word;
-  }
-  if (line !== '') lines.push(line);
-  return lines.length === 0 ? [''] : lines;
-}
-
-/** The word column and the sense column of one table. */
-function usageRows(pairs: ReadonlyArray<readonly [string, string]>): string {
-  const column = usageColumn(pairs);
-  const out: string[] = [];
-  for (const [left, right] of pairs) {
-    const body = senseLines(right, column);
-    out.push(`${' '.repeat(USAGE_MARGIN)}${left.padEnd(column - USAGE_MARGIN)}${body[0]}`);
-    for (const line of body.slice(1)) out.push(`${' '.repeat(column)}${line}`);
-  }
-  return out.join('\n');
-}
-
 /** The plugin command words the installed plugins claim, or nothing when none are installed. */
 async function pluginCommands(io: WordsIO) {
   try {
     const root = projectRootOf(undefined, io.root);
-    const pf = await handleOf(root, io);
+    const pf = handleOf(root, io);
     return await pf.conductor.pluginCommands();
   } catch {
     // The listing answers even when the folder behind it cannot be read; `doctor` names that.
@@ -158,37 +126,15 @@ async function pluginCommands(io: WordsIO) {
   }
 }
 
-/** The verb table's own sentences, in the order the listing prints them. */
-const VERB_SENSE: Record<string, string> = {
-  init: 'put the ledger in place (run once per project)',
-  register: "write the ledger's git merge driver into this project",
-  plan: 'read what the next step is, and write nothing',
-  hold: "put the named nodes in this line's hand (the claim)",
-  settle: "record one node's end: the verdict, the graph mark, the close-time seam",
-  advance: 'carry the line one step: claim the free slots and open their sessions',
-  dispatch: 'start the session for the nodes the cycle holds',
-  'clean-temp': "list (or remove) every node's temp/ directory",
-  handoff: "a worker's own closing call for the line it just ran",
-  'merge-ledger': 'the three-way merge driver git calls',
-};
-
-/** The group table's own sentences. */
-const GROUP_SENSE: Record<string, string> = {
-  cycle: 'one line of work',
-  dag: 'the graph',
-  config: "this machine's and this project's settings",
-  instruction: 'standing user instructions',
-  session: "a node's own conversations, which live on this machine only",
-};
-
-/** One verb's one-line sense: the sentence the table carries for that word. */
-function verbSense(word: string): string {
-  return VERB_SENSE[word] ?? '';
+/** One pair of the listing as the printer's row: the word column and the sense beside it. */
+function rowOf([invocation, sense]: readonly [string, string]): { invocation: string; sense: string } {
+  return { invocation, sense };
 }
 
-/** One group's one-line sense. */
-function groupSense(word: string): string {
-  return GROUP_SENSE[word] ?? '';
+/** One table of the listing, laid out by the shared printer. */
+function listingText(rows: ReadonlyArray<readonly [string, string]>): string {
+  const cells = rows.map(rowOf);
+  return listingBlock(cells, senseColumnOf(cells, LISTING), LISTING).join('\n');
 }
 
 /** The listing rows of the words this layer carries, static part. */
@@ -207,46 +153,43 @@ export interface WordsIndex {
 
 /**
  * The static index of the words: the data both the top listing and the agent-facing help page render.
- * The plugin words are a project's own reading (`answer(["--help"])` carries them); everything here is
- * the layer's own table.
+ * The word order is the table's top, and each line of sense is the row's own `summary` — one home per
+ * fact, so adding a word is adding a row. The plugin words are a project's own reading
+ * (`answer(["--help"])` carries them); everything here is the layer's own table.
  */
 export function describe(): WordsIndex {
   return {
     shape: USAGE_SHAPE,
     self: SELF_VERBS.map(([, display, blurb]) => [display, blurb] as const),
-    verbs: ['init', 'register', 'plan', 'hold', 'settle', 'advance', 'dispatch', 'clean-temp', 'handoff', 'merge-ledger'].map(
-      (word) => [word, verbSense(word)] as const,
-    ),
-    groups: ['cycle', 'dag', 'config', 'instruction', 'session'].map((word) => [word, groupSense(word)] as const),
-    layout: { margin: USAGE_MARGIN, column: USAGE_COLUMN, width: USAGE_WIDTH },
+    verbs: TABLE_TOP.verbs.map((word) => [word, rowFor(word)?.summary ?? ''] as const),
+    groups: TABLE_TOP.groups.map((word) => [word, groupFor(word)?.summary ?? ''] as const),
+    layout: { margin: LISTING.margin, column: LISTING.floor, width: LISTING.width },
   };
 }
 
 /** `--help`: the shape of the listing, then every word the router walks. */
 export async function topHelp(io: WordsIO): Promise<string> {
   const index = describe();
-  const verbRows = index.verbs.map(([word]) => [word, verbSense(word)] as const);
-  const groupRows = index.groups.map(([word]) => [`${word} <verb>`, groupSense(word)] as const);
-  const plugins = (await pluginCommands(io)).filter(
-    (entry: { name: string }) => !(entry.name in VERB_ROUTES) && !(entry.name in GROUP_SENSE),
-  );
+  const groupRows = index.groups.map(([word, sense]) => [`${word} <verb>`, sense] as const);
+  const plugins = (await pluginCommands(io)).filter((entry) => !CORE_COMMAND_WORDS.has(entry.name));
   let text =
     USAGE_SHAPE +
     '\n  the tool itself:\n' +
-    usageRows(index.self) +
+    listingText(index.self) +
     '\n\n  verbs:    (each one takes the rest of the line as `args`)\n' +
-    usageRows(verbRows) +
+    listingText(index.verbs) +
     "\n\n  groups:   (a group's verbs are the group's own: `help` with the group answers them)\n" +
-    usageRows(groupRows);
+    listingText(groupRows);
   if (plugins.length > 0) {
     const rows = plugins.map((entry) => [entry.name, entry.summary ?? ''] as const);
-    const column = usageColumn(rows);
+    const cells = rows.map(rowOf);
+    const column = senseColumnOf(cells, LISTING);
     const title =
       '(a word an installed plugin contributes, answered by that plugin: `help` with the word\n' +
-      senseLines('answers its own page, and `doctor` lists what is installed)', column)
+      wrap('answers its own page, and `doctor` lists what is installed)', Math.max(LISTING.width - column, 11))
         .map((line) => `${' '.repeat(column)}${line}`)
         .join('\n');
-    text += `\n\n  plugins:  ${title}\n${usageRows(rows)}`;
+    text += `\n\n  plugins:  ${title}\n${listingText(rows)}`;
   }
   return (
     text +
@@ -258,25 +201,18 @@ export async function topHelp(io: WordsIO): Promise<string> {
 
 // ── the router ──────────────────────────────────────────────────────────────
 
-/** The routing table's word → handler wiring, read once. */
-function handlerOf(name: string | undefined): ((call: any) => any) | undefined {
-  if (name === undefined) return undefined;
-  return (verbs as unknown as Record<string, ((call: any) => any) | undefined>)[name];
-}
-
 /** Run one parsed line: the help word, a refusal, or the handler's answer. */
-async function runRow(spec: WordSpec, parsed: any, io: WordsIO) {
+async function runRow(spec: WordSpec, parsed: any, io: WordsIO, knobs?: readonly string[]) {
   if (parsed.help === true) return { stdout: helpText(spec) };
   if (parsed.error !== undefined) {
     return { code: 2, stderr: usageError(spec, parsed.error) };
   }
   const key = spec.group === undefined ? spec.word : `${spec.group} ${spec.word}`;
-  const name = GROUP_HANDLERS[key] ?? VERB_ROUTES[key];
-  const handler = handlerOf(name);
+  const handler = HANDLERS[key];
   if (handler === undefined) {
     return refuse(`\`${key}\` is not wired to an engine action yet`, 2);
   }
-  return handler({
+  const call: VerbCall = {
     values: parsed.values ?? {},
     positionals: parsed.positionals ?? [],
     spec,
@@ -284,7 +220,9 @@ async function runRow(spec: WordSpec, parsed: any, io: WordsIO) {
     specOf,
     groupFor,
     io,
-  });
+    ...(knobs === undefined ? {} : { configKnobs: knobs }),
+  };
+  return handler(call);
 }
 
 /** The name a group's refusal prints for its sub-command: the group's own `dest`, spelled per group. */
@@ -319,14 +257,14 @@ async function runGroupWord(groupSpec: WordSpec, rest: readonly string[], io: Wo
 }
 
 /** One answer → the two streams and the exit code. */
-function settle(answer: { code?: number; stdout?: string; stderr?: string }) {
+function settle(answer: VerbAnswer) {
   return { code: answer.code ?? 0, stdout: answer.stdout ?? '', stderr: answer.stderr ?? '' };
 }
 
 /** The plugin command one word names, or nothing (a word no installed plugin claims). */
 async function pluginWord(word: string, io: WordsIO) {
   const root = projectRootOf(undefined, io.root);
-  const pf = await handleOf(root, io);
+  const pf = handleOf(root, io);
   const entries = await pf.conductor.pluginCommands();
   return entries.find((entry) => entry.name === word);
 }
@@ -343,7 +281,7 @@ async function pluginWord(word: string, io: WordsIO) {
  */
 async function runPluginWord(entry: { plugin: string }, word: string, rest: readonly string[], io: WordsIO) {
   const root = projectRootOf(undefined, io.root);
-  const pf = await handleOf(root, io);
+  const pf = handleOf(root, io);
   const answer = await pf.conductor.pluginCommand({ word, argv: [...rest] });
   if (!answer.ran) {
     if (answer.error !== null) {
@@ -369,7 +307,7 @@ function pluginRefusal(plugin: string, error: string, code: number | null): stri
 async function configKeysOf(io: WordsIO): Promise<string[]> {
   try {
     const root = projectRootOf(undefined, io.root);
-    const pf = await handleOf(root, io);
+    const pf = handleOf(root, io);
     return await pf.config.keys();
   } catch {
     // A folder with no `.pf` of its own still answers its help page, and with the names that folder
@@ -386,9 +324,8 @@ function streamText(text: string | undefined): string {
 }
 
 /**
- * The whole line of words: argv in, one answer out. The words about this process itself — the
- * checkout's doctor, its version, the merge driver's hand-off to the engine's process entry — are the
- * transport layer's own; everything else answers here.
+ * The whole line of words: argv in, one answer out. Every word in the table answers here, the three
+ * about this checkout included — a transport that answers one of them itself simply never asks.
  */
 export async function answer(argv: readonly string[], io: WordsIO): Promise<{ code: number; stdout: string; stderr: string }> {
   if (argv.length === 0 || HELP_WORDS.includes(argv[0] ?? '')) {
@@ -398,24 +335,22 @@ export async function answer(argv: readonly string[], io: WordsIO): Promise<{ co
   const rest = argv.slice(1);
 
   // The settings verbs print the knob names the engine accepts here: the list is read before the row is
-  // turned into a spec, so the help, the usage line and the refusal all carry this run's own names.
-  if (verb === 'config') {
-    useConfigKnobs(await configKeysOf(io));
-  }
+  // turned into a spec, so the help, the usage line and the refusal all carry this run's own names. It
+  // travels with the call (never through module state): one long-lived process answers several projects.
+  const knobs = verb === 'config' ? await configKeysOf(io) : undefined;
 
   const row: WordRow | undefined = rowFor(verb);
   if (row !== undefined) {
-    const parsed = parse(specOf(row), rest);
+    const parsed = parse(specOf(row, knobs), rest);
     if (parsed.verb !== undefined) {
       // A group: the sub-command's own row is what prints and what runs.
-      return settle2(await runRow(parsed.subcommand!, parsed, io));
+      return normalize(settle(await runRow(parsed.subcommand!, parsed, io)));
     }
-    return settle2(await runRow(specOf(row), parsed, io));
+    return normalize(settle(await runRow(specOf(row, knobs), parsed, io, knobs)));
   }
   const group = groupFor(verb);
   if (group !== undefined) {
-    const groupSpec = specOf(group);
-    const answers = await runGroupWord(groupSpec, rest, io);
+    const answers = await runGroupWord(specOf(group, knobs), rest, io);
     return normalize(answers);
   }
   const plugin = await pluginWord(verb, io);
@@ -429,13 +364,8 @@ export async function answer(argv: readonly string[], io: WordsIO): Promise<{ co
   });
 }
 
-/** The answer of one routed word, with its streams spelled the way the transport writes them. */
-function settle2(answer: { code?: number; stdout?: string; stderr?: string }) {
-  return normalize(settle(answer));
-}
-
 /** Normalize one answer's two streams (non-empty, newline-terminated) and keep its exit code. */
-function normalize(answer: { code?: number; stdout?: string; stderr?: string }) {
+function normalize(answer: VerbAnswer) {
   return {
     code: answer.code ?? 0,
     stdout: streamText(answer.stdout),

@@ -7,6 +7,7 @@ import { assertLedgerInitialized } from './initledger';
 import type {
   CycleCloseInput,
   CycleCreateInput,
+  CycleHolder,
   CyclePolicySet,
   CyclePolicyValue,
   CycleStanding,
@@ -561,6 +562,25 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
       const ledger = await readState();
       const record = findCycle(ledger, id);
       return { ...record, holding: holdingOf(record) };
+    },
+
+    /**
+     * Which line holds one node now, and which lines have already walked it. One record judgement, in
+     * one place: the same reading the closing gate asks (`holding` / `path`), handed back to whoever
+     * has to say it in words. A read verb: no lock, no write.
+     */
+    async holder(node: string): Promise<CycleHolder> {
+      const { cycles } = await readState();
+      const lines = cycles.map((record) => ({ ...record, holding: holdingOf(record) }));
+      const holders = lines.filter((line) => holdingOf(line).some((item) => item.id === node));
+      const closedOn = lines.filter((line) =>
+        ((line.path ?? []) as readonly { node?: unknown }[]).some((step) => step.node === node),
+      );
+      return {
+        holders,
+        closedOn,
+        lines,
+      };
     },
 
     /** One line's effective policy set: the defaults, then whatever this line states, in one reading. */

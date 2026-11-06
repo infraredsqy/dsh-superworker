@@ -7,10 +7,12 @@
  */
 import { readFileSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
+import { PfError } from '../errors';
+import type { PfErrorCode } from '../errors';
 import { open } from '../open';
 import type { Pf } from '../open';
 import { short as shortOf } from '../graph';
-import type { WordsIO, WordProject } from './types';
+import type { VerbAnswer, VerbCall, WordsIO } from './types';
 
 const encoder = new TextEncoder();
 
@@ -64,16 +66,111 @@ export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Wrap one handler so an engine refusal lands as its sentence plus that door's exit code. */
-export function guarded(
-  body: (call: any) => any,
-  exitCode = 1,
-): (call: any) => Promise<{ code?: number; stdout?: string; stderr?: string }> {
-  return async (call: any) => {
+// ── the exit codes ──────────────────────────────────────────────────────────
+//
+// One table, in one place. `2` is "this line cannot be taken" — a usage refusal, a record that does
+// not fit the line, or a record that cannot be read at all (plan / settle / advance answer a read
+// failure here, as they always have); `3` is the session that could not be opened after the word
+// began (dispatch's failures after it began, a read failure included); `1` is everything else that
+// failed. A word's own code is the fallback. The code table only ever **tightens** a word's own
+// tier (`1` → `2`): it reaches the refusals the engine names with a `PfError` code saying the line
+// does not fit, and it never lowers a word's own `2` or `3` into `1` — the four disk-failure codes
+// (`parse_failure`, `invalid_utf8`, `lock_timeout`, `invalid_config_file`) are deliberately absent
+// from it, so a record that cannot be read keeps the word's own tier. A failure the engine throws
+// as a plain `Error` (a record verb's "no such line", for one) never gets here either and keeps the
+// word's own code, so the same sentence can answer `2` from one word and `1` from another.
+
+/** The three numbers this layer answers with. */
+export const EXIT = {
+  /** The word failed: a refusal with no more specific answer, a write that did not land. */
+  failed: 1,
+  /** This line cannot be taken: a usage refusal, or a record that refuses the line as written. */
+  refused: 2,
+  /** The session could not be opened (the opener failed after the word began). */
+  noSession: 3,
+} as const;
+
+/** The words that answer with a code other than `failed`; a word absent here answers `failed`. */
+const WORD_EXIT_CODES: Readonly<Record<string, number>> = {
+  plan: EXIT.refused,
+  settle: EXIT.refused,
+  advance: EXIT.refused,
+  handoff: EXIT.refused,
+  dispatch: EXIT.noSession,
+};
+
+/**
+ * The engine's own refusal codes → the code an answer takes. A line the record cannot accept is a
+ * refusal like any other (`2`), even from a word whose own tier is `1`. The disk-failure codes are
+ * absent on purpose: a record that cannot be read is not a refusal of the line — no line can be
+ * taken at all — so those fall through to the word's own tier (`exitCodeOf` below), and the table
+ * never answers below what the word itself answers.
+ */
+const ERROR_EXIT_CODES: Readonly<Partial<Record<PfErrorCode, number>>> = {
+  unknown_key: EXIT.refused,
+  invalid_value: EXIT.refused,
+  layer_not_allowed: EXIT.refused,
+  cycle_not_found: EXIT.refused,
+  node_not_found: EXIT.refused,
+  ambiguous_holder: EXIT.refused,
+  not_a_project: EXIT.refused,
+  worktree_mode_unsupported: EXIT.refused,
+  dispatch_blocked: EXIT.refused,
+  nothing_to_settle: EXIT.refused,
+  not_holding: EXIT.refused,
+};
+
+/**
+ * The code one failed word answers with: the engine's named-refusal code when it has one (the table
+ * above only tightens), else the word's own tier — a read failure of the records lands here, so
+ * `plan` / `settle` / `advance` answer `2` and `dispatch` `3`, exactly as their catches used to.
+ */
+export function exitCodeOf(verb: string, error: unknown): number {
+  if (error instanceof PfError) return ERROR_EXIT_CODES[error.code] ?? WORD_EXIT_CODES[verb] ?? EXIT.failed;
+  return WORD_EXIT_CODES[verb] ?? EXIT.failed;
+}
+
+// ── the one skeleton ────────────────────────────────────────────────────────
+
+/**
+ * What one verb's body is handed: the parsed line, and the two things every word used to open for
+ * itself — the project root it acts on and that project's engine handle. A word that answers without
+ * a record (`version`, `dag help`, the merge driver) simply does not read them: opening a handle
+ * touches no disk.
+ */
+export interface VerbScene extends VerbCall {
+  /** The project root this word acts on: `--project`, else the caller's own (worktrees resolved). */
+  readonly root: string;
+  /** The engine handle of that root, opened on this call's own seams. */
+  readonly pf: Pf;
+  /** The first word of one positional cell — `undefined` when the line did not give one. */
+  readonly at: (index: number) => string | undefined;
+}
+
+/** One word's body: the engine call and the lines it answers with, nothing else. */
+export type VerbBody = (scene: VerbScene) => Promise<VerbAnswer> | VerbAnswer;
+
+/** One wired word: what the router's table holds for it. */
+export type VerbHandler = (call: VerbCall) => Promise<VerbAnswer>;
+
+/**
+ * Wrap one word's body: the project root and the handle are opened here, once, and a refusal thrown
+ * anywhere inside lands as that sentence plus the exit code the table above gives it. A word writes
+ * only its answer.
+ */
+export function run(verb: string, body: VerbBody): VerbHandler {
+  return async (call: VerbCall): Promise<VerbAnswer> => {
     try {
-      return await body(call);
+      const root = projectRootOf(call.values.project, call.io.root);
+      const pf = handleOf(root, call.io);
+      return await body({
+        ...call,
+        root,
+        pf,
+        at: (index: number) => call.positionals[index]?.[0],
+      });
     } catch (error) {
-      return refuse(messageOf(error), exitCode);
+      return refuse(messageOf(error), exitCodeOf(verb, error));
     }
   };
 }
@@ -127,12 +224,6 @@ export function handleOf(root: string, io: WordsIO): Pf {
     ...(io.homeDir === undefined ? {} : { homeDir: io.homeDir }),
     ...(io.pluginsDir === undefined ? {} : { pluginsDir: io.pluginsDir }),
   });
-}
-
-/** The project root and the handle of one call, on the seams the caller handed in. */
-export async function project(value: string | undefined, io: WordsIO): Promise<WordProject> {
-  const root = projectRootOf(value, io.root);
-  return { root, pf: await handleOf(root, io) };
 }
 
 /** The tag list of one filter cell: comma-separated, empty words dropped. */

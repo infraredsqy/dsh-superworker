@@ -154,23 +154,55 @@ export function invocationOf(action: SpecAction): string {
 }
 
 /** One row of a section listing: the word column's invocation, the sense beside it, and its indent. */
-interface SectionRow {
+export interface SectionRow {
   readonly invocation: string;
   readonly sense?: string;
   readonly indent?: number;
 }
 
 /**
+ * One two-column listing's geometry: where the word column opens, how wide the body is, one blank
+ * between the word cell and its sense, and the range the sense column may open in. Both printers in
+ * this layer (a help page's sections and the top-level index) are laid out off one of these — the
+ * numbers differ, the laying out does not.
+ */
+export interface ListingGeometry {
+  /** Where the word column opens. */
+  readonly margin: number;
+  /** The printed body's width: the sense wraps in what the sense column leaves. */
+  readonly width: number;
+  /** Blank columns kept between the word cell and the sense. */
+  readonly gap: number;
+  /** The narrowest the sense column may open. */
+  readonly floor: number;
+  /** The widest it may open. */
+  readonly ceiling: number;
+}
+
+/** A help page's own geometry: two spaces in, 78 columns wide, a sense column between 2 and 24. */
+export const SECTION_GEOMETRY: ListingGeometry = {
+  margin: MARGIN,
+  width: WIDTH,
+  gap: 2,
+  floor: MARGIN,
+  ceiling: MAX_HELP_POSITION,
+};
+
+/**
  * One section: the word column and the sense column, one row per action; a sense that does not fit the
  * row wraps under itself. `senseColumn` is fixed for the whole section so every row lines up, and a
  * nested row (a group's verbs) opens two columns further in.
  */
-function sectionBlock(title: string, rows: readonly SectionRow[], senseColumn: number): string[] {
-  const width = Math.max(WIDTH - senseColumn, 11);
-  const lines: string[] = [title];
+export function listingBlock(
+  rows: readonly SectionRow[],
+  senseColumn: number,
+  geometry: ListingGeometry = SECTION_GEOMETRY,
+): string[] {
+  const width = Math.max(geometry.width - senseColumn, 11);
+  const lines: string[] = [];
   for (const row of rows) {
-    const indent = row.indent ?? MARGIN;
-    const actionWidth = senseColumn - indent - 2;
+    const indent = row.indent ?? geometry.margin;
+    const actionWidth = senseColumn - indent - geometry.gap;
     const invocation = row.invocation;
     const sense = row.sense ?? '';
     if (sense === '') {
@@ -180,7 +212,8 @@ function sectionBlock(title: string, rows: readonly SectionRow[], senseColumn: n
     const wrapped = wrap(sense, width);
     if ([...invocation].length <= actionWidth) {
       lines.push(
-        `${' '.repeat(indent)}${invocation}${' '.repeat(actionWidth - [...invocation].length)}  ${wrapped[0]}`,
+        `${' '.repeat(indent)}${invocation}${' '.repeat(actionWidth - [...invocation].length)}` +
+          `${' '.repeat(geometry.gap)}${wrapped[0]}`,
       );
       for (const line of wrapped.slice(1)) lines.push(' '.repeat(senseColumn) + line);
     } else {
@@ -191,11 +224,19 @@ function sectionBlock(title: string, rows: readonly SectionRow[], senseColumn: n
   return lines;
 }
 
-/** The sense column of one section: the widest word of that section, under the printer's ceiling. */
-function senseColumnOf(rows: readonly SectionRow[]): number {
+/** The sense column of one listing: the widest word of that listing, inside the geometry's bounds. */
+export function senseColumnOf(
+  rows: readonly SectionRow[],
+  geometry: ListingGeometry = SECTION_GEOMETRY,
+): number {
   let widest = 0;
-  for (const row of rows) widest = Math.max(widest, [...row.invocation].length + (row.indent ?? MARGIN));
-  return Math.min(widest + 2, MAX_HELP_POSITION);
+  for (const row of rows) widest = Math.max(widest, [...row.invocation].length + (row.indent ?? geometry.margin));
+  return Math.max(geometry.floor, Math.min(widest + geometry.gap, geometry.ceiling));
+}
+
+/** One titled section of a help page. */
+function sectionBlock(title: string, rows: readonly SectionRow[], senseColumn: number): string[] {
+  return [title, ...listingBlock(rows, senseColumn)];
 }
 
 /** One command's full help text, as printed. */

@@ -69,3 +69,15 @@ export function manifestPathOf(dshHome: string = dshHomeOf()): string {
 export function shippedPluginsDir(): string {
   return fileURLToPath(new URL(`../../packages/pf-core/plugins/`, import.meta.url))
 }
+
+/**
+ * The root of the package this line is deployed as: where its `package.json` sits.
+ *
+ * The same relative walk answers in both trees (`src/host/…` and the bundled `lib/host/index.js`):
+ * two levels up is the package root either way. This is the `packageRoot` seam the words layer is
+ * handed — the words about this checkout (`version`, the first line of `doctor`) print where the
+ * caller stands rather than guessing it from the engine module's own location.
+ */
+export function shippedPackageRoot(): string {
+  return fileURLToPath(new URL('../../', import.meta.url))
+}

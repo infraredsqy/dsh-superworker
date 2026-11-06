@@ -41,12 +41,29 @@ const notBuilt = `packages/pf-core/dist/index.mjs is not built yet; npm test bui
 const { default: tsdownConfig } = await import('../tsdown.config.ts')
 const neverBundle = tsdownConfig.deps?.neverBundle ?? []
 
-/** Every specifier the bundle still reaches for: `from '…'` and a bare `import '…'`. */
+/**
+ * Every specifier the bundle still reaches for: `from '…'` and a bare `import '…'`.
+ *
+ * A module specifier is one word between the two quotes of one style, and the whole match is spelled
+ * out here: no whitespace inside, no brace, and the closing quote is the same style the opening one
+ * was. The engine's own word table travels in the bundle as literal text too, and a sentence that
+ * happens to end in `from` sits in front of a quote exactly where a specifier would
+ * (`… nothing to pick from"`), so the pattern itself refuses what a specifier cannot be. Tightening
+ * the pattern matters: a filter applied after a looser match would swallow `from "pf-core"` sitting
+ * right behind such a sentence, and the scan would answer green to the one accident it exists for.
+ */
 function outsideSpecifiers(code) {
   const out = new Set()
-  for (const match of code.matchAll(/(?:from|import)\s*(["'])([^"']+)\1/gu)) out.add(match[2])
+  for (const match of code.matchAll(/(?:from|import)\s*(["'])([^\s"'{}[\]]+)\1/gu)) out.add(match[2])
   return [...out]
 }
+
+test('包面：扫描不放过紧贴散文的 specifier——散文里的 `from"` 不能把下一条外置吞掉', () => {
+  // The accident this whole file exists for, placed where the bundle's own prose makes it easiest to
+  // lose: a sentence ending in `from"`, then an import spelled with the same quote style right behind
+  // it. A scan that matches loosely and then filters its findings answers `[]` here.
+  assert.deepEqual(outsideSpecifiers('nothing to pick from" from "pf-core"'), ['pf-core'])
+})
 
 test('包面：引擎是本仓的 workspace 包，宿主半身按名字就能到它', () => {
   const link = join(root, 'node_modules', 'pf-core')

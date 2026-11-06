@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { open } from '../src/open';
 
 /**
- * No stub left on the surface: all fifty-seven verbs across the seven namespaces are methods, and
+ * No stub left on the surface: all sixty verbs across the seven namespaces are methods, and
  * the source tree has no "not implemented yet" path either.
  * The probe handle's root is a made-up address; the assertions here touch only methods and source
  * text, and nothing lands on disk.
@@ -35,14 +35,14 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
 }
 
 describe('verbs on the handle', () => {
-  it('seven namespaces, fifty-seven verbs, none missing', () => {
+  it('seven namespaces, sixty verbs, none missing', () => {
     let count = 0;
     for (const [, ns] of SURFACE) {
       for (const value of Object.values(ns)) {
         if (typeof value === 'function') count += 1;
       }
     }
-    expect(count).toBe(3 + 16 + 13 + 5 + 5 + 3 + 13);
+    expect(count).toBe(3 + 16 + 14 + 5 + 5 + 3 + 14);
   });
 
   it("each level's verb names match the frozen surface", () => {
@@ -62,7 +62,7 @@ describe('verbs on the handle', () => {
         'search', 'setStatus', 'specPath', 'unlink', 'update', 'validate',
       ].sort(),
       'ledger.cycles': [
-        'close', 'create', 'current', 'hold', 'list', 'policies', 'rename', 'retry',
+        'close', 'create', 'current', 'hold', 'holder', 'list', 'policies', 'rename', 'retry',
         'setPolicy', 'setStatus', 'show', 'standing', 'start',
       ].sort(),
       'ledger.instructions': ['add', 'list', 'remove', 'resolve', 'revive'].sort(),
@@ -70,7 +70,7 @@ describe('verbs on the handle', () => {
       sessions: ['list', 'note', 'show'],
       conductor: [
         'advance', 'close', 'dispatch', 'dispatchPreview', 'doctor', 'handoff', 'handoffForm',
-        'next', 'pluginCommand', 'pluginCommands', 'prepare', 'settle', 'settlePreview',
+        'next', 'pluginCommand', 'pluginCommands', 'prepare', 'settle', 'settlePreview', 'startedHolding',
       ],
     });
   });

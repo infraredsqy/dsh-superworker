@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -183,6 +183,43 @@ describe('a process without an opener', () => {
     expect(receipt.spawned).toEqual([]);
     expect(receipt.pinned).toHaveLength(1);
     expect(existsSync(join(root, '.pf', 'meta', 'launch', 'c1', receipt.pinned[0], 'started'))).toBe(false);
+  });
+});
+
+describe('a record that cannot be read: every word answers its own tier', () => {
+  it('plan, settle and advance refuse with 2 and dispatch with 3, writing not one byte', async () => {
+    const { root, io } = project();
+    await call(io, ['init']);
+    const broken = '{ this record does not parse';
+    writeFileSync(join(root, '.pf', 'state.json'), broken);
+    const plan = await answer(['plan', '--cycle', 'c1'], io);
+    expect(plan.code).toBe(2);
+    expect(plan.stderr).toContain('parse failure');
+    const settle = await answer(['settle', 'nosuch', '--cycle', 'c1'], io);
+    expect(settle.code).toBe(2);
+    const advance = await answer(['advance', '--cycle', 'c1'], io);
+    expect(advance.code).toBe(2);
+    const dispatch = await answer(['dispatch', 'c1'], io);
+    expect(dispatch.code).toBe(3);
+    // One corrupted record, four answers, and not one byte of it rewritten by any of the words.
+    expect(readFileSync(join(root, '.pf', 'state.json'), 'utf8')).toBe(broken);
+  });
+});
+
+describe('dag update: the word that names no change', () => {
+  it('answers the refusal code with its own sentence on stderr, and writes not one byte', async () => {
+    const { root, io } = project();
+    await call(io, ['init']);
+    await call(io, ['dag', 'add', 'the first node']);
+    const [id] = graphIds(io);
+    const before = readFileSync(join(root, '.pf', 'ideas.json'), 'utf8');
+    // No flag at all: a line this word cannot take. It is a refusal, never a success code carrying
+    // an error sentence (the shape this word used to answer with).
+    const refused = await answer(['dag', 'update', id!], io);
+    expect(refused.stdout).toBe('');
+    expect(refused.code).toBe(2);
+    expect(refused.stderr.startsWith('Error: No changes:')).toBe(true);
+    expect(readFileSync(join(root, '.pf', 'ideas.json'), 'utf8')).toBe(before);
   });
 });
 

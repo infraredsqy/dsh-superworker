@@ -54,90 +54,31 @@ function optionsOf(row: WordRow): SpecAction[] {
 }
 
 /**
- * The name a refusal prints for one positional. The listings print a choice cell's value list instead
- * of a name, so the name a message uses (`argument key: invalid choice ...`) is carried here, once per
- * command, in the order that command's positionals are declared.
- */
-const POSITIONAL_NAMES: Record<string, readonly string[]> = {
-  handoff: ['cycle', 'node', 'status'],
-  'dag add': ['title', 'description'],
-  'dag status': ['uuid', 'status'],
-  'dag update': ['uuid'],
-  'dag rm': ['uuid'],
-  'dag depend': ['uuid'],
-  'dag undepend': ['uuid', 'dep'],
-  'dag approve': ['uuid'],
-  'dag revive': ['uuid'],
-  'dag info': ['uuid'],
-  'dag context': ['uuid'],
-  'dag open': ['uuid'],
-  'dag search': ['query'],
-  'cycle policy': ['id', 'key', 'value'],
-  'cycle status': ['id', 'status'],
-  'cycle close': ['id', 'node'],
-  'cycle show': ['id', 'node'],
-  'cycle retry': ['id', 'node'],
-  'cycle create': ['id'],
-  'cycle start': ['id'],
-  'cycle rename': ['id'],
-  'config get': ['key'],
-  'config set': ['key', 'value'],
-  'config unset': ['key'],
-  'instruction add': [],
-  'instruction list': [],
-  'instruction resolve': ['ins_id'],
-  'instruction rm': ['ins_id'],
-  'instruction revive': ['ins_id'],
-  'session show': ['node'],
-  hold: ['node'],
-  dispatch: ['id'],
-  'merge-ledger': ['base', 'ours', 'theirs', 'path'],
-};
-
-/**
- * The name a group's refusal prints for its sub-command. The parser carries a `dest` per group, and
- * a refusal uses that name rather than the listing's metavar: `dag` spells its dest with the angle
- * brackets still on, the other four without.
- */
-const GROUP_DESTS: Record<string, string> = {
-  cycle: 'cycle_command',
-  dag: '<command>',
-  config: 'config_command',
-  instruction: 'instruction_command',
-  session: 'session_command',
-};
-
-/**
  * The settings verbs whose one positional is the knob name. The list a settings verb accepts is read
  * at run time, out of the settings table in force — the core settings plus whatever an installed
  * plugin declares — so a table built with a plugin installed must not be printed in a project without it.
  */
 const CONFIG_KEY_WORDS = new Set(['config get', 'config set', 'config unset']);
 
-/** The knob names in force, set by the router once per run (`null` before that, and when no engine was reached). */
-let configKnobs: readonly string[] | null = null;
-
-/** Hand over the setting names in force for this run: the one list the settings verbs print and refuse against. */
-export function useConfigKnobs(keys: readonly string[]): void {
-  configKnobs = Array.isArray(keys) && keys.length > 0 ? [...keys] : null;
-}
-
-/** One row as the printer / parser spec. */
-export function specOf(row: WordRow): WordSpec {
+/**
+ * One row as the printer / parser spec. `knobs` is the settings list in force for this call — handed
+ * in with it, never kept here: the same row printed from another project must answer another page.
+ */
+export function specOf(row: WordRow, knobs?: readonly string[]): WordSpec {
   const actions: SpecAction[] = [];
   actions.push(...optionsOf(row));
   const key = row.group === undefined ? row.word : `${row.group} ${row.word}`;
-  const names = POSITIONAL_NAMES[key] ?? [];
   for (const [index, cell] of (row.positionals ?? []).entries()) {
     // The settings verbs' knob cell is read at run time: the metavar, the listing and the refusal all
     // come off the same list, so the help cannot offer a name the engine would refuse.
-    const knobs = configKnobs;
-    const knobCell = index === 0 && knobs !== null && CONFIG_KEY_WORDS.has(key);
+    const knobCell = index === 0 && knobs !== undefined && knobs.length > 0 && CONFIG_KEY_WORDS.has(key);
     const metavar = knobCell ? `{${knobs!.join(',')}}` : cell.metavar;
     actions.push({
       kind: 'positional',
       name: knobCell ? metavar : cell.name,
-      dest: names[index] ?? cell.name,
+      // The name a refusal prints is the cell's own `dest`, or its name when the row states nothing
+      // further: a cell whose name spells its choices still answers with the role it stands for.
+      dest: knobCell ? 'key' : (cell.dest ?? cell.name),
       metavar,
       required: cell.required === true,
       ...(cell.nargs === undefined ? {} : { nargs: cell.nargs }),
@@ -152,16 +93,16 @@ export function specOf(row: WordRow): WordSpec {
       kind: 'subparsers',
       metavar,
       cellName: metavar.replace(/^<|>$/gu, ''),
-      dest: GROUP_DESTS[row.word] ?? metavar.replace(/^<|>$/gu, ''),
+      dest: row.dest ?? metavar.replace(/^<|>$/gu, ''),
       commands: row.commands!.map((command) => ({
-        ...specOf(command),
+        ...specOf(command, knobs),
         word: command.word,
         help: command.help ?? command.summary ?? '',
       })),
     });
   }
   const ordered = actions;
-  const spec: WordSpec = {
+  return {
     word: row.word,
     group: row.group,
     prog: row.prog,
@@ -170,13 +111,11 @@ export function specOf(row: WordRow): WordSpec {
     // The usage line prints a group's own options and, last, its subparser metavar.
     actions: () => ordered,
   };
-  return spec;
 }
 
 /** A leaf word's row (a group's verb is looked up as `"<group> <verb>"`). */
 export function rowFor(word: string): WordRow | undefined {
-  if (COMMAND_ROWS[word] !== undefined) return COMMAND_ROWS[word];
-  return undefined;
+  return COMMAND_ROWS[word];
 }
 
 /** A group's row. */

@@ -290,7 +290,20 @@ export interface CycleStanding {
   signal: CycleStandingSignal | null;
 }
 
-/** The cycles namespace: setting up, running, stopping and settling one work line, these thirteen verbs. */
+/**
+ * Which line holds one node now: every line that claims it, the lines that already walked it, and
+ * every line on the record (what a "nobody holds it" sentence names).
+ */
+export interface CycleHolder {
+  /** Every line holding it: two lines side by side can both claim one node. */
+  readonly holders: readonly CycleRecord[];
+  /** The lines whose `path` already walked it. */
+  readonly closedOn: readonly CycleRecord[];
+  /** Every line on this record. */
+  readonly lines: readonly CycleRecord[];
+}
+
+/** The cycles namespace: setting up, running, stopping and settling one work line, these fourteen verbs. */
 export interface CyclesNamespace {
   create(input: CycleCreateInput): Promise<CycleRecord>;
   start(input: CycleStartInput): Promise<CycleRecord>;
@@ -302,6 +315,8 @@ export interface CyclesNamespace {
   /** The line that should be working now; null when there is none. */
   current(): Promise<CycleRecord | null>;
   show(id: string): Promise<CycleRecord>;
+  /** Which line holds one node now: the claim read in one place, for whoever has to say it in words. */
+  holder(node: string): Promise<CycleHolder>;
   /** One line's effective policy set: the defaults this line's picks read, then whatever it states. */
   policies(id: string): Promise<CyclePolicySet>;
   /** One node's standing in this line: held now / walked before / nothing, plus the ticket on disk. */

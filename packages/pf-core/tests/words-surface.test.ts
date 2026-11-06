@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COMMANDS } from '../src/words/table';
+import { COMMANDS, COMMAND_ROWS, GROUPS } from '../src/words/table';
 import {
   INSTRUCTION_SCOPES,
   instructionAddLine,
@@ -14,12 +14,14 @@ import {
  * left out. The flow verbs carry exactly the shaping options their one operation needs; a second
  * operation behind the same word (a claim, a session, a stop, a rehearsal on a reading word) is what
  * this pins out.
+ *
+ * The rows are read off the one table: `COMMAND_ROWS` is the flat view the router walks (a top-level
+ * verb by its word, a group's verb as `"<group> <verb>"`), and `GROUPS` is where a group's verbs are
+ * stored — the two are not two copies, the flat one is derived from the other.
  */
 
 const FLAGS = (word: string): string[] =>
-  ((COMMANDS as unknown as Record<string, { options?: Array<{ flags?: string[] }> }>)[word]?.options ?? [])
-    .flatMap((option) => option.flags ?? [])
-    .sort();
+  (COMMAND_ROWS[word]?.options ?? []).flatMap((option) => option.flags ?? []).sort();
 
 describe('one verb, one operation: the flow verbs carry shaping options only', () => {
   it('plan reads: where to read, and the closing rehearsal', () => {
@@ -48,13 +50,13 @@ describe('one verb, one operation: the flow verbs carry shaping options only', (
 
   it('the retired op-selecting flags are on no verb at all', () => {
     const retired = ['--plan', '--spawn', '--no-spawn', '--continue', '--stop'];
-    const words = Object.keys(COMMANDS as unknown as Record<string, unknown>);
+    const words = Object.keys(COMMAND_ROWS);
     const carrying = words.filter((word) => FLAGS(word).some((flag) => retired.includes(flag)));
     expect(carrying).toEqual([]);
   });
 
   it('the rehearsal flag sits on the words whose effect is not a record read back', () => {
-    const words = Object.keys(COMMANDS as unknown as Record<string, unknown>);
+    const words = Object.keys(COMMAND_ROWS);
     const carrying = words.filter((word) => FLAGS(word).includes('--dry-run')).sort();
     // settle and dispatch (the two effects worth rehearsing), and the merge driver's process hand-off, which
     // answers git with a verdict and writes nothing when it is rehearsed.
@@ -62,10 +64,9 @@ describe('one verb, one operation: the flow verbs carry shaping options only', (
   });
 
   it('claiming lives on a verb of its own, not in the line group', () => {
-    const commands = COMMANDS as unknown as Record<string, { commands?: Array<{ word: string }> }>;
-    const cycle = commands.cycle?.commands?.map((command) => command.word) ?? [];
+    const cycle = GROUPS.cycle?.commands?.map((command) => command.word) ?? [];
     expect(cycle).not.toContain('hold');
-    expect(Object.keys(commands)).toContain('hold');
+    expect(Object.keys(COMMAND_ROWS)).toContain('hold');
   });
 });
 /**
@@ -94,7 +95,10 @@ describe('the instruction scopes and the panel words: one home, on the engine si
       }
       for (const item of Object.values(held)) walk(item);
     };
-    walk(COMMANDS);
+    // The one table in its two halves: a top-level verb sits in `COMMANDS`, a group's verb inside its
+    // group's `commands` — the flat `COMMAND_ROWS` view derives from exactly these, so walking both
+    // halves reaches every `--scope` cell the table holds.
+    walk({ top: COMMANDS, groups: GROUPS });
     return found;
   };
 

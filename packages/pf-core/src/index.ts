@@ -82,6 +82,7 @@ export type {
   AddedNode,
   CycleCloseInput,
   CycleCreateInput,
+  CycleHolder,
   CyclePolicySet,
   CyclePolicyValue,
   CycleStanding,
@@ -175,3 +176,5 @@ export type {
   PluginSourceCell,
   PluginTiming,
 } from './plugins/types';
+
+export type { PfLocations, PfPaths } from './paths';

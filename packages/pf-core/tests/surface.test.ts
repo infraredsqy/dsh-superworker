@@ -13,21 +13,21 @@ const DAG_METHODS = [
 ];
 const CYCLE_METHODS = [
   'create', 'start', 'rename', 'setStatus', 'setPolicy', 'list', 'current',
-  'show', 'policies', 'standing', 'hold', 'close', 'retry',
+  'show', 'policies', 'standing', 'holder', 'hold', 'close', 'retry',
 ];
 const INSTRUCTION_METHODS = ['add', 'list', 'resolve', 'revive', 'remove'];
 const CONFIG_METHODS = ['get', 'set', 'unset', 'list', 'keys'];
 const SESSION_METHODS = ['list', 'show', 'note'];
 const CONDUCTOR_METHODS = [
   'next', 'prepare', 'dispatch', 'dispatchPreview', 'handoff', 'settle', 'settlePreview', 'close',
-  'advance', 'doctor', 'handoffForm', 'pluginCommand', 'pluginCommands',
+  'advance', 'doctor', 'handoffForm', 'pluginCommand', 'pluginCommands', 'startedHolding',
 ];
 
 const pf = open('\\\\tmp\\pf-surface-probe');
 
 describe('the handle open() hands back', () => {
-  it('root plus four namespaces, no key missing and none extra', () => {
-    expect(Object.keys(pf).sort()).toEqual(['conductor', 'config', 'ledger', 'root', 'sessions']);
+  it('root plus four namespaces and the record tree locations, no key missing and none extra', () => {
+    expect(Object.keys(pf).sort()).toEqual(['conductor', 'config', 'ledger', 'locations', 'root', 'sessions']);
   });
   it('root is kept as given', () => {
     expect(pf.root).toBe('\\\\tmp\\pf-surface-probe');
@@ -45,7 +45,7 @@ describe('pf.ledger', () => {
   it('dag has all sixteen verbs', () => {
     expect(Object.keys(pf.ledger.dag).sort()).toEqual([...DAG_METHODS].sort());
   });
-  it('cycles has all thirteen verbs', () => {
+  it('cycles has all fourteen verbs', () => {
     expect(Object.keys(pf.ledger.cycles).sort()).toEqual([...CYCLE_METHODS].sort());
   });
   it('instructions has all five verbs', () => {
@@ -60,7 +60,7 @@ describe('pf.config / pf.sessions / pf.conductor', () => {
   it('sessions has all three verbs', () => {
     expect(Object.keys(pf.sessions).sort()).toEqual([...SESSION_METHODS].sort());
   });
-  it('conductor has all thirteen verbs', () => {
+  it('conductor has all fourteen verbs', () => {
     expect(Object.keys(pf.conductor).sort()).toEqual([...CONDUCTOR_METHODS].sort());
   });
 });

@@ -8,6 +8,8 @@ import type { LedgerNamespace } from './ledger';
 import { createSessionsNamespace } from './sessions';
 import type { SessionsNamespace } from './sessions';
 import { pluginAssemblyOf } from './plugins/assembly';
+import { recordLocations } from './paths';
+import type { PfLocations } from './paths';
 
 /** The options of open; executor is the only injection point for the executor. */
 export interface PfOpenOptions {
@@ -29,7 +31,7 @@ export interface PfOpenOptions {
   readonly pluginsDir?: string;
 }
 
-/** The pf handle: the project root plus four namespaces. */
+/** The pf handle: the project root plus four namespaces and where the record tree lives. */
 export interface Pf {
   /** The project root, the spelling open received is kept as it is (open itself does not touch disk). */
   readonly root: string;
@@ -37,6 +39,12 @@ export interface Pf {
   readonly conductor: ConductorNamespace;
   readonly config: ConfigNamespace;
   readonly sessions: SessionsNamespace;
+  /**
+   * The record tree's own locations of this root: the directories, and the four file builders a caller
+   * prints. A caller that has to name a path asks here — the `.pf` layout is not respelled outside
+   * `paths.ts`.
+   */
+  readonly locations: PfLocations;
 }
 
 const executors = new WeakMap<Pf, Executor | undefined>();
@@ -71,6 +79,7 @@ export function open(root: string, options: PfOpenOptions = {}): Pf {
       declaredKnobsOf: (dir) => pluginAssemblyOf(dir, options.pluginsDir).knobs(),
     }),
     sessions: createSessionsNamespace(root),
+    locations: recordLocations(root),
   };
   executors.set(pf, options.executor);
   return pf;

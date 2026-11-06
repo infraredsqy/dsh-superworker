@@ -26,6 +26,12 @@ export interface PositionalCell {
   readonly nargs?: string;
   readonly choices?: readonly string[];
   readonly help?: string;
+  /**
+   * The name a refusal prints for this cell (`argument <dest>: invalid choice …`). A cell whose
+   * `name` spells its choices (`{active,inactive}`) still prints the role it stands for (`status`);
+   * absent, the name is the role.
+   */
+  readonly dest?: string;
 }
 
 /** One mutually exclusive group of flags on a table row. */
@@ -45,6 +51,8 @@ export interface WordRow {
   readonly commands?: readonly WordRow[];
   /** A group row's sub-command metavar (`<command>` by default). */
   readonly metavar?: string;
+  /** The name a group's refusal prints for its sub-command (`cycle_command`, `dag_command`, …). */
+  readonly dest?: string;
   /** A group verb's one-line sense, where the row carries no help cell of its own. */
   readonly summary?: string;
   /** A group verb's listing sense, where the row carries one. */
@@ -117,17 +125,16 @@ export interface WordsIO {
    * inside a long-lived process has no stream here that ever ends.
    */
   readonly readInput?: () => Promise<string>;
+  /**
+   * The package root this call answers from: the words about this checkout (`version`, and the first
+   * line of `doctor`) print it. A caller that knows where it is deployed hands it in; absent, the
+   * package this module sits in answers, which is the engine product's own root.
+   */
+  readonly packageRoot?: string;
 }
 
 import type { Executor } from '../executor';
 import type { GitRunner } from '../git';
-import type { Pf } from '../open';
-
-/** The handle one call opened, together with the project root it answers at. */
-export interface WordProject {
-  readonly root: string;
-  readonly pf: Pf;
-}
 
 /** What one verb answers with: the two streams and the exit code. */
 export interface VerbAnswer {
@@ -142,7 +149,13 @@ export interface VerbCall {
   readonly positionals: readonly (readonly string[])[];
   readonly spec: WordSpec;
   readonly helpText: (spec: WordSpec) => string;
-  readonly specOf: (row: WordRow) => WordSpec;
+  readonly specOf: (row: WordRow, knobs?: readonly string[]) => WordSpec;
   readonly groupFor: (word: string) => WordRow | undefined;
   readonly io: WordsIO;
+  /**
+   * The knob names in force for this call, read once from the engine before any settings page is
+   * built: the settings verbs print and refuse against this list. Passed in with the call, never kept
+   * in a module-level cell — one long-lived process answers for several projects.
+   */
+  readonly configKnobs?: readonly string[];
 }

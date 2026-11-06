@@ -17,12 +17,9 @@ import { runMergeDriver } from '../ledgermerge/driver';
 import type { CycleStatus, InstructionRecord, NodeResult, NodeStatus } from '../types';
 import { usageError } from './argparse';
 import {
-  guarded,
-  handleOf,
+  EXIT,
   messageOf,
   posix,
-  project,
-  projectRootOf,
   pyCompact,
   pyIndented,
   pyList,
@@ -30,10 +27,12 @@ import {
   readCount,
   readPolicyValue,
   refuse,
+  run,
   short,
   splitTags,
 } from './out';
-import type { VerbCall, WordsIO } from './types';
+import type { Pf } from '../open';
+import type { WordsIO } from './types';
 
 // ═══ the pipeline verbs ══════════════════════════════════════════════════════
 
@@ -41,23 +40,23 @@ import type { VerbCall, WordsIO } from './types';
  * `init`: put the record directory in place. The engine's report is the reading; the lines below
  * are that reading spelled out (what was written, what was skipped and why).
  */
-export const initVerb = guarded(async (call: VerbCall) => {
-  const { values, io } = call;
-  const root = projectRootOf(values.project, io.root);
-  const pf = await handleOf(root, io);
+export const initVerb = run("init", async (call) => {
+  const { values, io, pf } = call;
+  // The record tree's own locations are the engine's read: this layer prints them, it does not spell them.
+  const { pfDir, configJson } = pf.locations.paths;
   const layout = values.commit === true ? 'in-repo' : 'own-repo';
   // The record directory gets a repository of its own in the own-repo layout, unless the line said
   // `--no-own-repo`: that is the default, and `--own-repo` is the flag on the other side.
   const ownRepoAsked = layout === 'own-repo' && values.no_own_repo !== true;
   const report = await pf.ledger.init({ layout, ownRepo: ownRepoAsked, git: io.git });
   const lines: string[] = [];
-  lines.push(`Ledger: ${join(root, '.pf')}`);
+  lines.push(`Ledger: ${pfDir}`);
   lines.push(
     report.layout === 'own-repo'
       ? 'Mode: this machine only (.pf/ does not enter the team repository)'
       : 'Mode: into the version repository with the project',
   );
-  const configFile = join(root, '.pf', 'config.json');
+  const configFile = configJson;
   lines.push(
     report.written.includes('config.json')
       ? `Config file: ${configFile} (written; empty = all factory defaults, and \`config set\` is how to change one)`
@@ -75,8 +74,8 @@ export const initVerb = guarded(async (call: VerbCall) => {
   // nothing is printed for: `--no-own-repo`, and the in-repo layout, which never creates one).
   const ownRepo = ownRepoAsked
     ? ({
-        created: `Gave ${join(root, '.pf')} a repository of its own: local history starts here, and once a remote is attached to it, it can travel to another machine on its own.`,
-        present: `${join(root, '.pf')} already has a repository of its own; it was left alone.`,
+        created: `Gave ${pfDir} a repository of its own: local history starts here, and once a remote is attached to it, it can travel to another machine on its own.`,
+        present: `${pfDir} already has a repository of its own; it was left alone.`,
       } as Record<string, string | undefined>)[report.ownRepo]
     : undefined;
   if (ownRepo !== undefined) lines.push(ownRepo);
@@ -86,13 +85,11 @@ export const initVerb = guarded(async (call: VerbCall) => {
   }
   for (const warning of report.warnings) lines.push(`Warning: ${warning}`);
   return { stdout: lines.join('\n') };
-}, 1);
+});
 
 /** `register`: write the merge driver's two keys, nothing else. */
-export const registerVerb = guarded(async (call: VerbCall) => {
-  const { values, io } = call;
-  const root = projectRootOf(values.project, io.root);
-  const pf = await handleOf(root, io);
+export const registerVerb = run("register", async (call) => {
+  const { io, pf } = call;
   const command = await pf.ledger.register({ git: io.git });
   if (command === null) {
     return {
@@ -101,12 +98,11 @@ export const registerVerb = guarded(async (call: VerbCall) => {
     };
   }
   return { stdout: command };
-}, 1);
+});
 
 /** `clean-temp`: list (or with `--yes`, remove) every node's `temp/` directory. */
-export const cleanTempVerb = guarded(async (call: VerbCall) => {
-  const { values } = call;
-  const { pf } = await project(values.project, call.io);
+export const cleanTempVerb = run("clean-temp", async (call) => {
+  const { values, pf } = call;
   const report = await pf.ledger.cleanTemp({
     ...(values.node === undefined ? {} : { node: values.node }),
     ...(values.yes === true ? { remove: true } : {}),
@@ -132,17 +128,15 @@ export const cleanTempVerb = guarded(async (call: VerbCall) => {
     lines.push(`Removed ${report.removed.length} temp directories.`);
   }
   return { stdout: lines.join('\n') };
-}, 1);
+});
 
 /** `handoff`: the ticket shape, or one ticket written. */
-export const handoffVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const root = projectRootOf(values.project, call.io.root);
-  const pf = await handleOf(root, call.io);
+export const handoffVerb = run("handoff", async (call) => {
+  const { values, positionals, pf } = call;
   const [cycle, node, status] = positionals.map((words) => words[0]);
   if (values.form === true) {
     if (cycle === undefined) {
-      return refuse('the form needs <cycle>: `handoff --form <cycle>`', 2);
+      return refuse('the form needs <cycle>: `handoff --form <cycle>`', EXIT.refused);
     }
     const form = await pf.conductor.handoffForm({ cycle, ...(node === undefined ? {} : { node }) });
     const fields = [
@@ -173,11 +167,11 @@ export const handoffVerb = guarded(async (call: VerbCall) => {
   if (node === undefined || status === undefined || values.summary === undefined) {
     return refuse(
       'a ticket needs <node> <status> -s "<one-line summary>"; `--form <cycle>` prints the shape',
-      2,
+      EXIT.refused,
     );
   }
   const outputs = await readOutputs(values.outputs, call.io);
-  if (outputs.error !== undefined) return refuse(outputs.error, 1);
+  if (outputs.error !== undefined) return refuse(outputs.error, EXIT.failed);
   const ticket = await pf.conductor.handoff({
     cycle: cycle,
     node,
@@ -190,7 +184,7 @@ export const handoffVerb = guarded(async (call: VerbCall) => {
       `handoff: ${ticket.node} ticket written; the node is not closed yet -- record it with ` +
       `\`settle ${ticket.node}\` (no session is opened by that)`,
   };
-}, 2);
+});
 
 /** The `-o` cell: an inline object, `@path`, or the caller's own input source (`-`). */
 async function readOutputs(
@@ -244,18 +238,17 @@ function noTagsRefusal(verb: string) {
       `cycle ${verb} <slug> --tags coding. Known words: writing/coding/art ` +
       '(a word outside the vocabulary is fine too; it is taken as given). Every pick this line ' +
       'makes, and which plugins may react to it, reads this one range.',
-    2,
+    EXIT.refused,
   );
 }
 
 /** `cycle create`. */
-export const cycleCreateVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
+export const cycleCreateVerb = run("cycle create", async (call) => {
+  const { values, pf } = call;
+  const id = call.at(0)!;
   if (values.tags === undefined || splitTags(values.tags).length === 0) {
     return noTagsRefusal('create');
   }
-  const { pf } = await project(values.project, call.io);
   const record = await pf.ledger.cycles.create({
     id,
     ...(values.title === undefined ? {} : { title: values.title }),
@@ -264,16 +257,15 @@ export const cycleCreateVerb = guarded(async (call: VerbCall) => {
   });
   const tags = Array.isArray(record.tags) ? record.tags : [];
   return { stdout: `CREATED: cycle "${record.id}"${tags.length > 0 ? ` (tags=${pyList(tags)})` : ''}` };
-}, 1);
+});
 
 /** `cycle start`: create and pin the opening node — two lines, the creation and the pinning. */
-export const cycleStartVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
+export const cycleStartVerb = run("cycle start", async (call) => {
+  const { values, pf } = call;
+  const id = call.at(0)!;
   if (values.tags === undefined || splitTags(values.tags).length === 0) {
     return noTagsRefusal('start');
   }
-  const { pf } = await project(values.project, call.io);
   const record = await pf.ledger.cycles.start({
     id,
     ...(values.title === undefined ? {} : { title: values.title }),
@@ -293,40 +285,37 @@ export const cycleStartVerb = guarded(async (call: VerbCall) => {
       `STARTED: cycle "${record.id}" → ${title}` +
       (holding.length > 1 ? `  (${holding.length} node(s) pinned)` : ''),
   };
-}, 1);
+});
 
 /** `cycle rename`. */
-export const cycleRenameVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
-  const { pf } = await project(values.project, call.io);
+export const cycleRenameVerb = run("cycle rename", async (call) => {
+  const { values, pf } = call;
+  const id = call.at(0)!;
   const record = await pf.ledger.cycles.rename(id, values.title);
   return { stdout: `RENAMED: "${record.id}" → "${record.title}"` };
-}, 1);
+});
 
 /** `cycle status`. */
-export const cycleStatusVerb = guarded(async (call: VerbCall) => {
-  const { positionals } = call;
+export const cycleStatusVerb = run("cycle status", async (call) => {
+  const { positionals, pf } = call;
   const [id, status] = positionals.map((words) => words[0]);
-  const { pf } = await project(undefined, call.io);
   const record = await pf.ledger.cycles.setStatus(id, status as CycleStatus);
   return { stdout: `CYCLE_STATUS: "${record.id}" → ${record.status}` };
-}, 1);
+});
 
 /** `cycle policy`. */
-export const cyclePolicyVerb = guarded(async (call: VerbCall) => {
-  const { positionals } = call;
+export const cyclePolicyVerb = run("cycle policy", async (call) => {
+  const { positionals, pf } = call;
   const [id, key, value] = positionals.map((words) => words[0]);
-  const { pf } = await project(undefined, call.io);
   const effective = await pf.ledger.cycles.setPolicy(id, key, readPolicyValue(value) as CyclePolicyValue);
   return {
     stdout: `POLICY: "${id}" → ${Object.entries(effective).map(([name, held]) => `${name}=${pyScalar(held)}`).join(', ')}`,
   };
-}, 1);
+});
 
 /** `cycle list`. */
-export const cycleListVerb = guarded(async (call: VerbCall) => {
-  const { pf } = await project(undefined, call.io);
+export const cycleListVerb = run("cycle list", async (call) => {
+  const { pf } = call;
   const cycles = await pf.ledger.cycles.list();
   if (cycles.length === 0) return { stdout: 'No cycles found.' };
   const lines: string[] = [
@@ -345,11 +334,11 @@ export const cycleListVerb = guarded(async (call: VerbCall) => {
     );
   }
   return { stdout: lines.join('\n') };
-}, 1);
+});
 
 /** `cycle current`: the lines in service, and every line still holding a node. */
-export const cycleCurrentVerb = guarded(async (call: VerbCall) => {
-  const { pf } = await project(undefined, call.io);
+export const cycleCurrentVerb = run("cycle current", async (call) => {
+  const { pf } = call;
   const cycles = await pf.ledger.cycles.list();
   const lines = cycles.filter(
     (cycle) => cycle.status === 'active' || (Array.isArray(cycle.holding) ? cycle.holding : []).length > 0,
@@ -370,13 +359,12 @@ export const cycleCurrentVerb = guarded(async (call: VerbCall) => {
     for (const item of holding) out.push(`  Node: ${item.id}  (since ${item.since ?? '?'})`);
   }
   return { stdout: out.join('\n') };
-}, 1);
+});
 
 /** `cycle show`: one node's standing in one line — the one word with a different meaning here. */
-export const cycleShowVerb = guarded(async (call: VerbCall) => {
-  const { positionals } = call;
+export const cycleShowVerb = run("cycle show", async (call) => {
+  const { positionals, pf } = call;
   const [id, node] = positionals.map((words) => words[0]);
-  const { pf } = await project(undefined, call.io);
   const standing = await pf.ledger.cycles.standing(id, node);
   const lines: string[] = [];
   if (standing.standing === 'holding') {
@@ -398,7 +386,7 @@ export const cycleShowVerb = guarded(async (call: VerbCall) => {
     }
   }
   return { stdout: lines.join('\n') };
-}, 1);
+});
 
 /**
  * `hold`: the claim step. The nodes are the operand and the line is where they are held — without
@@ -406,13 +394,12 @@ export const cycleShowVerb = guarded(async (call: VerbCall) => {
  * whole or not at all, and the answer is the line's hand after the write: the head as `CURRENT_NODE`
  * (the cell a dispatch would send first) and the rest as `HOLDING`.
  */
-export const holdVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
+export const holdVerb = run("hold", async (call) => {
+  const { values, positionals, pf } = call;
   const nodes = (positionals[0] ?? []).filter((node) => node !== '');
   if (nodes.length === 0) {
-    return refuse('hold names at least one node. Nothing was changed.', 2);
+    return refuse('hold names at least one node. Nothing was changed.', EXIT.refused);
   }
-  const { pf } = await project(values.project, call.io);
   let cycleId: string | undefined = values.cycle;
   if (cycleId === undefined) {
     const line = await pf.ledger.cycles.current();
@@ -420,7 +407,7 @@ export const holdVerb = guarded(async (call: VerbCall) => {
       return refuse(
         `hold needs the line to put ${nodes.map(short).join(', ')} in hand, and no cycle is active. ` +
           'Name one with `--cycle <id>`, or read them with `cycle list`.',
-        2,
+        EXIT.refused,
       );
     }
     cycleId = String(line.id);
@@ -431,39 +418,37 @@ export const holdVerb = guarded(async (call: VerbCall) => {
     `${index === 0 ? 'CURRENT_NODE' : 'HOLDING   '}: ${cycleId} → ${item.id}`,
   );
   return { stdout: lines.join('\n') };
-}, 1);
+});
 
 /** `cycle close`. */
-export const cycleCloseVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
+export const cycleCloseVerb = run("cycle close", async (call) => {
+  const { values, positionals, pf } = call;
   const [id, node] = positionals.map((words) => words[0]);
-  const { pf } = await project(undefined, call.io);
   const record = await pf.ledger.cycles.close(id, { node, result: values.result });
   return {
     stdout: `NODE_CLOSED: ${id} → ${node} ${values.result} (path is now ${(record.path ?? []).length} step(s))`,
   };
-}, 1);
+});
 
 /**
  * `cycle retry`: the old ticket is taken down (and, with `--drop`, so is the claim). The two lines
- * name the ticket file; its location is the engine's own layout, spelled here only for the reader.
+ * name the ticket file, whose location is the engine's own read.
  */
-export const cycleRetryVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
+export const cycleRetryVerb = run("cycle retry", async (call) => {
+  const { values, positionals, pf } = call;
   const [id, node] = positionals.map((words) => words[0]);
-  const { root, pf } = await project(undefined, call.io);
   await pf.ledger.cycles.retry(id, node, {
     ...(values.drop === true ? { drop: true } : {}),
     ...(values.summary === undefined ? {} : { summary: values.summary }),
   });
-  const ticket = join(root, '.pf', 'signals', id, `${node}.json`);
+  const ticket = pf.locations.signal(String(id), String(node));
   return {
     stdout:
       values.drop === true
         ? `Signal dropped (no ticket left): ${ticket}`
         : `Signal cleared and rewritten as pending: ${ticket}`,
   };
-}, 1);
+});
 
 // ═══ dag: the graph ══════════════════════════════════════════════════════════
 
@@ -472,8 +457,8 @@ export const cycleRetryVerb = guarded(async (call: VerbCall) => {
  * write for every row: each row prints its id (and its `ref`, when it carried one) and where its
  * spec.md would go.
  */
-export const dagAddVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
+export const dagAddVerb = run("dag add", async (call) => {
+  const { values, positionals, pf, root } = call;
   const titleWords = positionals[0] ?? [];
   const title = titleWords[0] ?? '';
   const description = (positionals[1] ?? []).join(' ') || values.desc;
@@ -482,7 +467,6 @@ export const dagAddVerb = guarded(async (call: VerbCall) => {
     // with neither is refused with the same sentence the required cell used to answer with.
     return { code: 2, stderr: usageError(call.spec, 'the following arguments are required: title') };
   }
-  const { root, pf } = await project(values.project, call.io);
   if (values.from_file !== undefined) {
     if (titleWords.length > 0) return refuse('give either a title or --from-file', 2);
     // A batch carries the rows' own fields: a per-node option alongside it has nothing to shape.
@@ -533,22 +517,20 @@ export const dagAddVerb = guarded(async (call: VerbCall) => {
   });
   const spec = await pf.ledger.dag.specPath(node.id);
   return { stdout: `Node created: ${node.id}\nSpec path (nonexistent): ${posix(spec)}` };
-}, 1);
+});
 
 /** `dag rm`. */
-export const dagRmVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
-  const { pf } = await project(values.project, call.io);
+export const dagRmVerb = run("dag rm", async (call) => {
+  const { values, pf } = call;
+  const id = call.at(0)!;
   await pf.ledger.dag.remove(id, { ...(values.force === true ? { force: true } : {}) });
   return { stdout: `Removed ${id}` };
-}, 1);
+});
 
 /** `dag update`. */
-export const dagUpdateVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
-  const { pf } = await project(values.project, call.io);
+export const dagUpdateVerb = run("dag update", async (call) => {
+  const { values, pf } = call;
+  const id = call.at(0)!;
   const patch: Record<string, unknown> = {};
   if (values.title !== undefined) patch.title = values.title;
   if (values.desc !== undefined) patch.description = values.desc;
@@ -557,11 +539,16 @@ export const dagUpdateVerb = guarded(async (call: VerbCall) => {
   if (values.tags !== undefined) patch.tags = splitTags(values.tags);
   if (values.clear_tags === true) patch.tags = null;
   if (Object.keys(patch).length === 0) {
-    return { stderr: 'No changes: provide --title, --desc, --mode, --weight, --tags and/or --clear-tags' };
+    // A call that names no change is a line this word cannot take, and it answers like one: the
+    // sentence on stderr, and the refusal's own code (never a success code with an error sentence).
+    return refuse(
+      'No changes: provide --title, --desc, --mode, --weight, --tags and/or --clear-tags',
+      EXIT.refused,
+    );
   }
   await pf.ledger.dag.update(id, patch);
-  return {};
-}, 1);
+  return { stdout: `Updated ${short(id)}` };
+});
 
 /**
  * `dag depend` / `dag undepend`: the edge edits. `--on` takes a comma-separated list: the whole list
@@ -569,63 +556,57 @@ export const dagUpdateVerb = guarded(async (call: VerbCall) => {
  * as it always was; a list answers the receipt a batch needs, since the whole call is one write and
  * there is otherwise nothing to confirm it landed.
  */
-export const dagDependVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
+export const dagDependVerb = run("dag depend", async (call) => {
+  const { values, pf } = call;
+  const id = call.at(0)!;
   const deps = splitTags(values.on);
   if (deps.length === 0) {
-    return refuse('dag depend needs --on with at least one dependency id: `--on a,b,c`', 2);
+    return refuse('dag depend needs --on with at least one dependency id: `--on a,b,c`', EXIT.refused);
   }
-  const { pf } = await project(values.project, call.io);
   await pf.ledger.dag.link(id, deps);
   if (deps.length === 1) return {};
   return { stdout: `Linked ${short(id)} → ${deps.length} dependencies: ${deps.map(short).join(', ')}` };
-}, 1);
+});
 
-export const dagUndependVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
+export const dagUndependVerb = run("dag undepend", async (call) => {
+  const { values, positionals, pf } = call;
+  const id = call.at(0)!;
   const [dep] = (positionals[1] ?? []);
-  const { pf } = await project(values.project, call.io);
   const dependency = dep ?? values.from;
   if (dependency === undefined) {
-    return refuse('specify dependency to remove via positional arg or --from', 2);
+    return refuse('specify dependency to remove via positional arg or --from', EXIT.refused);
   }
   await pf.ledger.dag.unlink(id, dependency);
-  return {};
-}, 1);
+  return { stdout: `UNLINKED: ${short(id)} → ${short(dependency)}` };
+});
 
 /** `dag status`. */
-export const dagStatusVerb = guarded(async (call: VerbCall) => {
-  const { positionals } = call;
+export const dagStatusVerb = run("dag status", async (call) => {
+  const { positionals, pf } = call;
   const [id, status] = positionals.map((words) => words[0]);
-  const { pf } = await project(undefined, call.io);
   await pf.ledger.dag.setStatus(id, status as NodeStatus);
-  return {};
-}, 1);
+  return { stdout: `STATUS: ${short(id)} → ${status}` };
+});
 
 /** `dag approve`. */
-export const dagApproveVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
-  const { pf } = await project(values.project, call.io);
+export const dagApproveVerb = run("dag approve", async (call) => {
+  const { values, pf } = call;
+  const id = call.at(0)!;
   const node = await pf.ledger.dag.approve(id, values.at);
   return { stdout: `APPROVED: ${id} at ${node.approved_at ?? values.at}` };
-}, 1);
+});
 
 /** `dag revive`. */
-export const dagReviveVerb = guarded(async (call: VerbCall) => {
-  const { positionals } = call;
-  const id = positionals[0]![0];
-  const { pf } = await project(undefined, call.io);
+export const dagReviveVerb = run("dag revive", async (call) => {
+  const { pf } = call;
+  const id = call.at(0)!;
   const node = await pf.ledger.dag.revive(id);
   return { stdout: `REVIVED: ${node.title ?? ''} -> todo` };
-}, 1);
+});
 
 /** `dag list`: the rows as one JSON line (the compact spelling). */
-export const dagListVerb = guarded(async (call: VerbCall) => {
-  const { values } = call;
-  const { pf } = await project(values.project, call.io);
+export const dagListVerb = run("dag list", async (call) => {
+  const { values, pf } = call;
   const filter: Record<string, unknown> = {};
   if (values.ready === true) filter.ready = true;
   if (values.status !== undefined && values.status.length > 0) filter.status = values.status;
@@ -633,10 +614,10 @@ export const dagListVerb = guarded(async (call: VerbCall) => {
   if (values.limit !== undefined) filter.limit = Number(values.limit);
   const rows = await pf.ledger.dag.list(filter);
   return { stdout: pyCompact(values.verbose === true ? await verboseList(pf, rows) : rows) };
-}, 1);
+});
 
 /** `dag list --verbose`: each row grows its two dependency lists, spelled the same way. */
-async function verboseList(pf: Awaited<ReturnType<typeof handleOf>>, rows: readonly unknown[]): Promise<unknown[]> {
+async function verboseList(pf: Pf, rows: readonly unknown[]): Promise<unknown[]> {
   const out: unknown[] = [];
   for (const row of rows) {
     const one = row as { id: string };
@@ -651,45 +632,41 @@ async function verboseList(pf: Awaited<ReturnType<typeof handleOf>>, rows: reado
 }
 
 /** `dag info`. */
-export const dagInfoVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
-  const { pf } = await project(values.project, call.io);
+export const dagInfoVerb = run("dag info", async (call) => {
+  const { values, pf } = call;
+  const id = call.at(0)!;
   const info = await pf.ledger.dag.info(id, { ...(values.verbose === true ? { verbose: true } : {}) });
   return { stdout: pyCompact(info) };
-}, 1);
+});
 
 /** `dag context`. */
-export const dagContextVerb = guarded(async (call: VerbCall) => {
-  const { positionals } = call;
-  const id = positionals[0]![0];
-  const { pf } = await project(undefined, call.io);
+export const dagContextVerb = run("dag context", async (call) => {
+  const { pf } = call;
+  const id = call.at(0)!;
   return { stdout: pyCompact(await pf.ledger.dag.context(id)) };
-}, 1);
+});
 
 /** `dag search`. */
-export const dagSearchVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const query = positionals[0]![0];
-  const { pf } = await project(values.project, call.io);
+export const dagSearchVerb = run("dag search", async (call) => {
+  const { values, pf } = call;
+  const query = call.at(0)!;
   const hits = await pf.ledger.dag.search(query, {
     ...(values.limit === undefined ? {} : { limit: Number(values.limit) }),
     ...(values.active_only === true ? { activeOnly: true } : {}),
   });
   return { stdout: pyCompact(hits) };
-}, 1);
+});
 
 /** `dag open`: the absolute spec path, forward slashes. */
-export const dagOpenVerb = guarded(async (call: VerbCall) => {
-  const { positionals } = call;
-  const id = positionals[0]![0];
-  const { pf } = await project(undefined, call.io);
+export const dagOpenVerb = run("dag open", async (call) => {
+  const { pf } = call;
+  const id = call.at(0)!;
   return { stdout: posix(await pf.ledger.dag.specPath(id)) };
-}, 1);
+});
 
 /** `dag validate`: the two checks, then the count and the status histogram. */
-export const dagValidateVerb = guarded(async (call: VerbCall) => {
-  const { pf } = await project(undefined, call.io);
+export const dagValidateVerb = run("dag validate", async (call) => {
+  const { pf } = call;
   const report = await pf.ledger.dag.validate();
   const lines: string[] = [];
   const cycleLines = report.problems.filter((problem) => problem.includes('check=no_cycles'));
@@ -707,12 +684,12 @@ export const dagValidateVerb = guarded(async (call: VerbCall) => {
     lines.push(`  ${status}: ${count}`);
   }
   return { stdout: lines.join('\n'), ...(report.ok ? {} : { code: 1 }) };
-}, 1);
+});
 
 /** `dag help`: the group's own listing, which is the full usage reference of this layer. */
-export async function dagHelpVerb(call: VerbCall) {
+export const dagHelpVerb = run('dag help', async (call) => {
   return { stdout: call.helpText(call.specOf(call.groupFor('dag')!)) };
-}
+});
 
 // ═══ config: one chain ═══════════════════════════════════════════════════════
 
@@ -747,9 +724,8 @@ function readLayerOf(values: Record<string, any>): ConfigLayer | undefined {
 }
 
 /** `config list`. */
-export const configListVerb = guarded(async (call: VerbCall) => {
-  const { values } = call;
-  const { pf } = await project(values.project, call.io);
+export const configListVerb = run("config list", async (call) => {
+  const { values, pf } = call;
   const at = readLayerOf(values);
   const readings = await pf.config.list(at);
   const keys = Object.keys(readings);
@@ -759,22 +735,20 @@ export const configListVerb = guarded(async (call: VerbCall) => {
       .map((key) => `${key.padEnd(width)} = ${shownValue(readings[key]!.value)} (${layerLabel(readings[key]!.source, values.cycle, values.node)})`)
       .join('\n'),
   };
-}, 1);
+});
 
 /** `config get`: one value, and nothing else. */
-export const configGetVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const key = positionals[0]![0];
-  const { pf } = await project(values.project, call.io);
+export const configGetVerb = run("config get", async (call) => {
+  const { values, pf } = call;
+  const key = call.at(0)!;
   const reading = await pf.config.get(key, readLayerOf(values));
   return { stdout: shownValue(reading.value) };
-}, 1);
+});
 
 /** `config set`: one value into exactly one layer, then the effective reading again. */
-export const configSetVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
+export const configSetVerb = run("config set", async (call) => {
+  const { values, positionals, pf } = call;
   const [key, raw] = positionals.map((words) => words[0]);
-  const { pf } = await project(values.project, call.io);
   const target = targetLayer(values);
   // The word travels to the gate exactly as typed: the gate parses it by the knob's kind, which is
   // where a switch's two strings `on` / `off` belong. The first line prints that same word, so
@@ -786,13 +760,12 @@ export const configSetVerb = guarded(async (call: VerbCall) => {
       `CONFIG: ${key} = ${pyScalar(raw)} (written to ${layerLabel(target.layer, values.cycle, values.node)})\n` +
       `CONFIG: effective ${key} = ${shownValue(reading.value)} (from ${layerLabel(reading.source, values.cycle, values.node)})`,
   };
-}, 1);
+});
 
 /** `config unset`. */
-export const configUnsetVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const key = positionals[0]![0];
-  const { pf } = await project(values.project, call.io);
+export const configUnsetVerb = run("config unset", async (call) => {
+  const { values, pf } = call;
+  const key = call.at(0)!;
   const target = targetLayer(values);
   await pf.config.unset(key, target.at);
   const reading = await pf.config.get(key, target.at);
@@ -801,7 +774,7 @@ export const configUnsetVerb = guarded(async (call: VerbCall) => {
       `CONFIG: ${key} override dropped from ${layerLabel(target.layer, values.cycle, values.node)}\n` +
       `CONFIG: effective ${key} = ${shownValue(reading.value)} (from ${layerLabel(reading.source, values.cycle, values.node)})`,
   };
-}, 1);
+});
 
 // ═══ instruction: the user's standing words ══════════════════════════════════
 
@@ -813,9 +786,8 @@ const SCOPE_WORDS: Record<string, string> = {
 };
 
 /** `instruction add`. */
-export const instructionAddVerb = guarded(async (call: VerbCall) => {
-  const { values } = call;
-  const { pf } = await project(values.project, call.io);
+export const instructionAddVerb = run("instruction add", async (call) => {
+  const { values, pf } = call;
   const entry = await pf.ledger.instructions.add({
     text: values.text,
     scope: values.scope ?? 'global',
@@ -839,7 +811,7 @@ export const instructionAddVerb = guarded(async (call: VerbCall) => {
       `INSTRUCTION ${entry.id}: [${scope}/${target}] ${entry.text}` +
       (where.length > 0 ? `   @ ${where.join(' / ')}` : ''),
   };
-}, 1);
+});
 
 /**
  * The two sentences a project with no entries at all reads: the account is absent, and that state is
@@ -882,16 +854,15 @@ function emptyAccountLines(total: number, scope: string | undefined, globalTotal
 }
 
 /** The account's own two counts: every entry, and how many of them read global. Both come off the engine's account view. */
-async function instructionTotals(pf: Awaited<ReturnType<typeof handleOf>>) {
+async function instructionTotals(pf: Pf) {
   const all = await pf.ledger.instructions.list({ all: true });
   const global = await pf.ledger.instructions.list({ all: true, scope: 'global' });
   return { total: all.length, globalTotal: global.length };
 }
 
 /** `instruction list`: the reader-facing view by default, the account when asked for it. */
-export const instructionListVerb = guarded(async (call: VerbCall) => {
-  const { values } = call;
-  const { pf } = await project(values.project, call.io);
+export const instructionListVerb = run("instruction list", async (call) => {
+  const { values, pf } = call;
   const accountView = values.all === true || values.live === true || values.scope !== undefined;
   const filter = {
     ...(values.all === true ? { all: true } : {}),
@@ -938,22 +909,20 @@ export const instructionListVerb = guarded(async (call: VerbCall) => {
     if (typeof entry.note === 'string' && entry.note !== '') lines.push(`      note: ${entry.note}`);
   }
   return { stdout: lines.join('\n') };
-}, 1);
+});
 
 /** `instruction resolve`: archive one entry, with the note the owner put on it when one is given. */
-export const instructionResolveVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
-  const { pf } = await project(values.project, call.io);
+export const instructionResolveVerb = run("instruction resolve", async (call) => {
+  const { values, pf } = call;
+  const id = call.at(0)!;
   await pf.ledger.instructions.resolve(id, values.note === undefined ? undefined : { note: values.note });
   return { stdout: `INSTRUCTION ${id} → ${values.state}` };
-}, 1);
+});
 
 /** `instruction rm`: the sentence is printed first, then it goes. */
-export const instructionRmVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
-  const { pf } = await project(values.project, call.io);
+export const instructionRmVerb = run("instruction rm", async (call) => {
+  const { pf } = call;
+  const id = call.at(0)!;
   const before = await pf.ledger.instructions.list({ all: true });
   const hit = before.find((entry) => entry.id === id);
   const head =
@@ -962,24 +931,22 @@ export const instructionRmVerb = guarded(async (call: VerbCall) => {
       : `INSTRUCTION ${hit.id}: [${hit.scope}/${hit.target ?? 'stage'}] ${hit.text}\n`;
   await pf.ledger.instructions.remove(id);
   return { stdout: `${head}REMOVED ${id}` };
-}, 1);
+});
 
 /** `instruction revive`. */
-export const instructionReviveVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
-  const { pf } = await project(values.project, call.io);
+export const instructionReviveVerb = run("instruction revive", async (call) => {
+  const { pf } = call;
+  const id = call.at(0)!;
   await pf.ledger.instructions.revive(id);
   return { stdout: `INSTRUCTION ${id} → live` };
-}, 1);
+});
 
 // ═══ session: a node's own conversations, on this machine only ═══════════════
 
 /** `session show`: one node's note; an empty note is an answer, not an error. */
-export const sessionShowVerb = guarded(async (call: VerbCall) => {
-  const { values, positionals } = call;
-  const id = positionals[0]![0];
-  const { pf } = await project(values.project, call.io);
+export const sessionShowVerb = run("session show", async (call) => {
+  const { values, pf } = call;
+  const id = call.at(0)!;
   const shown = await pf.sessions.show(id);
   if (values.json === true) {
     return { stdout: pyIndented({ node: shown.node, v: shown.v, discussion: shown.discussion, run: shown.run }) };
@@ -994,12 +961,11 @@ export const sessionShowVerb = guarded(async (call: VerbCall) => {
     lines.push(`  ${String(role).padEnd(10)} ${entry.session}  ${entry.host ?? '?'}  ${entry.at ?? 'time unknown'}`);
   }
   return { stdout: lines.join('\n') };
-}, 1);
+});
 
 /** `session list`: every note this machine holds, keyed by node id. */
-export const sessionListVerb = guarded(async (call: VerbCall) => {
-  const { values } = call;
-  const { root, pf } = await project(values.project, call.io);
+export const sessionListVerb = run("session list", async (call) => {
+  const { values, pf } = call;
   const notes = await pf.sessions.list();
   if (values.json === true) {
     const table: Record<string, unknown> = {};
@@ -1008,7 +974,7 @@ export const sessionListVerb = guarded(async (call: VerbCall) => {
     return { stdout: pyIndented(table) };
   }
   if (notes.length === 0) {
-    return { stdout: `no session notes under ${join(root, '.pf', 'meta', 'sessions')}` };
+    return { stdout: `no session notes under ${pf.locations.paths.sessionsDir}` };
   }
   const lines: string[] = [];
   for (const row of notes) {
@@ -1022,11 +988,14 @@ export const sessionListVerb = guarded(async (call: VerbCall) => {
     );
   }
   return { stdout: lines.join('\n') };
-}, 1);
+});
 
 // ═══ the words about where this is standing ══════════════════════════════════
 
-/** The package root this module answers from: the nearest ancestor that carries a manifest. */
+/**
+ * The package root this module answers from, when the call handed in no seam of its own: the nearest
+ * ancestor that carries a manifest. `WordsIO.packageRoot` is the seam; this is its documented default.
+ */
 function packageRoot(): string {
   const dir = dirname(fileURLToPath(import.meta.url));
   for (const candidate of [
@@ -1044,9 +1013,9 @@ function packageRoot(): string {
   return resolve(dir, '..', '..');
 }
 
-/** The one line `version` prints, and the first line `doctor` prints. */
-function standingLine(): string {
-  const root = packageRoot();
+/** The one line `version` prints, and the first line `doctor` prints: the package root this call was handed, or this module's own. */
+function standingLine(io: WordsIO): string {
+  const root = io.packageRoot ?? packageRoot();
   try {
     const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { name?: string; version?: string };
     return `${manifest.name ?? 'pf-core'} ${manifest.version ?? '0.0.0'} at ${root}`;
@@ -1057,19 +1026,17 @@ function standingLine(): string {
 }
 
 /** `version`: which package this is, its version, and the directory it was read from. */
-export const versionVerb = guarded(async () => ({ stdout: standingLine() }));
+export const versionVerb = run('version', async (call) => ({ stdout: standingLine(call.io) }));
 
 /**
  * `doctor [--fix]`: the engine's check-up, printed cell by cell. With `--fix` it runs `init` once
  * afterwards — `init` recognizes what is already there, so the cell a missing layout file turned
  * red comes back green without a second setup act.
  */
-export const doctorVerb = guarded(async (call: VerbCall) => {
-  const { values, io } = call;
-  const root = projectRootOf(values.project, io.root);
-  const pf = await handleOf(root, io);
+export const doctorVerb = run("doctor", async (call) => {
+  const { values, io, root, pf } = call;
   const report = await pf.conductor.doctor({ git: io.git });
-  const lines: string[] = [standingLine(), `project root: ${root}`];
+  const lines: string[] = [standingLine(io), `project root: ${root}`];
   for (const check of report.checks) {
     const detail = (check.detail ?? '').split('\n');
     const one = detail.length === 1 && detail[0] !== '';
@@ -1089,12 +1056,12 @@ export const doctorVerb = guarded(async (call: VerbCall) => {
  * the driver's own (`ledgermerge/`); this word only hands the four paths over and carries the exit
  * code back out.
  */
-export const mergeLedgerVerb = guarded(async (call: VerbCall) => {
+export const mergeLedgerVerb = run("merge-ledger", async (call) => {
   const [base, ours, theirs, path] = (call.positionals ?? []).flatMap((words) => [...words]);
   if (base === undefined || ours === undefined || theirs === undefined) {
     return refuse(
       'the merge driver takes four paths (%O %A %B %P: the common side, this side, the other side, and the path in the repository)',
-      2,
+      EXIT.refused,
     );
   }
   const out: string[] = [];
@@ -1105,7 +1072,4 @@ export const mergeLedgerVerb = guarded(async (call: VerbCall) => {
   );
   return { code, stdout: out.join(''), stderr: err.join('') };
 });
-
-export { planVerb } from './plan';
-export { settleVerb } from './settle';
-export { advanceVerb, dispatchVerb } from './advance';
+;

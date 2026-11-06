@@ -13,12 +13,15 @@
   home。`pluginsDir` 是这个句柄扫描的插件目录
   （设置声明的并入、插件命令、doctor 与两道时机门读的都是它）：点名优先于 `PF_PLUGINS_DIR`，两者都压过
   缺省的 `<root>/plugins`；不点名时读法照旧。
-- `Pf { root: string; ledger; conductor; config; sessions }` —— `root` 是打开时给的项目根，原样保存。
-- `pf.ledger.dag` 十六动词、`pf.ledger.cycles` 十三动词、`pf.ledger.instructions` 五动词、
+- `Pf { root: string; ledger; conductor; config; sessions; locations }` —— `root` 是打开时给的项目根，原样保存；
+  `locations` 是这个根那份记录树的落点（`PfLocations { paths; signal; launchPrompt }`）：
+  谁要把一个落点印出来就问它，`.pf` 的拼法只在 `paths.ts` 一处。
+- `pf.ledger.dag` 十六动词、`pf.ledger.cycles` 十四动词、`pf.ledger.instructions` 五动词、
   `pf.config` 五动词、`ledger.init` / `ledger.register` / `ledger.cleanTemp`、`pf.sessions` 三动词与
   `conductor.next` / `conductor.close` / `conductor.advance` / `conductor.settle` / `conductor.settlePreview` /
   `conductor.dispatch` / `conductor.dispatchPreview` / `conductor.doctor` / `conductor.handoff` /
-  `conductor.handoffForm` / `conductor.pluginCommand` / `conductor.pluginCommands` / `conductor.prepare`
+  `conductor.handoffForm` / `conductor.pluginCommand` / `conductor.pluginCommands` / `conductor.prepare` /
+  `conductor.startedHolding`
   都在句柄上，全是真实现；没有一个桩。
 - 动作路径即 API 路径：`ledger.dag.add` 这样的动作路径，同时就是将来 API 的命名空间路径——
   按这个拼写找方法，从句柄一路点下去就能到。
@@ -57,18 +60,28 @@ usageError
 装与卸归装它的那一侧。
 
 `answer(argv, io)` 是词面（words layer）的唯一应答口：一行命令进来，交回
-`{ code, stdout, stderr }`——两个流已是命令面会写出的字节（非空、以换行收尾）。`io` 是本次调用的
-接缝（`WordsIO { root; executor?; git?; homeDir?; pluginsDir?; openerAvailable?; readInput? }`）：`root`
+`{ code, stdout, stderr }`——两个流已是命令面会写出的字节（非空、以换行收尾）。`code` 是这条命令的
+退出码：`2` 是这行话取不了（用法错，或引擎用带码的拒绝——`PfError.code`——说明了这行话不合；
+`plan` / `settle` / `advance` 遇上读不动的记录——解析不动、不是 UTF-8、锁等不到、设置文件坏了——
+也答这一档，读盘失败照词自己的档位走，不折进 `1`），`3` 是词开始之后会话没能开起来（`dispatch`
+读不动记录同答这一档），`1` 是其余失败（引擎按普通 `Error` 抛出的记录类拒绝也走这一格）。带码的
+表只做「`1` 收紧成 `2`」一个方向：其余动词遇同样的读盘失败答 `1`，而从没有一格被它放低过。
+`io` 是本次调用的
+接缝（`WordsIO { root; executor?; git?; homeDir?; pluginsDir?; openerAvailable?; readInput?; packageRoot? }`）：`root`
 替代「进程当前目录」这个隐含依赖（不接受 `--project` 的词读的就是它），`executor` /
 `git` 注入，`openerAvailable` 说出本调用能否真开会话（`dispatch` / `advance` 据此照实回答：开不出
 会话的进程里 `dispatch` 一个字节都不写就拒，`advance` 只钉节点、不落材料、不认领会话，两边都把
 面板（寻路中心）与那几份 prompt 的位置念出来），`readInput` 是「取输入」的那条接缝：`handoff -o -`
-的字节从它来（调用方自己的流，词面不碰本进程），没给的调用按名字拒绝 `-` 并指向 `@path`。本进程自己的三个词（checkout 的 doctor、version、合并驱动的进程交接）归命令面
-的适配器答，词面不路由。`describe()` 交出词表的静态索引数据（`WordsIndex`：形状说明、三个
+的字节从它来（调用方自己的流，词面不碰本进程），没给的调用按名字拒绝 `-` 并指向 `@path`，
+`packageRoot` 是「这套东西部署在哪」那一格：`version` 与 `doctor` 的第一行印它，调用方知道就交进来，
+不给时按本模块所在的包根答（引擎产物的那个根）。本进程自己的三个词（checkout 的 doctor、version、
+合并驱动的进程交接）与其余词一样在词面的表上、由词面路由——命令面的适配器要不要先抢着答是它自己的
+选择，不是这张表缺了词。`describe()` 交出词表的静态索引数据（`WordsIndex`：形状说明、三个
 自述词、动词与组的行、版式常数），顶层清单与 agent 面的帮助页渲染同一份；`topHelp(io)` 交出拼好的
 顶层清单文本（插件词按 `io` 现读）。`COMMANDS` / `GROUPS` / `specOf` / `helpText` / `parse` /
 `usageError` 是那张词表与它的桥、打印器、解析器与用法错误——一张表喂解析、打印与路由，谁需要表
-从引擎拿。`LONG_RESULT_LIMIT`（4000，按 UTF-8 字节计——与 `Buffer.byteLength` 同一把尺子，不是字符数）与
+从引擎拿（`COMMANDS` 是平铺后的读法：顶层动词按词、组动词按 `"<组> <动词>"`，它由 `GROUPS` 的
+`commands` 现推，组动词只有一份）。`LONG_RESULT_LIMIT`（4000，按 UTF-8 字节计——与 `Buffer.byteLength` 同一把尺子，不是字符数）与
 `longResultPointerOf(stdout, word)` 是长结果的上限与指针，只在这一处定义：`dag list` / `dag search` /
 `session list` 三个词的应答超过上限时，投影层在尾部补指针问的下一句词，绝不静默截断；词面的打印
 不走它（印出的字节是它自己的契约）。
@@ -204,6 +217,7 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 | `ledger.cycles.show` | `show(id)` | 一条线的完整记录 |
 | `ledger.cycles.policies` | `policies(id)` | 这条线的有效策略集：缺省在前，线自己写了的盖上去 |
 | `ledger.cycles.standing` | `standing(id, node)` | 一个节点在这条线里的站况：`holding` / `walked` / `nothing`，外加磁盘上那张票 |
+| `ledger.cycles.holder` | `holder(node)` | 这个节点现在归谁：握着它的那一条线（多于一条时为 `null`）、握着它的全部线、已经走过它的线，外加记录上的全部线——「谁握着」的判定只在这里读一次，词面只把它译成句子 |
 | `ledger.cycles.hold` | `hold(id, nodes)` | 认领一个节点（或一批）进这条线的在册名单：一个节点只属于一条线，一批是一次写入、要么整批落、要么一个字节都不落 |
 | `ledger.cycles.close` | `close(id, input)` | 结算一步：判决进 path，认领放下 |
 | `ledger.cycles.retry` | `retry(id, node?, options?)` | 撤旧票、改写 pending，线册不动；`{ drop: true }` 连认领一起摘掉，会话已经死掉时重来要的是这一档；`{ summary: '…' }` 是改写后那张票上的那句话，没给时用固定的那句 |
@@ -357,6 +371,7 @@ id，写口认的是节点已有的那个目录。
 | `conductor.prepare` | `prepare(input?)` | 把一次派发的材料落下来、不开会话：提示词落到它的位置、运行稿立在节点目录、交接单模板随材料交回 `PreparedDispatch { cycle; nodes }`；只有规划交回 `dispatch` 时才有材料可落，别的计划当场拒绝、一个字节不写 |
 | `conductor.dispatch` | `dispatch(input?)` | 把一格交给一个会话，交回收据 `DispatchReceipt { action; cycle; node_id; node_title; prompt; prompt_text; session? }`；`action` 只有 `opened` / `already_open` 两个词 |
 | `conductor.dispatchPreview` | `dispatchPreview(input?)` | 派发的预演：这格会收到的请求（材料落点与是否已在盘上、`model`），拦下缝问各家自己的预演、理由当数据交回 `blocked`；不落材料、不落记号、不开会话 |
+| `conductor.startedHolding` | `startedHolding(input?)` | 这条线握着、且会话已经开出去的那些节点：派发写下的 `started` 记号由引擎读，调用方不必自己试这个文件 |
 | `conductor.handoff` | `handoff(input)` | 写一张交接单，落在 signals 下的「线 id / 节点 id」 |
 | `conductor.handoffForm` | `handoffForm(input?)` | 这条线要的交接单形状：它问哪几个读数格（不写一个字节） |
 | `conductor.pluginCommand` | `pluginCommand(input)` | 把一个词连同它的行交给声明这个词的插件，在本进程里跑，交回 `PluginCommandAnswer { word; plugin; ran; text; code; error }` |

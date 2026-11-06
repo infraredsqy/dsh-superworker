@@ -7,8 +7,9 @@
  * node is on disk, and settling it, where would the line go (still a reading: the rehearsal of the same
  * criteria `settle` lands).
  */
-import { handleOf, pyIndented, projectRootOf, refuse, short } from './out';
-import type { VerbCall } from './types';
+import { EXIT, pyIndented, refuse, run } from './out';
+import type { VerbAnswer } from './types';
+import { lineHoldingOf } from './holder';
 
 /**
  * One plan as the caller reads it: the action, then every cell a reader has to act on. Key order is that
@@ -43,77 +44,27 @@ export function actionText(action: Record<string, any>): string {
   return lines.join('\n');
 }
 
-/**
- * The line a closing rehearsal belongs to: the one holding the node — a worker should not have to learn
- * cycle bookkeeping. A node nobody holds, or one several lines hold, is refused with the reason (a node
- * already closed out has nothing left to rehearse).
- */
-export async function holderOf(
-  known: readonly any[],
-  nodeId: string,
-): Promise<{ cycle?: any; refusal?: string }> {
-  const holders = known.filter((cycle) =>
-    ((Array.isArray(cycle.holding) ? cycle.holding : []) as any[]).some((item) => item.id === nodeId),
-  );
-  if (holders.length === 1) return { cycle: holders[0] };
-  if (holders.length > 1) {
-    return {
-      refusal: `${nodeId} is the node of several lines (${holders.map((cycle) => cycle.id).join(', ')}); name it with --cycle.`,
-    };
-  }
-  const closed = known.filter((cycle) =>
-    ((cycle.path ?? []) as any[]).some((step: any) => step.node === nodeId),
-  );
-  if (closed.length > 0) {
-    return {
-      refusal: `${nodeId} is already closed on ${closed.map((cycle) => cycle.id).join(', ')}; there is nothing left to settle. Reopen it, or start a new line.`,
-    };
-  }
-  return {
-    refusal:
-      `${nodeId} is not a node any line is holding. Every line holds ` +
-      `${known.map((cycle) => `${cycle.id}:${((cycle.holding ?? []) as any[]).map((item) => item.id).join(', ') || '(none)'}`).join('; ') || 'none'}.`,
-  };
-}
-
 /** Print one plan: the JSON spelling when asked for, else the lines. */
-export function printAction(action: Record<string, any>, asJson: boolean) {
+export function printAction(action: Record<string, any>, asJson: boolean): VerbAnswer {
   return { stdout: asJson ? pyIndented(action) : actionText(action) };
 }
 
 /** `plan`: read the plan (or the closing rehearsal), print it, write nothing. */
-export async function planVerb(call: VerbCall) {
-  const { values, io } = call;
-  const root = projectRootOf(values.project, io.root);
-  const pf = await handleOf(root, io);
+export const planVerb = run('plan', async (call) => {
+  const { values, pf } = call;
   const asJson = values.json === true;
   let cycleId: string | undefined = values.cycle;
-  try {
-    if (values.after !== undefined) {
-      if (cycleId === undefined) {
-        const found = await holderOf(await pf.ledger.cycles.list(), values.after);
-        if (found.refusal !== undefined) return refuse(`${found.refusal} Nothing was changed.`, 2);
-        cycleId = String(found.cycle.id);
-      }
-      const action = await pf.conductor.next({
-        cycle: cycleId,
-        after: values.after,
-      });
-      return printAction(action as Record<string, any>, asJson);
+  if (values.after !== undefined) {
+    if (cycleId === undefined) {
+      const found = await lineHoldingOf(pf, values.after);
+      if (found.refusal !== undefined) return refuse(`${found.refusal} Nothing was changed.`, EXIT.refused);
+      cycleId = found.cycle;
     }
-    const action = await pf.conductor.next({
-      ...(cycleId === undefined ? {} : { cycle: cycleId }),
-    } as Record<string, any>);
+    const action = await pf.conductor.next({ cycle: cycleId, after: values.after });
     return printAction(action as Record<string, any>, asJson);
-  } catch (error) {
-    return refuse(error instanceof Error ? error.message : String(error), 2);
   }
-}
-
-/** The node id a closing line names, or a refusal naming what the line does hold. */
-export function requireHeldNode(line: any, nodeId: string | undefined): string | undefined {
-  if (nodeId === undefined || nodeId === '') {
-    return `a closing call names the node whose work ended (held: ${((line?.holding ?? []) as any[]).map((item) => short(item.id)).join('+') || 'nothing'}).`;
-  }
-  return undefined;
-}
+  const action = await pf.conductor.next({
+    ...(cycleId === undefined ? {} : { cycle: cycleId }),
+  } as Record<string, any>);
+  return printAction(action as Record<string, any>, asJson);
+});

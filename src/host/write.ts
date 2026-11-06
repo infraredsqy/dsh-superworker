@@ -16,7 +16,7 @@
 import { answer, type Executor, type WordsIO } from 'pf-core'
 import type { PfOutcome } from './failure.ts'
 import { hostGitRunner } from './git.ts'
-import { shippedPluginsDir } from './skill-paths.ts'
+import { shippedPackageRoot, shippedPluginsDir } from './skill-paths.ts'
 
 /**
  * The seams one word line answers through, assembled in one place: the project
@@ -33,6 +33,8 @@ export function answerHandleOf(root: string, opener?: { readonly executor: Execu
   return {
     root,
     pluginsDir: shippedPluginsDir(),
+    // Where this line is deployed: the words about the checkout print this, they do not guess it.
+    packageRoot: shippedPackageRoot(),
     git: hostGitRunner(),
     ...(opener === undefined ? {} : { executor: opener.executor, openerAvailable: true }),
   }
