@@ -30,6 +30,19 @@ const DSH_CONDUCT_SPAWN_DRY_RUN = 'DSH_CONDUCT_SPAWN_DRY_RUN';
 const DSH_CONDUCT_MODEL = 'DSH_CONDUCT_MODEL';
 const DSH_SESSION_ID = 'DSH_SESSION_ID';
 
+/**
+ * Every switch named above, as the one table the rest of the tree reads them from: the suite's
+ * global setup shuts exactly these before any worker starts, so a name added here is shut there
+ * too — a list copied by hand is the kind that quietly misses the newest switch.
+ */
+export const RUNTIME_SWITCHES: readonly string[] = [
+  PF_HOME_DIR,
+  PF_PLUGINS_DIR,
+  DSH_CONDUCT_SPAWN_DRY_RUN,
+  DSH_CONDUCT_MODEL,
+  DSH_SESSION_ID,
+];
+
 /** The words the drill switch reads as off; every other value (including none at all) is its own word. */
 const DRY_RUN_OFF = ['', '0', 'false', 'False'];
 

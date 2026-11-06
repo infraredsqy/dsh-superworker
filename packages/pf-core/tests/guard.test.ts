@@ -15,8 +15,9 @@ import { describe, expect, it } from 'vitest';
  *   scripts) stays forbidden; a `bin/` directory stays forbidden too (checked below, directly on the
  *   tree).
  *
- * Note: `\bspawn\b` matches whole words only -- `spawner` is part of a policy key in a cycle
- * record, which is data, so it is let past; the bare verb spawn may not appear even once in the
+ * Note: `\bspawn\b` matches whole words only -- an older record may still carry a `spawner` field,
+ * written there by a different implementation of this pipeline; that field is data read tolerantly
+ * and is not a policy key of this engine's. The bare verb spawn may not appear even once in the
  * code or the comments of the source.
  * **String literals do not count as source**: the plan the planning step hands back carries copied
  * call text (things like `dispatch <cycle>`), which is deliverable body, a sentence

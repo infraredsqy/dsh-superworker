@@ -54,10 +54,18 @@ function refused(code) {
  * the file names (a name with no `/` under it is a file, one with is a directory), `read` pages by
  * line through {@link readPage}. The refusal simulation (a tier below the default, a byte cap) is
  * optional — omit it and every page passes.
+ *
+ * Every call is recorded on `calls` (kind, scope, path, range and the signal the caller handed
+ * over), so a case that judges *which root* was asked needs no port of its own. An empty dict is the
+ * bare not-found face: every directory and every file is absent, which is what the plugin cases
+ * stand on.
  */
 export function fakeWorkspaceFiles(files, { tier = 400, maxBytes = Infinity } = {}) {
+  const calls = []
   return {
-    async list(_scope, dir) {
+    calls,
+    async list(scope, dir, signal) {
+      calls.push({ kind: 'list', scope, path: dir, signal })
       const prefix = dir === '' ? '' : `${dir}/`
       const found = new Map()
       for (const path of Object.keys(files)) {
@@ -69,7 +77,8 @@ export function fakeWorkspaceFiles(files, { tier = 400, maxBytes = Infinity } = 
       if (found.size === 0) throw absentError(dir)
       return { path: dir, entries: [...found.values()], truncated: false }
     },
-    async read(_scope, path, range) {
+    async read(scope, path, range, signal) {
+      calls.push({ kind: 'read', scope, path, range, signal })
       const text = files[path]
       if (text === undefined) throw absentError(path)
       return readPage(text, range, { tier, maxBytes })

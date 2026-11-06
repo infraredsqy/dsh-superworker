@@ -18,13 +18,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PathfinderRecordsGateway } from '../src/host/gateway.ts'
 import { absentError, readPage } from './helpers/workspace-files-port.mjs'
+import { pinHome } from './helpers/env.mjs'
 
 /* One machine layer for this file: the settings endpoint reads the global layer, which lives in the
  * home directory — `PF_HOME_DIR` is the engine's own switch for it, so this case never reads (or is
  * steered by) the developer's own home. */
-const home = mkdtempSync(join(tmpdir(), 'pf-gateway-home-'))
-process.env.PF_HOME_DIR = home
-after(() => rmSync(home, { recursive: true, force: true }))
+const pinned = pinHome(['PF_HOME_DIR'], 'pf-gateway-home-')
+after(pinned.restore)
 
 /** The nine endpoints, matching the table in `gateway.ts`. */
 const ENDPOINTS = [

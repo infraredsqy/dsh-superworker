@@ -57,7 +57,7 @@ interface CutCycle {
   readonly steps: readonly CutStep[]
 }
 
-/** One node's own facts, with the two dependency columns not yet computed (that waits until the whole batch's states are out). */
+/** One node's own facts, in one batch: the two dependency columns wait until the whole batch's states are out, then come down with the facts. */
 interface NodeFacts {
   readonly id: string
   readonly node: PathfinderNode
@@ -68,7 +68,12 @@ interface NodeFacts {
   readonly firstStep: StepReading | undefined
   /** The last step that came to rest, with its own verdict; absent when no step has come to rest. */
   readonly lastVerdict: StepReading | undefined
+  /** This node's dependencies that nobody in the batch has completed: the batch's one completed set decided them. */
+  readonly openDependencies: readonly string[]
 }
+
+/** One node's facts before the batch-wide completed set is out. */
+type NodeSeed = Omit<NodeFacts, 'openDependencies'>
 
 /**
  * @throws A TypeError when the input is not a moment: with an unspeakable moment, no word of the reading counts.
@@ -81,7 +86,7 @@ export function readProject(input: RecordsAtMoment): ProjectReading {
 
   const cut = input.cycles.map((cycle) => cutCycle(cycle, at))
   const facts = readFacts(input.nodes, cut, at)
-  const nodes = facts.map((item) => readNode(item, facts, at))
+  const nodes = facts.map((item) => readNode(item, at))
   const nodeById = Object.fromEntries(nodes.map((node) => [node.id, node]))
   const cycles = cut.map((item) => finishCycle(item, nodes))
   const cycleById = Object.fromEntries(cycles.map((cycle) => [cycle.id, cycle]))
@@ -205,7 +210,7 @@ function stateOf(node: PathfinderNode, lastVerdict: StepReading | undefined, at:
   return lastVerdict !== undefined && PARKED_RESULTS.has(lastVerdict.result ?? '') ? 'shelved' : 'todo'
 }
 
-/** Each node's own facts, in record order. */
+/** Each node's own facts, in record order; the completed set is taken once here, not once per node. */
 function readFacts(
   source: Readonly<Record<string, PathfinderNode>>,
   cut: readonly CutCycle[],
@@ -225,7 +230,7 @@ function readFacts(
     for (const holding of cycle.holding) collect(heldOf, holding.holding.nodeId, holding)
   }
 
-  return Object.entries(source).map(([id, node]) => {
+  const seeds: readonly NodeSeed[] = Object.entries(source).map(([id, node]) => {
     const steps = stepsOf.get(id) ?? []
     /* Its own step: the first step walked in the records. A re-run node has two steps; the first one is its own. */
     const firstStep = steps[0]
@@ -245,10 +250,17 @@ function readFacts(
       lastVerdict,
     }
   })
+
+  /* The batch's one completed set: every node reads its open dependencies off this, so the answer is the same for all of them and costs one walk. */
+  const completed = new Set(seeds.filter((seed) => seed.state === 'completed').map((seed) => seed.id))
+  return seeds.map((seed) => ({
+    ...seed,
+    openDependencies: (seed.node.dependencies ?? []).filter((dependency) => !completed.has(dependency)),
+  }))
 }
 
-function readNode(facts: NodeFacts, all: readonly NodeFacts[], at: Date): NodeReading {
-  const { id, node, state, steps, held, firstStep, lastVerdict } = facts
+function readNode(facts: NodeFacts, at: Date): NodeReading {
+  const { id, node, state, steps, held, firstStep, lastVerdict, openDependencies } = facts
   const completedAt = cutAt(toMoment(node.completed_at), at)
   const approvedAt = cutAt(toMoment(node.approved_at), at)
   const startedAt = firstStep?.startedAt ?? null
@@ -260,8 +272,6 @@ function readNode(facts: NodeFacts, all: readonly NodeFacts[], at: Date): NodeRe
     if (item.holding.since !== null) holdMoments.push(item.holding.since)
   }
   const running = state === 'todo' && heldByIDs.length > 0
-  const completed = new Set(all.filter((item) => item.state === 'completed').map((item) => item.id))
-  const openDependencies = (node.dependencies ?? []).filter((dependency) => !completed.has(dependency))
   const recordStatus = text(node.status)
   const mode = text(node.mode)
   const title = text(node.title)

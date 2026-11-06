@@ -2,22 +2,20 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { RUNTIME_SWITCHES } from '../src/env.ts';
 import { hashDirectory } from './helpers/hash-dir.ts';
 
 /**
- * The four runtime switches the engine reads (see `src/env.ts`).
+ * The runtime switches the engine reads, taken from the engine's own table (`src/env.ts`) rather
+ * than copied here: a switch added to that table is shut by this setup without another edit, and
+ * one that only exists in this file would be a name the engine never reads.
  *
  * The suite shuts them before any worker starts: a suite whose result depends on what the machine
- * happened to export is not hermetic, and these four move the machine layer's home, the plugin folder
- * and the session id — exactly the things the cases in this suite shut into temp dirs themselves.
- * Each case that means to read one of them exports it for its own stretch again.
+ * happened to export is not hermetic, and these five move the machine layer's home, the plugin folder,
+ * the session id, the drill switch and the model route — exactly the things the cases in this suite
+ * shut into temp dirs themselves. Each case that means to read one of them exports it for its own
+ * stretch again.
  */
-const RUNTIME_SWITCHES = [
-  'PF_HOME_DIR',
-  'PF_PLUGINS_DIR',
-  'DSH_CONDUCT_SPAWN_DRY_RUN',
-  'DSH_SESSION_ID',
-];
 
 /**
  * The global guard for the whole suite: shut the machine layer into a fresh temporary sandbox, then

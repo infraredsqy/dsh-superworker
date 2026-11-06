@@ -34,17 +34,13 @@ import {
   toolDescriptionOf,
   wakeAgent,
 } from '../src/host/tool.ts'
+import { pinHome } from './helpers/env.mjs'
+import { fakeContext } from './helpers/host-context.mjs'
 
 /* Loading this line places the shipped skills into the DSH skill root; the root these
  * cases would write into is pinned to a temp home here, never the machine's own. */
-const testHome = mkdtempSync(join(tmpdir(), 'pf-tool-home-'))
-const previousHome = process.env.DSH_HOME
-process.env.DSH_HOME = testHome
-test.after(() => {
-  if (previousHome === undefined) delete process.env.DSH_HOME
-  else process.env.DSH_HOME = previousHome
-  rmSync(testHome, { recursive: true, force: true })
-})
+const pinned = pinHome(['DSH_HOME'], 'pf-tool-home-')
+test.after(pinned.restore)
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
 
@@ -53,31 +49,13 @@ const repo = fileURLToPath(new URL('..', import.meta.url))
  * `options.cwd` is the live session's workspace root the fact trigger reads; omitting it
  * stands in for a session with no cwd at all (the sandbox root answers then).
  */
-function fakeContext(options = {}) {
-  const provided = {}
-  const listeners = {}
-  const effects = []
-  const ctx = {
-    provide: (service, value) => {
-      provided[service] = value
-    },
-    on: (event, listener) => {
-      ;(listeners[event] ??= []).push(listener)
-      return () => {
-        const held = listeners[event] ?? []
-        const at = held.indexOf(listener)
-        if (at >= 0) held.splice(at, 1)
-      }
-    },
-    effect: (make) => {
-      effects.push(make())
-    },
-    sessions: { get: () => (options.cwd === undefined ? undefined : { header: { cwd: options.cwd } }) },
-    sandboxPolicy: { workspaceRoot: 'C:\\tool-root' },
-    get: () => undefined,
-  }
-  return { ctx, provided, listeners, effects }
-}
+const context = (options = {}) => fakeContext({
+  sessionCwd: options.cwd,
+  sandboxRoot: 'C:\\tool-root',
+  bus: true,
+  provide: true,
+  effect: true,
+})
 
 /** An agent with a scoped context whose tools registry records what lands in it. */
 function fakeAgent(id = 'agent-1') {
@@ -103,28 +81,28 @@ function fakeAgent(id = 'agent-1') {
 }
 
 /** Settle one tool call through every `tools/post-execute` listener the context holds. */
-async function firePostExecute(listeners, exec, result) {
-  for (const listener of listeners['tools/post-execute'] ?? []) {
+async function firePostExecute(events, exec, result) {
+  for (const listener of events.listenersOf('tools/post-execute')) {
     await listener(exec, result, async () => ({ kind: 'accept' }))
   }
 }
 
 /** Propose one step through every `agent/pre-step` listener the context holds. */
-async function firePreStep(listeners, payload, messages) {
-  for (const listener of listeners['agent/pre-step'] ?? []) {
+async function firePreStep(events, payload, messages) {
+  for (const listener of events.listenersOf('agent/pre-step')) {
     await listener(payload, async () => ({ kind: 'enter', messages }))
   }
 }
 
 test('零常驻：无关工具的调用、失败的技能装载、别的技能名，都不唤醒', async () => {
-  const { ctx, listeners } = fakeContext()
+  const { ctx, events } = context()
   apply(ctx)
   const { agent, registered } = fakeAgent()
 
-  await firePostExecute(listeners, { name: 'bash', agent }, { isError: false })
-  await firePostExecute(listeners, { name: 'skill', agent }, { isError: true })
+  await firePostExecute(events, { name: 'bash', agent }, { isError: false })
+  await firePostExecute(events, { name: 'skill', agent }, { isError: true })
   await firePreStep(
-    listeners,
+    events,
     { agent },
     [{ source: { kind: 'skill-invocation', name: 'some-skill' } }],
   )
@@ -132,25 +110,25 @@ test('零常驻：无关工具的调用、失败的技能装载、别的技能�
 })
 
 test('唤醒一次：skill 工具装了技能，下一轮这个 agent 的作用域里就有 pathfinder，且只有一份', async () => {
-  const { ctx, listeners } = fakeContext()
+  const { ctx, events } = context()
   apply(ctx)
   const { agent, registered } = fakeAgent()
 
-  await firePostExecute(listeners, { name: 'skill', agent }, { isError: false })
+  await firePostExecute(events, { name: 'skill', agent }, { isError: false })
   assert.equal(registered.length, 1, '装一次')
   assert.equal(registered[0].name, PATHFINDER_TOOL_NAME)
 
-  await firePostExecute(listeners, { name: 'skill', agent }, { isError: false })
-  await firePreStep(listeners, { agent }, [{ source: { kind: 'skill-invocation', name: 'pf-route' } }])
+  await firePostExecute(events, { name: 'skill', agent }, { isError: false })
+  await firePreStep(events, { agent }, [{ source: { kind: 'skill-invocation', name: 'pf-route' } }])
   assert.equal(registered.length, 1, '同一个 agent 只有一份')
 })
 
 test('唤醒一次：用户敲 /pf-route 也走同一个唤醒，两条线不各注册各的', async () => {
-  const { ctx, listeners } = fakeContext()
+  const { ctx, events } = context()
   apply(ctx)
   const { agent, registered } = fakeAgent()
 
-  await firePreStep(listeners, { agent }, [
+  await firePreStep(events, { agent }, [
     { source: { kind: 'skill-invocation', name: 'pf-route' } },
     { source: { kind: 'skill-invocation', name: 'pf-conduct' } },
   ])
@@ -162,15 +140,15 @@ test('事实唤醒：工作区有 .pf，第一步的请求里就有工具，不�
   const root = mkdtempSync(join(tmpdir(), 'pf-workspace-'))
   mkdirSync(join(root, '.pf'), { recursive: true })
   try {
-    const { ctx, listeners } = fakeContext({ cwd: root })
+    const { ctx, events } = context({ cwd: root })
     apply(ctx)
     const { agent, registered } = fakeAgent()
 
-    await firePreStep(listeners, { agent }, [])
+    await firePreStep(events, { agent }, [])
     assert.equal(registered.length, 1, '工作区有记录，第一步就上膛')
     assert.equal(registered[0].name, PATHFINDER_TOOL_NAME)
 
-    await firePreStep(listeners, { agent }, [])
+    await firePreStep(events, { agent }, [])
     assert.equal(registered.length, 1, '同一个 agent 只有一份')
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -180,17 +158,17 @@ test('事实唤醒：工作区有 .pf，第一步的请求里就有工具，不�
 test('事实唤醒：工作区没有 .pf 就不点亮；记录出现之后，下一步才上膛', async () => {
   const root = mkdtempSync(join(tmpdir(), 'pf-workspace-'))
   try {
-    const { ctx, listeners } = fakeContext({ cwd: root })
+    const { ctx, events } = context({ cwd: root })
     apply(ctx)
     const { agent, registered } = fakeAgent()
 
     assert.equal(hasPipelineRecord(root), false)
-    await firePreStep(listeners, { agent }, [])
+    await firePreStep(events, { agent }, [])
     assert.equal(registered.length, 0, '无关工作区一个字节都不多')
 
     mkdirSync(join(root, '.pf'), { recursive: true })
     assert.equal(hasPipelineRecord(root), true)
-    await firePreStep(listeners, { agent }, [])
+    await firePreStep(events, { agent }, [])
     assert.equal(registered.length, 1, '记录出现之后，下一步就上膛')
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -198,7 +176,7 @@ test('事实唤醒：工作区没有 .pf 就不点亮；记录出现之后，下
 })
 
 test('工具的形状：名字、描述字节数、参数与输出都是声明的面', () => {
-  const { ctx } = fakeContext()
+  const { ctx } = context()
   const { agent, registered } = fakeAgent()
   wakeAgent(agent, { ctx })
 
@@ -227,7 +205,7 @@ test('工具的四层帮助：argv 由 word / args / help 拼出，help 与 args
   // 没有 help：词 + args 就是运行这一次调用。
   assert.deepEqual(argvOf({ word: 'dag', args: ['list'] }), ['dag', 'list'])
 
-  const { ctx } = fakeContext()
+  const { ctx } = context()
   const { agent, registered } = fakeAgent()
   wakeAgent(agent, { ctx })
   const answer = await registered[0].execute({ help: true }, { agent })
@@ -285,24 +263,24 @@ test('名字锁：注册名、README 的拼法来自同一个常量；技能正�
 })
 
 test('卸下：线的 effect 把两条触发线一起收走；agent 的 effect 把工具收走', async () => {
-  const { ctx, listeners, effects } = fakeContext()
+  const { ctx, events, effects } = context()
   apply(ctx)
-  assert.equal((listeners['tools/post-execute'] ?? []).length, 1)
-  assert.equal((listeners['agent/pre-step'] ?? []).length, 1)
+  assert.equal(events.listenersOf('tools/post-execute').length, 1)
+  assert.equal(events.listenersOf('agent/pre-step').length, 1)
 
   const { agent, registered } = fakeAgent()
-  await firePostExecute(listeners, { name: 'skill', agent }, { isError: false })
+  await firePostExecute(events, { name: 'skill', agent }, { isError: false })
   assert.equal(registered.length, 1)
 
   // The line's own effects: the wake's disposer is collected there, so an unload
   // takes both triggers back. (The skills placement's effect settles later and is not
   // this test's business.)
   for (const dispose of effects) if (typeof dispose === 'function') dispose()
-  assert.equal((listeners['tools/post-execute'] ?? []).length, 0, 'post-execute 上的线收走了')
-  assert.equal((listeners['agent/pre-step'] ?? []).length, 0, 'pre-step 上的线收走了')
+  assert.equal(events.listenersOf('tools/post-execute').length, 0, 'post-execute 上的线收走了')
+  assert.equal(events.listenersOf('agent/pre-step').length, 0, 'pre-step 上的线收走了')
 
   // The agent's own effect: the registration disposer is collected there.
-  const { ctx: ctx2, listeners: listeners2 } = fakeContext()
+  const { ctx: ctx2, events: events2 } = context()
   installToolWake(ctx2)
   const holder = []
   const agent2 = {
@@ -322,7 +300,7 @@ test('卸下：线的 effect 把两条触发线一起收走；agent 的 effect �
       },
     },
   }
-  await firePostExecute(listeners2, { name: 'skill', agent: agent2 }, { isError: false })
+  await firePostExecute(events2, { name: 'skill', agent: agent2 }, { isError: false })
   assert.equal(holder.length, 1)
   agent2.dispose()
   assert.equal(holder.length, 0, 'agent 走了，工具跟着走')

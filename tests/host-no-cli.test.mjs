@@ -31,8 +31,9 @@
  *
  * The engine product and the host bundle must be built, and the host half's declared peer must be
  * installed (`npm test` builds both; nothing in this suite builds `lib/` — the published package
- * builds it at `prepack`). Without them every leg skips itself with that reason, the same discipline
- * as `tests/runtime-outside-repo.test.mjs`.
+ * builds it at `prepack`). Three things are needed and one missing is enough: without the engine
+ * product, or without the host bundle, or without the host peer on disk, every leg skips itself
+ * with that reason.
  *
  *   node --test tests/
  */
@@ -43,6 +44,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { covered, filesUnder } from './helpers/npm-files.mjs'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
 const manifest = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'))
@@ -60,26 +62,6 @@ const skip = existsSync(engineProduct) && existsSync(hostEntry) && existsSync(pe
 
 /** The names a `pf` command takes on the three platforms this repo runs on. */
 const PF_NAMES = ['pf', 'pf.cmd', 'pf.exe']
-
-/** npm's `files` wildcard (`**` crosses directories, `*` does not), matched the way npm reads it. */
-function covered(pattern, file) {
-  const body = pattern
-    .replace(/[.+^${}()|[\]\\]/gu, '\\$&')
-    /* One pass, so the group a replacement inserts is not scanned again by the next rule. */
-    .replace(/\*\*\/|\*/gu, (match) => (match === '**/' ? '(?:[^/]+/)*' : '[^/]*'))
-  return new RegExp(`^${body}$`, 'u').test(file)
-}
-
-/** Every file under a directory, as a slash-separated path relative to it. */
-function filesUnder(dir, prefix = '') {
-  const out = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const rel = prefix === '' ? entry.name : `${prefix}/${entry.name}`
-    if (entry.isDirectory()) out.push(...filesUnder(join(dir, entry.name), rel))
-    else out.push(rel)
-  }
-  return out
-}
 
 /** Every file in a tree whose leaf name is one of the command's own spellings. */
 function pfExecutables(dir) {
@@ -117,6 +99,30 @@ function envValue(env, name) {
   const key = Object.keys(env).find((candidate) => candidate.toLowerCase() === name.toLowerCase())
   return key === undefined ? undefined : env[key]
 }
+
+/**
+ * Drop a variable from an environment copy whatever case the copy spells it in, and say what it
+ * held. A plain `delete env[name]` only finds the host's own spelling: a copy carrying `Node_Options`
+ * or `pf_home_dir` would keep the variable, and the child would inherit a headlessness the case
+ * thought it had taken away.
+ */
+function dropEnvKey(env, name) {
+  const wanted = name.toLowerCase()
+  let held
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() !== wanted) continue
+    held = env[key]
+    delete env[key]
+  }
+  return held
+}
+
+/**
+ * The variables this case takes out of the child's environment: the engine's own switches through
+ * the copy, the node options, and the session id. Each is read and dropped by name, whatever case
+ * the copy happens to carry.
+ */
+const SCRUBBED = ['PF_PLUGINS_DIR', 'DSH_CONDUCT_SPAWN_DRY_RUN', 'DSH_SESSION_ID', 'NODE_OPTIONS', 'NODE_PATH']
 
 /**
  * The shipped shape: exactly the manifest's `files` entries, plus a manifest of the same name,
@@ -180,6 +186,9 @@ const snapshot = (value) => JSON.parse(JSON.stringify(value))
 const record = {
   cwd: process.cwd(),
   path: process.env.PATH ?? '',
+  /* The keys of its own environment, not their values: the parent checks that the switches it took
+   * out did not come back under another spelling. */
+  envKeys: Object.keys(process.env),
   beforeInit: existsSync(join(project, '.pf')),
   pf: null,
   help: null,
@@ -394,10 +403,13 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
     const entries = (process.env.PATH ?? '').split(delimiter).filter((entry) => entry.length > 0)
     const removed = entries.filter((entry) => PF_NAMES.some((name) => existsSync(join(entry, name))))
     const kept = entries.filter((entry) => !removed.includes(entry))
-    const scrubbed = ['PF_PLUGINS_DIR', 'DSH_CONDUCT_SPAWN_DRY_RUN', 'DSH_SESSION_ID', 'NODE_OPTIONS', 'NODE_PATH']
     const env = { ...process.env, PF_HOME_DIR: home, DSH_HOME: home }
-    const wasSet = scrubbed.filter((name) => env[name] !== undefined)
-    for (const name of scrubbed) delete env[name]
+    const wasSet = SCRUBBED.filter((name) => envValue(env, name) !== undefined)
+    for (const name of SCRUBBED) dropEnvKey(env, name)
+    /* The scrub is a reading, not a hope: after the drops, no spelling of these names is left in
+     * the copy the child is handed. */
+    const leftover = SCRUBBED.filter((name) => envValue(env, name) !== undefined)
+    assert.deepEqual(leftover, [], `these did not come out of the child's environment: ${JSON.stringify(leftover)}`)
     /* PATH is written once, in one spelling. A host that spells the key `Path` would leave two keys
      * in this plain copy (`process.env` finds either; the object keeps both), and which one the child
      * then sees is the platform's pick, not this case's. */
@@ -419,10 +431,20 @@ test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目
     const said = `exit=${child.status}\n--- stdout ---\n${child.stdout}\n--- stderr ---\n${child.stderr}`
     assert.equal(child.status, 0, said)
     const record = JSON.parse(child.stdout.trim().split('\n').pop())
-    const run = { assembly: { root: release, files: inventory }, path: { kept, removed, wasSet, scrubbed }, elapsedMs, record }
+    const run = {
+      assembly: { root: release, files: inventory },
+      path: { kept, removed, wasSet, scrubbed: { names: SCRUBBED, leftover } },
+      elapsedMs,
+      record,
+    }
 
     /* The gate: no pf from inside the child, and no .pf in the target before anything ran. */
     assert.deepEqual(record.pf, { error: 'ENOENT', status: null }, `pf is still resolvable inside the child: ${JSON.stringify(record.pf)}`)
+    /* The child's own environment is the reading that counts: of the five names taken out of the
+     * copy, none came back under any spelling. */
+    const leaked = SCRUBBED.filter((name) =>
+      record.envKeys.some((key) => key.toLowerCase() === name.toLowerCase()))
+    assert.deepEqual(leaked, [], `the child inherited these after the scrub: ${JSON.stringify(leaked)}`)
     assert.equal(record.path, kept.join(delimiter), 'the child saw exactly the filtered PATH')
     assert.ok(record.cwd.toLowerCase().includes(basename(work).toLowerCase()), `the child must stand in the temp project, not the checkout: ${record.cwd}`)
     assert.equal(record.beforeInit, false, 'the target project must have no .pf/ before the flow')

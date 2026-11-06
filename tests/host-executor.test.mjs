@@ -25,19 +25,16 @@ import { join } from 'node:path'
 import { canonicalWorkspaceRoot, openNodeSession } from '../src/host/executor.ts'
 import { executorOf } from '../src/host/relay.ts'
 import { PATHFINDER_TOOL_NAME } from '../src/host/tool.ts'
+import { pinHome } from './helpers/env.mjs'
+import { until, flush } from './helpers/wait.mjs'
+import { fakeContext } from './helpers/host-context.mjs'
 import { fakeWorkspaceFiles } from './helpers/workspace-files-port.mjs'
 
 /* Opening a session also reads the placement record under the DSH home to confirm the skills the
  * plugins placed against this workspace's own catalog view. These cases exercise the opener's flow,
  * not that placement, so the home they read is pinned to a temp one here — never the machine's own. */
-const testHome = mkdtempSync(join(tmpdir(), 'pf-executor-home-'))
-const previousHome = process.env.DSH_HOME
-process.env.DSH_HOME = testHome
-test.after(() => {
-  if (previousHome === undefined) delete process.env.DSH_HOME
-  else process.env.DSH_HOME = previousHome
-  rmSync(testHome, { recursive: true, force: true })
-})
+const pinned = pinHome(['DSH_HOME'], 'pf-executor-home-')
+test.after(pinned.restore)
 
 /** One cell's plan line, the way the dispatch preparation writes it: one line, nothing after it. */
 const PROMPT_LINE = '/pf-conduct n1 [pipeline]'
@@ -54,12 +51,6 @@ function defer() {
   return { promise, resolve }
 }
 
-/** Let the queued stretches schedule: one macrotask beats every pending microtask hop. */
-async function flush() {
-  await new Promise((resolve) => setImmediate(resolve))
-  await new Promise((resolve) => setImmediate(resolve))
-}
-
 /**
  * Wait until the queued opens reach `count` creations, then turn the loop over once. The opener
  * resolves the workspace root off the loop (`realpath`) before it creates, so a fixed number of
@@ -68,15 +59,6 @@ async function flush() {
 async function opened(created, count = 1) {
   await until(() => created.length >= count, `第 ${count} 个 create`)
   await flush()
-}
-
-/** Wait until the fact holds, yielding to the event loop; the wait is bounded by wall clock, because the work crosses real IO. */
-async function until(check, what) {
-  const started = Date.now()
-  while (!check()) {
-    if (Date.now() - started > 2000) throw new Error(`等不到：${what}`)
-    await new Promise((resolve) => setImmediate(resolve))
-  }
 }
 
 /**
@@ -123,33 +105,14 @@ function fakeAgents({ withWhenIdle = true, gate, idleRefusal } = {}) {
   }
 }
 
-/** The host context stand-in: services by name, the port as a property, and an event bus with `on`/`emit`. `sessions` is passed as-is: the store is an inject requirement, and a stand-in that omits it still opens. */
-function fakeContext({ files, agents, sessions, defaultModel, workspaceRegistry, agentPresets } = {}) {
-  const listeners = new Map()
-  const bus = {
-    on(name, listener) {
-      const set = listeners.get(name) ?? new Set()
-      set.add(listener)
-      listeners.set(name, set)
-      return () => set.delete(listener)
-    },
-    emit(name, ...args) {
-      for (const listener of [...(listeners.get(name) ?? [])]) listener(...args)
-    },
-  }
-  const ctx = {
-    workspaceFiles: fakeWorkspaceFiles(files),
-    get(name) {
-      if (name === 'sessions') return sessions
-      if (name === 'agents') return agents
-      if (name === 'agentDefaultModel') return defaultModel
-      if (name === 'workspaceRegistry') return workspaceRegistry
-      if (name === 'agentPresets') return agentPresets
-      return undefined
-    },
-    on: bus.on,
-  }
-  return { ctx, events: bus }
+/** The host context stand-in: the port as a property, an event bus with `on`/`emit`, and the store the opener reaches through `get('sessions')` — the inject requirement a stand-in that omits the live-session service still opens without. */
+function context({ files, agents, sessions, defaultModel, workspaceRegistry, agentPresets } = {}) {
+  return fakeContext({
+    files,
+    sessions: false,
+    bus: true,
+    services: { sessions, agents, agentDefaultModel: defaultModel, workspaceRegistry, agentPresets },
+  })
 }
 
 /** A real workspace root for the note the opener writes, with the plan prompt in the port's dict. `prompt: null` means the cell has none. */
@@ -159,7 +122,7 @@ function rig({ files = {}, node = 'n1', cycle = 'c1', prompt = PROMPT, ...rest }
   const dict = { ...files }
   if (prompt !== null) dict[promptPath(cycle, node)] = prompt
   const agents = fakeAgents(rest)
-  const { ctx, events } = fakeContext({ files: dict, agents: agents.registry, sessions: {}, ...rest })
+  const { ctx, events } = context({ files: dict, agents: agents.registry, sessions: {}, ...rest })
   return { root, cycle, node, agents, ctx, events }
 }
 
@@ -182,7 +145,7 @@ function aliasOf(root) {
 
 test('探测：代理登记不在，点名 agents 拒绝，什么都没建', async () => {
   const agents = fakeAgents()
-  const { ctx } = fakeContext({ files: {}, agents })
+  const { ctx } = context({ files: {}, agents })
   const noAgents = { ...ctx, get(name) { return name === 'sessions' ? {} : undefined } }
   const outcome = await openNodeSession(noAgents, 's1', 'C:\\ws', 'c1', 'n1')
   assert.deepEqual(outcome, { ok: false, code: 'no-session-service', detail: 'agents' })
@@ -476,7 +439,7 @@ test('同一条工作区的线：两个开严格一前一后，都开成', async
   const holds = [defer(), defer()]
   let taken = 0
   const agents = fakeAgents({ gate: () => holds[taken++].promise })
-  const { ctx } = fakeContext({ files, agents: agents.registry, sessions: {} })
+  const { ctx } = context({ files, agents: agents.registry, sessions: {} })
   const first = openNodeSession(ctx, 's1', root, 'c1', 'n1')
   const second = openNodeSession(ctx, 's1', root, 'c1', 'n2')
   await opened(agents.created)
@@ -503,7 +466,7 @@ test('同一条工作区的线：一个拒绝毒不死下一条，第二个照�
   const agents = fakeAgents({
     gate: (_record, index) => (index === 0 ? Promise.reject(new Error('create blew up')) : Promise.resolve()),
   })
-  const { ctx } = fakeContext({ files, agents: agents.registry, sessions: {} })
+  const { ctx } = context({ files, agents: agents.registry, sessions: {} })
   const one = await openNodeSession(ctx, 's1', root, 'c1', 'n1')
   assert.equal(one.ok, false)
   assert.equal(one.code, 'open-failed')
@@ -525,7 +488,7 @@ test('不同工作区不排队：两边的 create 都进了才谈结算', async 
   const holds = [defer(), defer()]
   let taken = 0
   const agents = fakeAgents({ gate: () => holds[taken++].promise })
-  const { ctx } = fakeContext({ files, agents: agents.registry, sessions: {} })
+  const { ctx } = context({ files, agents: agents.registry, sessions: {} })
   const one = openNodeSession(ctx, 's1', rootA, 'c1', 'n1')
   const two = openNodeSession(ctx, 's1', rootB, 'c1', 'n1')
   await opened(agents.created, 2)
@@ -667,7 +630,7 @@ test('唤醒：会话没有可注册的工具面时，open 照常开成（wake �
       return Promise.resolve({ agent, dispose: async () => {} })
     },
   }
-  const { ctx } = fakeContext({ files: { [promptPath('c1', 'n1')]: PROMPT }, agents: bareAgents, sessions: {} })
+  const { ctx } = context({ files: { [promptPath('c1', 'n1')]: PROMPT }, agents: bareAgents, sessions: {} })
   const pending = openNodeSession(ctx, 's1', root, 'c1', 'n1')
   await until(() => made !== undefined, 'bare agent 进 create')
   made.whenIdle.resolve()
@@ -710,13 +673,13 @@ test('派发接缝的演练档：请求不带 dryRun 时照常开会话，回执
 
 /** One placement record plus the two files it names, in the temp home these cases read. */
 function placeOneSkill(name) {
-  const root = join(testHome, 'skills')
+  const root = join(pinned.home, 'skills')
   const ours = join(root, name, 'SKILL.md')
   mkdirSync(join(root, name), { recursive: true })
   writeFileSync(ours, `---\nname: ${name}\ndescription: placed by the plugin\n---\n\n# ${name}\n`, 'utf8')
-  mkdirSync(join(testHome, 'pathfinder'), { recursive: true })
+  mkdirSync(join(pinned.home, 'pathfinder'), { recursive: true })
   writeFileSync(
-    join(testHome, 'pathfinder', 'skills.json'),
+    join(pinned.home, 'pathfinder', 'skills.json'),
     JSON.stringify({ version: 1, root, skills: [{ name, dir: name, files: [`${name}/SKILL.md`] }] }),
     'utf8',
   )
@@ -725,8 +688,8 @@ function placeOneSkill(name) {
 
 /** Take the record back off the temp home, so the next case starts with this line having placed nothing. */
 function clearPlacement() {
-  rmSync(join(testHome, 'pathfinder'), { recursive: true, force: true })
-  rmSync(join(testHome, 'skills'), { recursive: true, force: true })
+  rmSync(join(pinned.home, 'pathfinder'), { recursive: true, force: true })
+  rmSync(join(pinned.home, 'skills'), { recursive: true, force: true })
 }
 
 /** The host context with a skill catalog that answers one fixed view, and a logger that keeps its lines. The workspace layer is present and quiet, so the only line these cases read is the diagnostic's own. */

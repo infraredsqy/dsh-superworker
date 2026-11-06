@@ -22,23 +22,16 @@ import { join } from 'node:path'
 import { dispatchCell, installRelay } from '../src/host/relay.ts'
 import { PathfinderRecordsGateway } from '../src/host/gateway.ts'
 import { PANEL_PREF_FIELDS } from '../src/host/settings-fields.ts'
+import { pinHome } from './helpers/env.mjs'
+import { fakeContext } from './helpers/host-context.mjs'
+import { drainFor, until } from './helpers/wait.mjs'
 import { absentError, readPage } from './helpers/workspace-files-port.mjs'
 
 /* The engine reads this machine's layer (`<home>/.pf/config.json`) during
  * dispatch preparation; these cases pin it to a temporary home, never the
  * machine's own. The opener's skill-placement read rides the same pin. */
-const testHome = mkdtempSync(join(tmpdir(), 'pf-relay-home-'))
-const previousHome = process.env.PF_HOME_DIR
-const previousDshHome = process.env.DSH_HOME
-process.env.PF_HOME_DIR = testHome
-process.env.DSH_HOME = testHome
-test.after(() => {
-  if (previousHome === undefined) delete process.env.PF_HOME_DIR
-  else process.env.PF_HOME_DIR = previousHome
-  if (previousDshHome === undefined) delete process.env.DSH_HOME
-  else process.env.DSH_HOME = previousDshHome
-  rmSync(testHome, { recursive: true, force: true })
-})
+const pinned = pinHome(['PF_HOME_DIR', 'DSH_HOME'], 'pf-relay-home-')
+test.after(pinned.restore)
 
 /** A real workspace root with a real `.pf` in it: the four layout files, the graph, and one active line holding `holding`. */
 function rigRecordRoot(holding) {
@@ -72,30 +65,8 @@ async function settleClose(root, closed, next) {
   await writeFile(join(root, '.pf', 'state.json'), JSON.stringify(state))
 }
 
-/** The negative wait behind the `wait` assertions: a judge's plan read is a few small file reads, so half a second of drained loop is the honest bound before asserting "still nothing". */
-async function drain() {
-  await drainFor(500)
-}
-
-/** Wait until the fact holds, yielding to the event loop; the wait is bounded by wall clock, because the trigger is fire-and-forget and its work crosses real file IO. */
-async function until(check, what, notes = []) {
-  const started = Date.now()
-  for (;;) {
-    if (check()) return
-    if (Date.now() - started > 2000) {
-      throw new Error(`等不到：${what}${notes.length > 0 ? `；relay 的读数：${JSON.stringify(notes)}` : ''}`)
-    }
-    await new Promise((resolve) => setImmediate(resolve))
-  }
-}
-
-/** The negative wait: nothing should happen, so the loop is drained for a wall-clock stretch before the "still nothing" assert. A fire-and-forget trigger has no completion event to await; this is that wait, stated honestly. */
-async function drainFor(ms) {
-  const started = Date.now()
-  while (Date.now() - started < ms) {
-    await new Promise((resolve) => setImmediate(resolve))
-  }
-}
+/** The negative wait behind the `wait` assertions: the shared drain (see `helpers/wait.mjs`) — it only ever disproves. */
+const drain = () => drainFor()
 
 /** The session-side stand-in: every create is recorded; each agent settles its opening round on the spot. With `idleGate`, the opening round's settlement waits for the gate — the in-flight shape a long first round produces. */
 function fakeAgents({ idleGate } = {}) {
@@ -152,46 +123,23 @@ function fsPort(root) {
   }
 }
 
-/** The host context stand-in: services by name, an event bus, a logger the relay's refusals land on, and the settings surface the switch is read from (the object is shared, so a flip is seen live). */
-function fakeContext({ root, agents, config } = {}) {
-  const listeners = new Map()
-  const warnings = []
-  const bus = {
-    on(name, listener) {
-      const set = listeners.get(name) ?? new Set()
-      set.add(listener)
-      listeners.set(name, set)
-      return () => set.delete(listener)
-    },
-    emit(name, ...args) {
-      for (const listener of [...(listeners.get(name) ?? [])]) listener(...args)
-    },
-  }
-  return {
-    ctx: {
-      workspaceFiles: fsPort(root),
-      sessions: { get: () => ({ header: { cwd: root } }) },
-      sandboxPolicy: { workspaceRoot: root },
-      ...(config === undefined ? {} : { config }),
-      logger: {
-        warn: (line) => warnings.push(line),
-      },
-      get(name) {
-        if (name === 'sessions') return {}
-        if (name === 'agents') return agents.registry
-        return undefined
-      },
-      on: bus.on,
-    },
-    events: bus,
-    warnings,
-  }
+/** The host context stand-in: the real record directory behind the port, the live session header naming it, an event bus, a logger the relay's refusals land on, and the settings surface the switch is read from (the object is shared, so a flip is seen live). */
+function context({ root, agents, config } = {}) {
+  return fakeContext({
+    port: fsPort(root),
+    sessionCwd: root,
+    sandboxRoot: root,
+    config,
+    bus: true,
+    logger: true,
+    services: { sessions: {}, agents: agents.registry },
+  })
 }
 
 test('派发落认领：会话开出来，started 标记在盘上，会话档也落了', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
-  const { ctx } = fakeContext({ root, agents })
+  const { ctx } = context({ root, agents })
   try {
     const outcome = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
     assert.equal(outcome.ok, true, JSON.stringify(outcome))
@@ -212,7 +160,7 @@ test('派发落认领：会话开出来，started 标记在盘上，会话档也
 test('并发两次只开一个会话：第二个调用读到认领，不再建第二条', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
-  const { ctx } = fakeContext({ root, agents })
+  const { ctx } = context({ root, agents })
   try {
     const [one, two] = await Promise.all([
       dispatchCell(ctx, 'caller', root, 'c-1', 'n-1'),
@@ -230,7 +178,7 @@ test('并发两次只开一个会话：第二个调用读到认领，不再建�
 test('触发：自己开的会话收尾，计划说 dispatch，下一棒自己开出来', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
-  const { ctx, events, warnings } = fakeContext({ root, agents })
+  const { ctx, events, warnings } = context({ root, agents })
   const installOff = installRelay(ctx)
   try {
     /* 第一棒由按钮那条路开出来：会话进入宿主自己的追踪表。 */
@@ -266,7 +214,7 @@ test('触发：自己开的会话收尾，计划说 dispatch，下一棒自己�
 test('销毁触发：计划说 wait 时，会话被销毁也什么都不开（判据没有变）', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
-  const { ctx, events, warnings } = fakeContext({ root, agents })
+  const { ctx, events, warnings } = context({ root, agents })
   const installOff = installRelay(ctx)
   try {
     const first = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
@@ -286,7 +234,7 @@ test('销毁触发：计划说 wait 时，会话被销毁也什么都不开（�
 test('销毁触发：会话没走到回合结束就被销毁，计划说 dispatch 时下一棒照开', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
-  const { ctx, events, warnings } = fakeContext({ root, agents })
+  const { ctx, events, warnings } = context({ root, agents })
   const installOff = installRelay(ctx)
   try {
     const first = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
@@ -313,7 +261,7 @@ test('销毁触发：会话没走到回合结束就被销毁，计划说 dispatc
 test('销毁触发：不是本宿主开的会话被销毁，什么都不开', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
-  const { ctx, events, warnings } = fakeContext({ root, agents })
+  const { ctx, events, warnings } = context({ root, agents })
   const installOff = installRelay(ctx)
   try {
     const first = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
@@ -332,7 +280,7 @@ test('销毁触发：不是本宿主开的会话被销毁，什么都不开', as
 test('两份通知都来：轮次结束已经开了下一棒，同一会话的销毁不再开第三棒', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
-  const { ctx, events, warnings } = fakeContext({ root, agents })
+  const { ctx, events, warnings } = context({ root, agents })
   const installOff = installRelay(ctx)
   try {
     const first = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
@@ -361,7 +309,7 @@ test('注册先于回合结束：本棒在途时它的 turn/end 就该被接力�
   let releaseIdle
   const idleGate = new Promise((give) => { releaseIdle = give })
   const agents = fakeAgents({ idleGate })
-  const { ctx, events, warnings } = fakeContext({ root, agents })
+  const { ctx, events, warnings } = context({ root, agents })
   const installOff = installRelay(ctx)
   try {
     /* 第一棒在途：首条指令已进，回合被 gate 挂着——dispatch 尚未返回。 */
@@ -401,7 +349,7 @@ test('开关关掉：turn/end 来了也不开下一棒；开关打开后同一�
    * the shape the real host hands over, pinned here. */
   let snapshot = false
   const config = { [PANEL_PREF_FIELDS.autoRelay]: { get: () => snapshot } }
-  const { ctx, events, warnings } = fakeContext({ root, agents })
+  const { ctx, events, warnings } = context({ root, agents })
   const installOff = installRelay(ctx, config)
   try {
     /* 按钮那条路不受开关管：第一棒照常开出来，会话进追踪表。 */
@@ -432,7 +380,7 @@ test('开关关掉：turn/end 来了也不开下一棒；开关打开后同一�
 test('按钮走同一条路：网关的 openNodeSession 端点一样落认领', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
-  const { ctx } = fakeContext({ root, agents })
+  const { ctx } = context({ root, agents })
   try {
     const gateway = new PathfinderRecordsGateway(ctx)
     const outcome = await gateway.openNodeSession('caller', '', 'c-1', 'n-1')
@@ -447,7 +395,7 @@ test('按钮走同一条路：网关的 openNodeSession 端点一样落认领', 
 test('格子派发不成：拒绝带引擎的原话，认领不落盘，一个会话都没建', async () => {
   const root = rigRecordRoot([])
   const agents = fakeAgents()
-  const { ctx } = fakeContext({ root, agents })
+  const { ctx } = context({ root, agents })
   try {
     const outcome = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
     assert.equal(outcome.ok, false)

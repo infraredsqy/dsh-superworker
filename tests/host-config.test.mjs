@@ -10,19 +10,18 @@
  */
 import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { open } from 'pf-core'
 import { PathfinderRecordsGateway } from '../src/host/gateway.ts'
 import { parseConfigList } from '../src/host/project-config.ts'
-import { fakeContext } from './helpers/host-fixtures.mjs'
+import { pinHome } from './helpers/env.mjs'
+import { fakeContext } from './helpers/host-context.mjs'
+import { configOnDisk, project as throwaway } from './helpers/pf-project.mjs'
 
 /* One machine layer for this file: the global settings layer lives in the home directory, and
  * `PF_HOME_DIR` is the engine's own switch for it — a test may not read the developer's own home. */
-const home = mkdtempSync(join(tmpdir(), 'pf-host-config-home-'))
-process.env.PF_HOME_DIR = home
-after(() => rmSync(home, { recursive: true, force: true }))
+const pinned = pinHome(['PF_HOME_DIR'], 'pf-host-config-home-')
+after(pinned.restore)
 
 /** The four lines printed by a local `config list`, verbatim. */
 const LISTED = [
@@ -33,21 +32,7 @@ const LISTED = [
 ].join('\n')
 
 /** A throwaway project: `.pf` laid down by the engine itself, closed again when the case is done. */
-async function project() {
-  const root = mkdtempSync(join(tmpdir(), 'pf-host-config-'))
-  await open(root).ledger.init()
-  return {
-    root,
-    done() {
-      rmSync(root, { recursive: true, force: true })
-    },
-  }
-}
-
-/** The project settings file as it sits on disk; `init` lays an empty object and writes add to it. */
-function configOnDisk(root) {
-  return JSON.parse(readFileSync(join(root, '.pf', 'config.json'), 'utf8'))
-}
+const project = () => throwaway('pf-host-config-')
 
 test('工具印的四行：值与它住哪一层都读出来', () => {
   const entries = parseConfigList(LISTED)
@@ -117,7 +102,7 @@ test('不是设置行的都不收：工具另印的提醒、空行、没有值�
 test('读一趟：答的就是 config list，答在这个工作区的根上，表就是它印的那几行', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext({ workspaceRoot: stage.root }))
+    const gateway = new PathfinderRecordsGateway(fakeContext({ root: stage.root }).ctx)
     const reading = await gateway.readConfig('s1', '')
 
     assert.equal(reading.ok, true, reading.refusal?.detail)
@@ -136,7 +121,7 @@ test('读那一趟没成：如实说它没成，一行都不编，理由还是�
   try {
     /* A project settings file that is not JSON: the engine refuses, and its sentence is the detail. */
     writeFileSync(join(stage.root, '.pf', 'config.json'), '{ this is not json')
-    const gateway = new PathfinderRecordsGateway(fakeContext({ workspaceRoot: stage.root }))
+    const gateway = new PathfinderRecordsGateway(fakeContext({ root: stage.root }).ctx)
     const reading = await gateway.readConfig('s1', '')
 
     /* The reason is a code, and the engine's own words ride along as the detail: those words are not
@@ -154,7 +139,7 @@ test('读那一趟没成：如实说它没成，一行都不编，理由还是�
 test('写一条：config set <键> <值>，落的是项目那一层（不带 --global）', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext({ workspaceRoot: stage.root }))
+    const gateway = new PathfinderRecordsGateway(fakeContext({ root: stage.root }).ctx)
     const outcome = await gateway.setConfig('s1', '', 'worktree_mode', 'fork')
 
     assert.equal(outcome.ok, true, outcome.detail)
@@ -168,7 +153,7 @@ test('写一条：config set <键> <值>，落的是项目那一层（不带 --g
 test('没登记的键照递：这一手不立放行表，拒的是引擎自己', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext({ workspaceRoot: stage.root }))
+    const gateway = new PathfinderRecordsGateway(fakeContext({ root: stage.root }).ctx)
     const outcome = await gateway.setConfig('s1', '', 'spawner', 'dsh')
 
     /* The line is still handed over and the engine's refusal surfaces as its own code, with its

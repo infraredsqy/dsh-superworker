@@ -17,25 +17,22 @@ import { answer, open } from 'pf-core'
 import { apply } from '../src/host/index.ts'
 import { shippedPluginsDir } from '../src/host/skills.ts'
 import { PATHFINDER_TOOL_NAME, toolDescriptionOf, wakeAgent } from '../src/host/tool.ts'
+import { fakeContext } from './helpers/host-context.mjs'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
 const shippedPlugins = join(repo, 'packages', 'pf-core', 'plugins')
 
 /** A stand-in host context whose sessions resolve nowhere, so the tool reads the sandbox root. */
-function fakeContext(workspaceRoot) {
-  return {
-    provide: () => undefined,
-    on: () => () => undefined,
-    effect: () => undefined,
-    sessions: { get: () => undefined },
-    sandboxPolicy: { workspaceRoot },
-    get: () => undefined,
-  }
-}
+const contextOver = (workspaceRoot) => fakeContext({
+  sandboxRoot: workspaceRoot,
+  bus: true,
+  provide: true,
+  effect: true,
+}).ctx
 
 /** The tool registered into a fresh agent's scope over the given workspace. */
 function toolOver(workspaceRoot) {
-  const ctx = fakeContext(workspaceRoot)
+  const ctx = contextOver(workspaceRoot)
   const registered = []
   const agent = {
     id: 'agent-tool',

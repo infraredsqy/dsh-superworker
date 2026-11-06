@@ -8,65 +8,26 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { apply, inject, name } from '../src/host/index.ts'
+import { pinHome } from './helpers/env.mjs'
+import { fakeContext as standIn } from './helpers/host-context.mjs'
 
 /* Loading this line places the shipped skills into the DSH skill root, and these cases only exercise
  * the record service — so the root they would write into is pinned to a temp home here, never the
  * machine's own. `apply` returns the placement seam; these cases do not wait on it, they only check
  * that loading still installs the service (the placement has its own file, `host-skills`). */
-const testHome = mkdtempSync(join(tmpdir(), 'pf-plugin-home-'))
-const previousHome = process.env.DSH_HOME
-process.env.DSH_HOME = testHome
-test.after(() => {
-  if (previousHome === undefined) delete process.env.DSH_HOME
-  else process.env.DSH_HOME = previousHome
-  rmSync(testHome, { recursive: true, force: true })
-})
+const pinned = pinHome(['DSH_HOME'], 'pf-plugin-home-')
+test.after(pinned.restore)
 
 const signal = new AbortController().signal
 
-function fakeWorkspaceFiles() {
-  const asked = []
-  return {
-    asked,
-    async list(scope, path, signal) {
-      asked.push({ kind: 'list', scope, path, signal })
-      const error = new Error(`no entry at ${path}`)
-      error.code = 'workspace-file/not-found'
-      throw error
-    },
-    async read(scope, path, range, signal) {
-      asked.push({ kind: 'read', scope, path, range, signal })
-      throw new Error('nothing to read in this test')
-    },
-  }
-}
-
-function fakeContext({ live = {}, stored = {}, sandboxRoot = 'C:\\fallback-root' } = {}) {
-  const workspaceFiles = fakeWorkspaceFiles()
-  const provided = {}
-  const statCalls = []
-  const ctx = {
-    workspaceFiles,
-    sessions: { get: (sessionId) => live[sessionId] },
-    sandboxPolicy: { workspaceRoot: sandboxRoot },
-    get: (service) =>
-      service === 'sessionPersistence'
-        ? {
-            stat: async (sessionId) => {
-              statCalls.push(sessionId)
-              return stored[sessionId]
-            },
-          }
-        : undefined,
-    provide: (service, value) => {
-      provided[service] = value
-    },
-  }
-  return { ctx, provided, asked: workspaceFiles.asked, statCalls }
+/**
+ * The context the plugin is applied to: the live and stored session headers, the sandbox policy's
+ * fallback root, and the workspace-files port in its bare not-found form — every directory and file
+ * is absent, which is the reading these cases judge (which root was asked, and for what).
+ */
+function context({ live = {}, stored = {}, sandboxRoot = 'C:\\fallback-root' } = {}) {
+  return standIn({ live, stored, sandboxRoot, files: {}, provide: true })
 }
 
 test('插件名与依赖声明就是宿主那四样', () => {
@@ -98,7 +59,7 @@ test('出口面收在插件协议要的那五样上：内部件不再从入口�
 })
 
 test('活着的会话头说话：它写的 cwd 就是取数的那个根', async () => {
-  const { ctx, provided, asked } = fakeContext({
+  const { ctx, provided, asked } = context({
     live: { s1: { header: { cwd: 'C:\\from-the-live-session' } } },
     stored: { s1: { header: { cwd: 'C:\\from-the-stored-header' } } },
   })
@@ -114,7 +75,7 @@ test('活着的会话头说话：它写的 cwd 就是取数的那个根', async 
 })
 
 test('没有活着的会话时，落盘的会话头说话', async () => {
-  const { ctx, provided, asked } = fakeContext({ stored: { s2: { header: { cwd: 'C:\\from-the-stored-header' } } } })
+  const { ctx, provided, asked } = context({ stored: { s2: { header: { cwd: 'C:\\from-the-stored-header' } } } })
   apply(ctx)
   const reading = await provided.pathfinder.read('s2', { signal })
 
@@ -123,7 +84,7 @@ test('没有活着的会话时，落盘的会话头说话', async () => {
 })
 
 test('有活着的会话头就不再问落盘的头：它没写 cwd 时落到沙箱策略那个根', async () => {
-  const { ctx, provided, asked, statCalls } = fakeContext({
+  const { ctx, provided, asked, statCalls } = context({
     live: { s4: { header: {} } },
     stored: { s4: { header: { cwd: 'C:\\from-the-stored-header' } } },
     sandboxRoot: 'C:\\sandbox-root-for-tests',
@@ -137,7 +98,7 @@ test('有活着的会话头就不再问落盘的头：它没写 cwd 时落到沙
 })
 
 test('两个会话头都没写 cwd 时，落到沙箱策略那个根', async () => {
-  const { ctx, provided, asked } = fakeContext({
+  const { ctx, provided, asked } = context({
     live: { s3: { header: {} } },
     stored: { s3: { header: {} } },
     sandboxRoot: 'C:\\sandbox-root-for-tests',
@@ -150,7 +111,7 @@ test('两个会话头都没写 cwd 时，落到沙箱策略那个根', async () 
 })
 
 test('整条会话都没人认得时，走的还是沙箱策略那个根，取数不抛', async () => {
-  const { ctx, provided } = fakeContext({ sandboxRoot: 'C:\\sandbox-root-for-tests' })
+  const { ctx, provided } = context({ sandboxRoot: 'C:\\sandbox-root-for-tests' })
   apply(ctx)
   const reading = await provided.pathfinder.read('nobody-knows-me', { signal })
 
@@ -160,7 +121,7 @@ test('整条会话都没人认得时，走的还是沙箱策略那个根，取�
 })
 
 test('服务装在 ctx 上，由调用方给的取消信号转手递给口子', async () => {
-  const { ctx, provided, asked } = fakeContext({ sandboxRoot: 'C:\\sandbox-root-for-tests' })
+  const { ctx, provided, asked } = context({ sandboxRoot: 'C:\\sandbox-root-for-tests' })
   apply(ctx)
   assert.equal(typeof provided.pathfinder.read, 'function')
 

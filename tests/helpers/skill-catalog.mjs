@@ -10,9 +10,10 @@
  *
  * Both stand-ins read real directories, so "the install's own read-back" and "what a session sees"
  * are two different reads of the same disk rather than one view pretending to be both. The ranks and
- * sources are the provider's own; `tests/host-skills.test.mjs` holds the two views separately, and
- * the raw readings against the real packages live beside the node record
- * (`temp/fix-scope-probe-raw.txt`, from the fix round that established them).
+ * sources are the provider's own; `tests/host-skills.test.mjs` holds the two views separately. The
+ * probe readings the ranks were first taken from live in this machine's pipeline record
+ * (`.pf/nodes/<uuid>/temp/`), which is not part of the repository — the rules above are what this
+ * file carries, and nothing here reads that record.
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'

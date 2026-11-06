@@ -20,9 +20,10 @@
  *   replaces the previous manifest's entries, so an upgrade leaves no earlier version behind.
  *
  * The catalog stand-in (`helpers/skill-catalog.mjs`) implements the two real packages' rules — root
- * ranks and the layer merge — over real directories, and holds the two views separately; the raw
- * readings taken against the installed packages themselves live beside the node record
- * (`temp/fix-scope-probe-raw.txt`, from the fix round that established them).
+ * ranks and the layer merge — over real directories, and holds the two views separately. The probe
+ * readings the ranks were first taken from live in this machine's pipeline record
+ * (`.pf/nodes/<uuid>/temp/`), which is not part of the repository; nothing here reads them, and the
+ * cases below stand on the stand-in's rules alone.
  *
  *   node --test tests/     (npm test builds packages/pf-core first; this file imports the engine by
  *                           name, so without that build it cannot load)
@@ -46,6 +47,7 @@ import {
   shippedPluginsDir,
   skillRootOf,
 } from '../src/host/skills.ts'
+import { pinTo } from './helpers/env.mjs'
 import { PRESET_SCOPE, fakeFileSystemProvider, fakeSkillRegistry } from './helpers/skill-catalog.mjs'
 
 /** Every plugin folder's skills, as the engine reads them off this checkout. */
@@ -523,8 +525,7 @@ test('没有 effect 接缝、也没有 logger 的宿主：这次照装，摘的�
 
 test('apply：技能装载接在这条线自己的 fiber 上，装完盘上有、fiber 摘掉即摘净', async () => {
   const h = homes()
-  const previous = process.env.DSH_HOME
-  process.env.DSH_HOME = h.dsh
+  const unpin = pinTo(h.dsh, ['DSH_HOME'])
   try {
     const reported = []
     let provided
@@ -551,8 +552,7 @@ test('apply：技能装载接在这条线自己的 fiber 上，装完盘上有�
     dispose()
     assert.equal(existsSync(manifestPathOf(h.dsh)), false)
   } finally {
-    if (previous === undefined) delete process.env.DSH_HOME
-    else process.env.DSH_HOME = previous
+    unpin()
     h.clean()
   }
 })

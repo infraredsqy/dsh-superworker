@@ -14,30 +14,22 @@
  */
 import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { answer, open } from 'pf-core'
 import { PathfinderRecordsGateway } from '../src/host/gateway.ts'
 import { shippedPluginsDir } from '../src/host/skills.ts'
+import { pinHome } from './helpers/env.mjs'
+import { fakeContext } from './helpers/host-context.mjs'
+import { configOnDisk, project as throwaway } from './helpers/pf-project.mjs'
 
 /* One machine layer for this file. The global settings layer lives in the home directory, and
  * `PF_HOME_DIR` is the engine's own switch for it: a test may not read the developer's own home. */
-const home = mkdtempSync(join(tmpdir(), 'pf-host-write-home-'))
-process.env.PF_HOME_DIR = home
-after(() => rmSync(home, { recursive: true, force: true }))
+const pinned = pinHome(['PF_HOME_DIR'], 'pf-host-write-home-')
+after(pinned.restore)
 
 /** A throwaway project: `.pf` laid down by the engine itself, closed again when the case is done. */
-async function project() {
-  const root = mkdtempSync(join(tmpdir(), 'pf-host-write-'))
-  await open(root).ledger.init()
-  return {
-    root,
-    done() {
-      rmSync(root, { recursive: true, force: true })
-    },
-  }
-}
+const project = () => throwaway('pf-host-write-')
 
 /** The words layer's own seams for a project: the root it answers at, and the plugins this package ships. */
 function ioOf(root) {
@@ -61,31 +53,19 @@ function instructionSaying(root, text) {
   return instructionsOnDisk(root).find((entry) => entry.text === text)
 }
 
-/** The project settings file as it sits on disk; `init` lays an empty object and writes add to it. */
-function configOnDisk(root) {
-  return JSON.parse(readFileSync(join(root, '.pf', 'config.json'), 'utf8'))
-}
-
 /**
  * A minimal host context: the session stands in the named project, and no process gateway exists at
  * all. Asking for one throws — a write that reached for a command would fail right here.
  */
-function fakeContext(workspaceRoot) {
-  return {
-    workspaceFiles: {},
-    sessions: { get: () => ({ header: { cwd: workspaceRoot } }) },
-    sandboxPolicy: { workspaceRoot },
-    get(service) {
-      if (service === 'subprocess') throw new Error('this host exposes no process gateway, and the write path must not ask for one')
-      return undefined
-    },
-  }
-}
+const context = (workspaceRoot) => fakeContext({
+  root: workspaceRoot,
+  absent: { subprocess: 'this host exposes no process gateway, and the write path must not ask for one' },
+}).ctx
 
 test('记下一条：原话整句落进记录，回来的就是引擎那一句', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext(stage.root))
+    const gateway = new PathfinderRecordsGateway(context(stage.root))
     const said = '先看一眼记录再动手 & 别猜 "引号" 也在'
     const outcome = await gateway.addInstruction('s1', '', said, 'global', '', '')
 
@@ -104,7 +84,7 @@ test('点名一个工作区：这一笔落在那个根上，不看这条会话�
   const mine = await project()
   const other = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext(mine.root))
+    const gateway = new PathfinderRecordsGateway(context(mine.root))
     const outcome = await gateway.addInstruction('s1', other.root, '这一句写给别人', 'global', '', '')
 
     assert.equal(outcome.ok, true, outcome.detail)
@@ -126,7 +106,7 @@ test('绑一格：点名的那个节点落进记录，句子里的位置也指�
     const node = Object.keys(nodes).find((id) => nodes[id].title === '这一格先停下')
     assert.ok(node !== undefined, '种子节点没落进图里')
 
-    const gateway = new PathfinderRecordsGateway(fakeContext(stage.root))
+    const gateway = new PathfinderRecordsGateway(context(stage.root))
     const outcome = await gateway.addInstruction('s1', '', '这一格先停下', 'node', '', node)
 
     assert.equal(outcome.ok, true, outcome.detail)
@@ -146,7 +126,7 @@ test('绑一格：点名的那个节点落进记录，句子里的位置也指�
 test('归档一条：记录留在盘上，状态换成 withdrawn', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext(stage.root))
+    const gateway = new PathfinderRecordsGateway(context(stage.root))
     await gateway.addInstruction('s1', '', '归档我', 'global', '', '')
     const id = instructionSaying(stage.root, '归档我').id
 
@@ -165,7 +145,7 @@ test('归档一条：记录留在盘上，状态换成 withdrawn', async () => {
 test('复原一条：归档那条回到在用', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext(stage.root))
+    const gateway = new PathfinderRecordsGateway(context(stage.root))
     await gateway.addInstruction('s1', '', '放回去', 'global', '', '')
     const id = instructionSaying(stage.root, '放回去').id
     await gateway.archiveInstruction('s1', '', id)
@@ -183,7 +163,7 @@ test('复原一条：归档那条回到在用', async () => {
 test('删一条：句子与记录一起走，回来的尾巴是 REMOVED', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext(stage.root))
+    const gateway = new PathfinderRecordsGateway(context(stage.root))
     await gateway.addInstruction('s1', '', '这条我要删', 'global', '', '')
     const id = instructionSaying(stage.root, '这条我要删').id
 
@@ -201,7 +181,7 @@ test('删一条：句子与记录一起走，回来的尾巴是 REMOVED', async 
 test('写一个设置：项目那一层落盘，回来的是引擎印的那两行', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext(stage.root))
+    const gateway = new PathfinderRecordsGateway(context(stage.root))
     const outcome = await gateway.setConfig('s1', '', 'worktree_mode', 'reuse')
 
     assert.equal(outcome.ok, true, outcome.detail)
@@ -216,7 +196,7 @@ test('写一个设置：项目那一层落盘，回来的是引擎印的那两�
 test('读设置：引擎印的每一行解析成表，成功那一支不塞拒绝理由', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext(stage.root))
+    const gateway = new PathfinderRecordsGateway(context(stage.root))
     await gateway.setConfig('s1', '', 'worktree_mode', 'fork')
 
     const reading = await gateway.readConfig('s1', '')
@@ -237,16 +217,16 @@ test('全局那一层：家目录那份写下的值读成 global，这一手不�
   try {
     /* The machine layer, written the way a person would: the engine reads `<PF_HOME_DIR>/.pf/config.json`,
      * and only the words layer's own `config list` can say this value came from there. */
-    mkdirSync(join(home, '.pf'), { recursive: true })
-    writeFileSync(join(home, '.pf', 'config.json'), `${JSON.stringify({ max_agents: 3 })}\n`)
-    const gateway = new PathfinderRecordsGateway(fakeContext(stage.root))
+    mkdirSync(join(pinned.home, '.pf'), { recursive: true })
+    writeFileSync(join(pinned.home, '.pf', 'config.json'), `${JSON.stringify({ max_agents: 3 })}\n`)
+    const gateway = new PathfinderRecordsGateway(context(stage.root))
 
     const reading = await gateway.readConfig('s1', '')
 
     assert.equal(reading.ok, true, reading.refusal?.detail)
     assert.deepEqual(reading.entries['max_agents'], { value: '3', layer: 'global' }, '家目录那份压过出厂默认，层签读作 global')
   } finally {
-    rmSync(join(home, '.pf'), { recursive: true, force: true })
+    rmSync(join(pinned.home, '.pf'), { recursive: true, force: true })
     stage.done()
   }
 })
@@ -254,7 +234,7 @@ test('全局那一层：家目录那份写下的值读成 global，这一手不�
 test('空话与不认识的范围当场说清，记录一个字都不动', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext(stage.root))
+    const gateway = new PathfinderRecordsGateway(context(stage.root))
     const blank = await gateway.addInstruction('s1', '', '   ', 'global', '', '')
     const odd = await gateway.addInstruction('s1', '', '一句话', 'everywhere', '', '')
 
@@ -269,7 +249,7 @@ test('空话与不认识的范围当场说清，记录一个字都不动', async
 test('引擎非零作答：ok 是假，detail 是它自己那一句，记录不改', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext(stage.root))
+    const gateway = new PathfinderRecordsGateway(context(stage.root))
     const outcome = await gateway.archiveInstruction('s1', '', 'i-nope')
 
     assert.equal(outcome.ok, false)
@@ -283,7 +263,7 @@ test('引擎非零作答：ok 是假，detail 是它自己那一句，记录不�
 test('值合不合法由引擎判：它拒绝的那一句原样回来，盘上什么都不留', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext(stage.root))
+    const gateway = new PathfinderRecordsGateway(context(stage.root))
     const outcome = await gateway.setConfig('s1', '', 'max_agents', '0')
 
     assert.equal(outcome.ok, false)
@@ -299,7 +279,7 @@ test('值合不合法由引擎判：它拒绝的那一句原样回来，盘上�
 test('没登记的键照递：这一手不立放行表，拒的是引擎', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(fakeContext(stage.root))
+    const gateway = new PathfinderRecordsGateway(context(stage.root))
     const outcome = await gateway.setConfig('s1', '', 'spawner', 'dsh')
 
     assert.equal(outcome.ok, false)

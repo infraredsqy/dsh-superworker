@@ -56,6 +56,17 @@ export function readPool(
   const line = readLine(cycles)
 
   const rows: IssueReading[] = []
+  /* The one partition: every row lands in the pile its state names as it is read, so no later pass
+   * has to walk the rows again to find out what is in a pile. */
+  const piles = new Map<IssueState, IssueReading[]>()
+  const pileOf = (state: IssueState): IssueReading[] => {
+    const known = piles.get(state)
+    if (known !== undefined) return known
+    const made: IssueReading[] = []
+    piles.set(state, made)
+    return made
+  }
+  const countOf = (state: IssueState): number => piles.get(state)?.length ?? 0
   for (const entry of Object.values(issues)) {
     const discoveredAt = cutAt(toMoment(entry.discovered), at)
     /* An issue not yet discovered is not on the books: the ledger only records what has been registered. */
@@ -68,7 +79,7 @@ export function readPool(
     const id = text(entry.id) ?? ''
     /* Whether it weighs on the line is the verdict's own call: issues judged `external` drop out of the weighted sum — counted in, they would be a floor nobody could move and the threshold could never dip below, which is exactly how the pool's canonical reading `issue weight` treats them. The count follows a different measure (the tool's `status`): still on the books, still standing, just not weighing on the line. */
     const payable = decision !== 'external'
-    rows.push({
+    const row: IssueReading = {
       id,
       weight: severity === undefined ? 0 : (weights?.[severity] ?? 0),
       status: statusOf(recordStatus, written, at),
@@ -87,14 +98,14 @@ export function readPool(
       ...field('suggestion', text(entry.suggestion)),
       ...field('reason', text(entry.reason)),
       ...field('planPath', text(entry.plan_path)),
-    })
+    }
+    rows.push(row)
+    pileOf(row.status).push(row)
   }
 
   const groups: IssueGroupReading[] = []
   for (const pile of GROUPS) {
-    const entries = rows
-      .filter((row) => row.status === pile.key)
-      .sort(pile.standing ? standingOrder : closedOrder)
+    const entries = [...(piles.get(pile.key) ?? [])].sort(pile.standing ? standingOrder : closedOrder)
     if (entries.length === 0) continue
     groups.push({
       key: pile.key,
@@ -105,16 +116,15 @@ export function readPool(
     })
   }
 
-  const open = rows.filter((row) => row.status === 'open')
-  const acknowledged = rows.filter((row) => row.status === 'acknowledged')
-  const standing = [...open, ...acknowledged]
+  /* The two piles still owed, in record order: the census counts them and the line weighs them. */
+  const standing = [...(piles.get('open') ?? []), ...(piles.get('acknowledged') ?? [])]
   const census: PoolCensus = {
     total: rows.length,
     standing: standing.length,
-    open: open.length,
-    acknowledged: acknowledged.length,
-    rejected: rows.filter((row) => row.status === 'rejected').length,
-    resolved: rows.filter((row) => row.status === 'resolved').length,
+    open: countOf('open'),
+    acknowledged: countOf('acknowledged'),
+    rejected: countOf('rejected'),
+    resolved: countOf('resolved'),
   }
 
   return {

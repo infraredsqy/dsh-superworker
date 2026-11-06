@@ -32,10 +32,21 @@ const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
 // flag, skips the case.
 const workerLoadsTs = nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 6);
 
-/** Every `open(…, 'wx')` that was refused because the file was already there, in this process. */
+/**
+ * Every `open(…, 'wx')` that was refused because the file was already there, in this process.
+ *
+ * The count lives here because the mock above is hoisted above every case; what a case waits on is
+ * still its own — `beforeEach` empties this list, so "refused twice" can only ever be counted from
+ * the case that is asking. Left across cases, a second case would start with the first one's
+ * refusals in hand and read as blocked before it had waited at all.
+ */
 const refusals = vi.hoisted(() => {
   const paths: string[] = [];
   const waiters: Array<{ path: string; count: number; done: () => void }> = [];
+  const reset = (): void => {
+    paths.length = 0;
+    waiters.length = 0;
+  };
   const notify = (): void => {
     for (let index = waiters.length - 1; index >= 0; index -= 1) {
       const waiter = waiters[index]!;
@@ -45,7 +56,7 @@ const refusals = vi.hoisted(() => {
       }
     }
   };
-  return { paths, waiters, notify };
+  return { paths, waiters, notify, reset };
 });
 
 // The one seam this case needs: an exclusive creation meeting a file that is already there. It
@@ -79,6 +90,9 @@ beforeEach(() => {
   mkdirSync(join(root, '.pf'), { recursive: true });
   home = join(root, '_home');
   workers = [];
+  // Each case counts its own refusals: a list carried over from the case before would make the wait
+  // below answer for work this case never saw.
+  refusals.reset();
 });
 
 afterEach(() => {

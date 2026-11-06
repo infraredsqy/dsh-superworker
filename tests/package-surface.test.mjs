@@ -14,33 +14,13 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { covered, filesUnder } from './helpers/npm-files.mjs'
 
 const manifestPath = fileURLToPath(new URL('../package.json', import.meta.url))
 const manifest = JSON.parse(await (await import('node:fs/promises')).readFile(manifestPath, 'utf8'))
-
-/** Whether npm's `files` wildcard (`**` crosses directories, `*` does not) covers a concrete path. */
-function covered(pattern, file) {
-  const body = pattern
-    .replace(/[.+^${}()|[\]\\]/gu, '\\$&')
-    /* One pass, so the group a replacement inserts is not scanned again by the next rule. */
-    .replace(/\*\*\/|\*/gu, (match) => (match === '**/' ? '(?:[^/]+/)*' : '[^/]*'))
-  return new RegExp(`^${body}$`, 'u').test(file)
-}
-
-/** Every file under a directory, as a slash-separated path relative to it. */
-function filesUnder(dir) {
-  const out = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      for (const nested of filesUnder(full)) out.push(`${entry.name}/${nested}`)
-    } else out.push(entry.name)
-  }
-  return out
-}
 
 test('包面：这是一个可发布的包，版本号是一个真号', () => {
   assert.notEqual(manifest.private, true, 'private 拦着 publish')
