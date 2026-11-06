@@ -8,6 +8,7 @@
  * as no record: the panel stands on the factory defaults.
  */
 import type { WordKey } from './locales/index.ts'
+import { createStore } from './store.ts'
 import {
   PANEL_PREF_DEFAULTS,
   PANEL_PREF_FIELDS,
@@ -233,26 +234,14 @@ function samePrefs(left: PanelPrefs, right: PanelPrefs): boolean {
  * fresh reading on the spot.
  */
 export function createPrefsSource(): PrefsStore {
-  const listeners = new Set<() => void>()
+  const store = createStore<PrefsSnapshot>(UNAVAILABLE, sameSnapshot)
   let form: PrefsForm | null = null
   let off: (() => void) | null = null
-  let snapshot: PrefsSnapshot = UNAVAILABLE
-
-  const announce = (): void => {
-    for (const listener of [...listeners]) {
-      try {
-        listener()
-      } catch (error) {
-        /* One subscriber failing must not take the others down with it. */
-      }
-    }
-  }
 
   /** Mark whether the last write landed; a successful write or a form swap takes it back. */
   const setRefused = (refused: boolean): void => {
-    if (snapshot.refused === refused) return
-    snapshot = { ...snapshot, refused }
-    announce()
+    if (store.getSnapshot().refused === refused) return
+    store.put({ ...store.getSnapshot(), refused })
   }
 
   /** Fold the form's current reading into this port's reading; leave subscribers alone when nothing changed. */
@@ -267,15 +256,13 @@ export function createPrefsSource(): PrefsStore {
           revision: typeof held.revision === 'number' ? held.revision : undefined,
           writable: held.writable === true,
           /* This fold reads the document itself, so "the last write did not land" stays until a write truly succeeds. */
-          refused: snapshot.refused,
+          refused: store.getSnapshot().refused,
         }
       } catch (error) {
         next = UNAVAILABLE
       }
     }
-    if (sameSnapshot(snapshot, next)) return
-    snapshot = next
-    announce()
+    store.put(next)
   }
 
   const detach = (): void => {
@@ -291,13 +278,8 @@ export function createPrefsSource(): PrefsStore {
   }
 
   return {
-    getSnapshot: () => snapshot,
-    subscribe(listener) {
-      listeners.add(listener)
-      return () => {
-        listeners.delete(listener)
-      }
-    },
+    getSnapshot: store.getSnapshot,
+    subscribe: store.subscribe,
     attach(next) {
       detach()
       if (next === null) {
@@ -340,7 +322,7 @@ export function createPrefsSource(): PrefsStore {
         /* The first attempt carries the revision read earlier. A second write in the same round trip
          * still sees the pre-landing number, so the host refuses it on that fence; drop the fence and
          * go again. If this attempt is refused too, `settle` puts the sentence into the reading. */
-        return Promise.resolve(held.mutate(ops, snapshot.revision)).then(
+        return Promise.resolve(held.mutate(ops, store.getSnapshot().revision)).then(
           (accepted) => (accepted === true ? settle(true) : again()),
           () => again(),
         )

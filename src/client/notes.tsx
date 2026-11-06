@@ -11,13 +11,17 @@ import * as React from 'react'
 import type { InstructionScope } from '../host/gateway.ts'
 import type { CycleReading, InstructionReading, NodeReading, ProjectReading } from '../model/index.ts'
 import { dayParts, groupInstructions } from '../model/index.ts'
-import { NOT_ENABLED_WORD } from './constants.ts'
 import type { Translate } from './locale.ts'
 import { useT } from './locale.ts'
 import { dayLabel, groupWord, timeOf, unit } from './words.ts'
+import { nameWithin, nodeName } from './nodes.ts'
+import { PaneFrame } from './widgets.tsx'
 
 /** With archived entries collapsed, how many non-standing rows a group may show at most. */
 const NOTES_ROWS = 5
+
+/** How many characters the scope picker's cell-bound row can print before the name is cut. */
+const SCOPE_NAME_WIDTH = 12
 
 /**
  * The full layout of the notes pane: the "record one" row plus the ledger.
@@ -29,7 +33,6 @@ export function NotesPane(props: {
   readonly active: boolean
   readonly noNodes: boolean
   readonly project: ProjectReading | null
-  readonly cycles: readonly CycleReading[]
   readonly showArchived: boolean
   readonly onAdd: (text: string, scope: InstructionScope, cycle: string, node: string) => Promise<boolean>
   readonly onArchive: (id: string) => void
@@ -37,38 +40,30 @@ export function NotesPane(props: {
   readonly onDelete: (instruction: InstructionReading) => void
 }): React.ReactElement {
   const t = useT()
+  /* The record's lines come from the reading itself, not from a second prop carrying the same
+   * state: the scope picker cannot list a line the ledger below was not read with. */
+  const cycles = props.project?.cycles ?? []
   return (
-    <div
-      className="pf-pane"
-      id="pane-notes"
-      role="tabpanel"
-      aria-labelledby="tab-notes"
-      data-fill=""
-      hidden={!props.active}
-    >
-      {props.noNodes ? <p className="pf-innone">{t(NOT_ENABLED_WORD)}</p> : (
-        <React.Fragment>
-          {props.project === null ? null : (
-            <InstructionAdd
-              cycles={props.cycles}
-              inHand={props.project.columns.running[0] ?? null}
-              onAdd={props.onAdd}
-            />
-          )}
-          <div className="pf-scroll" id="notes-scroll" role="region" aria-label={t('notes.scroll.aria')} tabIndex={0}>
-            {props.project === null ? null : (
-              <InstructionBook
-                project={props.project}
-                showArchived={props.showArchived}
-                onArchive={props.onArchive}
-                onRevive={props.onRevive}
-                onDelete={props.onDelete}
-              />
-            )}
-          </div>
-        </React.Fragment>
+    <PaneFrame id="notes" active={props.active} noNodes={props.noNodes} fill>
+      {props.project === null ? null : (
+        <InstructionAdd
+          cycles={cycles}
+          inHand={props.project.columns.running[0] ?? null}
+          onAdd={props.onAdd}
+        />
       )}
-    </div>
+      <div className="pf-scroll" id="notes-scroll" role="region" aria-label={t('notes.scroll.aria')} tabIndex={0}>
+        {props.project === null ? null : (
+          <InstructionBook
+            project={props.project}
+            showArchived={props.showArchived}
+            onArchive={props.onArchive}
+            onRevive={props.onRevive}
+            onDelete={props.onDelete}
+          />
+        )}
+      </div>
+    </PaneFrame>
   )
 }
 
@@ -101,8 +96,8 @@ function scopeChoices(t: Translate, cycles: readonly CycleReading[], inHand: Nod
     out.push({ value: `cycle:${cycle.id}`, label: cycle.id, scope: 'cycle', cycle: cycle.id, node: '' })
   }
   if (inHand !== null) {
-    const name = inHand.title ?? inHand.id
-    const short = name.length > 12 ? `${name.slice(0, 12)}…` : name
+    /* The width this picker's column can print; how a name is cut is `nodes.ts`'s one answer. */
+    const short = nameWithin(nodeName(inHand), SCOPE_NAME_WIDTH)
     out.push({ value: `node:${inHand.id}`, label: t('notes.scope.node', { node: short }), scope: 'node', cycle: '', node: inHand.id })
   }
   return out

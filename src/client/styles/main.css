@@ -2,16 +2,16 @@
  * row, the box shared by the six panes, and the modal ("delete one"). Each pane's own layout lives
  * in the module stylesheet beside it; the page never touches vh / vw (headless screenshots re-wrap
  * viewport-hooked sizes mid-shutter). */.pf-page{
-  --pf-pad: 24px;        /* header side padding */
   --pf-row: 34px;        /* one row = one node; the title's line sits in it with a breath above and below */
   --pf-mark: 14px;       /* the cell left of a line name: its state at this moment */
   --pf-line-w: 176px;    /* the width both left columns list their lines in; the detail pane's own width rides --pf-side-w on top of it */
   --pf-detail-top: 12px; /* the rail and the list start on one line, this far under the tab rail */
   --pf-detail-foot: 20px;/* what the same list keeps under its last row, once it is scrolled to the end */
 }.pf-page{ overflow: hidden; }.pf-page{
-  /* The positioning base: the modal covers this footprint (not the whole window) and measures against it. */
+  /* The positioning base: the modal covers this footprint (not the whole window) and measures against it.
+   * Its height and its `--pf-pad` are the page's own common ground and stand in `tokens.css`: a second
+   * page on this panel must not be able to state a different one. */
   position: relative;
-  height: 100%;
   display: flex;
   flex-direction: column;
   padding: 12px var(--pf-pad) 12px;
@@ -62,10 +62,8 @@
   align-items: center;
   gap: 14px;
   min-height: 26px;
-}.pf-page .pf-head .pf-brand{
-  font-size: 13px;
-  color: var(--dsw-alias-label-primary);
-}/* Top right: three numbers, each with a framed mark. The frame is the state's language
+}/* The nameplate's own voice (brand face, weight, tracking, size, ink) is stated once in
+   `tokens.css`, where the nameplate is the same object on every view; this header adds nothing. *//* Top right: three numbers, each with a framed mark. The frame is the state's language
  * (ink / blue / hollow), one frame per state, and the number follows it. Three numbers side by
  * side, the proportions read themselves. Arithmetic nobody reads ("178 edges") does not enter here. */.pf-page .pf-count{
   /* Header column two, against the right edge. `tokens.css` supplies this row's whole rhythm; this only says where it stands. */

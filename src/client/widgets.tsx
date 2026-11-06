@@ -1,13 +1,53 @@
 /**
- * The widgets shared by the client's panes: a movable split, a count pill, a modal shell, and a
- * commit-style input.
+ * The widgets shared by the client's panes: a movable split, a count pill, a modal shell, a
+ * commit-style input, and the pane shell every view stands in.
  *
  * Each exists only once: the drag measurement differs in three places, but draggable + keyboard +
  * double-click-to-default is written down in one way; the modal's overlay, Escape, and focus all
- * come from one place, with each pane contributing only its body.
+ * come from one place, with each pane contributing only its body; and the pane shell's tab wiring
+ * and "no record yet" sentence are stated once for the five views.
  */
 import * as React from 'react'
+import { NOT_ENABLED_WORD } from './constants.ts'
 import { useT } from './locale.ts'
+
+/**
+ * The shell every pane stands in: one tabpanel per view, its `id` and `aria-labelledby` derived from
+ * the view id the tab row uses, and the "this workspace has no record yet" sentence in place of the
+ * body.
+ *
+ * @param props - The view id (`map`, `detail`, `notes`, `issue`, `config` — the tab row's own ids),
+ *   whether the pane is the visible one, whether the workspace has no node record at all, what this
+ *   pane's own sheet hangs on it beyond `pf-pane`, whether it fills the frame's footprint, a region
+ *   name for panes whose head is not their label, and the body.
+ */
+export function PaneFrame(props: {
+  readonly id: string
+  readonly active: boolean
+  readonly noNodes: boolean
+  /** Further classes this pane's own sheet selects on, e.g. the map's or the issue pane's. */
+  readonly className?: string | undefined
+  /** Every pane but the map fills the frame's footprint. */
+  readonly fill?: boolean | undefined
+  /** An extra region name, for the panes whose head is not the only thing naming them. */
+  readonly ariaLabel?: string | undefined
+  readonly children?: React.ReactNode
+}): React.ReactElement {
+  const t = useT()
+  return (
+    <section
+      className={`pf-pane${props.className === undefined ? '' : ` ${props.className}`}`}
+      id={`pane-${props.id}`}
+      role="tabpanel"
+      aria-labelledby={`tab-${props.id}`}
+      aria-label={props.ariaLabel}
+      data-fill={props.fill === true ? '' : undefined}
+      hidden={!props.active}
+    >
+      {props.noNodes ? <p className="pf-innone">{t(NOT_ENABLED_WORD)}</p> : props.children}
+    </section>
+  )
+}
 
 /**
  * A movable split: pointer dragging, keyboard stepping, double-click-to-default, and the aria value

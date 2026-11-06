@@ -14,6 +14,7 @@
  * comparing two layouts.
  */
 import type { GraphEdge, NodeReading } from '../model/index.ts'
+import { belongsTo, depthsOf, ownersOf, rankOf } from '../model/index.ts'
 
 /** One card's box, in canvas pixels. The sheet draws it from these two numbers, so they are stated once. */
 export const CARD_W = 380
@@ -115,39 +116,19 @@ export interface PlaceInput {
 }
 
 /**
- * Which reading of a card comes first, as a rank: a card that wants a person, then one in someone's
- * hands, then what may start, then everything still waiting, and only then what has already settled.
- *
- * Open work outranks delivered work on purpose. The map exists to answer "what wants a hand now";
- * a page whose first column is 155 delivered cards answers yesterday's question in yesterday's
- * order, and the four cards that still owe someone something read as the tail of the drawing. The
- * order is not a priority: nothing here says a delivered card was unimportant, only that it is done.
- */
-export function rankOf(node: NodeReading): number {
-  if (node.gate !== null) return 0
-  if (node.running) return 1
-  if (node.ready) return 2
-  if (node.state !== 'completed') return 3
-  return 4
-}
-
-/**
- * The one moment this card speaks of: the earliest of what it is waiting for, and the newest of
- * what it did — the gate's moment, else the pick-up, else the step's two ends, else the delivery,
- * else the creation.
- */
-export function momentOf(node: NodeReading): Date | null {
-  return node.gate?.since ?? node.heldSince ?? node.endedAt ?? node.completedAt ?? node.createdAt
-}
-
-/**
  * The triage order: rank first, the more recent moment next, and the record's own order last so
  * that two cards of one rank and one moment never swap places between opens.
+ *
+ * The rank is the model's ({@link rankOf}: an order over the one bucket), and the moment is the
+ * reading's own `stampAt`: which moment of a card is news is judged in the model, not here. What is
+ * this page's own rule is the consequence — open work outranks delivered work. The map answers "what
+ * wants a hand now"; a page whose first column is 155 delivered cards answers yesterday's question
+ * in yesterday's order, and the four cards that still owe someone something read as the tail.
  */
 export function rankedOf(nodes: readonly NodeReading[]): readonly NodeReading[] {
   const recordOrder = new Map(nodes.map((node, index) => [node.id, index]))
   return [...nodes].sort((left, right) => rankOf(left) - rankOf(right)
-    || (momentOf(right)?.getTime() ?? 0) - (momentOf(left)?.getTime() ?? 0)
+    || (right.stampAt?.getTime() ?? 0) - (left.stampAt?.getTime() ?? 0)
     || (recordOrder.get(left.id) ?? 0) - (recordOrder.get(right.id) ?? 0))
 }
 
@@ -206,36 +187,10 @@ function islandsOf(ids: readonly string[], edges: readonly GraphEdge[]): string[
   return [...groups.values()]
 }
 
-/**
- * Each card's depth inside one island: the longest prerequisite path that stays inside it.
- *
- * A prerequisite the page is not drawing is skipped rather than counted: the depth answers "how far
- * from this island's left edge does the card stand", and a card that is not here cannot be left of
- * it. A loop back to the card itself stops the walk there instead of recursing forever.
- */
-function depthsIn(members: readonly string[], up: ReadonlyMap<string, readonly string[]>): Map<string, number> {
-  const inside = new Set(members)
-  const depth = new Map<string, number>()
-  const walking = new Set<string>()
-
-  const walk = (id: string): number => {
-    const held = depth.get(id)
-    if (held !== undefined) return held
-    if (walking.has(id)) return 0
-    walking.add(id)
-    let deepest = 0
-    for (const prerequisite of up.get(id) ?? []) {
-      if (!inside.has(prerequisite)) continue
-      deepest = Math.max(deepest, walk(prerequisite) + 1)
-    }
-    walking.delete(id)
-    depth.set(id, deepest)
-    return deepest
-  }
-
-  for (const id of members) walk(id)
-  return depth
-}
+/* Islands are laid out on their own, so "how deep inside this island" is asked of one island at a
+ * time: the model's longest-path walk ({@link depthsOf}) with the island's members as the universe.
+ * A prerequisite the island is not drawing is skipped there, which is what the columns mean — how
+ * far from this island's left edge a card stands, not how far down the whole record it is. */
 
 /** The middle of a set of rows, or `null` when the card has no neighbour to follow. */
 function medianOf(values: readonly number[]): number | null {
@@ -275,7 +230,7 @@ function layoutIsland(
 ): Island {
   const inside = new Set(members)
   const wires = edges.filter((edge) => inside.has(edge.from) && inside.has(edge.to))
-  const depth = depthsIn(members, up)
+  const depth = depthsOf(members, up)
 
   const layers: string[][] = []
   for (const id of members) {
@@ -612,12 +567,12 @@ export function emphasisOf(placement: Placement, focus: string | null, scope: st
   const lit = new Set<string>()
   const ahead = new Set<string>()
   for (const node of placement.drawn) {
-    /* The line's own cards include the one it holds: a hold has not landed in `cycleIds` yet (that
-     * one records the steps already walked), so reading `cycleIds` alone would send the running
-     * card to the frameless rank until someone presses it. `ahead` stays "no line has picked up
-     * yet": a card in another line's hand is spoken for, not this line's future. */
-    if (node.cycleIds.includes(scope) || node.heldBy.includes(scope)) lit.add(node.id)
-    else if (node.cycleIds.length === 0 && node.heldBy.length === 0 && node.id !== focus) ahead.add(node.id)
+    /* Whether this card belongs to the picked line is the model's one answer (`belongsTo`: every
+     * line that has walked it, a re-run included, or the line holding it now) — the same criterion
+     * the detail's sections and the line's own parked count read. `ahead` stays "no line has picked
+     * up yet". */
+    if (belongsTo(node, scope)) lit.add(node.id)
+    else if (ownersOf(node).length === 0 && node.id !== focus) ahead.add(node.id)
   }
   if (focus !== null && placement.pos[focus] !== undefined) lit.add(focus)
   return { lit, ahead }

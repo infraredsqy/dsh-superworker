@@ -9,30 +9,49 @@
  */
 import type { DepsReading, GraphEdge, GraphReading, NodeReading } from './contract.ts'
 
-export function readGraph(nodes: readonly NodeReading[]): GraphReading {
-  const depends = new Map<string, readonly string[]>()
-  for (const node of nodes) depends.set(node.id, node.dependencies)
-
+/**
+ * Each id's depth: the longest prerequisite path that stays inside `ids`.
+ *
+ * The one longest-path walk in this repo. A prerequisite outside `ids` is skipped rather than
+ * counted — the universe is the caller's, and what it does not hold cannot stand to anyone's left.
+ * A loop back to the id itself stops the walk there instead of recursing forever.
+ *
+ * @param ids - The ids to place, in the caller's own order.
+ * @param up - Each id's prerequisites; an id absent from the map has none.
+ */
+export function depthsOf(ids: readonly string[], up: ReadonlyMap<string, readonly string[]>): Map<string, number> {
+  const inside = new Set(ids)
   const depth = new Map<string, number>()
   const walking = new Set<string>()
 
-  const depthOf = (id: string): number => {
+  const walk = (id: string): number => {
     const held = depth.get(id)
     if (held !== undefined) return held
     if (walking.has(id)) return 0
     walking.add(id)
     let deepest = 0
-    for (const dependency of depends.get(id) ?? []) {
-      if (!depends.has(dependency)) continue
-      deepest = Math.max(deepest, depthOf(dependency) + 1)
+    for (const prerequisite of up.get(id) ?? []) {
+      if (!inside.has(prerequisite)) continue
+      deepest = Math.max(deepest, walk(prerequisite) + 1)
     }
     walking.delete(id)
     depth.set(id, deepest)
     return deepest
   }
 
+  for (const id of ids) walk(id)
+  return depth
+}
+
+export function readGraph(nodes: readonly NodeReading[]): GraphReading {
+  const depends = new Map<string, readonly string[]>()
+  for (const node of nodes) depends.set(node.id, node.dependencies)
+
+  const ids = nodes.map((node) => node.id)
+  const depth = depthsOf(ids, depends)
+
   let maxDepth = -1
-  for (const node of nodes) maxDepth = Math.max(maxDepth, depthOf(node.id))
+  for (const node of nodes) maxDepth = Math.max(maxDepth, depth.get(node.id) ?? 0)
 
   const layers: NodeReading[][] = []
   for (let level = 0; level <= maxDepth; level += 1) layers.push([])

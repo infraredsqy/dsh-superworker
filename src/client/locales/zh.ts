@@ -199,15 +199,6 @@ export const zh = {
   'date.yesterday': '昨天',
   'date.before-yesterday': '前天',
   'date.month-day': '{month}月{day}日',
-  'duration.none': '没有记录',
-  'duration.seconds': '{value} 秒',
-  'duration.minutes': '{value} 分钟',
-  'duration.hours': '{value} 小时',
-  'duration.hours-minutes': '{value} 小时 {rest} 分',
-  'ago.just-now': '刚刚',
-  'ago.minutes': '{value} 分钟前',
-  'ago.hours': '{value} 小时前',
-  'ago.days': '{value} 天前',
 
   /* ── The scope of an instruction ──────────────────────────────────────────────────────────── */
   'scope.node': '这一格',

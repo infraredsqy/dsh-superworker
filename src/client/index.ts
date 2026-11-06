@@ -10,7 +10,8 @@ import { report } from './context.ts'
 import { injectAt } from './context.ts'
 import { createPanelPort, serviceAt, type PanelPort } from './data.ts'
 import { createLocalePort, LocaleProvider, localeOf, type LocaleService, type LocaleSource } from './locale.ts'
-import { currentSessionOf, knownSessionsOf, registerSeats, SEAT_WORD, sessionsSnapshotOf } from './mount.ts'
+import { currentSessionOf, knownSessionsOf, sessionsSnapshotOf } from './sessions-view.ts'
+import { registerSeats, SEAT_WORD } from './mount.ts'
 import { PathfinderPanel } from './panel.tsx'
 import { createPrefsSource, type PrefsStore } from './prefs.ts'
 import { dropSettingsStyle, registerSettingsSection } from './settings.tsx'
@@ -39,14 +40,10 @@ export {
 } from './settings.tsx'
 
 /** The identities of the two Pathfinder Center spots, readable off the bundle. */
-export {
-  createWorkspaceNav,
-  currentSessionOf,
-  knownSessionsOf,
-  PANEL_ORDER,
-  SEAT_WORD,
-  sessionsSnapshotOf,
-} from './mount.ts'
+export { createWorkspaceNav, PANEL_ORDER, SEAT_WORD } from './mount.ts'
+
+/** Why and which session a card opens: the session-list projections, readable off the bundle. */
+export { currentSessionOf, knownSessionsOf, sessionsSnapshotOf } from './sessions-view.ts'
 
 /**
  * The language machinery and the bundled tables, readable off the bundle.
@@ -60,7 +57,7 @@ export type { LocaleService, LocaleSource, LocaleSnapshot, Translate } from './l
 export { WORD_TABLES, zh as FALLBACK_WORD_TABLE } from './locales/index.ts'
 export { failureWord } from './words.ts'
 
-export { bucketOf, NO_WORKSPACES, workspacesAt } from './workspaces.ts'
+export { NO_WORKSPACES, workspaceOf, workspacesAt } from './workspaces.ts'
 export type { WorkspaceChoice, WorkspaceSnapshot, WorkspaceSource } from './workspaces.ts'
 
 /** Markers of the two injected stylesheets in the document: neither should remain after unmount. */

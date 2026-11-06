@@ -9,50 +9,72 @@
  * action stands disabled until the write settles.
  */
 import * as React from 'react'
-import type { CycleReading, DetailGroupKey, NodeReading, ProjectReading } from '../model/index.ts'
+import type { CycleReading, DetailGroupKey, GateReading, NodeReading, ProjectReading } from '../model/index.ts'
 import { nodesOf } from '../model/index.ts'
 import { clampSide, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN } from './prefs.ts'
-import { NOT_ENABLED_WORD } from './constants.ts'
 import { useT } from './locale.ts'
 import type { WordKey } from './locales/index.ts'
 import { gateTitle, gateWord, stateWord, unit } from './words.ts'
 import { nodeName, nodeHover } from './nodes.ts'
-import { Grip } from './widgets.tsx'
+import { Grip, PaneFrame } from './widgets.tsx'
 import { DepsChip, LineMark, StateMark } from './marks.tsx'
 
-/** The five detail sections, in the order readers meet them. */
+/**
+ * The five detail sections, in the order readers meet them.
+ *
+ * `silences` names the gate kinds this section already says in its own head: the shelves section is
+ * headed by the wait for a person, so a card parked there wears no second badge. It is stated as a
+ * mapping rather than as a comparison against the section's key, which is another vocabulary
+ * (`shelved` / `run` / `ready` / `wait` / `done`) that happens to share one word with the gate kinds
+ * (`shelved` / `manual` / `checkpoint`) — sharing a word is not sharing a fact.
+ */
 interface Group {
   readonly key: DetailGroupKey
   /** Which word heads this section, looked up when the header is drawn so the table knows no language. */
   readonly word: WordKey
   readonly cls: string
   readonly deps: boolean
+  /** The gate kinds this section's own head already states; a card gated that way adds no badge. */
+  readonly silences: readonly GateReading['kind'][]
 }
 
 /* The five sections always start expanded: this pane is called detail, and the rows are what the
  * reader came to see. The folding move survives, triggered by the reader. */
 const GROUPS: readonly Group[] = [
-  { key: 'shelved', word: 'state.shelved', cls: 'is-shelved', deps: false },
-  { key: 'run', word: 'state.running', cls: 'is-running', deps: false },
-  { key: 'ready', word: 'state.ready', cls: 'is-todo', deps: false },
-  { key: 'wait', word: 'state.todo', cls: 'is-todo', deps: true },
-  { key: 'done', word: 'state.done', cls: 'is-done', deps: false },
+  { key: 'shelved', word: 'state.shelved', cls: 'is-shelved', deps: false, silences: ['shelved'] },
+  { key: 'run', word: 'state.running', cls: 'is-running', deps: false, silences: [] },
+  { key: 'ready', word: 'state.ready', cls: 'is-todo', deps: false, silences: [] },
+  { key: 'wait', word: 'state.todo', cls: 'is-todo', deps: true, silences: [] },
+  { key: 'done', word: 'state.done', cls: 'is-done', deps: false, silences: [] },
 ]
 
 /** How far one keyboard move of the detail split travels; Shift takes two steps. */
 const SPLIT_STEP = 16
 
 /**
+ * Which line is being shown: the one the reader picked, and the record's first line when nothing is
+ * picked yet — or when the picked id no longer names a line, as happens when a re-read drops it.
+ *
+ * The resolution is written here once and read by both ends that need it: the pane that lists a
+ * line's cells and the shell that opens a session for one of them. Two copies of this expression
+ * would be free to name different lines, and the body would list one line while "open" reported
+ * another.
+ */
+export function pickedCycleOf(cycles: readonly CycleReading[], lineId: string | null): CycleReading | null {
+  return cycles.find((cycle) => cycle.id === lineId) ?? cycles[0] ?? null
+}
+
+/**
  * The full layout of the detail pane: the line sidebar, the split, and the body.
- * @param props - Visibility, whether to collapse to one sentence, the record's lines with the
- *   picked one, the reading at this moment, the split width with its two write-backs, where
- *   the pick-line action goes, and where the open-a-session action on a ready cell goes.
+ * @param props - Visibility, whether to collapse to one sentence, which line is picked (and the record's
+ *   reading it is resolved in), the split width with its two write-backs, where the pick-line action
+ *   goes, and where the open-a-session action on a ready cell goes.
  */
 export function DetailPane(props: {
   readonly active: boolean
   readonly noNodes: boolean
-  readonly cycles: readonly CycleReading[]
-  readonly picked: CycleReading | null
+  /** Which line the reader picked; `null` before anything is picked, read as the record's first line. */
+  readonly lineId: string | null
   readonly project: ProjectReading | null
   /** The stranded dispatches, by node id: the line each cell's claim belongs to. */
   readonly stranded: Readonly<Record<string, string>>
@@ -65,24 +87,22 @@ export function DetailPane(props: {
   readonly openingNode: string | null
 }): React.ReactElement {
   const t = useT()
+  /* The record's lines come from the reading itself, and which of them is picked is resolved by
+   * {@link pickedCycleOf} from the reading and the picked id: the pane holds one entry to the state
+   * it draws, so the sidebar and the body cannot be a frame apart, and no line object comes in
+   * beside the record. */
+  const cycles = props.project?.cycles ?? []
+  const picked = pickedCycleOf(cycles, props.lineId)
   return (
-    <div
-      className="pf-pane"
-      id="pane-detail"
-      role="tabpanel"
-      aria-labelledby="tab-detail"
-      data-fill=""
-      hidden={!props.active}
-    >
-      {props.noNodes ? <p className="pf-innone">{t(NOT_ENABLED_WORD)}</p> : (
+    <PaneFrame id="detail" active={props.active} noNodes={props.noNodes} fill>
       <div className="pf-detail" style={{ ['--pf-side-w' as string]: `${props.sideWidth}px` }}>
         <div className="pf-lineside" role="group" aria-label={t('detail.lines.aria')}>
-          {props.cycles.map((cycle) => (
+          {cycles.map((cycle) => (
             <div className="pf-lineitem" key={cycle.id}>
               <button
                 type="button"
                 className="pf-linepick"
-                aria-current={cycle.id === props.picked?.id}
+                aria-current={cycle.id === picked?.id}
                 aria-label={`${cycle.id} · ${stateWord(t, cycle)}`}
                 onClick={() => props.onPickLine(cycle.id)}
               >
@@ -107,12 +127,11 @@ export function DetailPane(props: {
         />
         <div className="pf-linemain">
           <div className="pf-scroll" role="region" aria-label={t('view.detail')} tabIndex={0}>
-            {props.picked === null ? null : <DetailList cycle={props.picked} project={props.project as ProjectReading} stranded={props.stranded} onOpenNode={props.onOpenNode} openingNode={props.openingNode} />}
+            {picked === null || props.project === null ? null : <DetailList cycle={picked} project={props.project} stranded={props.stranded} onOpenNode={props.onOpenNode} openingNode={props.openingNode} />}
           </div>
         </div>
       </div>
-      )}
-    </div>
+    </PaneFrame>
   )
 }
 
@@ -166,8 +185,9 @@ function DetailGroup(props: { readonly group: Group; readonly nodes: readonly No
             ) : null}
           </span>
           {/* The section already says its own gate kind: a node gated that same way adds no second
-              badge here. Both sides are the structured kind — a gate's kind against the section's. */}
-          {node.gate !== null && node.gate.kind !== group.key
+              badge here. Both sides are the structured kind — a gate's kind against the kinds this
+              section silences. */}
+          {node.gate !== null && !group.silences.includes(node.gate.kind)
             ? <span className={`pf-gate pf-rowgate${node.state === 'todo' ? ' is-quiet' : ''}`}>{gateWord(t, node.gate)}</span>
             : null}
         </div>

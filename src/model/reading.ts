@@ -8,9 +8,9 @@
  * pinned down here and nowhere else.
  */
 import type { PathfinderReading, PathfinderSourceState } from './records.ts'
-import type { CycleReading, NodeBucket, NodeReading, ProjectReading } from './contract.ts'
+import type { CycleReading, NodeBucket, NodeRank, NodeReading, ProjectReading } from './contract.ts'
 
-export type { NodeBucket }
+export type { NodeBucket, NodeRank }
 
 /** The keys of the detail's five groups: shelved, running, ready, not started, completed. */
 export type DetailGroupKey = 'shelved' | 'run' | 'ready' | 'wait' | 'done'
@@ -30,6 +30,58 @@ export function bucketOf(node: NodeReading): NodeBucket {
   if (node.gate !== null) return node.gate.kind === 'shelved' ? 'shelved' : 'gate'
   if (node.running) return 'run'
   return node.state === 'completed' ? 'done' : 'todo'
+}
+
+/**
+ * Where a card stands in the triage order: the bucket's own order, with the two halves of `todo`
+ * kept apart — what may start outranks what still owes a prerequisite.
+ *
+ * The order is read off {@link bucketOf} rather than judged a second time, so the two readings of
+ * one card cannot drift apart. It is an order and not a priority: a delivered card is not
+ * unimportant, it is finished.
+ */
+export function rankOf(node: NodeReading): NodeRank {
+  const bucket = bucketOf(node)
+  if (bucket === 'gate' || bucket === 'shelved') return 0
+  if (bucket === 'run') return 1
+  if (bucket === 'todo') return node.ready ? 2 : 3
+  return 4
+}
+
+/**
+ * Which lines a cell belongs to: every line that has walked it, in record order, plus any line holding
+ * it right now.
+ *
+ * One criterion, judged here and consumed everywhere the question comes up — the detail's sections,
+ * the line's own parked count, and the map's ink all read this and not `cycleIds` / `heldBy` on
+ * their own. The record lists the walkers in the order they came, so the line the cell happened
+ * before stands first; a re-run leaves a second walker, and that line walked the cell too. A hold
+ * has not landed in `cycleIds` yet, so a line in whose hand the cell is belongs to it as well.
+ */
+export function ownersOf(node: NodeReading): readonly string[] {
+  const owners = [...node.cycleIds]
+  for (const holder of node.heldBy) {
+    if (!owners.includes(holder)) owners.push(holder)
+  }
+  return owners
+}
+
+/** Whether that line has this cell: see {@link ownersOf}. */
+export function belongsTo(node: NodeReading, cycleId: string): boolean {
+  return node.cycleIds.includes(cycleId) || node.heldBy.includes(cycleId)
+}
+
+/**
+ * A line's own state, in one word: owing a person (it parked a cell), in service, or stopped.
+ *
+ * Both the word the rail and the detail print and the class the line's mark wears come from this
+ * one answer, so the spinner and the sentence cannot disagree about the same line.
+ */
+export type CycleState = 'blocked' | 'run' | 'stopped'
+
+export function lineStateOf(cycle: CycleReading): CycleState {
+  if (cycle.parked.length > 0) return 'blocked'
+  return cycle.inService ? 'run' : 'stopped'
 }
 
 /**
@@ -54,7 +106,7 @@ export function everySourceIs(reading: PathfinderReading, state: PathfinderSourc
  */
 export function nodesOf(key: DetailGroupKey, cycle: CycleReading, project: ProjectReading): readonly NodeReading[] {
   const mine = (list: readonly NodeReading[]): readonly NodeReading[] =>
-    list.filter((node) => node.cycleIds[0] === cycle.id || node.heldBy.includes(cycle.id))
+    list.filter((node) => belongsTo(node, cycle.id))
   if (key === 'shelved') return mine(project.columns.shelved)
   if (key === 'run') return mine(project.columns.running)
   if (key === 'ready') return mine(project.columns.ready)

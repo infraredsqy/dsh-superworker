@@ -1,12 +1,12 @@
 /* The formatting segment: invariants only — which unit a duration falls in, which day a moment
- * fell on, how far back it was, and what is given when there is no such moment. The model measures;
- * the words are the client's.
+ * fell on, and what is given when there is no such moment. The model measures; the words are the
+ * client's.
  *
  *   node --test tests/
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { agoParts, clock, dayParts, duration, durationParts, elapsedSince, two } from '../src/model/format.ts'
+import { clock, dayParts, duration, durationParts, two } from '../src/model/format.ts'
 
 test('没有那一刻的时候给「没有」的样子，不写 0', () => {
   const at = new Date('2026-03-10T12:00:00.000Z')
@@ -14,8 +14,6 @@ test('没有那一刻的时候给「没有」的样子，不写 0', () => {
   assert.equal(clock(null), '--')
   assert.equal(duration(null), '--')
   assert.equal(durationParts(null), null)
-  assert.equal(elapsedSince(null, at), '--')
-  assert.equal(agoParts(null, at), null)
   assert.equal(dayParts(null, at), null)
 })
 
@@ -51,37 +49,23 @@ test('日子按读到的那一刻算', () => {
   assert.deepEqual(dayParts(new Date(2026, 2, 1, 0, 0), at), { unit: 'date', month: 3, day: 1 }, '再远的给月份与日，不带年份')
 })
 
-test('过了多久：那一刻在读到的那一刻之后，就没有时长', () => {
-  const at = new Date('2026-03-10T12:00:00.000Z')
-
-  assert.equal(elapsedSince(new Date('2026-03-10T11:00:00.000Z'), at), '1h')
-  assert.equal(elapsedSince(new Date('2026-03-10T12:30:00.000Z'), at), '--')
-})
-
-test('相对这一刻的说法', () => {
-  const at = new Date('2026-03-10T12:00:00.000Z')
-
-  assert.deepEqual(agoParts(new Date('2026-03-10T11:59:50.000Z'), at), { unit: 'just-now' })
-  assert.deepEqual(agoParts(new Date('2026-03-10T11:30:00.000Z'), at), { unit: 'minutes', value: 30 })
-  assert.deepEqual(agoParts(new Date('2026-03-10T08:00:00.000Z'), at), { unit: 'hours', value: 4 })
-  assert.deepEqual(agoParts(new Date('2026-03-09T12:00:00.000Z'), at), { unit: 'days', value: 1 })
-})
-
-test('收窄出口：ago / durationLong / two 只有测试认得，不再从模型入口出', async () => {
+test('收窄出口：删掉的几种写法入口与模块里都不再有，只在本模块内用的不上入口', async () => {
   const entry = await import('../src/model/index.ts')
   const format = await import('../src/model/format.ts')
 
   assert.equal(entry.ago, undefined)
   assert.equal(entry.durationLong, undefined)
+  assert.equal(entry.elapsedSince, undefined, '没人读的紧凑拼法不上入口')
+  assert.equal(entry.agoParts, undefined, '没人读的相对时间不上入口')
   assert.equal(entry.two, undefined)
   assert.equal(entry.dayLabel, undefined)
   assert.equal(Object.hasOwn(format, 'ago'), false, '旧的写法已经整个没有了，不是收进模块里')
   assert.equal(Object.hasOwn(format, 'durationLong'), false)
+  assert.equal(Object.hasOwn(format, 'elapsedSince'), false, '整条删掉了：模块里也不再留一份')
+  assert.equal(Object.hasOwn(format, 'agoParts'), false)
   assert.equal(Object.hasOwn(format, 'dayLabel'), false)
   assert.equal(typeof format.two, 'function', '两位补零只在本模块里用，不上入口')
-  assert.equal(typeof entry.duration, 'function', '面板真在用的那几个照旧从入口出')
-  assert.equal(typeof entry.elapsedSince, 'function')
-  assert.equal(typeof entry.durationParts, 'function')
-  assert.equal(typeof entry.dayParts, 'function')
-  assert.equal(typeof entry.agoParts, 'function')
+  assert.equal(typeof entry.duration, 'function', '面板真在用的照旧从入口出')
+  assert.equal(typeof entry.dayParts, 'function', '面板真在用的照旧从入口出')
+  assert.equal(typeof entry.durationParts, 'function', '长写法只有本模块与测试认得，不算面板在用')
 })

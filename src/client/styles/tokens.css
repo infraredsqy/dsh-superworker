@@ -13,6 +13,10 @@
   font: var(--dsw-font-s-14);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}.pf-page{
+  /* The page's side padding: one value for every page that stands on this panel, stated here so a
+   * second page cannot take a different one. */
+  --pf-pad: 24px;
 }@media (prefers-reduced-motion: reduce){.pf-page, .pf-page *, .pf-page::before, .pf-page *::before, .pf-page::after, .pf-page *::after{
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
@@ -530,10 +534,10 @@
   width: 2px;
   border-radius: 2px;
   background: linear-gradient(to bottom,
-    transparent calc(var(--pf-handle-y, 50%) - 36px),
-    var(--dsw-alias-scrollbar-bg-l1) calc(var(--pf-handle-y, 50%) - 8px),
-    var(--dsw-alias-scrollbar-bg-l1) calc(var(--pf-handle-y, 50%) + 8px),
-    transparent calc(var(--pf-handle-y, 50%) + 36px));
+    transparent calc(50% - 36px),
+    var(--dsw-alias-scrollbar-bg-l1) calc(50% - 8px),
+    var(--dsw-alias-scrollbar-bg-l1) calc(50% + 8px),
+    transparent calc(50% + 36px));
   opacity: 0;
   pointer-events: none;
 }.pf-page .pf-grip:hover::after, .pf-page .pf-grip:focus-visible::after{

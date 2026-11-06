@@ -23,11 +23,11 @@ import {
   PANEL_ORDER,
   SEAT_WORD,
   createSessionNav,
-  currentSessionOf,
-  knownSessionsOf,
   registerSeats,
-  sessionsSnapshotOf,
 } from '../src/client/mount.ts'
+/* The session-list projections moved out of the mount file with the readings they answer: they are
+ * pure, so they are imported from where they live rather than through the assembly. */
+import { currentSessionOf, knownSessionsOf, sessionsSnapshotOf } from '../src/client/sessions-view.ts'
 import { FALLBACK_LOCALE, LOCALE_NS, createLocalePort, localeOf } from '../src/client/locale.ts'
 import { WORD_TABLES } from '../src/client/locales/index.ts'
 import { PANEL_STYLE_ID, SETTINGS_STYLE_ID, dropStyleTag, ensureStyleTag } from '../src/client/style-tags.ts'

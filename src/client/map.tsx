@@ -12,8 +12,7 @@
  */
 import * as React from 'react'
 import type { CycleReading, NodeReading, ProjectReading } from '../model/index.ts'
-import { bucketOf } from '../model/index.ts'
-import { NOT_ENABLED_WORD } from './constants.ts'
+import { belongsTo, bucketOf, ownersOf } from '../model/index.ts'
 import { useT } from './locale.ts'
 import type { Translate } from './locale.ts'
 import {
@@ -24,7 +23,6 @@ import {
   fitView,
   focusView,
   lodOf,
-  momentOf,
   panView,
   place,
   rankedOf,
@@ -37,6 +35,7 @@ import {
 import { LineMark, runningTitle, StrandedMark } from './marks.tsx'
 import { nodeHover, nodeName } from './nodes.ts'
 import { gateWord, stateWord, timeOf } from './words.ts'
+import { PaneFrame } from './widgets.tsx'
 
 /** The ruler used when the viewport cannot be measured: a hidden pane measures 0, and a reading never comes out as 0. */
 const FALLBACK: Size = { w: 1280, h: 720 }
@@ -461,18 +460,12 @@ export function MapPane(props: {
    * that scope's first card, and no reset button of its own is needed. */
   const pickScope = (id: string | null): void => {
     setScope(id)
-    const pool = id === null ? nodes : nodes.filter((node) => node.cycleIds.includes(id))
+    /* Which cards belong to a line is the model's one answer (`belongsTo`), the same one the detail's
+     * sections and the ink are read from. */
+    const pool = id === null ? nodes : nodes.filter((node) => belongsTo(node, id))
     const next = rankedOf(pool)[0]?.id ?? head
     setFocusId(next)
     setMode('focus')
-  }
-
-  if (props.noNodes) {
-    return (
-      <section className="pf-pane pf-map-pane" id="pane-map" role="tabpanel" aria-labelledby="tab-map" hidden={!props.active}>
-        <p className="pf-innone">{t(NOT_ENABLED_WORD)}</p>
-      </section>
-    )
   }
 
   const lod = lodOf(camera.s)
@@ -484,13 +477,7 @@ export function MapPane(props: {
   }
 
   return (
-    <section
-      className="pf-pane pf-map-pane"
-      id="pane-map"
-      role="tabpanel"
-      aria-labelledby="tab-map"
-      hidden={!props.active}
-    >
+    <PaneFrame id="map" active={props.active} noNodes={props.noNodes} className="pf-map-pane">
       <div
         className="pf-map"
         style={{ ['--card-w' as string]: `${String(CARD_W)}px`, ['--card-h' as string]: `${String(CARD_H)}px` }}
@@ -505,7 +492,7 @@ export function MapPane(props: {
               pressed={liveScope === cycle.id}
               /* A line that has touched nothing in this workspace is greyed out and holds no press:
                  the row itself is the reading — this line has done nothing here. */
-              disabled={!nodes.some((node) => node.cycleIds.includes(cycle.id))}
+              disabled={!nodes.some((node) => belongsTo(node, cycle.id))}
               onPress={() => pickScope(cycle.id)}
             />
           ))}
@@ -592,7 +579,7 @@ export function MapPane(props: {
           </div>
         </div>
       </div>
-    </section>
+    </PaneFrame>
   )
 }
 
@@ -625,7 +612,7 @@ function RailItem(props: {
 }
 
 /**
- * One card: its title, then the row that says which line it belongs to and when, with the running
+ * One card: its title, then the row that says which lines it belongs to and when, with the running
  * ring leading that row on the one card that is in hand.
  *
  * A card carries two readings at once and they must not borrow each other's paint: the frame says
@@ -652,8 +639,11 @@ function Card(props: {
   const target = props.go === null ? null : props.go.targetOf(node)
   const hover = nodeHover(node)
   const canGo = target !== null
-  const moment = stampMomentOf(node)
+  const moment = node.stampAt
   const dead = props.dead !== null && props.dead.length > 0
+  /* The lines this cell belongs to, in the model's own order: every line that has walked it (a
+   * re-run included) first, then any line holding it now. */
+  const owners = ownersOf(node)
   return (
     <button
       type="button"
@@ -668,15 +658,16 @@ function Card(props: {
       <span className="pf-mmeta">
         {/* The mark leads the row: a round in hand wears the ring, and one whose session is gone
             wears the stranded × in its place — the same slot, because it is the same reading (what
-            is happening to this cell right now). The line's id follows, and a card with no line
-            renders no id at all rather than an empty one — nothing is drawn for what the record does
-            not have. */}
+            is happening to this cell right now). The lines' ids follow, in the order the model gives
+            them (`ownersOf`: every line that walked this cell, then any line holding it), and a card
+            no line has touched renders no id at all rather than an empty one — nothing is drawn for
+            what the record does not have. */}
         {node.running
           ? (dead
             ? <StrandedMark cycleId={props.dead} nodeId={node.id} />
             : <span className="pf-state is-run" title={runningTitle(t, node)} />)
           : null}
-        {node.cycleIds.length === 0 ? null : <span className="pf-mtag">{node.cycleIds[0]}</span>}
+        {owners.length === 0 ? null : <span className="pf-mtag">{owners.join('·')}</span>}
         {node.gate === null ? null : <span className="pf-gate">{gateWord(t, node.gate)}</span>}
         <span className="pf-mtime pf-num">{moment === null ? '' : timeOf(t, moment, props.at)}</span>
       </span>
@@ -695,9 +686,4 @@ export function edgeOf(node: NodeReading): string {
     : bucket === 'done' ? 'is-done'
       : bucket === 'todo' ? 'is-todo'
         : 'is-gate'
-}
-
-/** The one moment this card's stamp reads: {@link momentOf} says it, and says it nowhere else. */
-function stampMomentOf(node: NodeReading): Date | null {
-  return momentOf(node)
 }

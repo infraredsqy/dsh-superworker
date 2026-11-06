@@ -3,8 +3,8 @@
  *
  * Pathfinder Center does not care which session DSH currently shows in the center column — all
  * workspaces are openable to it. This layer only reads that list into a snapshot, works out which
- * bucket a session falls into, and hands back an empty list when there is no list. The list itself
- * belongs to DSH's `workspaces` service: no caching, no copying here.
+ * workspace a session falls into, and hands back an empty list when there is no list. The list
+ * itself belongs to DSH's `workspaces` service: no caching, no copying here.
  */
 import { serviceAt } from './data.ts'
 
@@ -66,13 +66,14 @@ export function workspacesAt(owner: unknown): WorkspaceSource | undefined {
 }
 
 /**
- * Which bucket a session falls into.
+ * Which workspace a session falls into.
  *
  * A "bucket" is one of DSH's sidebar groups: if the session's id appears in some workspace's
  * `sessionIds`, it falls into that one; if it appears in none, it is ungrouped — DSH reads it the
- * same way.
+ * same way. The name says workspace rather than bucket: "bucket" is the model's word for the state
+ * one node sits in (`bucketOf`), and one name for two readings is the collision this rename ends.
  */
-export function bucketOf(
+export function workspaceOf(
   items: readonly WorkspaceChoice[],
   sessionId: string | undefined,
 ): WorkspaceChoice | undefined {

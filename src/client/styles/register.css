@@ -2,20 +2,20 @@
  * issue register (severity, evidence, disposition; weights against a policy
  * line). The pool is what nobody has closed, so that is the page; one movable hairline cuts it in
  * two, and the page reads without writing — closing a case is the agent's move in this version. */.pf-issue{
-  --pf-pad: 24px;
   --pf-rule: 0.5px;      /* the page's own hairlines: the band, the two heads, the bar */
   --pf-left: 55%;        /* the pool's column, until a reader moves the bar */
   --pf-gutter: 11px;     /* the bar between the two halves */
   --pf-lead: 62px;       /* state mark + severity chip */
   --pf-mod: 96px;        /* which part of the project the case lives in */
   --pf-gap: 14px;
-}.pf-issue{ height: 100%; overflow: hidden; }.pf-issue .pf-page{
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  padding: 20px var(--pf-pad) 0;
 }/* ?embed=1: this page arrives as one cell of the main panel; the header is the host's business and
  * the page keeps only its own footprint. The wires pane runs the same line.
+ *
+ * The pool has no page of its own to open any more: every rule below leads with the embed marker.
+ * The footprint the standalone page used to state (a full-height flex column) is the shared page's
+ * (`tokens.css`: `.pf-page` height; `main.css`: the flex column), stated there once for every page on
+ * this panel — this page does not state it a second time. The pane's own `height` / `overflow` are the
+ * shared pane shell's (`main.css`: `.pf-pane.is-frame`), not this page's business.
  *
  * Once embedded, the left and right page gutters belong to the host too: the nameplate, the tabs
  * and what the panes hold share one left edge, and one more gutter of this page's own would put
@@ -24,7 +24,9 @@
  *
  * The top of the page does not yield all the way either: the host's own cell lays 8px under the tab
  * row, and the band keeps 12px of its own on top of that — the distance the map's rail and the
- * detail's first head keep. It is the band's side margins that yield, not its top. */.is-embed.pf-issue .pf-page{ padding: 0; }.is-embed.pf-issue .pf-band{ padding-top: 12px; }/* The panel's own reading, in the panel's own marks: one small square per mass the
+ * detail's first head keep. It is the band's side margins that yield, not its top. */.is-embed.pf-issue .pf-page{
+  padding: 0;
+}.is-embed.pf-issue .pf-band{ padding-top: 12px; }/* The panel's own reading, in the panel's own marks: one small square per mass the
  * band is reading, and how many cases are in it. Those marks are what the panel's
  * node counts are made of, which is why the reading belongs in the body rather
  * than the header's corner, where the shell's own figure stands. It is the last
@@ -245,7 +247,7 @@
  * Height is not a reason to stack: both columns are scrollers, so a short frame
  * -- a short window, or the pane this page is a tab of, which is the same thing
  * -- shows fewer rows in each half rather than showing only one of them. */@media (max-width: 900px){.pf-issue{ overflow: auto; }/* The columns stop being scrollers and become two sections of one page, so
-   * the split takes its content's height instead of the frame's. */.pf-issue .pf-page{ height: auto; min-height: 100%; overflow: visible; padding-bottom: 24px; }.pf-issue .pf-split{ grid-template-columns: minmax(0, 1fr); flex: none; }/* No room to move a bar in, and nothing for it to separate: the two columns
+   * the split takes its content's height instead of the frame's. */.is-embed.pf-issue .pf-page{ height: auto; min-height: 100%; overflow: visible; padding-bottom: 24px; }.pf-issue .pf-split{ grid-template-columns: minmax(0, 1fr); flex: none; }/* No room to move a bar in, and nothing for it to separate: the two columns
    * are two sections of one page and the hairline runs across instead. */.pf-issue .pf-gutter{ display: none; }.pf-issue .pf-case{
     border-top: var(--pf-rule) solid var(--dsw-alias-border-l1);
     padding: 14px 0 0;

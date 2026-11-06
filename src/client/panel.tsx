@@ -20,16 +20,19 @@ import type { PrefField, PrefsSource, ViewId } from './prefs.ts'
 import { clampSide, DEFAULT_SOURCE, PANEL_PREF_FIELDS, VIEW_IDS, VIEW_WORDS } from './prefs.ts'
 import { useT } from './locale.ts'
 import { failureWord } from './words.ts'
-import type { Failure, Outcome } from './failure.ts'
+import type { Outcome } from './failure.ts'
 import { failureOf } from './failure.ts'
+import type { Load as LoadOf, Note } from './outcome.ts'
+import { writeToNote } from './outcome.ts'
 import type { PanelPort } from './data.ts'
-import { bucketOf, NO_WORKSPACES, type WorkspaceSource } from './workspaces.ts'
+import { NO_WORKSPACES, workspaceOf, type WorkspaceSource } from './workspaces.ts'
 import { MapPane, type CardGo } from './map.tsx'
 import { ConfigPane } from './config.tsx'
 import { DeleteConfirm } from './delete-confirm.tsx'
-import { DetailPane } from './detail.tsx'
+import { DetailPane, pickedCycleOf } from './detail.tsx'
 import { NotesPane } from './notes.tsx'
 import { IssuePool } from './pool.tsx'
+import { PaneFrame } from './widgets.tsx'
 
 /* The five views, in tab order: the ids are the settings document's own list (VIEW_IDS), so the
  * settings dropdown and the tab row cannot drift apart and neither knows the language. Every pane
@@ -58,25 +61,12 @@ const NO_CLAIMS: Readonly<Record<string, string>> = Object.freeze({})
 
 const NO_SESSIONS: ReadonlySet<string> = new Set<string>()
 
-/** How far one reading has got. Which words a failure reads as is decided where it is drawn. */
+/** How far one reading has got, widened with this shell's own phase. Which words a failure reads as is
+ * decided where it is drawn. */
 type Load =
-  | { readonly phase: 'loading' }
-  | { readonly phase: 'ok'; readonly reading: PathfinderReading }
-  | { readonly phase: 'failed'; readonly failure: Failure }
+  | LoadOf<PathfinderReading>
   /** No session is selected, so there is no workspace to read and no failure to speak of. */
   | { readonly phase: 'no-session' }
-
-/**
- * What the one note line under the panel says.
- *
- * Two different things land there and they are not the same kind of text: the tool's own words,
- * carried out verbatim when it spoke while succeeding, and why an operation was refused, which is a
- * code this panel spells. Kept apart rather than flattened into one string, because only the second
- * is ours to translate.
- */
-type Note =
-  | { readonly kind: 'said'; readonly text: string }
-  | { readonly kind: 'failure'; readonly failure: Failure }
 
 /**
  * The level the panel reads at this moment.
@@ -111,7 +101,7 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
     workspaceStore.getSnapshot,
   )
   const items = workspaceList.items
-  const mine = React.useMemo(() => bucketOf(items, sessionId), [items, sessionId])
+  const mine = React.useMemo(() => workspaceOf(items, sessionId), [items, sessionId])
   const [pickedSpace, setPickedSpace] = React.useState<string | null | undefined>(undefined)
   const chosen = React.useMemo(() => {
     if (pickedSpace === undefined) return mine
@@ -136,6 +126,11 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
   const [tab, setTab] = usePreference<ViewId>(stored.tab)
   const [sideWidth, setSideWidth] = usePreference<number>(stored.sideWidth)
   const [otherStates, setOtherStates] = usePreference<boolean>(stored.otherStates)
+  /* This screen only reads the archived flag — the settings page is where it is flipped — but it
+   * takes the same road as the three above: one hook is what every preference this pane reads goes
+   * through, so the next field that becomes writable here does not have to be re-plumbed onto a
+   * second pipe (a direct store read that quietly disagrees with the local copy). */
+  const [archived] = usePreference<boolean>(stored.archived)
   const [load, setLoad] = React.useState<Load>({ phase: 'loading' })
   const [notes, setNotes] = React.useState<Readonly<Record<string, string>>>(NO_NOTES)
   /* The dispatch claims and the live-agent roster: the two machine-side facts the stranded reading
@@ -244,7 +239,11 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
   )
 
   const cycles = project?.cycles ?? []
-  const picked = cycles.find((cycle) => cycle.id === lineId) ?? cycles[0] ?? null
+  /* Which line the detail pane is showing, and therefore which line a card's "open" acts on: this
+   * shell keeps only the id — the one thing the port needs — and both ends ask the same one
+   * resolution (`pickedCycleOf`), so the line the body lists and the line reported to the port
+   * cannot be different ones. */
+  const pickedLine = pickedCycleOf(cycles, lineId)
 
   /* The stranded dispatches, judged once per reading: claim on disk, the cell still held, and the
      session its note names absent from this host's live agents. The judgment is the model's; the
@@ -272,21 +271,13 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
   const onWrite = React.useCallback(
     (run: () => Promise<Outcome>): Promise<boolean> => {
       setNote(null)
-      return run().then(
-        (outcome) => {
-          /* Success carries the tool's own words when it said any; a refusal carries a code, and the
-           * note line spells it when it is drawn — not here, where the reader's language is unknown. */
-          setNote(outcome.ok
-            ? (outcome.text.length > 0 ? { kind: 'said', text: outcome.text } : null)
-            : { kind: 'failure', failure: { code: outcome.code, ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}) } })
-          if (outcome.ok) setTick((value) => value + 1)
-          return outcome.ok
-        },
-        (error: unknown) => {
-          setNote({ kind: 'failure', failure: failureOf(error) })
-          return false
-        },
-      )
+      /* The loop itself is one hand (`writeToNote`): what came back reads the same on this note line
+       * as it does on the settings page's, and returning "did it land" is for the "record one" row —
+       * only a landed sentence clears the box. */
+      return writeToNote(run, {
+        note: (next) => setNote(next),
+        after: (landed) => { if (landed) setTick((value) => value + 1) },
+      })
     },
     [],
   )
@@ -397,8 +388,7 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
           <DetailPane
             active={tab === 'detail'}
             noNodes={noNodes}
-            cycles={cycles}
-            picked={picked}
+            lineId={lineId}
             project={project}
             stranded={stranded}
             sideWidth={sideWidth}
@@ -407,9 +397,9 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
             onPickLine={setLineId}
             openingNode={openingNode}
             onOpenNode={(nodeId) => {
-              if (picked === null || openingNode === nodeId) return
+              if (pickedLine === null || openingNode === nodeId) return
               setOpeningNode(nodeId)
-              void onWrite(() => port.openNodeSession(sessionId ?? '', workspaceRoot, picked.id, nodeId)).finally(() => setOpeningNode(null))
+              void onWrite(() => port.openNodeSession(sessionId ?? '', workspaceRoot, pickedLine.id, nodeId)).finally(() => setOpeningNode(null))
             }}
           />
 
@@ -417,8 +407,7 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
             active={tab === 'notes'}
             noNodes={noNodes}
             project={project}
-            cycles={cycles}
-            showArchived={stored.archived}
+            showArchived={archived}
             onAdd={(text, scope, cycle, node) => (
               onWrite(() => port.say(sessionId ?? '', workspaceRoot, text, scope, cycle, node))
             )}
@@ -430,18 +419,11 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
           {/* This pane acts as its own page root: the `is-embed` yield marker hangs on it together
               with the page marker (`pf-issue`), and the build gateway folds that sheet by its own
               page marker. */}
-          <div
-            className="pf-pane is-frame is-embed pf-issue"
-            id="pane-issue"
-            role="tabpanel"
-            aria-labelledby="tab-issue"
-            data-fill=""
-            hidden={tab !== 'issue'}
-          >
+          <PaneFrame id="issue" active={tab === 'issue'} noNodes={false} className="is-frame is-embed pf-issue" fill>
             {project === null ? null : (
               <IssuePool project={project} showOtherStates={otherStates} onShowOtherStates={pickOtherStates} />
             )}
-          </div>
+          </PaneFrame>
 
           <ConfigPane
             port={port}

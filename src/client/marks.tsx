@@ -8,11 +8,21 @@
  * themselves (a gate's hint, a moment's day, a line's state) are spelled in `words.ts`.
  */
 import * as React from 'react'
-import type { CycleReading, NodeReading } from '../model/index.ts'
-import { bucketOf, duration, readDeps } from '../model/index.ts'
+import type { CycleReading, CycleState, NodeReading } from '../model/index.ts'
+import { bucketOf, duration, lineStateOf, readDeps } from '../model/index.ts'
 import type { Translate } from './locale.ts'
 import { useT } from './locale.ts'
 import { depsSentence, gateTitle, stateWord, strandedTitle } from './words.ts'
+
+/**
+ * What each line state wears on the mark: the same answer that spells the hover sentence
+ * ({@link stateWord}), so the spinner and the word cannot disagree.
+ */
+const LINE_CLASSES: Readonly<Record<CycleState, string>> = {
+  blocked: 'is-blocked',
+  run: 'is-run',
+  stopped: '',
+}
 
 /**
  * What the running ring says: how long this step has been open, or just "in hand" when the line
@@ -34,7 +44,7 @@ export function runningTitle(t: Translate, node: NodeReading): string {
 export function LineMark(props: { readonly cycle: CycleReading }): React.ReactElement {
   const t = useT()
   const { cycle } = props
-  const cls = cycle.parked.length > 0 ? 'is-blocked' : cycle.inService ? 'is-run' : ''
+  const cls = LINE_CLASSES[lineStateOf(cycle)]
   return <span className={`pf-linemark ${cls}`.trim()} title={stateWord(t, cycle)} />
 }
 

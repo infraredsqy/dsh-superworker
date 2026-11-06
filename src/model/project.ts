@@ -25,6 +25,7 @@ import { cutAt, field, happenedAt, secondsBetween, text, toMoment, writtenBy } f
 import { readGraph } from './graph.ts'
 import { readInstructions } from './instructions.ts'
 import { readPool } from './pool.ts'
+import { belongsTo } from './reading.ts'
 
 /** The two verdicts that mean not completed: on a card, the node is shelved. */
 const PARKED_RESULTS = new Set(['failed', 'stopped'])
@@ -285,6 +286,11 @@ function readNode(facts: NodeFacts, at: Date): NodeReading {
     completedAt,
     approvedAt,
   })
+  /* The one moment this card speaks of: the gate's, else the pick-up, else the step's end, else the
+   * delivery, else the creation. Judged here so a board prints it instead of picking again. */
+  const heldSince = holdMoments.length > 0 ? new Date(Math.min(...holdMoments.map((d) => d.getTime()))) : null
+  const createdAt = cutAt(toMoment(node.created_at), at)
+  const stampAt = gate?.since ?? heldSince ?? endedAt ?? completedAt ?? createdAt
   return {
     id,
     state,
@@ -294,8 +300,8 @@ function readNode(facts: NodeFacts, at: Date): NodeReading {
     openDependencies,
     heldBy: heldByIDs,
     /* The moment it was picked up: the earliest hold; empty when the record has none. */
-    heldSince: holdMoments.length > 0 ? new Date(Math.min(...holdMoments.map((d) => d.getTime()))) : null,
-    createdAt: cutAt(toMoment(node.created_at), at),
+    heldSince,
+    createdAt,
     completedAt,
     startedAt,
     endedAt,
@@ -305,6 +311,7 @@ function readNode(facts: NodeFacts, at: Date): NodeReading {
     steps,
     cycleIds: [...facts.walkedBy],
     gate,
+    stampAt,
     ...field('title', title),
     ...field('recordStatus', recordStatus),
     ...field('mode', mode),
@@ -351,7 +358,7 @@ function approvedDelivery(completedAt: Date | null, approvedAt: Date | null): bo
 }
 
 function finishCycle(cycle: CutCycle, nodes: readonly NodeReading[]): CycleReading {
-  const parked = nodes.filter((node) => node.state === 'shelved' && node.cycleIds[0] === cycle.id).map((node) => node.id)
+  const parked = nodes.filter((node) => node.state === 'shelved' && belongsTo(node, cycle.id)).map((node) => node.id)
   return {
     id: cycle.id,
     inService: cycle.inService,

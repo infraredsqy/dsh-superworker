@@ -44,6 +44,17 @@ export type NodeState = 'todo' | 'shelved' | 'completed'
 export type NodeBucket = 'gate' | 'run' | 'shelved' | 'todo' | 'done'
 
 /**
+ * Where a card stands in the triage order the board draws its page in, 0 first: a card that wants a
+ * person, then one in someone's hands, then what may start, then what still owes a prerequisite, and
+ * only then what has already settled.
+ *
+ * An order over the one classification rather than a second one: the two halves of `todo` are the
+ * only place a rank says more than its {@link NodeBucket}, and "ready" is the reading's own answer,
+ * not a judgment made again here.
+ */
+export type NodeRank = 0 | 1 | 2 | 3 | 4
+
+/**
  * The human gate: when a node needs a person. Which of the three it is plus a moment, all criteria
  * in the records — no new data here.
  *
@@ -120,6 +131,14 @@ export interface NodeReading {
   readonly cycleIds: readonly string[]
   /** The human gate: which kind, and which moment, if this node needs a person; `null` when it does not. */
   readonly gate: GateReading | null
+  /**
+   * The one moment this card speaks of: the gate's moment, else the pick-up, else the step's end,
+   * else the delivery, else the creation.
+   *
+   * Which moment is news about this card is a judgment of the reading's, made once here; a card
+   * drawn on a board prints this field and does not pick among the moments again.
+   */
+  readonly stampAt: Date | null
 }
 
 /**

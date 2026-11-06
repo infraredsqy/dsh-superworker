@@ -9,7 +9,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { NO_WORKSPACES, bucketOf, workspacesAt } from '../src/client/workspaces.ts'
+import { NO_WORKSPACES, workspaceOf, workspacesAt } from '../src/client/workspaces.ts'
 
 function choice(workspaceId, sessionIds = []) {
   return { workspaceId, path: `C:\\${workspaceId}`, title: workspaceId, sessionIds }
@@ -57,18 +57,18 @@ test('没有清单时那份空名单：永远是同一个对象，订阅它什�
   assert.equal(typeof NO_WORKSPACES.subscribe(() => undefined), 'function')
 })
 
-test('这条会话落在哪个桶里：身份在哪个工作区的名下就算它', () => {
+test('这条会话落在哪个工作区里：身份在哪个工作区的名下就算它', () => {
   const items = [choice('w-1', ['s-9']), choice('w-2', ['s-7', 's-8'])]
 
-  assert.equal(bucketOf(items, 's-7')?.workspaceId, 'w-2')
-  assert.equal(bucketOf(items, 's-9')?.workspaceId, 'w-1')
+  assert.equal(workspaceOf(items, 's-7')?.workspaceId, 'w-2')
+  assert.equal(workspaceOf(items, 's-9')?.workspaceId, 'w-1')
 })
 
 test('一个都不出现、或压根没有会话：未分组', () => {
   const items = [choice('w-1', ['s-9'])]
 
-  assert.equal(bucketOf(items, 's-404'), undefined)
-  assert.equal(bucketOf(items, ''), undefined)
-  assert.equal(bucketOf(items, undefined), undefined)
-  assert.equal(bucketOf([], 's-9'), undefined)
+  assert.equal(workspaceOf(items, 's-404'), undefined)
+  assert.equal(workspaceOf(items, ''), undefined)
+  assert.equal(workspaceOf(items, undefined), undefined)
+  assert.equal(workspaceOf([], 's-9'), undefined)
 })

@@ -15,13 +15,12 @@
 import type { Translate } from './locale.ts'
 import type { Failure, FailureCode } from './failure.ts'
 import type { WordKey } from './locales/index.ts'
-import { clock, dayParts } from '../model/index.ts'
+import { clock, dayParts, lineStateOf } from '../model/index.ts'
 import type {
-  AgoParts,
   CycleReading,
+  CycleState,
   DayParts,
   DepsReading,
-  DurationParts,
   GateReading,
   InstructionGroupReading,
   IssueState,
@@ -93,10 +92,16 @@ export function otherStatesWord(t: Translate, pool: PoolReading): string {
     .join(' · ')
 }
 
+/** What each of the three line states reads as. */
+const LINE_WORDS: Readonly<Record<CycleState, WordKey>> = {
+  blocked: 'cycle.blocked',
+  run: 'cycle.running',
+  stopped: 'cycle.stopped',
+}
+
 /** A line's own state, in words: owing someone reads as blocked, then running or stopped. */
 export function stateWord(t: Translate, cycle: CycleReading): string {
-  if (cycle.parked.length > 0) return t('cycle.blocked')
-  return cycle.inService ? t('cycle.running') : t('cycle.stopped')
+  return t(LINE_WORDS[lineStateOf(cycle)])
 }
 
 /**
@@ -173,24 +178,10 @@ export function timeOf(t: Translate, moment: Date | null, at: Date): string {
   return moment === null ? '--' : `${dayLabel(t, dayParts(moment, at))} ${clock(moment)}`
 }
 
-/** A duration spelled out in full, in the units a reader says it in. */
-export function durationLong(t: Translate, parts: DurationParts | null): string {
-  if (parts === null) return t('duration.none')
-  if (parts.unit === 'seconds') return t('duration.seconds', { value: parts.value })
-  if (parts.unit === 'minutes') return t('duration.minutes', { value: parts.value })
-  return parts.rest > 0
-    ? t('duration.hours-minutes', { value: parts.value, rest: parts.rest })
-    : t('duration.hours', { value: parts.value })
-}
-
-/** How long ago a moment was, relative to the caller's "now". */
-export function ago(t: Translate, parts: AgoParts | null): string {
-  if (parts === null) return ''
-  if (parts.unit === 'just-now') return t('ago.just-now')
-  if (parts.unit === 'minutes') return t('ago.minutes', { value: parts.value })
-  if (parts.unit === 'hours') return t('ago.hours', { value: parts.value })
-  return t('ago.days', { value: parts.value })
-}
+/* How long something took is printed by the model's compact spelling (`duration`: `41s`, `1h02`),
+ * which reads the same in every language. A localised spelling once stood here beside it with no
+ * place that drew it; a second spelling of one duration is the thing this file exists to avoid, so
+ * it is gone rather than kept for a future caller. */
 
 /** What each refusal code reads as. One entry per code, so a new code fails to compile until it speaks. */
 const FAILURE_WORDS: Readonly<Record<FailureCode, WordKey>> = {

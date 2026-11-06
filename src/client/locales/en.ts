@@ -175,15 +175,6 @@ export const en: Readonly<Record<WordKey, string>> = {
   'date.yesterday': 'Yesterday',
   'date.before-yesterday': 'Two days ago',
   'date.month-day': '{month}/{day}',
-  'duration.none': 'No record',
-  'duration.seconds': '{value}s',
-  'duration.minutes': '{value}m',
-  'duration.hours': '{value}h',
-  'duration.hours-minutes': '{value}h {rest}m',
-  'ago.just-now': 'Just now',
-  'ago.minutes': '{value}m ago',
-  'ago.hours': '{value}h ago',
-  'ago.days': '{value}d ago',
 
   /* ── The scope of an instruction ──────────────────────────────────────────────────────────── */
   'scope.node': 'This cell',

@@ -25,8 +25,14 @@ const CASE_MIN = 360
 /** How far one keyboard move of the split travels. */
 const BAR_STEP = 16
 
+/**
+ * The tier the record itself names, worn as a class. The list of tiers and the lightest one are the
+ * model's (`pool.ts`'s weight table); this side only spells the word the record already wrote. A
+ * case whose record names no tier draws no badge at all, so there is nothing here to stand in with
+ * a default — inventing one would put a tier on the screen that the record never said.
+ */
 function sevClass(severity: string | undefined): string {
-  return `is-${severity ?? 'P3'}`
+  return severity === undefined ? '' : `is-${severity}`
 }
 
 /** The severity badge: one word, its weight on hover; absent when the record names no severity. */

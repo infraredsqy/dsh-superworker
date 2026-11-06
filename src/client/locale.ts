@@ -13,14 +13,16 @@
  * a stand-alone panel) get Chinese, read straight from the bundled table. That keeps every word on
  * the panel defined in every deployment — a missing service degrades the feature, never the copy.
  *
- * The port deliberately mirrors `prefs.ts`: a snapshot that only changes identity when something
- * truly changed, a `subscribe`, and a module-level default so a component is readable before
- * anything attached. This file stays `.ts` and builds its components with `React.createElement`:
- * Node loads `.ts` directly for the unit tests and rejects `.tsx`, and this module is on the import
- * path of the files those tests do load.
+ * The port stands on the same store skeleton as `prefs.ts` (`store.ts`): a snapshot that only
+ * changes identity when something truly changed, a `subscribe`, and a module-level default so a
+ * component is readable before anything attached. What is this port's own is the folding (which
+ * language is in force, and which translator reads it). This file stays `.ts` and builds its
+ * components with `React.createElement`: Node loads `.ts` directly for the unit tests and rejects
+ * `.tsx`, and this module is on the import path of the files those tests do load.
  */
 import * as React from 'react'
 import { WORD_TABLES, zh, type WordKey } from './locales/index.ts'
+import { createStore } from './store.ts'
 
 /**
  * The namespace this panel's lookup tables register under in DSH's locale service.
@@ -114,7 +116,6 @@ function bundledAt(locale: string): Translate {
  * It stands first on the bundled fallback and stays usable whether or not a service ever arrives.
  */
 export function createLocalePort(): LocalePort {
-  const listeners = new Set<() => void>()
   let off: (() => void) | null = null
   let service: LocaleService | null = null
   let bound: Translate | null = null
@@ -123,17 +124,7 @@ export function createLocalePort(): LocalePort {
   /** What the attached service said last time, so a notification that changed nothing is not relayed. */
   let lastActive: string = FALLBACK_LOCALE
   let lastRevision: unknown = undefined
-  let snapshot: LocaleSnapshot = Object.freeze({ active, revision, t: bundledAt(active) })
-
-  const announce = (): void => {
-    for (const listener of [...listeners]) {
-      try {
-        listener()
-      } catch (error) {
-        /* One subscriber failing must not take the others down with it. */
-      }
-    }
-  }
+  const store = createStore<LocaleSnapshot>(Object.freeze({ active, revision, t: bundledAt(active) }))
 
   /**
    * Rebuild the reading and tell subscribers, but only when it truly changed.
@@ -143,11 +134,10 @@ export function createLocalePort(): LocalePort {
    * make it new.
    */
   const publish = (nextActive: string, nextT: Translate, changed: boolean): void => {
-    if (!changed && nextActive === active && nextT === snapshot.t) return
+    if (!changed && nextActive === active && nextT === store.getSnapshot().t) return
     active = nextActive
     revision += 1
-    snapshot = Object.freeze({ active, revision, t: nextT })
-    announce()
+    store.put(Object.freeze({ active, revision, t: nextT }))
   }
 
   /**
@@ -205,13 +195,8 @@ export function createLocalePort(): LocalePort {
   }
 
   return {
-    getSnapshot: () => snapshot,
-    subscribe(listener) {
-      listeners.add(listener)
-      return () => {
-        listeners.delete(listener)
-      }
-    },
+    getSnapshot: store.getSnapshot,
+    subscribe: store.subscribe,
     attach(next) {
       detach()
       if (next === null) {

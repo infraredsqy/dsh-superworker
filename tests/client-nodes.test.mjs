@@ -1,17 +1,17 @@
 /* A cell's name and handles: eight-char short id, titleless nodes fall back to the short id,
  * hover shows "full name · short handle" and does not repeat the name when it already equals
- * the handle.
+ * the handle, and a name cut to a place's own width is cut the same way everywhere.
  *
- * These three literals live in src/client/nodes.ts — pure functions, loadable in Node; how a card
+ * These literals live in src/client/nodes.ts — pure functions, loadable in Node; how a card
  * and a row pair the name with the handle is a rendering concern, walked by hand,
  * while this file locks the criteria themselves: the long/short bounds of truncation, missing vs
- * empty-string titles, and both hover outcomes.
+ * empty-string titles, both hover outcomes, and the one cut-with-ellipsis spelling.
  *
  *   node --test tests/
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { shortId, nodeName, nodeHover } from '../src/client/nodes.ts'
+import { shortId, nameWithin, nodeName, nodeHover } from '../src/client/nodes.ts'
 
 function aNode(id, title) {
   return { id, title }
@@ -27,6 +27,13 @@ test('一格的名字：记录写了标题就用标题，没写才轮到身份�
   assert.equal(nodeName(aNode('n1', '批E 收尾')), '批E 收尾', '写了标题用标题')
   assert.equal(nodeName(aNode('n123456789', undefined)), 'n1234567', '没写标题落身份短写，不露全长身份')
   assert.equal(nodeName(aNode('n1', '')), '', '写了空标题也算写了，不落回短写')
+})
+
+test('截名字：按调用方给的宽度截，截了才带省略号，恰好的不截', () => {
+  assert.equal(nameWithin('批E 收尾', 12), '批E 收尾', '装得下就原样')
+  assert.equal(nameWithin('abcdefghijkl', 12), 'abcdefghijkl', '恰好一样宽：不截也不加省略号')
+  assert.equal(nameWithin('abcdefghijklm', 12), 'abcdefghijkl…', '多一个字：截到宽度并说明没印完')
+  assert.equal(nameWithin('abcdefghijklm', 5), 'abcde…', '宽度是调用方的事，这里只负责按它截')
 })
 
 test('悬停：全名后跟八字把手，名字本身就是那八个字时不重复', () => {

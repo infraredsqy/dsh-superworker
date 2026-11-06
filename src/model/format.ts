@@ -9,10 +9,9 @@
  *
  * When the moment is absent, an "absent" shape is given (`null`, or `--`) rather than a `0` that
  * reads as "exactly zero". Everything is based on the moment the caller provides; this module never
- * takes the current time itself.
+ * takes the current time itself. A span is measured between the two moments handed in — "how long ago
+ * was it" is not a shape given here, because nothing on the panel asks it.
  */
-import { secondsBetween } from './fields.ts'
-
 export function two(n: number): string {
   return (n < 10 ? '0' : '') + String(n)
 }
@@ -49,10 +48,6 @@ export function duration(seconds: number | null): string {
   return parts.rest > 0 ? `${parts.value}h${two(parts.rest)}` : `${parts.value}h`
 }
 
-export function elapsedSince(moment: Date | null, at: Date): string {
-  return moment === null ? '--' : duration(secondsBetween(moment, at))
-}
-
 /**
  * Which day a moment fell on: today, yesterday, the day before, or a calendar date.
  *
@@ -77,23 +72,4 @@ export function dayParts(moment: Date | null, at: Date): DayParts | null {
   if (diff === 1) return { unit: 'yesterday' }
   if (diff === 2) return { unit: 'before-yesterday' }
   return { unit: 'date', month: moment.getMonth() + 1, day: moment.getDate() }
-}
-
-/**
- * How long ago a moment was, relative to the caller's own moment: barely at all, or a count of
- * minutes / hours / days. `null` when there is no moment to speak of.
- */
-export type AgoParts =
-  | { readonly unit: 'just-now' }
-  | { readonly unit: 'minutes' | 'hours' | 'days'; readonly value: number }
-
-/** Which arm a moment falls in, measured against `at`. */
-export function agoParts(moment: Date | null, at: Date): AgoParts | null {
-  if (moment === null) return null
-  const minutes = Math.round((at.getTime() - moment.getTime()) / 60000)
-  if (minutes < 1) return { unit: 'just-now' }
-  if (minutes < 60) return { unit: 'minutes', value: minutes }
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return { unit: 'hours', value: hours }
-  return { unit: 'days', value: Math.floor(hours / 24) }
 }

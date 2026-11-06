@@ -26,33 +26,19 @@ import {
   type ConfigRow,
   type ConfigSection,
 } from './config-rows.ts'
-import { NOT_ENABLED_WORD } from './constants.ts'
 import type { PanelPort } from './data.ts'
-import type { Failure } from './failure.ts'
 import { failureOf } from './failure.ts'
 import { useT } from './locale.ts'
 import type { WordKey } from './locales/index.ts'
-import { CommitNumberInput } from './widgets.tsx'
+import type { Load as LoadOf, Note } from './outcome.ts'
+import { writeToNote } from './outcome.ts'
+import { CommitNumberInput, PaneFrame } from './widgets.tsx'
 
 /** The two words of the on / off control, as keys; the pressed one states the value the tool holds. */
 const SIDES: readonly (readonly [WordKey, boolean])[] = [['config.toggle.on', true], ['config.toggle.off', false]]
 
-type Load =
-  | { readonly phase: 'loading' }
-  | { readonly phase: 'ok'; readonly reading: PathfinderConfigReading }
-  | { readonly phase: 'failed'; readonly failure: Failure }
-
-/**
- * What this pane can leave on the note line under the panel.
- *
- * The shell owns that line and the words on it, so this pane hands over what it has and lets the
- * shell say it: the tool's own words, carried out verbatim when it spoke while succeeding, or a
- * refusal — a code, because which language the reader looks at is not known here. Mirrors the
- * shell's own note type.
- */
-type Note =
-  | { readonly kind: 'said'; readonly text: string }
-  | { readonly kind: 'failure'; readonly failure: Failure }
+/** How far this pane's own read has got; the shape is the client's one reading-of-a-read. */
+type Load = LoadOf<PathfinderConfigReading>
 
 /**
  * How tall the page's own content stands, the tail left out: the last section's bottom measured in
@@ -156,25 +142,17 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
 
   /* One write: the tool's word is final, then read again — what controls show always follows the
      re-read copy. No key filtering: unregistered keys are passed through as well, and when the
-     tool does not recognize one, its refusal lands on the note line. */
+     tool does not recognize one, its refusal lands on the note line. The loop is the shell's own
+     (`writeToNote`); what is this pane's is who owns the note and that a re-read follows either
+     way. */
   const send = React.useCallback((key: string, next: string): void => {
-    const after = (): void => { setTick((round) => round + 1) }
-    port.setConfig(sessionId, workspaceRoot, key, next).then(
-      (outcome) => {
-        said.current = outcome.ok ? null : 'write'
-        /* Success carries the tool's own words when it said any; a refusal carries a code, which the
-         * shell spells — not here, where the reader's language is unknown. */
-        note(outcome.ok
-          ? (outcome.text.length > 0 ? { kind: 'said', text: outcome.text } : null)
-          : { kind: 'failure', failure: { code: outcome.code, ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}) } })
-        after()
+    void writeToNote(() => port.setConfig(sessionId, workspaceRoot, key, next), {
+      note: (left) => {
+        said.current = left?.kind === 'failure' ? 'write' : null
+        note(left)
       },
-      (error: unknown) => {
-        said.current = 'write'
-        note({ kind: 'failure', failure: failureOf(error) })
-        after()
-      },
-    )
+      after: () => { setTick((round) => round + 1) },
+    })
   }, [port, sessionId, workspaceRoot, note])
 
   const reading = load.phase === 'ok' ? load.reading : null
@@ -235,16 +213,8 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
   }, [])
 
   return (
-    <div
-      className="pf-pane"
-      id="pane-config"
-      role="tabpanel"
-      aria-labelledby="tab-config"
-      aria-label={t('common.settings')}
-      data-fill=""
-      hidden={!active}
-    >
-      {noNodes ? <p className="pf-innone">{t(NOT_ENABLED_WORD)}</p> : reading === null || sections.length === 0 ? null : (
+    <PaneFrame id="config" active={active} noNodes={noNodes} fill ariaLabel={t('common.settings')}>
+      {reading === null || sections.length === 0 ? null : (
       <div className="pf-cfg">
         <nav className="pf-cfgnav" aria-label={t('config.categories.aria')}>
           <div className="pf-cfglist">
@@ -290,7 +260,7 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
         </div>
       </div>
       )}
-    </div>
+    </PaneFrame>
   )
 }
 
