@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { GitRunner } from './git';
 import { isMissingPath } from './fs-helpers';
 import { atomicWriteBytes } from './jsonio';
+import { withLedgerLock } from './ledgerlock';
 import { pfPaths, type PfPaths } from './paths';
 
 /**
@@ -91,10 +92,51 @@ const LEDGER_AGENTS_BODY = [
   '',
 ].join('\n');
 
-/** `.pf/config.json` as the factory hands it out: an empty object, LF, trailing newline. */
-const EMPTY_CONFIG_BODY = '{}\n';
+/**
+ * `.pf/config.json` as the factory hands it out: an empty object, LF, no trailing newline — the record
+ * writers' own byte rule (`src/jsonio.ts`), so the file init lays down and the one `config.set` rewrites
+ * are the same bytes. A trailing newline here would give this one record two byte readings.
+ */
+const EMPTY_CONFIG_BODY = '{}';
 
 const encoder = new TextEncoder();
+
+/**
+ * The layout files, and the one table they come from: the name, the bytes, whether the file is an **init
+ * marker** (the presence of the markers is what `isLedgerInitialized` reads), and whether it lands only
+ * when absent. The writing, the init gate and the doctor's check of the layout all derive from here, so a
+ * fifth layout file is added in one place and lands in all three at once.
+ *
+ * `.pf/config.json` is the one file with a rule of its own: it is a record a person edits, so init lands it
+ * only when it is absent (`force` is the one way to reset it), while the three constant files are repaired
+ * whenever their bytes differ.
+ */
+interface LayoutFile {
+  readonly name: string;
+  readonly body: string;
+  /** Whether this file's presence is part of "this `.pf` was deliberately set up". */
+  readonly initMarker: boolean;
+  /** Land it only when the file is absent (or `force` was asked for): never to repair its bytes. */
+  readonly onlyWhenAbsent?: boolean;
+}
+
+const LAYOUT_FILES: readonly LayoutFile[] = [
+  { name: '.gitignore', body: GITIGNORE_BODY, initMarker: true },
+  { name: '.gitattributes', body: GITATTRIBUTES_BODY, initMarker: true },
+  { name: 'AGENTS.md', body: LEDGER_AGENTS_BODY, initMarker: false },
+  { name: 'config.json', body: EMPTY_CONFIG_BODY, initMarker: false, onlyWhenAbsent: true },
+];
+
+/** Every layout file's name, in the order they land: what `init` lays down and what the doctor checks for. */
+export const LAYOUT_FILE_NAMES: readonly string[] = LAYOUT_FILES.map((file) => file.name);
+
+/**
+ * The two marks init lands: only with these two files present does this `.pf` count as deliberately set up.
+ * Derived from the layout table above — a mark is a column of that table, not a second list of names.
+ */
+const INIT_MARKERS: readonly string[] = LAYOUT_FILES.filter((file) => file.initMarker).map(
+  (file) => file.name,
+);
 
 /**
  * The strict reader of the exclude file: bytes that are not valid UTF-8 are refused rather than
@@ -102,9 +144,6 @@ const encoder = new TextEncoder();
  * same bytes it read (valid UTF-8 round-trips byte for byte).
  */
 const excludeDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-
-/** The two marks init lands: only with these two files present does this `.pf` count as deliberately set up. */
-const INIT_MARKERS = ['.gitignore', '.gitattributes'] as const;
 
 /** The name the merge driver is registered under, and the one command on `PATH` that answers it. */
 const MERGE_DRIVER_COMMAND = 'pf-merge-ledger';
@@ -116,8 +155,11 @@ const MERGE_DRIVER_PF_FORM = `${PF_COMMAND} merge-ledger`;
 /** The two command forms, under the names the doctor's cell speaks of them: the writer and the reader share them. */
 export { MERGE_DRIVER_COMMAND as MERGE_DRIVER_NAME_FORM, MERGE_DRIVER_PF_FORM };
 
-/** The args git hands a merge driver, in its own order. */
-const MERGE_DRIVER_ARGS = '%O %A %B %P';
+/** The args git hands a merge driver, in its own order — one array, and both the command string and the reading pattern are built from it. */
+const MERGE_DRIVER_ARGS = ['%O', '%A', '%B', '%P'] as const;
+
+/** The same args as they appear in the driver string. */
+const MERGE_DRIVER_ARGS_TEXT = MERGE_DRIVER_ARGS.join(' ');
 
 /** The built entry the absolute form points at (a sibling of `dist/index.mjs`). */
 const MERGE_DRIVER_PRODUCT = 'merge-ledger.mjs';
@@ -236,13 +278,6 @@ export interface InitReport {
 
 // ── the layout files ─────────────────────────────────────────────────────────
 
-/** The three constant layout files, in the order they land. `.pf/config.json` has its own rule below. */
-const LAYOUT_FILES: ReadonlyArray<readonly [string, string]> = [
-  ['.gitignore', GITIGNORE_BODY],
-  ['.gitattributes', GITATTRIBUTES_BODY],
-  ['AGENTS.md', LEDGER_AGENTS_BODY],
-];
-
 async function bytesMatch(path: string, payload: Uint8Array): Promise<boolean> {
   let current: Uint8Array;
   try {
@@ -257,26 +292,54 @@ async function bytesMatch(path: string, payload: Uint8Array): Promise<boolean> {
   return true;
 }
 
-/** Land the layout files: the constants whenever their bytes differ, config.json only when absent (or force). */
+/** Whether the file is there and is a file (a directory or an unreadable cell is not). */
+function isFileThere(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Land the layout files from the one table: the three constant files whenever their bytes differ,
+ * `.pf/config.json` only when absent (or `force`).
+ *
+ * The config.json landing is a read → change → write of a record like any other, so it goes through the
+ * record tree's lock, and whether the file is there is read **inside** that lock: a `config set` another
+ * process is running right now is either finished (the file exists, and init leaves it alone) or not
+ * started (the empty object lands first, and that write then queues behind). Without the lock, init could
+ * look between a `set`'s read and its write and put the whole document back to `{}`.
+ *
+ * The lock is taken only when this run really has that write to do: a run with nothing to land on
+ * config.json (every second `init`) answers at once instead of queueing behind a `config set` that holds
+ * the lock, or waiting out a lock file a dead holder left behind. The gate outside the lock is a plain
+ * filesystem read; the one inside asks again, so the write acts on an answer that still holds. When the
+ * lock is needed it is taken around the whole landing, so a lock nobody can get leaves no half of the
+ * layout behind: nothing lands, and the directory does not read as init-ed.
+ */
 async function writeLayoutFiles(paths: PfPaths, force: boolean): Promise<string[]> {
   const written: string[] = [];
-  for (const [name, body] of LAYOUT_FILES) {
-    const path = join(paths.pfDir, name);
-    const payload = encoder.encode(body);
-    if (await bytesMatch(path, payload)) continue;
-    await atomicWriteBytes(path, payload);
-    written.push(name);
-  }
-  let configThere = false;
-  try {
-    configThere = statSync(paths.configJson).isFile();
-  } catch {
-    configThere = false;
-  }
-  // `force` is the one way to reset what a person wrote; without it an existing config.json is never touched.
-  if (force || !configThere) {
-    await atomicWriteBytes(paths.configJson, encoder.encode(EMPTY_CONFIG_BODY));
-    written.push('config.json');
+  const gated = LAYOUT_FILES.filter((file) => file.onlyWhenAbsent === true);
+
+  /** The one landing, in table order: the constant files, then the ones that only land when absent. */
+  const land = async (): Promise<void> => {
+    for (const file of LAYOUT_FILES) {
+      const path = join(paths.pfDir, file.name);
+      const payload = encoder.encode(file.body);
+      if (file.onlyWhenAbsent === true) {
+        // `force` is the one way to reset what a person wrote; without it an existing config.json is never touched.
+        if (!force && isFileThere(path)) continue;
+      } else if (await bytesMatch(path, payload)) continue;
+      await atomicWriteBytes(path, payload);
+      written.push(file.name);
+    }
+  };
+
+  if (force || gated.some((file) => !isFileThere(join(paths.pfDir, file.name)))) {
+    await withLedgerLock(paths, land);
+  } else {
+    await land();
   }
   return written;
 }
@@ -618,16 +681,21 @@ function mergeLedgerProductPath(): string {
  */
 export function mergeDriverCommand(): string {
   if (resolvesOnPath(PF_COMMAND)) {
-    return `${MERGE_DRIVER_PF_FORM} ${MERGE_DRIVER_ARGS}`;
+    return `${MERGE_DRIVER_PF_FORM} ${MERGE_DRIVER_ARGS_TEXT}`;
   }
   if (resolvesOnPath(MERGE_DRIVER_COMMAND)) {
-    return `${MERGE_DRIVER_COMMAND} ${MERGE_DRIVER_ARGS}`;
+    return `${MERGE_DRIVER_COMMAND} ${MERGE_DRIVER_ARGS_TEXT}`;
   }
-  return `"${process.execPath}" "${mergeLedgerProductPath()}" ${MERGE_DRIVER_ARGS}`;
+  return `"${process.execPath}" "${mergeLedgerProductPath()}" ${MERGE_DRIVER_ARGS_TEXT}`;
 }
 
-/** The absolute form this package writes: the quoted node path, the quoted built entry, then git's args. */
-const ABSOLUTE_FORM = /^"([^"]+)" "([^"]+)" %O %A %B %P$/;
+/**
+ * The absolute form this package writes: the quoted node path, the quoted built entry, then git's args —
+ * the args spelled from `MERGE_DRIVER_ARGS`, the same array the command string is built from. A second
+ * literal copy of `%O %A %B %P` here would let a change of order (or one arg more) go unrecognised by the
+ * reader, and the registration a person's machine really answers would be judged dead and rewritten.
+ */
+const ABSOLUTE_FORM = new RegExp(`^"([^"]+)" "([^"]+)" ${MERGE_DRIVER_ARGS_TEXT}$`);
 
 /** The absolute form as this machine reads it: its shape, the two paths it names, and which of them are not here. */
 export interface AbsoluteFormReading {

@@ -109,6 +109,29 @@ describe('planning: readiness criterion and picking', () => {
     expect(plan.nodes).toEqual([first.id]);
   });
 
+  it('a hand-edited cycles table with entries that cannot be line records is read past, not crashed on', async () => {
+    const root = freshRoot();
+    const pf = open(root);
+    await pf.ledger.init();
+    const node = await pf.ledger.dag.add({ title: 'write it' });
+    await pf.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
+    // A null, a bare word and an array around the one real line: none of the three can be read as a
+    // line, and the table's one reading (`readStateLedger`) drops them. Every reader of that table —
+    // this plan included — therefore sees the same one line instead of a TypeError.
+    const records = JSON.parse(readFileSync(join(root, '.pf', 'state.json'), 'utf8')) as {
+      cycles: unknown[];
+    };
+    writeFileSync(
+      join(root, '.pf', 'state.json'),
+      JSON.stringify({ cycles: [null, 'junk', [], ...records.cycles] }, null, 2),
+      'utf8',
+    );
+    const plan = await open(root).conductor.next();
+    expect(actionOf(plan)).toBe('open_node');
+    if (plan.action !== 'open_node') return;
+    expect(plan.node_id).toBe(node.id);
+  });
+
   it('ties: equally scored rows are settled by the graph ordering (it takes the first row of that ordering)', async () => {
     const root = freshRoot();
     const pf = open(root);

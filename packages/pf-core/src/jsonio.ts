@@ -207,29 +207,7 @@ function reasonOf(error: unknown): string {
  * on failure it is cleared away and the original error is handed out.
  */
 export async function atomicWriteBytes(path: string, payload: Uint8Array): Promise<void> {
-  const dir = dirname(path);
-  await mkdir(dir, { recursive: true });
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
-  const tmp = join(dir, tempName(basename(path)));
-  try {
-    handle = await open(tmp, 'wx');
-    await handle.writeFile(payload);
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await renameWithRetry(tmp, path);
-  } catch (error) {
-    if (handle !== undefined) {
-      try {
-        await handle.close();
-      } catch {
-        // A handle that will not close goes away with the process; a failed cleanup must not cover
-        // the original error that is about to be handed out.
-      }
-    }
-    await discardTemp(tmp);
-    throw error;
-  }
+  await landTemp(path, payload, (tmp) => renameWithRetry(tmp, path));
 }
 
 export async function atomicWriteJson(
@@ -259,6 +237,26 @@ export async function exclusiveCreateBytes(path: string, payload: Uint8Array): P
   const linkIntoPlace = fsPromises as typeof fsPromises & {
     link(from: string, to: string): Promise<void>;
   };
+  await landTemp(path, payload, (tmp) => linkIntoPlace.link(tmp, path));
+}
+
+/**
+ * The one landing a block of bytes onto `path` goes through: the temporary file sits in the target's
+ * own directory (a cross-directory rename leaves half a file on the way), is created exclusively,
+ * written out and fsynced; `place` is the one step that differs between the two landings — a rename
+ * onto the target (atomic write) or a hard link onto it (exclusive creation). The temporary file is
+ * cleared either way once `place` is done (after a rename it is already gone), and on any failure the
+ * handle is closed, the temporary file is cleared and the original error is handed out as it is — the
+ * original record stays as it was, and a reader sees either the old file or the new one, never half.
+ *
+ * The temporary name's rule, the fsync moment and the failure cleanup therefore have one home: a
+ * hardening of any of them lands for both writers at once instead of one of them keeping half the fix.
+ */
+async function landTemp(
+  path: string,
+  payload: Uint8Array,
+  place: (tmp: string) => Promise<void>,
+): Promise<void> {
   const dir = dirname(path);
   await mkdir(dir, { recursive: true });
   let handle: Awaited<ReturnType<typeof open>> | undefined;
@@ -269,7 +267,7 @@ export async function exclusiveCreateBytes(path: string, payload: Uint8Array): P
     await handle.sync();
     await handle.close();
     handle = undefined;
-    await linkIntoPlace.link(tmp, path);
+    await place(tmp);
   } catch (error) {
     if (handle !== undefined) {
       try {

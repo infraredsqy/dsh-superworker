@@ -1,5 +1,5 @@
 import { nowSeconds } from './clock';
-import { cycleHoldingIds } from './cycles';
+import { cycleHoldingIds, readStateLedger } from './cycles';
 import { atomicWriteJson, jsonOptionsForRecord, readJsonFile } from './jsonio';
 import { assertLedgerInitialized } from './initledger';
 import type {
@@ -229,13 +229,13 @@ async function writeInstructionsAt(paths: PfPaths, ledger: InstructionsLedger): 
   await atomicWriteJson(paths.instructionsJson, ledger.data, jsonOptionsForRecord('instructions'));
 }
 
-/** Read-only view of the line account: registering a binding and deciding visibility need "is the line active, who does it hold", and not one byte is written. */
+/**
+ * Read-only view of the line account: registering a binding and deciding visibility need "is the line
+ * active, who does it hold", and not one byte is written. The table comes from the engine's one reading
+ * of `state.json` (`readStateLedger`), so entries that are not line records are dropped in one place.
+ */
 async function readStateCyclesAt(paths: PfPaths): Promise<CycleRecord[]> {
-  const read = await readJsonFile(paths.stateJson, 'state.json');
-  const data = read.kind === 'present' && read.value !== null && typeof read.value === 'object'
-    ? (read.value as Record<string, unknown>)
-    : {};
-  return Array.isArray(data.cycles) ? (data.cycles as CycleRecord[]) : [];
+  return (await readStateLedger(paths)).cycles;
 }
 
 /** Read-only view of the graph: registering a binding has to check whether the named node is on the graph (visibility needs its statuses too). */

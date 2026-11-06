@@ -51,10 +51,11 @@ import type { CyclePolicies, CycleRecord } from './types';
  * There are only four kinds: `number` (a positive numeric value), `integer` (a positive integer), `word` (a
  * word from a vocabulary), `switch` (on / off). The read side and the write side go through the same
  * `parseConfigValue` — a JSON value read from disk and a string handed in by a word pass the
- * same gate, so the boundary of a kind is written once. The write side has two extra rules: number /
- * integer take positive values only (0 would put every reading over the bound); `off` is a value for a
- * switch; for a non-switch kind, writing `off` is refused just like writing any other word outside the
- * vocabulary — taking a layer off is the job of `unset`.
+ * same gate, so the boundary of a kind is written once, positivity included: number / integer take
+ * positive values only (0 would put every reading over the bound), and a layer file carrying 0 or a
+ * negative number is skipped on the read side exactly as `set` refuses it. The write side has one extra
+ * rule: `off` is a value for a switch, and for a non-switch kind writing `off` is refused just like
+ * writing any other word outside the vocabulary — taking a layer off is the job of `unset`.
  *
  * Which layers each knob accepts is stated in its own cell: a built-in setting governs the whole project
  * or the whole machine, so it takes only the project / global layers; a knob a plugin declares is read by
@@ -301,6 +302,11 @@ function knobOf(
  * on-disk literal of this number (present only on the file-layer read side): a JS number has no
  * integer/float distinction, `4.0` lands as 4, and only the on-disk text tells an "integer literal" and
  * "a decimal written into an integer cell" apart — the latter is not taken.
+ *
+ * A numeric kind takes positive values only — `integer` at least 1, `number` above 0 — and that boundary
+ * is written here, once: the write gate and the layer-file reading both come through this function, so a
+ * hand-written `-1` on disk is skipped exactly as `set` refuses it instead of being read as a value in
+ * force.
  */
 export function parseConfigValue(
   kind: ConfigKind,
@@ -328,7 +334,7 @@ export function parseConfigValue(
       if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text)) return null;
       value = Number(text);
     }
-    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
   }
   if (kind === 'word') {
     if (typeof value !== 'string') return null;
@@ -363,14 +369,54 @@ function refuseMessage(key: string, spec: KnobSpec, value: unknown): string {
   return `${key} wants a word, but read ${read}`;
 }
 
+/**
+ * The refusal of a name that is not on the list, in the one spelling every verb uses: the code, the
+ * sentence and the list of configurable names are written here, and the verbs only hand in the file
+ * they were pointed at (the project layer of the directory being asked).
+ */
+function unknownKeyRefusal(
+  path: string,
+  key: string,
+  specs: Readonly<Record<string, KnobSpec>>,
+): PfError {
+  return new PfError(
+    'unknown_key',
+    path,
+    `unknown key ${JSON.stringify(key)}; configurable: ${Object.keys(specs).sort().join(', ')}`,
+  );
+}
+
+/**
+ * The refusal of a layer the knob does not take, in the one spelling every verb uses: the layers it does
+ * take are read off the knob, and `did` is the verb's own half of the sentence — `nothing was written`
+ * for the two write verbs, `nothing was read` for `get`.
+ */
+function layerNotAllowedRefusal(
+  path: string,
+  key: string,
+  spec: KnobSpec,
+  layer: ConfigLayerName,
+  did: string,
+): PfError {
+  return new PfError(
+    'layer_not_allowed',
+    path,
+    `${key} does not take the ${layer} layer (it takes: ${acceptedLayers(spec).join(', ')}); ${did}`,
+  );
+}
+
 // ── the layer a verb points at ──────────────────────────────────────────────
 
-/** The layer a verb points at, already read out of its spelling. */
-interface LayerPoint {
-  readonly layer: ConfigLayerName;
-  readonly cycle?: string;
-  readonly node?: string;
-}
+/**
+ * The layer a verb points at, already read out of its spelling. A union, not one shape with two optional
+ * ids: which id a layer needs is stated by the layer itself, so a reading or a writing of the line layer
+ * cannot be written without the line it belongs to, and the two wide layers carry no id at all.
+ */
+type LayerPoint =
+  | { readonly layer: 'project' }
+  | { readonly layer: 'global' }
+  | { readonly layer: 'cycle'; readonly cycle: string }
+  | { readonly layer: 'node'; readonly node: string };
 
 /** What one verb does with its layer, for the refusal sentence: a write names the layer it writes, a read the layer it reads up to. */
 const LAYER_VERBS: Readonly<Record<string, string>> = {
@@ -480,10 +526,36 @@ async function specsFor(
 }
 
 /**
+ * The one merge of a layer's raw key/value pairs into settings: a name the list does not know is skipped,
+ * a known name this layer does not take is skipped, and a value that does not match its kind is skipped —
+ * none of the three changes a reading, so this side stays silent about them.
+ *
+ * Both layers go through here; a layer only fetches its own raw pairs. `literals` is the file layer's
+ * extra evidence (the on-disk literal of each top-level number, so `4.0` written into an integer cell is
+ * not taken); the line layer has no such text and passes none.
+ */
+function mergeLayerValues(
+  raw: Readonly<Record<string, unknown>>,
+  specs: Readonly<Record<string, KnobSpec>>,
+  layer: ConfigLayerName,
+  literals?: Readonly<Record<string, string>>,
+): Record<string, ConfigValue> {
+  const out: Record<string, ConfigValue> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const spec = knobOf(specs, key);
+    if (spec === undefined) continue;
+    if (!acceptedLayers(spec).includes(layer)) continue;
+    const parsed = parseConfigValue(spec.kind, value, spec.values, literals?.[key]);
+    if (parsed === null) continue;
+    out[key] = parsed;
+  }
+  return out;
+}
+
+/**
  * The knobs one file layer declares, parsed by kind. A missing file means an empty table (the ordinary
- * state); an unknown name and a knob this layer does not take are skipped, and so is a value that does
- * not match its kind — none of the three changes a reading, so the read path stays silent about them.
- * A file that cannot be read or parsed is the one thing this refuses, because then no data is there.
+ * state); everything else is the merge's business (`mergeLayerValues`). A file that cannot be read or
+ * parsed is the one thing this refuses, because then no data is there.
  */
 async function readLayerValues(
   path: string,
@@ -496,16 +568,7 @@ async function readLayerValues(
   if (data === null || typeof data !== 'object' || Array.isArray(data)) {
     throw new PfError('invalid_config_file', path, `${path} must be a JSON object (key -> value)`);
   }
-  const out: Record<string, ConfigValue> = {};
-  for (const [key, raw] of Object.entries(data as Record<string, unknown>)) {
-    const spec = knobOf(specs, key);
-    if (spec === undefined) continue;
-    if (!acceptedLayers(spec).includes(layer)) continue;
-    const parsed = parseConfigValue(spec.kind, raw, spec.values, read.numberLiterals?.[key]);
-    if (parsed === null) continue;
-    out[key] = parsed;
-  }
-  return out;
+  return mergeLayerValues(data as Record<string, unknown>, specs, layer, read.numberLiterals);
 }
 
 /** The line layer: the knobs recognised in the `policies` slot, read loosely — an unrecognised value counts as unsaid (the old rule of the state record). */
@@ -514,15 +577,7 @@ function cycleLayerValues(
   specs: Readonly<Record<string, KnobSpec>>,
 ): Record<string, ConfigValue> {
   if (policies === null || typeof policies !== 'object' || Array.isArray(policies)) return {};
-  const out: Record<string, ConfigValue> = {};
-  for (const [key, raw] of Object.entries(policies as Record<string, unknown>)) {
-    const spec = knobOf(specs, key);
-    if (spec === undefined || !acceptedLayers(spec).includes('cycle')) continue;
-    const parsed = parseConfigValue(spec.kind, raw, spec.values);
-    if (parsed === null) continue;
-    out[key] = parsed;
-  }
-  return out;
+  return mergeLayerValues(policies as Record<string, unknown>, specs, 'cycle');
 }
 
 /** The refusal of a line id that is not on the record: the same code and sentence for every verb that names one. */
@@ -640,7 +695,8 @@ function chainUpTo(at: LayerPoint | undefined): {
   if (at === undefined) return { narrow: {}, wide: ['global', 'project'] };
   if (at.layer === 'global') return { narrow: {}, wide: ['global'] };
   if (at.layer === 'project') return { narrow: {}, wide: ['global', 'project'] };
-  return { narrow: { cycle: at.cycle, node: at.node }, wide: ['global', 'project'] };
+  if (at.layer === 'cycle') return { narrow: { cycle: at.cycle }, wide: ['global', 'project'] };
+  return { narrow: { node: at.node }, wide: ['global', 'project'] };
 }
 
 /**
@@ -697,11 +753,18 @@ async function writeCyclePolicy(
   });
 }
 
-/** Where one layer's settings land: the project file, the machine file, one line's record, one node's own file. */
-function layerPathOf(paths: PfPaths, point: LayerPoint, options: ConfigNamespaceOptions): string {
+/**
+ * Where one of these three layers lands: the project file, the machine file, one node's own file. The
+ * line layer is not here — its values ride on that line's record in `state.json` and are written by
+ * `writeCyclePolicy`, so naming a file for it would be a second answer to one question.
+ */
+function layerPathOf(
+  paths: PfPaths,
+  point: Exclude<LayerPoint, { readonly layer: 'cycle' }>,
+  options: ConfigNamespaceOptions,
+): string {
   if (point.layer === 'global') return globalConfigPath(options.homeDir);
-  if (point.layer === 'node') return nodeConfigPath(paths, point.node as string);
-  if (point.layer === 'cycle') return paths.stateJson;
+  if (point.layer === 'node') return nodeConfigPath(paths, point.node);
   return paths.configJson;
 }
 
@@ -719,30 +782,19 @@ async function validated(
 ): Promise<{ spec: KnobSpec; stored: ConfigValue | null }> {
   const paths = pfPaths(root);
   const spec = knobOf(specs, key);
-  if (spec === undefined) {
-    throw new PfError(
-      'unknown_key',
-      paths.configJson,
-      `unknown key ${JSON.stringify(key)}; configurable: ${Object.keys(specs).sort().join(', ')}`,
-    );
-  }
-  const allowed = acceptedLayers(spec);
-  if (!allowed.includes(point.layer)) {
-    throw new PfError(
-      'layer_not_allowed',
-      paths.configJson,
-      `${key} does not take the ${point.layer} layer (it takes: ${allowed.join(', ')}); nothing was written`,
-    );
+  if (spec === undefined) throw unknownKeyRefusal(paths.configJson, key, specs);
+  if (!acceptedLayers(spec).includes(point.layer)) {
+    throw layerNotAllowedRefusal(paths.configJson, key, spec, point.layer, 'nothing was written');
   }
   // The narrow layers point at a line or a node by id: an id that is not there is refused, never created.
-  if (point.layer === 'cycle') await cycleRecordOf(paths, point.cycle as string);
-  if (point.layer === 'node') await requireNode(paths, point.node as string);
+  if (point.layer === 'cycle') await cycleRecordOf(paths, point.cycle);
+  if (point.layer === 'node') await requireNode(paths, point.node);
   let stored: ConfigValue | null = null;
   if (value !== null) {
+    // The positivity of a numeric knob is the kind's own boundary, written once in `parseConfigValue`:
+    // the write side and the read side take the same gate, so nothing is refused here that a hand-edited
+    // layer file would still be read as.
     stored = parseConfigValue(spec.kind, value, spec.values);
-    if (stored !== null && (spec.kind === 'number' || spec.kind === 'integer') && typeof stored === 'number' && stored <= 0) {
-      stored = null;
-    }
     if (stored === null) {
       throw new PfError('invalid_value', paths.configJson, refuseMessage(key, spec, value));
     }
@@ -770,7 +822,7 @@ async function landWrite(
   options: ConfigNamespaceOptions,
 ): Promise<void> {
   if (point.layer === 'cycle') {
-    await writeCyclePolicy(paths, point.cycle as string, key, stored);
+    await writeCyclePolicy(paths, point.cycle, key, stored);
     return;
   }
   const path = layerPathOf(paths, point, options);
@@ -781,7 +833,7 @@ async function landWrite(
   }
   if (point.layer === 'node') {
     assertLedgerInitialized(paths);
-    const nodeId = point.node as string;
+    const nodeId = point.node;
     await withLedgerLock(paths, async () => {
       await requireNode(paths, nodeId);
       await writeLayerFile(path, key, stored);
@@ -807,15 +859,6 @@ export function createConfigNamespace(
   // asked one time, and every reader of the name's kind, layers and default looks at the same copy.
   const specsHere = (rootHere: string): Promise<Record<string, KnobSpec>> => specsFor(rootHere, options);
 
-  /** The refusal of a name that is not on the list; its location is the project layer of the directory the verb was pointed at. */
-  const unknownKey = (key: string, rootHere: string, specs: Readonly<Record<string, KnobSpec>>): PfError => {
-    return new PfError(
-      'unknown_key',
-      pfPaths(rootHere).configJson,
-      `unknown key ${JSON.stringify(key)}; configurable: ${Object.keys(specs).sort().join(', ')}`,
-    );
-  };
-
   /**
    * The read side's gate on a node layer, the same one a write goes through: the id is resolved against
    * the graph before anything is read, so a mistyped id is refused instead of answering with a wider
@@ -823,7 +866,7 @@ export function createConfigNamespace(
    * that layer yields nothing and the reading goes on below it.
    */
   const resolveReadNode = async (point: LayerPoint | undefined, rootHere: string): Promise<void> => {
-    if (point !== undefined && point.layer === 'node' && point.node !== undefined) {
+    if (point !== undefined && point.layer === 'node') {
       await requireNode(pfPaths(rootHere), point.node);
     }
   };
@@ -835,13 +878,15 @@ export function createConfigNamespace(
       // The key side is an own-property question too: a name every object inherits is not a setting,
       // and answering it would hand back a function where `{ value, source }` belongs.
       const spec = knobOf(specs, key);
-      if (spec === undefined) throw unknownKey(key, rootHere, specs);
+      if (spec === undefined) throw unknownKeyRefusal(pfPaths(rootHere).configJson, key, specs);
       const point = at === undefined || at === null ? undefined : layerPointOf(at, 'get');
       if (point !== undefined && !acceptedLayers(spec).includes(point.layer)) {
-        throw new PfError(
-          'layer_not_allowed',
+        throw layerNotAllowedRefusal(
           pfPaths(rootHere).configJson,
-          `${key} does not take the ${point.layer} layer (it takes: ${acceptedLayers(spec).join(', ')}); nothing was read`,
+          key,
+          spec,
+          point.layer,
+          'nothing was read',
         );
       }
       await resolveReadNode(point, rootHere);

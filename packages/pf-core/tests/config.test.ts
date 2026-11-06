@@ -493,6 +493,24 @@ describe('kinds and refusals', () => {
     }
   });
 
+  it('the positivity of a numeric knob is one gate on both sides: a hand-written 0 or -1 on disk is skipped, not read as a value in force', async () => {
+    const { root, config } = await makeProject(DECLARED);
+    try {
+      // The read side stays silent about a value that does not move: that layer states nothing and the
+      // next one (here the declaration's default) shows through — exactly what `set` refusing it means.
+      // Before this gate was one, the reading took -1 and 0 as values in force while `set` refused them.
+      seedProjectConfig(root, '{\n  "proj_depth": -1,\n  "narrow_limit": 0\n}');
+      expect(await config.get('proj_depth')).toEqual({ value: 6, source: 'builtin' });
+      expect(await config.get('narrow_limit')).toEqual({ value: 1, source: 'builtin' });
+      // A positive value in the very same file is read as before: the skip is the kind's boundary, not
+      // the whole layer file being given up on.
+      seedProjectConfig(root, '{\n  "proj_depth": 4,\n  "narrow_limit": 0\n}');
+      expect(await config.get('proj_depth')).toEqual({ value: 4, source: 'project' });
+    } finally {
+      cleanup(root);
+    }
+  });
+
   it('a refused write lands not one byte: the file stays as it was', async () => {
     const { root, config } = await makeProject();
     try {
@@ -551,6 +569,13 @@ describe('the layer a write names: one, and never defaulted', () => {
       const nodeRefusal = await refusalOf(() => config.set('max_agents', 4, { node: 'node-x' }));
       expect(nodeRefusal.code).toBe('layer_not_allowed');
       expect(nodeRefusal.message).toContain('project, global');
+      // The read side meets the same wall and says it in its own half of the one sentence: the code, the
+      // layer list and the key are the same text on both sides, and only the "nothing was …" cell differs.
+      const readRefusal = await refusalOf(() => config.get('max_agents', { cycle: 'c1' }));
+      expect(readRefusal.code).toBe('layer_not_allowed');
+      expect(readRefusal.message).toContain('it takes: project, global');
+      expect(readRefusal.message).toContain('nothing was read');
+      expect(cycleRefusal.message).toContain('nothing was written');
     } finally {
       cleanup(root);
     }
@@ -815,8 +840,7 @@ describe('where a write lands: one layer at a time', () => {
     const { root, config } = await makeProject();
     try {
       await config.unset('max_agents', { project: true });
-      // The writer puts down `{}` without a trailing newline (only the empty object init raises
-      // carries one); the same jsonBytes formatting applies.
+      // The same bytes init lands for its empty object: `jsonBytes` formatting, no trailing newline.
       expect(projectConfigText(root)).toBe('{}');
     } finally {
       cleanup(root);

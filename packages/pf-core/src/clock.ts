@@ -80,7 +80,14 @@ export function secondsTimestampOf(epochUs: number): SecondsTimestamp {
   );
 }
 
-/** The seconds-shape timestamp of now (the shape lines, handoff tickets, instructions and session files use); drawn from the same microsecond clock, also increasing within the process. */
+/**
+ * The seconds-shape timestamp of now (the shape lines, handoff tickets, instructions and session files
+ * use); drawn from the same microsecond clock, also increasing within the process.
+ *
+ * The spelling is `secondsTimestampOf`'s, not a second one cut out of the micro shape: a test that pins
+ * the clock hands out `secondsTimestampOf` too, so the pinned and the live path have to be one spelling
+ * — two of them could drift apart with the whole golden corpus still green.
+ */
 export function nowSeconds(): SecondsTimestamp {
-  return microTimestampOf(epochMicros()).slice(0, 19) + 'Z';
+  return secondsTimestampOf(epochMicros());
 }

@@ -24,6 +24,7 @@ import type { GitResult, GitRunner } from './git';
 import { atomicWriteBytes, atomicWriteJson, EOL, jsonOptionsForRecord, readJsonFile } from './jsonio';
 import {
   assertLedgerInitialized,
+  LAYOUT_FILE_NAMES,
   MERGE_DRIVER_NAME_FORM,
   MERGE_DRIVER_PF_FORM,
   namedDriverCommand,
@@ -38,7 +39,7 @@ import type { DagNamespace } from './ledger';
 import type { CycleRecord, HandoffRecord, NodeMode, NodeResult } from './types';
 import type { PluginCommandEntry, PluginContext, PluginFolder } from './plugins/types';
 import { withLedgerLock } from './ledgerlock';
-import { createCyclesNamespace, cycleHoldingIds, cyclePolicy } from './cycles';
+import { createCyclesNamespace, cycleHoldingIds, cyclePolicy, findCycleRecord, readStateLedger } from './cycles';
 
 /** The verdict words a handoff ticket takes: these three only (`pending` is the marker a re-run leaves, coming from the re-run verb, not from a session). */
 const HANDOFF_RESULTS: readonly NodeResult[] = ['completed', 'failed', 'stopped'];
@@ -530,17 +531,16 @@ export function createConductorNamespace(
   const dag = createDagNamespace(root);
   const cycles = createCyclesNamespace(root);
 
-  /** The reading of a line record: name an id and find that line; without a name the first active one is taken (and if there is none, it stops on the spot). */
+  /**
+   * The reading of a line record: name an id and find that line; without a name the first active one is
+   * taken (and if there is none, it stops on the spot). The table comes from the engine's one reading of
+   * `state.json` (`readStateLedger`) — normalized once, so a hand-edited entry cannot crash this reader
+   * while it is looked past elsewhere.
+   */
   async function resolveCycle(targetCycle: string | undefined): Promise<CycleRecord> {
-    const read = await readJsonFile(paths.stateJson, 'state.json');
-    const data = read.kind === 'present' && read.value !== null && typeof read.value === 'object'
-      ? (read.value as Record<string, unknown>)
-      : {};
-    const cycles = Array.isArray(data.cycles)
-      ? (data.cycles as CycleRecord[])
-      : [];
+    const ledger = await readStateLedger(paths);
     if (targetCycle !== undefined) {
-      const named = cycles.find((cycle) => cycle !== null && typeof cycle === 'object' && cycle.id === targetCycle);
+      const named = findCycleRecord(ledger, targetCycle);
       if (named === undefined) {
         throw new PfError(
           'cycle_not_found',
@@ -550,7 +550,7 @@ export function createConductorNamespace(
       }
       return named;
     }
-    const current = cycles.find((cycle) => cycle !== null && typeof cycle === 'object' && cycle.status === 'active');
+    const current = ledger.cycles.find((cycle) => cycle.status === 'active');
     if (current === undefined) {
       throw new PfError(
         'cycle_not_found',
@@ -1216,15 +1216,16 @@ export function createConductorNamespace(
 }
 
 /** The four layout files `init` sets up: one short of them and this record directory is incomplete. */
-const LEDGER_LAYOUT = ['.gitignore', '.gitattributes', 'AGENTS.md', 'config.json'] as const;
 
 /**
  * The three-cell check-up of the record face: the records are complete, no reference dangles, nothing cycles.
  *
  * A project with no `.pf/` does not count as red — a new project has not set up a record directory yet, and
  * this cell only says it should run `init` once. While the record directory is there, one missing file of
- * `init`'s four layout files is named; the graph goes through the criteria of `ledger.dag.validate` (cycles,
- * dangling dependencies); and the nodes a line holds must still be on the graph, with unrecognised ones named.
+ * `init`'s layout is named (the names come from the one layout table, `LAYOUT_FILE_NAMES`, so the doctor
+ * and `init` cannot disagree about what the layout is); the graph goes through the criteria of
+ * `ledger.dag.validate` (cycles, dangling dependencies); and the nodes a line holds must still be on the
+ * graph, with unrecognised ones named.
  */
 async function recordChecks(
   paths: PfPaths,
@@ -1233,7 +1234,7 @@ async function recordChecks(
   const gaps: string[] = [];
   const initialized = existsSync(paths.pfDir) && statSync(paths.pfDir).isDirectory();
   if (initialized) {
-    for (const name of LEDGER_LAYOUT) {
+    for (const name of LAYOUT_FILE_NAMES) {
       const path = join(paths.pfDir, name);
       if (!existsSync(path) || !statSync(path).isFile()) gaps.push(`${PF_DIR_NAME}/${name} is missing`);
     }
@@ -1241,14 +1242,9 @@ async function recordChecks(
 
   const graph = await dag.validate();
   const snapshot = await readGraphSnapshot(paths);
-  const seeing = await readJsonFile(paths.stateJson, 'state.json');
-  const data = seeing.kind === 'present' && seeing.value !== null && typeof seeing.value === 'object'
-    ? (seeing.value as Record<string, unknown>)
-    : {};
-  const cycles = Array.isArray(data.cycles) ? (data.cycles as CycleRecord[]) : [];
+  const cycles = (await readStateLedger(paths)).cycles;
   const dangling: string[] = [];
   for (const cycle of cycles) {
-    if (cycle === null || typeof cycle !== 'object') continue;
     // The claim is read off the one shape-tolerant reader (`cycleHoldingIds`), so a bare id string on an older
     // disc is checked against the graph like any other claim instead of passing for an empty hand.
     for (const id of cycleHoldingIds(cycle)) {
@@ -1265,7 +1261,7 @@ async function recordChecks(
       detail: !initialized
         ? `there is no ${PF_DIR_NAME} here yet (a new project runs ledger.init)`
         : gaps.length === 0
-          ? `the layout (${LEDGER_LAYOUT.join(', ')}) is all in place`
+          ? `the layout (${LAYOUT_FILE_NAMES.join(', ')}) is all in place`
           : gaps.join('\n'),
     },
     {

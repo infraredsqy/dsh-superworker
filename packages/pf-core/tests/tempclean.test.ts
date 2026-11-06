@@ -178,4 +178,22 @@ describe('filtering and an unreadable record', () => {
     expect(error.code).toBe('parse_failure');
     expect(snapshot(root)).toEqual(before);
   });
+
+  // Valid JSON that is not a record: the top-level shape gate of the one reading refuses it, so the
+  // sweep never reads a broken document as "no one holds anything" and deletes what a line holds.
+  it.each(['[]', '"x"', '123', 'null'])(
+    'state.json is valid JSON but not an object (%s): the whole thing refuses, the held temp stays',
+    async (body) => {
+      writeFileSync(paths.stateJson, body, 'utf8');
+      const before = snapshot(root);
+
+      const error = await rejection(cleanTemp(paths, { remove: true }));
+
+      expect(error.code).toBe('parse_failure');
+      // The node a line holds was never read as free: its cell is still there, and nothing moved at all.
+      expect(existsSync(nodeTempDir(paths, NODE_B))).toBe(true);
+      expect(existsSync(nodeTempDir(paths, NODE_A))).toBe(true);
+      expect(snapshot(root)).toEqual(before);
+    },
+  );
 });

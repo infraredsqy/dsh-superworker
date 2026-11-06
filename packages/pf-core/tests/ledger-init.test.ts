@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { isLedgerInitialized } from '../src/initledger';
 import { open } from '../src/open';
@@ -71,7 +71,9 @@ describe('ledger.init: the bottom line holds in an environment without git', () 
     expect(report.written).toEqual(LAYOUT_FILES);
     expect(readFileSync(join(root, '.pf', '.gitignore'), 'utf8')).toBe(GITIGNORE);
     expect(readFileSync(join(root, '.pf', '.gitattributes'), 'utf8')).toBe(GITATTRIBUTES);
-    expect(readFileSync(join(root, '.pf', 'config.json'), 'utf8')).toBe('{}\n');
+    // The one byte rule of a record (`src/jsonio.ts`): no trailing newline, so what init lands here and
+    // what `config.set` rewrites later are the same bytes for the same document.
+    expect(readFileSync(join(root, '.pf', 'config.json'), 'utf8')).toBe('{}');
     expect(readFileSync(join(root, '.pf', 'AGENTS.md'), 'utf8')).toContain('# .pf usage note');
     for (const name of LAYOUT_FILES) {
       expect(readFileSync(join(root, '.pf', name), 'utf8'), name).not.toContain('\r\n');
@@ -153,6 +155,25 @@ describe('ledger.init: the bottom line holds in an environment without git', () 
     expect(hashTree(join(root, '.pf'))).toBe(before);
   });
 
+  it('nothing to land: a run with config.json in place takes no lock and answers at once', async () => {
+    const pf = open(root);
+    await pf.ledger.init();
+    const pfDir = join(root, '.pf');
+    // A lock file nobody holds: taking the lock would mean waiting out the whole ten-second limit.
+    const lock = join(pfDir, 'meta', 'ledger.lock');
+    mkdirSync(dirname(lock), { recursive: true });
+    writeFileSync(lock, '', 'utf8');
+
+    const started = Date.now();
+    const second = await pf.ledger.init();
+    const elapsedMs = Date.now() - started;
+
+    expect(second.written).toEqual([]);
+    expect(elapsedMs).toBeLessThan(2_000);
+    // The lock was never taken: the stale file is still exactly where the dead holder left it.
+    expect(existsSync(lock)).toBe(true);
+  });
+
   it('only what is broken is rewritten: a hand-broken layout file is repaired by the next run', async () => {
     const pf = open(root);
     await pf.ledger.init();
@@ -185,7 +206,7 @@ describe('ledger.init: the bottom line holds in an environment without git', () 
     expect(untouched.written).toEqual([]);
 
     const forced = await pf.ledger.init({ force: true });
-    expect(readFileSync(join(pfDir, 'config.json'), 'utf8')).toBe('{}\n');
+    expect(readFileSync(join(pfDir, 'config.json'), 'utf8')).toBe('{}');
     expect(forced.written).toEqual(['config.json']);
     const before = hashTree(pfDir);
     await pf.ledger.init({ force: true });

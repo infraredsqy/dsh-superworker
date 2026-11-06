@@ -401,6 +401,25 @@ describe('list / show / current: the read side', () => {
     await expect(pf.ledger.cycles.hold('ghost', 'x')).rejects.toThrow('not found in state.json');
   });
 
+  it('a line id this record does not have refuses with cycle_not_found, the same code the settings chain uses', async () => {
+    await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
+    for (const call of [
+      () => pf.ledger.cycles.show('ghost'),
+      () => pf.ledger.cycles.policies('ghost'),
+      () => pf.ledger.cycles.rename('ghost', 'x'),
+    ]) {
+      const refusal = await call().then(
+        () => {
+          throw new Error('a call naming a line that is not there went through');
+        },
+        (error: unknown) => error as { code?: string; path?: string },
+      );
+      // One absence, one decidable answer: the code a caller branches on, and the record it is about.
+      expect(refusal.code).toBe('cycle_not_found');
+      expect(refusal.path).toBe(join(root, '.pf', 'state.json'));
+    }
+  });
+
   it('a .pf never init-ed: not a byte is written, and reading gives an empty ledger', async () => {
     const bare = mkdtempSync(join(tmpdir(), 'pf-cycle-bare-'));
     try {

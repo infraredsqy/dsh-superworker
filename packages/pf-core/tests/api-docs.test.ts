@@ -2,29 +2,49 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import * as pfCore from '../src/index';
+import { open } from '../src/index';
 
-/** docs/api.md agrees with the export surface: every export name is cross-checked, and each frozen method name is named. */
+/**
+ * docs/api.md agrees with the package: every runtime export name is crossed with the actual exports, and
+ * every verb the handle carries is one the document's tables name.
+ *
+ * The verb names are **read out of the document**, not copied into this file a second time: a hand-written
+ * list here could go stale against the table (it did, by nine verbs once) and the assertion "every frozen
+ * verb is documented" would keep passing over the gap. The one source is the tables' first column
+ * (`` `ledger.dag.add` ``), and the comparison is the whole set — documented verbs = the verbs on the
+ * handle, no name missing on either side.
+ */
 
 const docs = readFileSync(fileURLToPath(new URL('../docs/api.md', import.meta.url)), 'utf8').replace(/\r\n/g, '\n');
 
-const FROZEN_METHODS = [
-  'ledger.init', 'ledger.register',
-  'ledger.dag.add', 'ledger.dag.addMany', 'ledger.dag.remove', 'ledger.dag.update', 'ledger.dag.link',
-  'ledger.dag.unlink', 'ledger.dag.setStatus', 'ledger.dag.approve', 'ledger.dag.revive',
-  'ledger.dag.get', 'ledger.dag.info', 'ledger.dag.context', 'ledger.dag.search', 'ledger.dag.list',
-  'ledger.dag.specPath', 'ledger.dag.validate',
-  'ledger.cycles.create', 'ledger.cycles.start', 'ledger.cycles.rename',
-  'ledger.cycles.setStatus', 'ledger.cycles.setPolicy', 'ledger.cycles.list',
-  'ledger.cycles.current', 'ledger.cycles.show', 'ledger.cycles.hold',
-  'ledger.cycles.close', 'ledger.cycles.retry',
-  'ledger.instructions.add', 'ledger.instructions.list', 'ledger.instructions.resolve',
-  'ledger.instructions.revive', 'ledger.instructions.remove',
-  'config.get', 'config.set', 'config.unset', 'config.list',
-  'sessions.list', 'sessions.show', 'sessions.note',
-  'conductor.next', 'conductor.prepare', 'conductor.settle', 'conductor.dispatch', 'conductor.handoff',
-  'conductor.close', 'conductor.advance',
-  'conductor.doctor',
-];
+/** The verb rows of the document's tables: a first-column cell spelled `<namespace>.<verb>` (`ledger.init`, `conductor.next`, `config.get` …). */
+function documentedVerbs(): string[] {
+  const found = new Set<string>();
+  const row = /^\|\s*`((?:ledger(?:\.(?:dag|cycles|instructions))?|config|sessions|conductor)\.[A-Za-z]\w*)`\s*\|/gm;
+  for (const match of docs.matchAll(row)) found.add(match[1]!);
+  return [...found].sort();
+}
+
+/** The verbs the handle really carries, in the same `<namespace>.<verb>` spelling. */
+function handleVerbs(): string[] {
+  const pf = open('\\\\tmp\\pf-api-docs-probe');
+  const verbs: string[] = [];
+  for (const [name, value] of Object.entries(pf.ledger as unknown as Record<string, unknown>)) {
+    if (typeof value === 'function') verbs.push(`ledger.${name}`);
+  }
+  const groups: ReadonlyArray<readonly [string, object]> = [
+    ['ledger.dag', pf.ledger.dag],
+    ['ledger.cycles', pf.ledger.cycles],
+    ['ledger.instructions', pf.ledger.instructions],
+    ['config', pf.config],
+    ['sessions', pf.sessions],
+    ['conductor', pf.conductor],
+  ];
+  for (const [prefix, namespace] of groups) {
+    for (const name of Object.keys(namespace)) verbs.push(`${prefix}.${name}`);
+  }
+  return verbs.sort();
+}
 
 describe('docs/api.md agrees with the export surface', () => {
   it('the "runtime exports" block equals the actual package exports one by one', () => {
@@ -34,8 +54,11 @@ describe('docs/api.md agrees with the export surface', () => {
     expect(documented).toEqual(Object.keys(pfCore).sort());
   });
 
-  it('every frozen method name appears in the docs', () => {
-    const missing = FROZEN_METHODS.filter((name) => !docs.includes(name));
-    expect(missing).toEqual([]);
+  it('the verbs the document tables name are exactly the verbs the handle carries', () => {
+    const documented = documentedVerbs();
+    // A row the pattern does not recognise would silently shrink this set, so it has to have found the
+    // frozen surface's own size rather than an empty or half-read table.
+    expect(documented.length).toBeGreaterThan(50);
+    expect(documented).toEqual(handleVerbs());
   });
 });

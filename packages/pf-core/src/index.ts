@@ -1,6 +1,7 @@
 /**
- * The package exit of pf-core: runtime exports `open`, `SimulatedExecutor` and the three readers of a
- * plugin's own skills, everything else is types. Names and signatures are not renamed separately.
+ * The package exit of pf-core. What is exported at runtime is settled by the "运行时导出" section of
+ * `docs/api.md`, and that list is the only place the names are written down — everything else here is
+ * types. Names and signatures are not renamed separately.
  */
 
 export { open } from './open';

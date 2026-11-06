@@ -1,12 +1,9 @@
 import { readdirSync, statSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { cycleHoldingIds } from './cycles.ts';
-import { PfError } from './errors.ts';
+import { cycleHoldingIds, readStateLedger } from './cycles.ts';
 import { isMissingPath } from './fs-helpers.ts';
-import { readJsonFile } from './jsonio.ts';
 import { nodeTempDir, type PfPaths } from './paths.ts';
-import type { CycleRecord } from './types.ts';
 
 /**
  * The temp sweep (the piece `clean-temp` runs): list or delete each node's process-artifact
@@ -20,9 +17,11 @@ import type { CycleRecord } from './types.ts';
  *
  * Only this one cell is touched: spec, reports, run doc, session notes and the rest of the tree
  * stay as they are. Nodes a line holds (`holding` in `state.json`) are skipped unless `force` — raw
- * output there may be being written at this moment. An unreadable `state.json` refuses the whole
- * thing and touches no temp: reading it as "no one holds anything" and going ahead is the worst kind
- * of silent error.
+ * output there may be being written at this moment. A `state.json` that will not read — bytes that
+ * are not JSON, or a document whose top level is not an object — refuses the whole thing and touches
+ * no temp: reading it as "no one holds anything" and going ahead is the worst kind of silent error.
+ * That gate is not judged here: it is the one reading's (`readStateLedger`), so this sweep and every
+ * other reader meet the same answer.
  */
 
 /** The options of `cleanTemp`. */
@@ -146,26 +145,20 @@ function isDirectory(path: string): boolean {
   }
 }
 
-/** The node ids the lines hold right now: the `holding` ids of every line in `state.json` (nothing held is an empty set). */
+/**
+ * The node ids the lines hold right now: the `holding` ids of every line in `state.json` (nothing held is
+ * an empty set). The table comes from the engine's one reading of `state.json` (`readStateLedger`): a
+ * record that will not read still refuses the whole clean through that reading (`parse_failure`), the
+ * top-level shape gate included — refusing to read a document that is not an object is that reading's
+ * job, not a second judgement here — and entries that cannot be line records are dropped there too.
+ */
 async function heldNodeIds(paths: PfPaths): Promise<ReadonlySet<string>> {
-  const read = await readJsonFile(paths.stateJson, 'state.json');
+  const ledger = await readStateLedger(paths);
   const held = new Set<string>();
-  if (read.kind === 'missing') return held;
-  const state = read.value;
-  if (state === null || typeof state !== 'object' || Array.isArray(state)) {
-    throw new PfError(
-      'parse_failure',
-      paths.stateJson,
-      'state.json is not an object with a cycles list; refusing to read it as "no node is held"',
-    );
-  }
-  const cycles = (state as Record<string, unknown>).cycles;
-  if (!Array.isArray(cycles)) return held;
-  for (const cycle of cycles) {
-    if (cycle === null || typeof cycle !== 'object' || Array.isArray(cycle)) continue;
+  for (const cycle of ledger.cycles) {
     // Both on-disk shapes of a claim are read in one place (`cycleHoldingIds`): the canonical
     // `[{ id, since }]` and the bare id string an older disc carries.
-    for (const id of cycleHoldingIds(cycle as CycleRecord)) held.add(id);
+    for (const id of cycleHoldingIds(cycle)) held.add(id);
   }
   return held;
 }

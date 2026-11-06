@@ -15,7 +15,8 @@
  *                        because it has no effect on any reading;
  * - `layer_not_allowed`  this knob does not accept the layer being written or read up to (a refusal
  *                        names the layers it accepts);
- * - `cycle_not_found`    the line id named by the layer is not in this state.json;
+ * - `cycle_not_found`    the line id named is not in this state.json — the same code for a line the
+ *                        settings chain's cycle layer names and for one a cycles verb names;
  * - `node_not_found`     the node id named by the layer is not on this project's graph, or its spelling
  *                        is not one node-directory name (a path separator or a `.` / `..` segment never
  *                        becomes a path; an empty id is refused earlier, by the layer pointer, as a

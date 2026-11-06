@@ -11,7 +11,7 @@ import type {
   StopPlan,
   WaitPlan,
 } from './conductor';
-import { cycleHoldingIds, cyclePolicy } from './cycles';
+import { cycleHoldingIds, cyclePolicy, readStateLedger } from './cycles';
 import { createDagNamespace } from './dag';
 import { instructionInScope, isLive } from './instruct';
 import { readJsonFile } from './jsonio';
@@ -77,11 +77,9 @@ async function loadNodes(paths: PfPaths): Promise<NodeMap> {
   return nodes;
 }
 
-/** The line account and its rosters: the `cycles` table of state.json. */
+/** The line account and its rosters: the `cycles` table of state.json, read through the engine's one reading of it. */
 async function loadCycles(paths: PfPaths): Promise<CycleRecord[]> {
-  const data = await readRecord(paths.stateJson, 'state.json');
-  const cycles = data?.cycles;
-  return Array.isArray(cycles) ? (cycles as CycleRecord[]) : [];
+  return (await readStateLedger(paths)).cycles;
 }
 
 /** The instruction account: the `instructions` table of instructions.json, as it is on disk; visibility is computed when read. */

@@ -1,5 +1,6 @@
 import { createDagNamespace } from './dag';
 import { nowMicro, nowSeconds } from './clock';
+import { PfError } from './errors';
 import { unlinkWithRetry } from './fs-helpers';
 import { atomicWriteJson, jsonOptionsForRecord, readJsonFile } from './jsonio';
 import { assertLedgerInitialized } from './initledger';
@@ -108,12 +109,24 @@ function isCycleRecord(value: unknown): value is CycleRecord {
  * an empty table, and entries that are not line records are dropped. Those cells cannot be read as
  * lines, and the read side keeps that kind of silence everywhere else — dropping them here is what
  * keeps a hand-edited table from crashing one reader while the other looks past it.
+ *
+ * One shape is refused rather than normalized: a document whose top level is not a JSON object (an
+ * array, a bare word, a number, `null`) is not a record at all. Reading it as an empty table would
+ * hand every reader "nothing is held" from a document that says nothing of the kind — and a reader
+ * that acts on that (the temp sweep) would delete what a line holds. So the gate is here, once: every
+ * reader meets the same answer, and no reader has a reason to judge the shape a second time.
  */
 export async function readStateLedger(paths: PfPaths): Promise<StateLedger> {
   const read = await readJsonFile(paths.stateJson, 'state.json');
-  const data = read.kind === 'present' && read.value !== null && typeof read.value === 'object'
-    ? (read.value as Record<string, unknown>)
-    : {};
+  const document = read.kind === 'present' ? read.value : {};
+  if (document === null || typeof document !== 'object' || Array.isArray(document)) {
+    throw new PfError(
+      'parse_failure',
+      paths.stateJson,
+      'state.json is not an object with a cycles list; refusing to read it as a record',
+    );
+  }
+  const data = document as Record<string, unknown>;
   if (!Array.isArray(data.cycles)) data.cycles = [];
   const table = data.cycles as unknown[];
   for (let index = table.length - 1; index >= 0; index -= 1) {
@@ -299,11 +312,16 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
     await atomicWriteJson(paths.stateJson, ledger.data, jsonOptionsForRecord('state'));
   }
 
-  /** Find this line: by exact id, never guessing a prefix for the caller; an id not on the account is refused on the spot. */
+  /**
+   * Find this line: by exact id, never guessing a prefix for the caller; an id not on the account is
+   * refused on the spot with the record's own `cycle_not_found` — the same code and the same landing
+   * (`state.json`) the settings chain refuses a line id with, so one absence has one answer wherever
+   * a caller meets it and the code table covers the whole path.
+   */
   function findCycle(ledger: StateLedger, id: string): CycleRecord {
     const found = findCycleRecord(ledger, id);
     if (found === undefined) {
-      throw new Error(`cycle "${id}" not found in state.json`);
+      throw new PfError('cycle_not_found', paths.stateJson, `cycle "${id}" not found in state.json`);
     }
     return found;
   }
