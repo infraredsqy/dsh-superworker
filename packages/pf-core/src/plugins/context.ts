@@ -1,10 +1,18 @@
-import { join } from 'node:path';
-import { resolveConfig, type ConfigValue } from '../config';
-import { readJsonFile } from '../jsonio';
-import { nodeDir, pfPaths, type PfPaths } from '../paths';
-import type { NodeRecord } from '../types';
-import { PLUGIN_IMPL_NAME, declaredKnobSpecs, implOf, readingsOf, routableCommands } from './registry';
-import type { PluginContext, PluginFolder, PluginGraphSnapshot, PluginInsertTarget } from './types';
+import { resolveConfig, type ConfigValue, type KnobSpec } from '../config';
+import { nodeSpecPath, pfPaths } from '../paths';
+import type { PluginAssembly } from './assembly';
+import { implOf } from './scan';
+import { declaredKnobSpecs, readingsOf } from './tables';
+import { routableCommands } from '../words/plugin-commands';
+import type {
+  PluginCommandEntry,
+  PluginContext,
+  PluginFolder,
+  PluginGraphSnapshot,
+  PluginInsertTarget,
+  PluginReadingEntry,
+} from './types';
+import { PLUGIN_IMPL_NAME } from './scan';
 
 /**
  * The host context: everything a plugin can see at one timing, and nothing outside this surface.
@@ -19,6 +27,11 @@ import type { PluginContext, PluginFolder, PluginGraphSnapshot, PluginInsertTarg
  * and a command that ran and answered no text is a command that ran. A number asked a second time gets the
  * first answer (the computing function runs once per round); a self-question that goes round in circles is
  * named and then treated as "none this round".
+ *
+ * **One routing, two readers.** A plugin command is routed here once — find the word in the routing table,
+ * load the implementation, cut argv by `keep_name`, call `main`, and read what it answered into the four
+ * cells `ran / text / code / error`. This context's `capture` / `run` and `conductor.pluginCommand` both
+ * read that one answer, so neither of them has to explain "it did not run" or "it ran without a word".
  */
 
 /** The one spelling of the WARNING line on the tolerant path: `WARNING: plugin <name> <what went wrong>: <detail>`. */
@@ -43,33 +56,72 @@ function fromSig(sig: unknown, key: string): number | null {
 }
 
 /**
- * What one routed command did, told apart in the two ways a plugin can act on: whether it ran to its
- * end, and the text it answered with when it answered text. A word nobody routes, a routed command
- * whose implementation has no `main()`, and a command that threw are all "it did not run" — and a
- * command that answers no text at all still ran (the effect may be the whole point of it).
+ * What one routed plugin command did, in the four cells both readers take: whether a routed command was
+ * found and ran to its end, the text it answered with, the exit code a `main` answered with a number, and
+ * the sentence a failure leaves (`null` when it ran). The WARNING line for a failure is left here as well,
+ * so the two readers cannot describe the same failure two ways.
  */
-interface CommandAnswer {
+export interface CommandRoute {
+  /** The plugin whose word this was; null when no installed plugin claims the word. */
+  readonly plugin: string | null;
   /** Whether a routed command was found and its `main()` ran to its end. */
   readonly ran: boolean;
   /** The text the command answered with; null when it answered none (a failure, or an effectful command that answers no text). */
   readonly text: string | null;
+  /** The exit code `main` answered with a number; null when it answered none. */
+  readonly code: number | null;
+  /** The sentence the failure leaves: no routed word, no `main()`, or the throw itself; null when it ran. */
+  readonly error: string | null;
 }
 
-/** The spec.md location of one node: this tree's own layout, with forward slashes as a human reads it. */
-function specPathOf(paths: PfPaths, nodeId: string): string {
-  return join(nodeDir(paths, nodeId), 'spec.md').split('\\').join('/');
-}
-
-/** The graph snapshot: the node table the caller reads once before opening the seam (absent means an empty graph). */
-export async function readGraphSnapshot(paths: PfPaths): Promise<PluginGraphSnapshot> {
-  const read = await readJsonFile(paths.ideasJson, 'ideas.json');
-  const data = read.kind === 'present' && read.value !== null && typeof read.value === 'object'
-    ? (read.value as Record<string, unknown>)
-    : {};
-  const nodes = data.nodes !== null && typeof data.nodes === 'object' && !Array.isArray(data.nodes)
-    ? (data.nodes as Record<string, NodeRecord>)
-    : {};
-  return { nodes };
+/**
+ * Route one plugin command in this process: the word picks the owning plugin out of the routing table, its
+ * `main` runs here, and the answer comes back in the four cells above. Every failure leaves one WARNING line
+ * and reads as "it did not run"; a command that ran to its end ran even when it answered no text at all.
+ */
+export async function routeCommand(
+  argv: readonly string[],
+  folders: readonly PluginFolder[],
+  ctx: PluginContext,
+  warnings: string[],
+  routable: readonly PluginCommandEntry[] = routableCommands(folders),
+): Promise<CommandRoute> {
+  const neverRan: CommandRoute = { plugin: null, ran: false, text: null, code: null, error: null };
+  if (argv.length === 0 || typeof argv[0] !== 'string') return neverRan;
+  const word = argv[0];
+  const entry = routable.find((candidate) => candidate.name === word);
+  if (entry === undefined) return neverRan;
+  const folder = folders.find((f) => f.name === entry.plugin);
+  const impl = folder === undefined ? null : await implOf(folder);
+  const main = impl === null ? undefined : (impl as Record<string, unknown>).main;
+  if (typeof main !== 'function') {
+    const error = `plugin ${JSON.stringify(entry.plugin)} declares the command ${JSON.stringify(word)} ` +
+      'but has no main() to run it';
+    warnings.push(warnLine(entry.plugin, 'has no main()', `the command ${JSON.stringify(word)} cannot run`));
+    return { plugin: entry.plugin, ran: false, text: null, code: null, error };
+  }
+  const callArgv = entry.keepName ? argv : argv.slice(1);
+  try {
+    const answered = await (main as (argv: readonly string[], ctx: PluginContext) => unknown)(callArgv, ctx);
+    // The command ran to its end: what it answered is its business (an effectful one answers no text at all),
+    // and a number is the exit code it asks its caller to leave with.
+    return {
+      plugin: entry.plugin,
+      ran: true,
+      text: typeof answered === 'string' ? answered : null,
+      code: typeof answered === 'number' ? answered : null,
+      error: null,
+    };
+  } catch (error) {
+    warnings.push(warnLine(entry.plugin, `failed to run ${JSON.stringify(word)}`, error));
+    return {
+      plugin: entry.plugin,
+      ran: false,
+      text: null,
+      code: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 /** The options for assembling the context: the loaded plugin table, the home shut into a given directory, and where warnings land. */
@@ -90,6 +142,31 @@ export interface ContextOptions {
    * so a plugin's preview sees the scene its real door would see.
    */
   readonly preview?: boolean;
+  /**
+   * The round's own assembly: the merged tables (knobs, readings, routing) are worked out once and read
+   * from there, instead of being rebuilt by every question this context answers.
+   */
+  readonly assembly?: PluginAssembly;
+}
+
+/** The merged tables one context reads: from the round's assembly when it was handed in, worked out from the folders in hand otherwise. */
+async function tablesOf(options: ContextOptions): Promise<{
+  knobs: Record<string, KnobSpec>;
+  readings: readonly PluginReadingEntry[];
+  routable: readonly PluginCommandEntry[];
+}> {
+  if (options.assembly !== undefined) {
+    return {
+      knobs: await options.assembly.knobs(),
+      readings: await options.assembly.readings(),
+      routable: await options.assembly.routable(),
+    };
+  }
+  return {
+    knobs: declaredKnobSpecs(options.folders),
+    readings: readingsOf(options.folders),
+    routable: routableCommands(options.folders),
+  };
 }
 
 export function createContext(options: ContextOptions): PluginContext {
@@ -97,17 +174,20 @@ export function createContext(options: ContextOptions): PluginContext {
   const paths = pfPaths(root);
   const cycle = options.cycle ?? {};
   const nodeId = options.nodeId ?? null;
+  // The merged tables are read once per context (a table should not shift within one timing); a context
+  // built on the round's assembly reads the assembly's own copy, which is one for the whole round.
+  const tables = tablesOf(options);
 
   // Knobs: the whole chain is read once and cached for this round (a value should not shift within one timing).
   let chain: Promise<Record<string, ConfigValue | null>> | null = null;
   const readChain = (): Promise<Record<string, ConfigValue | null>> => {
     if (chain === null) {
-      chain = resolveConfig(root, {
+      chain = tables.then((merged) => resolveConfig(root, {
         homeDir: options.homeDir,
-        declaredKnobs: declaredKnobSpecs(folders),
+        declaredKnobs: merged.knobs,
         cycle: typeof cycle.id === 'string' ? cycle.id : undefined,
         node: nodeId ?? undefined,
-      }).then((readings) => {
+      })).then((readings) => {
         const out: Record<string, ConfigValue | null> = {};
         for (const [key, reading] of Object.entries(readings)) out[key] = reading.value;
         return out;
@@ -123,11 +203,12 @@ export function createContext(options: ContextOptions): PluginContext {
   const computed = new Map<string, number | null>();
   const computing = new Set<string>();
 
-  const cellFor = (key: string) => readingsOf(folders).find((entry) => entry.key === key);
+  const cellFor = async (key: string): Promise<PluginReadingEntry | undefined> =>
+    (await tables).readings.find((entry) => entry.key === key);
 
   const computedValue = async (key: string): Promise<number | null> => {
     if (computed.has(key)) return computed.get(key) ?? null;
-    const cell = cellFor(key);
+    const cell = await cellFor(key);
     const by = cell?.by ?? '';
     const plugin = cell?.plugin ?? '?';
     let value: number | null = null;
@@ -163,39 +244,6 @@ export function createContext(options: ContextOptions): PluginContext {
     return value;
   };
 
-  // Commands: only a plugin's own words are routed; a word the core reserves, and a word nobody claims, both answer "none".
-  const dispatchCommand = async (
-    argv: readonly string[],
-    warnMissingMain: boolean,
-  ): Promise<CommandAnswer> => {
-    const neverRan: CommandAnswer = { ran: false, text: null };
-    if (argv.length === 0 || typeof argv[0] !== 'string') return neverRan;
-    const word = argv[0];
-    const entry = routableCommands(folders).find((candidate) => candidate.name === word);
-    if (entry === undefined) return neverRan;
-    const folder = folders.find((f) => f.name === entry.plugin);
-    if (folder === undefined) return neverRan;
-    const impl = await implOf(folder);
-    if (impl === null) return neverRan;
-    const main = (impl as Record<string, unknown>).main;
-    if (typeof main !== 'function') {
-      if (warnMissingMain) warnings.push(warnLine(entry.plugin, 'has no main()', `the command ${JSON.stringify(word)} cannot run`));
-      return neverRan;
-    }
-    const callArgv = entry.keepName ? argv : argv.slice(1);
-    try {
-      const answered = await (main as (argv: readonly string[], ctx: PluginContext) => unknown)(
-        callArgv,
-        context,
-      );
-      // The command ran to its end: what it answered is its business (an effectful one answers no text at all).
-      return { ran: true, text: typeof answered === 'string' ? answered : null };
-    } catch (error) {
-      warnings.push(warnLine(entry.plugin, `failed to run ${JSON.stringify(word)}`, error));
-      return neverRan;
-    }
-  };
-
   const context: PluginContext = {
     root,
     ...(options.preview === true ? { preview: true } : {}),
@@ -213,7 +261,7 @@ export function createContext(options: ContextOptions): PluginContext {
 
     async reading(key: string) {
       if (key === '') return null;
-      const cell = cellFor(key);
+      const cell = await cellFor(key);
       if (cell === undefined || cell.source === 'ticket') return fromSig(options.sig ?? null, key);
       return computedValue(key);
     },
@@ -228,7 +276,7 @@ export function createContext(options: ContextOptions): PluginContext {
       return out.sort();
     },
 
-    capture: async (argv) => (await dispatchCommand(argv, true)).text,
+    capture: async (argv) => (await routeCommand(argv, folders, context, warnings, (await tables).routable)).text,
     // A rehearsal may read but must not act: a command whose effect is the point refuses here, and the
     // line it leaves says which word was not run — the picture stays whole instead of quietly missing it.
     run: options.preview === true
@@ -239,8 +287,8 @@ export function createContext(options: ContextOptions): PluginContext {
           );
           return false;
         }
-      : async (argv) => (await dispatchCommand(argv, false)).ran,
-    specPath: (nodeIdIn: string) => specPathOf(paths, nodeIdIn),
+      : async (argv) => (await routeCommand(argv, folders, context, warnings, (await tables).routable)).ran,
+    specPath: (nodeIdIn: string) => nodeSpecPath(paths, nodeIdIn),
   };
 
   return context;

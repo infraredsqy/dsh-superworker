@@ -113,6 +113,28 @@ describe('source tree guard', () => {
   });
 });
 
+describe('one spelling per fact', () => {
+  it('the plugins layer does not spell the spec file name itself (the layout belongs to paths.ts)', () => {
+    // `paths.nodeSpecPath` is the one home of that spelling; a reader or writer of the node's requirements
+    // takes the location from it, so the path an offer is told about and the file the text lands on cannot
+    // drift apart.
+    const offenders = srcFiles
+      .filter((file) => /[\\/]plugins[\\/]/.test(file))
+      .filter((file) => /['"]spec\.md['"]/.test(readFileSync(file, 'utf8')));
+    expect(offenders).toEqual([]);
+  });
+
+  it('the plugin registry is a barrel: the readers of a declaration live in their own modules', () => {
+    // Five jobs used to share one file (the scan and the loader, the closed-set validation, the merged
+    // tables, the command words, doctor's strict face), so changing one meant walking through the other
+    // four. The names stay re-exported from `registry.ts`, and no reader is implemented here.
+    const text = readFileSync(join(repoRoot, 'src', 'plugins', 'registry.ts'), 'utf8');
+    expect(text).not.toMatch(/^(?:export )?(?:async )?function /mu);
+    expect(text).not.toMatch(/^export (?:const|let|class|interface) /mu);
+    expect(text).not.toMatch(/^export type [A-Za-z_$]/mu);
+  });
+});
+
 describe('package shape guard (package.json)', () => {
   const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {
     private?: boolean;

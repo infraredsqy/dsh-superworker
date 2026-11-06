@@ -133,7 +133,7 @@ export interface PluginFolder {
   readonly problems: readonly string[];
 }
 
-/** The insertion wish a plugin hands back: one node declared (title, tags, body builder) together with its own words (why, a one-line account, its own data). */
+/** The insertion wish a plugin hands back: one node declared (title, tags, body builder) together with its own words (why, a one-line account). */
 export interface PluginOffer {
   /** The node title: a non-empty string. */
   readonly title: string;
@@ -141,8 +141,6 @@ export interface PluginOffer {
   readonly tags?: readonly string[];
   /** The node body: a builder taking the node id (the uuid does not exist before the node is set up, so a placeholder stands in first). */
   readonly spec_of: (nodeId: string) => string | Promise<string>;
-  /** The plugin's own data, which the core carries along as it is and does not interpret; keys that collide with the action's own are taken off (with a warning). */
-  readonly fields?: Record<string, unknown>;
   /** A one-line account (prose, carried to the reader as it is). */
   readonly note?: string;
   /** The plugin's own reason sentence (prose, printed as it is). */
@@ -155,7 +153,6 @@ export interface NormalizedOffer {
   readonly title: string;
   readonly tags: string[];
   readonly specOf: (nodeId: string) => string | Promise<string>;
-  readonly fields: Record<string, unknown>;
   readonly note: string;
   readonly why: string;
 }

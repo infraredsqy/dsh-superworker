@@ -5,16 +5,15 @@ import { createDagNamespace } from './dag';
 import { nowSeconds } from './clock';
 import { pluginAssemblyOf } from './plugins/assembly';
 import type { PluginAssembly } from './plugins/assembly';
-import { createContext, readGraphSnapshot, warnLine } from './plugins/context';
+import { createContext, routeCommand, warnLine } from './plugins/context';
+import { readGraphSnapshot } from './graph';
 import { collectGates, collectOffers } from './plugins/host';
 import { applyInsertion } from './plugins/insertion';
 import {
   commandClashes,
-  implOf,
   pluginListing,
   pluginsDirOf,
   previewGaps,
-  routableCommands,
   shadowedKnobs,
   verifyPlugins,
 } from './plugins/registry';
@@ -690,6 +689,7 @@ export function createConductorNamespace(
     const ctx = createContext({
       root,
       folders,
+      assembly,
       homeDir: options.homeDir,
       warnings,
       cycle: scene.cycle as unknown as Record<string, unknown>,
@@ -722,8 +722,8 @@ export function createConductorNamespace(
     // the lock is taken, on one snapshot of the scene (the line and the ticket as read just above). How long a
     // plugin takes to answer is how long it takes and no writer waits on it: no record of this ledger is written
     // in this stretch. What the answered offers want in the graph is landed under the lock by the mechanism below.
-    const { folders, ctx, warnings } = await pluginContext({ cycle, nodeId, sig });
-    const offers = await collectOffers('close', ctx, folders, warnings);
+    const { assembly, folders, ctx, warnings } = await pluginContext({ cycle, nodeId, sig });
+    const offers = await collectOffers('close', ctx, folders, warnings, false, assembly);
     return withLedgerLock(paths, async () => {
       // The first thing under the lock: the line and the ticket are read again, and the settle answers to these
       // bytes. What the plugin half was handed above is a snapshot taken before the lock — the plugins judge on
@@ -752,7 +752,7 @@ export function createConductorNamespace(
         // WARNING line and does not take part this round, while the main flow goes on as usual.
         for (const offer of offers) {
           try {
-            await applyInsertion(root, dag, offer, nodeId, target, warnings);
+            await applyInsertion(root, dag, offer, nodeId, target);
           } catch (error) {
             warnings.push(warnLine(offer.plugin, 'failed', error));
           }
@@ -929,7 +929,7 @@ export function createConductorNamespace(
         ctx,
         warnings,
       } = await pluginContext({ cycle, nodeId });
-      const reasons = await collectGates('dispatch', ctx, folders, warnings);
+      const reasons = await collectGates('dispatch', ctx, folders, warnings, false, assembly);
       if (reasons.length > 0) {
         throw new PfError(
           'dispatch_blocked',
@@ -1021,10 +1021,10 @@ export function createConductorNamespace(
       if (known === null) {
         throw new Error(`node ${nodeId} not found`);
       }
-      const { folders, ctx, warnings } = await pluginContext({ cycle, nodeId, preview: true });
+      const { assembly, folders, ctx, warnings } = await pluginContext({ cycle, nodeId, preview: true });
       // Refusing is the thing being rehearsed: the reasons come back as data, in the same order the real gate
       // would join them, instead of the refusal's exception.
-      const blocked = await collectGates('dispatch', ctx, folders, warnings, true);
+      const blocked = await collectGates('dispatch', ctx, folders, warnings, true, assembly);
       const prompt = launchPromptPath(paths, cycleId, nodeId);
       const model = modelOf(cycle, input?.model);
       return {
@@ -1052,10 +1052,10 @@ export function createConductorNamespace(
      */
     settlePreview: async (input) => {
       const { cycle, cycleId, nodeId, sig } = await settleScene(input);
-      const { folders, ctx, warnings } = await pluginContext({ cycle, nodeId, sig, preview: true });
+      const { assembly, folders, ctx, warnings } = await pluginContext({ cycle, nodeId, sig, preview: true });
       const settle = await settleClose(root, cycle, nodeId, sig);
       const target = settle.filled[0]?.id ?? null;
-      const offers = await collectOffers('close', ctx, folders, warnings, true);
+      const offers = await collectOffers('close', ctx, folders, warnings, true, assembly);
       const plan = await planNext(root, { cycle: cycleId, after: nodeId });
       return {
         action: 'settle' as const,
@@ -1102,17 +1102,8 @@ export function createConductorNamespace(
         answer.error = 'a plugin command needs a word';
         return answer;
       }
-      const folders = await pluginAssemblyOf(root, options.pluginsDir).folders();
-      const entry = routableCommands(folders).find((candidate) => candidate.name === word);
-      if (entry === undefined) return answer;
-      answer.plugin = entry.plugin;
-      const folder = folders.find((candidate) => candidate.name === entry.plugin);
-      const impl = folder === undefined ? null : await implOf(folder);
-      const main = impl === null ? undefined : (impl as Record<string, unknown>).main;
-      if (typeof main !== 'function') {
-        answer.error = `plugin ${JSON.stringify(entry.plugin)} declares the command ${JSON.stringify(word)} but has no main() to run it`;
-        return answer;
-      }
+      const assembly = pluginAssemblyOf(root, options.pluginsDir);
+      const folders = await assembly.folders();
       // The context is the same one a timing's door gets: the knobs' chain, the readings, the tag lookup, the
       // graph snapshot and the node layout. A plugin word run from outside the pipeline stands on no node and no line,
       // so both cells are empty and the whole graph is handed over as the snapshot.
@@ -1120,25 +1111,23 @@ export function createConductorNamespace(
       const ctx = createContext({
         root,
         folders,
+        assembly,
         homeDir: options.homeDir,
         warnings,
         dag: await readGraphSnapshot(paths),
       });
-      const callArgv = entry.keepName ? argv : argv.slice(1);
-      try {
-        const answered = await (main as (argv: readonly string[], context: unknown) => unknown)(callArgv, ctx);
-        // Ran to its end: whether it answered text is its own business (an effectful command answers none),
-        // and a number is the exit code it asks its caller to leave with.
-        answer.ran = true;
-        answer.text = typeof answered === 'string' ? answered : null;
-        answer.code = typeof answered === 'number' ? answered : null;
-      } catch (error) {
-        answer.error = error instanceof Error ? error.message : String(error);
-      }
+      // The one routing both readers take: this word is routed exactly the way `capture` / `run` route it, and
+      // its four cells (ran / text / code / error) are the same answer those two read.
+      const route = await routeCommand(argv, folders, ctx, warnings, await assembly.routable());
+      answer.plugin = route.plugin;
+      answer.ran = route.ran;
+      answer.text = route.text;
+      answer.code = route.code;
+      answer.error = route.error;
       return answer;
     },
 
-    pluginCommands: async () => await pluginAssemblyOf(root, options.pluginsDir).folders().then(routableCommands),
+    pluginCommands: async () => await pluginAssemblyOf(root, options.pluginsDir).routable(),
 
     handoffForm: async (input) => {
       const cycle = await resolveCycle(input?.cycle);

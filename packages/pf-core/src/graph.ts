@@ -1,3 +1,5 @@
+import { readJsonFile } from './jsonio';
+import type { PfPaths } from './paths';
 import type { NodeRecord } from './types';
 
 /**
@@ -6,10 +8,29 @@ import type { NodeRecord } from './types';
  * node table and gets answers back. Handling of dangling references is included — a dangling
  * dependency does not count as in-degree, is skipped on unreachable paths, and counts as delivered
  * in the readiness decision.
+ *
+ * The one exception is `readGraphSnapshot`, which reads the node table off the record: the graph is
+ * where the node table lives, so the reader of that record sits here, and a caller that wants a
+ * snapshot hands it in to the plugin seam instead of the seam reading the record itself.
  */
 
 /** The node table: the `nodes` table of ideas.json, keyed by node id. */
 export type NodeMap = Record<string, NodeRecord>;
+
+/**
+ * The node table as one snapshot: the records read once by the caller (absent or unreadable means an
+ * empty graph). The plugin seam takes this shape and never reads ideas.json itself.
+ */
+export async function readGraphSnapshot(paths: PfPaths): Promise<{ readonly nodes: Readonly<Record<string, NodeRecord>> }> {
+  const read = await readJsonFile(paths.ideasJson, 'ideas.json');
+  const data = read.kind === 'present' && read.value !== null && typeof read.value === 'object'
+    ? (read.value as Record<string, unknown>)
+    : {};
+  const nodes = data.nodes !== null && typeof data.nodes === 'object' && !Array.isArray(data.nodes)
+    ? (data.nodes as Record<string, NodeRecord>)
+    : {};
+  return { nodes };
+}
 
 /** The adjacency table: {node: [the nodes it depends on, ...]}. */
 export type Adjacency = Record<string, string[]>;

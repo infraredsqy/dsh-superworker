@@ -1,6 +1,9 @@
 import type { NormalizedOffer, PluginContext, PluginFolder, PluginTiming } from './types';
+import type { PluginAssembly } from './assembly';
 import { warnLine } from './context';
-import { implOf, isEmptyObject, usable } from './registry';
+import { usable } from './declare';
+import { doorOf, doorWarningLine, noDoor, noneThisRound } from './doors';
+import { implOf } from './scan';
 
 /**
  * The two timings each ask their own question:
@@ -18,6 +21,9 @@ import { implOf, isEmptyObject, usable } from './registry';
  * only blow up in the edit once the close has landed, which is the one moment the pipeline cannot take back.
  * Each cell is checked by the type the edit will use, and one wrong cell spends this plugin's round (one
  * warning naming the cell), on the same footing as throwing.
+ *
+ * "None this round" is read from the door contract (`doors.ts`) — the same tolerance doctor's stand-in
+ * question applies — so a plugin answering an empty table is silent at the real timing as well.
  */
 
 /** Whether a plugin is on this round: a plugin without an enable_knob is always on. */
@@ -65,15 +71,6 @@ function normalizeOffer(plugin: string, offer: unknown, warnings: string[]): Nor
     return null;
   }
 
-  const rawFields = cell.fields;
-  const fields: Record<string, unknown> = rawFields === undefined || rawFields === null
-    ? ({} as Record<string, unknown>)
-    : (rawFields as Record<string, unknown>);
-  if (fields === null || typeof fields !== 'object' || Array.isArray(fields)) {
-    warnings.push(warnLine(plugin, 'returned an unusable offer', `\`fields\` must be an object, got ${JSON.stringify(fields)}`));
-    return null;
-  }
-
   const note = cell.note === undefined || cell.note === null ? '' : cell.note;
   if (typeof note !== 'string') {
     warnings.push(warnLine(plugin, 'returned an unusable offer', `\`note\` must be a string, got ${JSON.stringify(note)}`));
@@ -90,7 +87,6 @@ function normalizeOffer(plugin: string, offer: unknown, warnings: string[]): Nor
     title,
     tags,
     specOf: specOf as (nodeId: string) => string | Promise<string>,
-    fields,
     note,
     why,
   };
@@ -103,30 +99,16 @@ function describe(value: unknown): string {
 }
 
 /**
- * The action's own keys: fields carrying any of these are taken off, one warning per key. The union comes from
- * two places: the cells of the offer shape on the TS side (title / spec_of / tags / fields / note / why /
- * steps), plus the same-named group in the action bag, `RESERVED_FIELDS` — fields are the plugin's own data, and
- * an offer that says `cycle` is pointing at another line, one that says `prompt` / `nodes` is pretending an
- * insertion is a dispatch, and `before_node` / `why` are how the action itself reads its destination.
+ * The names that may act this round: the usable plugins, worked out once per round. A caller that hands in
+ * its assembly shares one answer for the whole round (the same picture its own folder scan gave); without
+ * one, this answers from the folders in hand, once per call.
  */
-const RESERVED_FIELDS: ReadonlySet<string> = new Set([
-  'title', 'spec_of', 'tags', 'fields', 'note', 'why', 'steps',
-  'action', 'cycle', 'node_id', 'node_title', 'spec', 'add_command', 'commands',
-  'insertions', 'before_node', 'before_title',
-  'nodes', 'mode', 'prompt', 'prompt_text',
-]);
-
-/** The fields of one offer keep only its own data: the action's cells are taken off (one warning each). */
-function ownFields(plugin: string, fields: Record<string, unknown>, warnings: string[]): Record<string, unknown> {
-  const kept: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    if (RESERVED_FIELDS.has(key)) {
-      warnings.push(warnLine(plugin, 'field is reserved', `${JSON.stringify(key)} is the action's own cell and was dropped`));
-      continue;
-    }
-    kept[key] = value;
-  }
-  return kept;
+async function availableNames(
+  folders: readonly PluginFolder[],
+  assembly: PluginAssembly | undefined,
+): Promise<ReadonlySet<string>> {
+  if (assembly !== undefined) return new Set((await assembly.available()).map((folder) => folder.name));
+  return new Set(folders.filter((folder) => usable(folder)).map((folder) => folder.name));
 }
 
 /**
@@ -143,13 +125,14 @@ async function askDoors(
   ctx: PluginContext,
   folders: readonly PluginFolder[],
   warnings: string[],
-  preview = false,
+  preview: boolean,
+  available: ReadonlySet<string>,
 ): Promise<Array<{ folder: PluginFolder; answer: unknown }>> {
   const answers: Array<{ folder: PluginFolder; answer: unknown }> = [];
   const door = doorOf(action, preview);
   for (const folder of folders) {
     const decl = folder.decl;
-    if (decl === null || !usable(folder)) continue;
+    if (decl === null || !available.has(folder.name)) continue;
     const record = decl as Record<string, unknown>;
     if (record.timing !== timing || record.action !== action) continue;
     if (!(await enabled(folder, ctx, warnings))) continue;
@@ -157,15 +140,7 @@ async function askDoors(
     if (impl === null) continue; // a load failure is already recorded in the runtime problem table, which doctor reports.
     const call = (impl as Record<string, unknown>)[door];
     if (typeof call !== 'function') {
-      warnings.push(
-        preview
-          ? warnLine(
-              folder.name,
-              `has no ${door}()`,
-              `a rehearsal cannot say what it would ${action === 'insert' ? 'insert' : 'hold back'} this round`,
-            )
-          : warnLine(folder.name, `has no ${door}()`, 'the timing it declares cannot be served'),
-      );
+      warnings.push(doorWarningLine(folder.name, noDoor(door, action, preview, folder.name)));
       continue;
     }
     try {
@@ -177,12 +152,6 @@ async function askDoors(
   return answers;
 }
 
-/** The door of one action: the real one, or its rehearsal. */
-function doorOf(action: 'insert' | 'block', preview: boolean): string {
-  const base = action === 'insert' ? 'offer' : 'check';
-  return preview ? `${base}_preview` : base;
-}
-
 /** The insertions every plugin wants at this timing, in registry order; the shape was checked here and the graph edit is landed by the caller. */
 export async function collectOffers(
   timing: PluginTiming,
@@ -190,12 +159,16 @@ export async function collectOffers(
   folders: readonly PluginFolder[],
   warnings: string[],
   preview = false,
+  assembly?: PluginAssembly,
 ): Promise<NormalizedOffer[]> {
   const offers: NormalizedOffer[] = [];
-  for (const { folder, answer } of await askDoors(timing, 'insert', ctx, folders, warnings, preview)) {
-    // null / undefined / false / an empty object: "I have nothing to say this round", always a legitimate answer —
-    // skipped silently, without a warning.
-    if (answer === null || answer === undefined || answer === false || isEmptyObject(answer)) continue;
+  const answers = await askDoors(
+    timing, 'insert', ctx, folders, warnings, preview, await availableNames(folders, assembly),
+  );
+  for (const { folder, answer } of answers) {
+    // null / undefined / false / 0 / '' / an empty object / an empty table: "I have nothing to say this
+    // round", always a legitimate answer — skipped silently, without a warning.
+    if (noneThisRound(answer)) continue;
     const normalized = normalizeOffer(folder.name, answer, warnings);
     if (normalized !== null) offers.push(normalized);
   }
@@ -209,12 +182,16 @@ export async function collectGates(
   folders: readonly PluginFolder[],
   warnings: string[],
   preview = false,
+  assembly?: PluginAssembly,
 ): Promise<string[]> {
   const reasons: string[] = [];
-  for (const { folder, answer } of await askDoors(timing, 'block', ctx, folders, warnings, preview)) {
-    // "Not this round" has to state a reason; ones that state none (null / false / an empty string / an object with
-    // no own keys) are skipped silently — the same rule as collectOffers.
-    if (answer === null || answer === undefined || answer === false || answer === '' || isEmptyObject(answer)) continue;
+  const answers = await askDoors(
+    timing, 'block', ctx, folders, warnings, preview, await availableNames(folders, assembly),
+  );
+  for (const { folder, answer } of answers) {
+    // "Not this round" has to state a reason; ones that state none are skipped silently — the same tolerance
+    // collectOffers reads, from the same place.
+    if (noneThisRound(answer)) continue;
     if (typeof answer !== 'string') {
       warnings.push(warnLine(folder.name, 'returned an unusable reason', `a reason is prose, got ${describe(answer)}`));
       continue;
@@ -222,9 +199,4 @@ export async function collectGates(
     reasons.push(answer);
   }
   return reasons;
-}
-
-/** The fields version after the action's cells have been taken off cleanly (used when the insertion lands, travelling with the offer). */
-export function fieldsForInsertion(offer: NormalizedOffer, warnings: string[]): Record<string, unknown> {
-  return ownFields(offer.plugin, offer.fields, warnings);
 }

@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createContext, readGraphSnapshot } from '../src/plugins/context';
+import { createContext } from '../src/plugins/context';
+import { readGraphSnapshot } from '../src/graph';
 import { loadPlugins } from '../src/plugins/registry';
 import { pfPaths } from '../src/paths';
 import { open } from '../src/open';
@@ -318,8 +319,7 @@ describe('nodes by tag, command routing, the spec path and identity', () => {
     }
   });
 
-  it("specPath speaks this tree's layout; the three identity fields come along as they are", async () => {
-    const lab = makeLab('pf-plugin-ctx-');
+  it("specPath speaks this tree's layout; the three identity fields come along as they are", async () => {    const lab = makeLab('pf-plugin-ctx-');
     try {
       await lab.pf.ledger.init();
       const node = (await lab.pf.ledger.dag.add({ title: 'held' })).id;
@@ -347,6 +347,48 @@ describe('nodes by tag, command routing, the spec path and identity', () => {
       expect(ctx.sig).toBeNull();
       expect(ctx.target).toBeNull();
       expect(warnings).toEqual([]);
+    } finally {
+      lab.cleanup();
+    }
+  });
+});
+
+describe('one routing, two readers: capture / run and conductor.pluginCommand read the same answer', () => {
+  it('a word whose implementation has no main() reads as "it did not run" on both paths, naming the same cause', async () => {
+    // The routing used to exist twice — once for capture / run, once for the conductor's plugin word — and
+    // the two explained "it did not run" differently. It is one function now, answering ran / text / code /
+    // error, so both readers see the same four cells and neither invents its own wording for a failure.
+    const lab = makeLab('pf-plugin-ctx-');
+    try {
+      await lab.pf.ledger.init();
+      const folder = join(lab.root, 'plugins', 'doorless');
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(join(folder, 'plugin.json'), JSON.stringify({
+        summary: 'declares a word and ships no main()',
+        commands: { talk: { summary: 'the word nobody can run' } },
+      }), 'utf8');
+      writeFileSync(join(folder, 'impl.mjs'), 'export function offer() { return null; }\n', 'utf8');
+      const folders = (await loadPlugins(join(lab.root, 'plugins'))).folders;
+      const warnings: string[] = [];
+      const ctx = createContext({
+        root: lab.root,
+        folders,
+        homeDir: lab.home,
+        warnings,
+        dag: { nodes: {} },
+      });
+      expect(await ctx.capture(['talk'])).toBeNull();
+      expect(await ctx.run(['talk'])).toBe(false);
+      const routed = await lab.pf.conductor.pluginCommand({ word: 'talk', argv: [] });
+      // The same four cells on both paths: the word belongs to the one plugin, it did not run, it answered
+      // no text and no exit code, and the failure sentence says the one thing that is wrong with it.
+      expect(routed.plugin).toBe('doorless');
+      expect(routed.ran).toBe(false);
+      expect(routed.text).toBeNull();
+      expect(routed.code).toBeNull();
+      expect(routed.error).toContain('has no main()');
+      expect(warnings.join('\n')).toContain('has no main()');
+      expect(warnings.join('\n')).toContain('"talk"');
     } finally {
       lab.cleanup();
     }

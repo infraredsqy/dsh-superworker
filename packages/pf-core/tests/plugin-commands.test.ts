@@ -33,19 +33,26 @@ describe('a command clash: the core wins and the clash is reported', () => {
     const lab = makeLab('pf-plugin-cmd-');
     try {
       await lab.pf.ledger.init();
-      lab.plugin('talker', commandsOnlyDecl({ list: 'shadows a core word', issuelist: 'the plugin own word' }), {
+      lab.plugin('talker', commandsOnlyDecl({
+        plan: 'shadows a core verb',
+        issuelist: 'the plugin own word',
+        list: 'a method inside `dag`, not a word the core answers',
+      }), {
         'impl.mjs': TALKER_IMPL,
       });
       const folders = (await loadPlugins(join(lab.root, 'plugins'))).folders;
       const table = commandTable(folders);
-      expect(table.map((entry) => entry.name).sort()).toEqual(['issuelist', 'list']);
+      expect(table.map((entry) => entry.name).sort()).toEqual(['issuelist', 'list', 'plan']);
       const routable = routableCommands(folders);
-      expect(routable.map((entry) => entry.name)).toEqual(['issuelist']);
+      // `plan` is a word the word table answers, so the core keeps it. `list` is a verb inside the `dag`
+      // group, not a word of its own: it is not a core word and it routes to the plugin that declares it.
+      expect(routable.map((entry) => entry.name)).toEqual(['issuelist', 'list']);
       expect(commandClashes(folders).join('\n')).toContain(
-        'command "list" is a word this core already answers',
+        'command "plan" is a word this core already answers',
       );
+      expect(commandClashes(folders).join('\n')).not.toContain('"list"');
       // Routing inside this process follows the routing table: a word the core keeps answers
-      // nothing, while the plugin's own word runs.
+      // nothing, while a word the core only has inside a group runs the plugin's own command.
       const warnings: string[] = [];
       const ctx = createContext({
         root: lab.root,
@@ -54,7 +61,8 @@ describe('a command clash: the core wins and the clash is reported', () => {
         warnings,
         dag: { nodes: {} },
       });
-      expect(await ctx.capture(['list'])).toBeNull();
+      expect(await ctx.capture(['plan'])).toBeNull();
+      expect(await ctx.capture(['list'])).toBe('said:list');
       expect(await ctx.capture(['issuelist', 'a', 'b'])).toBe('said:issuelist|a|b');
     } finally {
       lab.cleanup();
@@ -83,7 +91,7 @@ describe('a command clash: the core wins and the clash is reported', () => {
     const lab = makeLab('pf-plugin-cmd-');
     try {
       await lab.pf.ledger.init();
-      lab.plugin('talker', commandsOnlyDecl({ list: 'shadows a core word' }), { 'impl.mjs': TALKER_IMPL });
+      lab.plugin('talker', commandsOnlyDecl({ plan: 'shadows a core verb' }), { 'impl.mjs': TALKER_IMPL });
       const report = await lab.pf.conductor.doctor();
       expect(report.ok).toBe(false);
       const commands = report.checks.find((check) => check.name === 'commands')!;

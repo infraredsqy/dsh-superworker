@@ -1,9 +1,11 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createContext, readGraphSnapshot } from '../src/plugins/context';
-import { collectGates, collectOffers, fieldsForInsertion } from '../src/plugins/host';
-import type { NormalizedOffer } from '../src/plugins/types';
+import { createContext } from '../src/plugins/context';
+import { collectGates, collectOffers } from '../src/plugins/host';
+import { pluginAssemblyOf } from '../src/plugins/assembly';
+import { applyInsertion } from '../src/plugins/insertion';
+import { readGraphSnapshot } from '../src/graph';
 import { loadPlugins } from '../src/plugins/registry';
 import { pfPaths } from '../src/paths';
 import { closeInsertDecl, dispatchBlockDecl, makeLab } from './helpers/plugin-lab';
@@ -433,21 +435,109 @@ describe('the listing side of doctor: one block per installed plugin, all of it 
   });
 });
 
-describe('fields carry only the plugin\'s own data: action-side words are stripped and warned about', () => {
-  it('fields.cycle is stripped while its own keys stay as they were, and the stripping raises one warning', () => {
-    const warnings: string[] = [];
-    const offer: NormalizedOffer = {
-      plugin: 'liar',
-      title: 't',
-      tags: [],
-      specOf: () => 'x',
-      fields: { cycle: 'c2', mine: 1 },
-      note: '',
-      why: '',
-    };
-    const fields = fieldsForInsertion(offer, warnings);
-    expect(fields).toEqual({ mine: 1 });
-    expect(warnings.join('\n')).toContain('field is reserved');
-    expect(warnings.join('\n')).toContain('"cycle"');
+describe('the offer contract is the shape the core uses: nothing beside it is carried or interpreted', () => {
+  it('an offer carrying extra cells lands unchanged: no stripping, no warning, and the landed insertion has no such cell', async () => {
+    const lab = makeLab('pf-plugin-runtime-');
+    try {
+      await lab.pf.ledger.init();
+      lab.plugin('talker', closeInsertDecl(), {
+        'impl.mjs': [
+          'const SPEC = "# talker spec\\n";',
+          'export function offer() {',
+          "  return { title: 't', tags: ['x'], spec_of: () => SPEC, note: 'n', why: 'w',",
+          "    fields: { cycle: 'c2', mine: 1 } };",
+          '}',
+        ].join('\n'),
+      });
+      const warnings: string[] = [];
+      const folders = (await loadPlugins(join(lab.root, 'plugins'))).folders;
+      const ctx = createContext({
+        root: lab.root,
+        folders,
+        homeDir: lab.home,
+        warnings,
+        dag: await readGraphSnapshot(pfPaths(lab.root)),
+      });
+      const offers = await collectOffers('close', ctx, folders, warnings);
+      expect(offers).toHaveLength(1);
+      const closed = (await lab.pf.ledger.dag.add({ title: 'the node being closed' })).id;
+      const applied = await applyInsertion(lab.root, lab.pf.ledger.dag, offers[0]!, closed, null);
+      // The four cells the mechanism reads, and nothing else: a cell the offer's shape does not name is
+      // neither carried along nor stripped with a warning — the core never interprets it.
+      expect(Object.keys(applied).sort()).toEqual(
+        ['nodeId', 'note', 'plugin', 'specPath', 'tags', 'title', 'why'],
+      );
+      expect(readFileSync(applied.specPath, 'utf8')).toBe('# talker spec\n');
+      expect(warnings).toEqual([]);
+    } finally {
+      lab.cleanup();
+    }
+  });
+});
+
+describe('one tolerance for "none this round": the timing reads what doctor reads', () => {
+  it('an offer answering an empty table is silent at the real timing (doctor already reads it as "none")', async () => {
+    const lab = makeLab('pf-plugin-runtime-');
+    try {
+      await lab.pf.ledger.init();
+      lab.plugin('listy', closeInsertDecl(), { 'impl.mjs': 'export function offer() { return []; }\n' });
+      const warnings: string[] = [];
+      const folders = (await loadPlugins(join(lab.root, 'plugins'))).folders;
+      const ctx = createContext({
+        root: lab.root,
+        folders,
+        homeDir: lab.home,
+        warnings,
+        dag: await readGraphSnapshot(pfPaths(lab.root)),
+      });
+      const offers = await collectOffers('close', ctx, folders, warnings);
+      expect(offers).toEqual([]);
+      // The same answer doctor's stand-in question accepts: an empty table is "I have nothing to say",
+      // not a half offer that spends the round with a WARNING.
+      expect(warnings).toEqual([]);
+    } finally {
+      lab.cleanup();
+    }
+  });
+});
+
+describe('one assembly is one picture of the round', () => {
+  it('the usable set is worked out once: a round does not re-validate every folder at every door', async () => {
+    const lab = makeLab('pf-plugin-runtime-');
+    try {
+      await lab.pf.ledger.init();
+      const folder = lab.plugin('healthy', closeInsertDecl({
+        files: ['tools/extra.mjs'],
+      }), {
+        'impl.mjs': 'export function offer() { return { title: "from the assembly", spec_of: () => "s" }; }\n',
+        'tools/extra.mjs': 'export const extra = 1;\n',
+      });
+      const assembly = pluginAssemblyOf(lab.root);
+      const folders = await assembly.folders();
+      const warnings: string[] = [];
+      const ctx = createContext({
+        root: lab.root,
+        folders,
+        assembly,
+        homeDir: lab.home,
+        warnings,
+        dag: await readGraphSnapshot(pfPaths(lab.root)),
+      });
+      // The picture this round starts on: the folder is whole, so the plugin may act.
+      expect(await assembly.available()).toHaveLength(1);
+
+      // The file the declaration lists disappears after the round started. The round's own assembly answers
+      // for the picture it took (one disk ask per folder, not one per door) and the door is still asked…
+      rmSync(join(folder, 'tools', 'extra.mjs'));
+      const fromAssembly = await collectOffers('close', ctx, folders, warnings, false, assembly);
+      expect(fromAssembly).toHaveLength(1);
+
+      // …while a reader that re-validates each folder at each door drops it, which is the per-door work the
+      // assembly exists to do once.
+      const revalidated = await collectOffers('close', ctx, folders, warnings);
+      expect(revalidated).toEqual([]);
+    } finally {
+      lab.cleanup();
+    }
   });
 });

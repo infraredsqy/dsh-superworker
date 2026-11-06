@@ -13,23 +13,21 @@
  * belong to the transport layer that carries this library and are not routed here.
  */
 import { useConfigKnobs, specOf, rowFor, groupFor } from './spec';
+import { CORE_HELP_WORDS, CORE_SELF_VERBS } from './core-words';
 import { helpText, parse, usageError } from './argparse';
 import { handleOf, projectRootOf, refuse } from './out';
 import * as verbs from './verbs';
 import type { WordRow, WordSpec } from './types';
 import type { WordsIO } from './types';
 
-/** The words this layer answers before it consults any table. */
-const HELP_WORDS = ['-h', '--help', 'help'];
+/** The words this layer answers before it consults any table: the listing and the two help flags (one spelling, shared with the core's own word set). */
+const HELP_WORDS = CORE_HELP_WORDS;
 
 /** The knob names a folder with no `.pf` of its own can still be asked for: the engine's three core settings. */
 const CORE_CONFIG_KEYS = ['max_agents', 'test_tier', 'worktree_mode'];
 
-/** The words the tool itself runs: word → the form `--help` prints, the one line of sense, the handler. */
-const SELF_VERBS: ReadonlyArray<readonly [string, string, string]> = [
-  ['doctor', 'doctor [--fix]', 'read the health of this checkout and this project'],
-  ['version', 'version', 'print the version and where this checkout lives'],
-];
+/** The words the tool itself runs: word → the form `--help` prints, the one line of sense (one home, shared with the core's own word set). */
+const SELF_VERBS = CORE_SELF_VERBS;
 
 /**
  * The verbs: word → the row found in the table (its flags and values come off that one table)

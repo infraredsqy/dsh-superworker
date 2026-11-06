@@ -1,8 +1,6 @@
 import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { DagNamespace } from '../ledger';
-import { nodeDir, pfPaths, type PfPaths } from '../paths';
-import { fieldsForInsertion } from './host';
+import { nodeSpecPath, pfPaths, type PfPaths } from '../paths';
 import type { NormalizedOffer } from './types';
 
 /**
@@ -22,6 +20,9 @@ import type { NormalizedOffer } from './types';
  * there as it is, so the generated description is a JSON literal with quotes and escapes; both sides use this
  * reading at the same moment, which is why the bytes line up).
  *
+ * The spec.md location is not spelled here: `paths.nodeSpecPath` is the one home of that spelling, so the
+ * path an offer is told about and the path the text lands on cannot drift apart.
+ *
  * An insertion is a graph edit and nothing more: it opens no session, does not move the line's hand and pins no
  * node. Every offer lands on its own and is contained on its own: one exploding offer spends only itself (one
  * WARNING line) and the rest still enter the graph.
@@ -40,7 +41,6 @@ export interface AppliedInsertion {
   readonly specPath: string;
   readonly why: string;
   readonly note: string;
-  readonly fields: Record<string, unknown>;
 }
 
 /**
@@ -55,7 +55,6 @@ export async function applyInsertion(
   offer: NormalizedOffer,
   closed: string | null,
   targetId: string | null,
-  warnings: string[],
 ): Promise<AppliedInsertion> {
   const paths: PfPaths = pfPaths(root);
 
@@ -90,17 +89,16 @@ export async function applyInsertion(
   if (typeof text !== 'string') {
     throw new TypeError(`\`spec_of\` must return the node's text as a string, got ${typeof text}`);
   }
-  const specFile = join(nodeDir(paths, added.id), 'spec.md');
-  writeFileSync(specFile, text, 'utf8');
+  const specPath = nodeSpecPath(paths, added.id);
+  writeFileSync(specPath, text, 'utf8');
 
   return {
     plugin: offer.plugin,
     nodeId: added.id,
     title: offer.title,
     tags: offer.tags,
-    specPath: specFile.split('\\').join('/'),
+    specPath,
     why: offer.why,
     note: offer.note,
-    fields: fieldsForInsertion(offer, warnings),
   };
 }
