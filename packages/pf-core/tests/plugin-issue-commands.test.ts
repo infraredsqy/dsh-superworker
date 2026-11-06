@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 // The surface under test is this plugin folder's own implementation (the very files the host
 // loads by path).
-import { main as issue, poolWeight } from '../plugins/issue/tools/commands.mjs';
+import { CELL_FALLBACK, main as issue, poolWeight } from '../plugins/issue/tools/commands.mjs';
 import { pool_weight } from '../plugins/issue/impl.mjs';
 import { EOL } from '../plugins/issue/tools/storage.mjs';
 
@@ -354,6 +354,22 @@ describe('list / status / top / by_module / stale: the invariants of the read si
     expect(grouped[''].map((r: { id: string }) => r.id)).toContain('emptyModule');
   });
 
+  it('a record whose source cell is null or absent counts as scan everywhere the source is read: status, list and search judge it once', async () => {
+    // One criterion for "came in through a scan": an absent or null source cell is scan — the
+    // historical pools carry such records, and list / search / status must not read it two ways.
+    seedMore({
+      nullSource: row({ id: 'nullSource', source: null }),
+      noSourceKey: row({ id: 'noSourceKey', source: undefined }),
+    });
+    const status = JSON.parse(await out(['status', '-v']));
+    expect(status.by_source).toEqual({ scan: 7 });
+    expect(JSON.parse(await out(['list', '--source', 'scan'])).map((r: { id: string }) => r.id))
+      .toEqual(expect.arrayContaining(['nullSource', 'noSourceKey']));
+    expect(JSON.parse(await out(['search', '--source', 'scan', 'nullSource'])).map((r: { id: string }) => r.id))
+      .toEqual(['nullSource']);
+    expect(await out(['search', '--source', 'manual', 'nullSource'])).toContain('[]');
+  });
+
   it('stale defaults to check_count>=3, -t overrides it, sorted by check_count descending', async () => {
     seedMore({
       a: row({ id: 'a', check_count: 5 }),
@@ -438,6 +454,28 @@ describe('mark / search / export_plan: the three helpers for closing out', () =>
     expect(text).toContain(`Plan: ${planFile}`);
     expect(text).toContain('Total: 2 issue(s)');
     expect(await err(['export_plan'])).toContain('positional argument(s)');
+  });
+});
+
+describe('record cells: the registry is the one place an unstated cell gets its value', () => {
+  it('a record stating no severity / status cell shows the registry fallback in search and export_plan, not a per-site handwriting', async () => {
+    // The shipped fallback happens to be the very string the old per-site handwriting used ('?'),
+    // which could not tell the two readings apart — so the probe gives the registry a different
+    // value, and both readers have to follow it (a call site that still hand-defaults stays '?').
+    const keep = { severity: CELL_FALLBACK.severity, status: CELL_FALLBACK.status };
+    CELL_FALLBACK.severity = 'unrated';
+    CELL_FALLBACK.status = 'unsettled';
+    try {
+      seed({ bare: row({ id: 'bare', title: 'needle', severity: undefined, status: undefined }) });
+      const found = JSON.parse(await out(['search', 'needle']));
+      expect(found).toHaveLength(1);
+      expect(found[0].severity).toBe('unrated');
+      expect(found[0].status).toBe('unsettled');
+      expect(await out(['export_plan', 'bare'])).toContain('## bare  (unrated)');
+    } finally {
+      CELL_FALLBACK.severity = keep.severity;
+      CELL_FALLBACK.status = keep.status;
+    }
   });
 });
 

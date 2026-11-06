@@ -33,6 +33,17 @@ describe('the stand-in reads declared cells through the registry, not through a 
     expect(await ctx.reading('measured')).toBeNull();
   });
 
+  it('a source claim the registry does not accept is not served: the stand-in reads servedSources, not the raw group', async () => {
+    // servedSources keeps the usable claims only (the name is one word, `by` is one word, none the
+    // core occupies); the raw sources group would serve a claim the rest of the engine refuses.
+    const decl: PluginDeclaration = {
+      sources: { 'not one word': { by: 'compute' } },
+      readings: { measured: { source: 'not one word' } },
+    };
+    const ctx = standInContext(decl, PROJECT);
+    expect(await ctx.reading('measured')).toBeNull();
+  });
+
   it('a knob takes the first value its kind allows: 1 for a number / integer, the first word, on for a switch', async () => {
     const decl: PluginDeclaration = {
       knobs: {

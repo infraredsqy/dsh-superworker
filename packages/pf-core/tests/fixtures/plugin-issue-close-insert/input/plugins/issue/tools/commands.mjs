@@ -394,12 +394,11 @@ function sortedCounts(counts) {
  * The vocabulary's default for a cell a hand-written record may leave out. One table, so a count, a
  * filter and a printed row cannot disagree about what an absent `severity` falls back to.
  */
-const CELL_FALLBACK = { severity: '?', status: '?', module: 'unknown', source: 'scan' };
+export const CELL_FALLBACK = { severity: '?', status: '?', module: 'unknown', source: 'scan' };
 
-/** One record's cell as every read prints it: the value it carries, or the vocabulary's default. */
+/** One record's cell as every read prints it: the value it carries, or the vocabulary's default. A cell stated as null reads as the default too (`??`, not `=== undefined`), so `source: null` counts as `scan` everywhere the source is read. */
 function cellOf(issue, field) {
-  const value = issue[field];
-  return value === undefined ? CELL_FALLBACK[field] : value;
+  return issue[field] ?? CELL_FALLBACK[field];
 }
 
 /** The decision a record stands on: one not settled yet is `unknown`. */
@@ -946,8 +945,8 @@ async function cmdSearch(args, ctx) {
     const base = {
       id: uid,
       title,
-      severity: issue.severity === undefined ? '?' : issue.severity,
-      status: issue.status === undefined ? '?' : issue.status,
+      severity: cellOf(issue, 'severity'),
+      status: cellOf(issue, 'status'),
     };
     if (idHit || titleHit) {
       base.match = idHit ? 'id' : 'title';
@@ -989,7 +988,7 @@ async function cmdExportPlan(args, ctx) {
   );
   const lines = ['# Execution Plan\n'];
   for (const issue of issues) {
-    const severity = issue.severity === undefined ? '?' : issue.severity;
+    const severity = cellOf(issue, 'severity');
     const module = issue.module ? issue.module : '?';
     lines.push(`## ${issue.id}  (${severity})`);
     if (module) lines.push(`Module: ${module}`);

@@ -319,7 +319,8 @@ describe('nodes by tag, command routing, the spec path and identity', () => {
     }
   });
 
-  it("specPath speaks this tree's layout; the three identity fields come along as they are", async () => {    const lab = makeLab('pf-plugin-ctx-');
+  it("specPath speaks this tree's layout; the three identity fields come along as they are", async () => {
+    const lab = makeLab('pf-plugin-ctx-');
     try {
       await lab.pf.ledger.init();
       const node = (await lab.pf.ledger.dag.add({ title: 'held' })).id;

@@ -36,7 +36,7 @@ export { PLUGIN_SKILL_FILE, PLUGIN_SKILLS_DIR, skillFolders, skillProblems } fro
 
 export { previewGaps, verifyPlugins } from './doctor';
 
-export { noneThisRound, noneThisRound as isEmptyObject, previewDoorOf } from './doors';
+export { noneThisRound, previewDoorOf } from './doors';
 
 export { CORE_COMMAND_WORDS } from '../words/core-words';
 export { commandClashes, commandTable, routableCommands } from '../words/plugin-commands';

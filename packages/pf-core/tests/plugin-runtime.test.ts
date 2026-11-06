@@ -2,6 +2,7 @@ import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createContext } from '../src/plugins/context';
+import { DOORS, doorForAction } from '../src/plugins/doors';
 import { collectGates, collectOffers } from '../src/plugins/host';
 import { pluginAssemblyOf } from '../src/plugins/assembly';
 import { applyInsertion } from '../src/plugins/insertion';
@@ -498,6 +499,21 @@ describe('one tolerance for "none this round": the timing reads what doctor read
     } finally {
       lab.cleanup();
     }
+  });
+});
+
+describe('the door a declaration names is read off the one DOORS table', () => {
+  it('an action the DOORS table gains gets its door at once; a word outside the table names no door', () => {
+    const doors = DOORS as Record<string, { door: string; preview: string }>;
+    doors.probe = { door: 'probe_door', preview: 'probe_door_preview' };
+    try {
+      expect(doorForAction('probe')).toBe('probe_door');
+    } finally {
+      delete doors.probe;
+    }
+    expect(doorForAction('probe')).toBeNull();
+    expect(doorForAction('notify')).toBeNull();
+    expect(doorForAction(null)).toBeNull();
   });
 });
 

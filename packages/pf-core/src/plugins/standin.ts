@@ -1,7 +1,6 @@
 import { join } from 'node:path';
 import type { ConfigValue } from '../config';
-import { cellOf, group, isKnownKind, wordsCell } from './cells';
-import { CORE_READING_SOURCES } from './types';
+import { cellOf, group, isKnownKind, servedSources, wordsCell } from './cells';
 import type { PluginContext, PluginDeclaration, PluginInsertTarget } from './types';
 
 /**
@@ -31,9 +30,10 @@ export function standInContext(decl: PluginDeclaration, project: string): Plugin
     if (cell === null || Object.keys(cell).length === 0) continue;
     values.set(key, cellValue(cell));
   }
-  // The stand-in values of readings: a source the core serves, or one the declaration claims, is given 1,
-  // and the rest answer "none".
-  const served = new Set([...CORE_READING_SOURCES, ...Object.keys(group(decl, 'sources'))]);
+  // The stand-in values of readings: a source the core serves, or one the declaration claims
+  // acceptably (the one list `readingsOf` draws on — `servedSources`), is given 1, and the rest
+  // answer "none". A claim the registry does not accept is not served here either.
+  const served = new Set(servedSources(decl));
   const numbers = new Map<string, number>();
   for (const [key, raw] of Object.entries(readings)) {
     const source = cellOf(raw)?.source;

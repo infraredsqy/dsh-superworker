@@ -140,7 +140,12 @@ function metricsOf(decl) {
     const prose = PROSE[key];
     if (spec === null || typeof spec !== 'object' || Array.isArray(spec) || prose === undefined) continue;
     const reading = asRecord(readings[key]);
-    out.push({ ...prose, ...spec, reading: key, source: reading.source || 'ticket' });
+    // The source cell is read the way the engine's registry reads it (`readingsOf`): the cell as it
+    // stands, and a reading that names no source is not served (doctor reports it), so this metric
+    // is not judged — no fallback value is invented here.
+    const source = reading.source;
+    if (typeof source !== 'string') continue;
+    out.push({ ...prose, ...spec, reading: key, source });
   }
   return out;
 }

@@ -24,9 +24,8 @@ export function doorOf(action: PluginAction, preview = false): string {
 
 /** The door a declared action names, read off the same table: null when the declaration names no action the core serves (validation has already reported it). */
 export function doorForAction(action: unknown): string | null {
-  if (action === 'insert') return DOORS.insert.door;
-  if (action === 'block') return DOORS.block.door;
-  return null;
+  if (typeof action !== 'string' || !Object.keys(DOORS).includes(action)) return null;
+  return DOORS[action as PluginAction].door;
 }
 
 /** The rehearsal a door owes beside it: the same name with `_preview` (see PluginImplModule). */
