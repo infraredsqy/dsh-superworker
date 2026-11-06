@@ -13,6 +13,15 @@
  * compares the encoded bytes, so a change to either side's indent / key order / line ending /
  * number spelling turns it red on the spot.
  *
+ * The moment this layer writes (`now` and the `microTimestampOf` / anchor pair under it) is a copy of
+ * `src/clock.ts`, and the pool's `discovered` / `updated_at` are the engine's MicroTimestamp spelled
+ * the same way. This copy is not kept in step by reading both sides either: the same contract test
+ * (`tests/issue-pool-bytes.test.ts`) runs one batch of epoch-microsecond readings through both
+ * spellings, so a change to either side's padding, literal `Z` or six-digit tail turns it red.
+ *
+ * Whether a record directory counts as init-ed is `src/initledger.ts`'s reading alone — this layer
+ * does not answer that question a second time.
+ *
  * The runtime hands in two facts:
  * - Locking: a write lands atomically (a temp file in the target's own directory is renamed over
  *   it), so a reader never sees half a record; and every "read → change → write" of one command
@@ -35,7 +44,6 @@ import {
   openSync,
   readFileSync,
   renameSync,
-  statSync,
   unlinkSync,
   writeSync,
 } from 'node:fs';
@@ -62,11 +70,6 @@ export const POOL_LOCK_TIMEOUT_MS = 10_000;
 
 /** The probe interval of a contender: core's ledger lock probes on the same cadence. */
 export const POOL_LOCK_POLL_MS = 50;
-
-/** Where the record directory lands: `<root>/.pf` (the path `init` looks for). */
-export function ledgerDir(root) {
-  return join(root, '.pf');
-}
 
 /** Issue status: `open` -> `acknowledged` -> `resolving` -> `resolved`, or `rejected` for one left unfixed. */
 export const VALID_STATUSES = Object.freeze(['open', 'acknowledged', 'resolving', 'resolved', 'rejected']);
@@ -373,21 +376,7 @@ export function ensurePlanDir(root, planPath) {
   mkdirSync(dirname(resolve(root, planPath)), { recursive: true });
 }
 
-export function absolutePlanPath(root, planPath) {
-  return resolve(root, planPath);
-}
-
-/** Whether this record directory counts as initialized: the directory is there and both markers are there (the reading of `src/initledger.ts`). */
-export function isInitialized(root) {
-  const dir = ledgerDir(root);
-  if (!existsSync(dir) || !statSync(dir).isDirectory()) return false;
-  return ['.gitignore', '.gitattributes'].every((marker) => {
-    const path = join(dir, marker);
-    return existsSync(path) && statSync(path).isFile();
-  });
-}
-
-/** A relative path resolves against the project root (a plugin is given no working directory). */
+/** A relative path resolves against the project root (a plugin is given no working directory); the one spelling of that reading. */
 export function resolveFrom(root, path) {
   return resolve(root, path);
 }

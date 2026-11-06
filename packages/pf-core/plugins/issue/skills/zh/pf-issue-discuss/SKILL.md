@@ -49,8 +49,8 @@ disable-model-invocation: true
 
 | 场景 | 处理 |
 |---|---|
-| 深聊某条的实现细节 | 建议转 `/engineering` |
-| 大规模重构信号 | 单独立一条（阈值与口径见 [`../pf-issue-repair/pool.md`](../pf-issue-repair/pool.md)），建议转 `/engineering` |
+| 深聊某条的实现细节 | 建议转 `/pf-conduct`（准备时它把需求与代码对齐） |
+| 大规模重构信号 | 单独立一条（阈值与口径见 [`../pf-issue-repair/pool.md`](../pf-issue-repair/pool.md)），建议转 `/pf-route`（把重构当一个节点进图） |
 | 要修一批 | `/pf-issue-repair` |
 | 池子该刷新了 | `/pf-issue-scan` |
 | 该进图的新功能 | `/pf-route` |

@@ -108,10 +108,12 @@ large):
 
 **Verification is required**: it compiles + the remaining tests pass (or at least no new
 failures). Commands and tier follow pf-conduct's "Test tier and verification", taken from the
-project docs rather than copied from another project. **The measured time has to be reported**:
-the fast lane's measured seconds, which are the whole acceptance of the compression half; the node
-road also reports the full run's, since the maintenance channel's node reads exactly that for its
-completion rule. No reading means it was not done.
+project docs rather than copied from another project. That section's original lives in the
+`pf-conduct` skill's `SKILL.md`; with only `test-audit` installed it is not here, and the tier is
+then read with `config get test_tier` and the command taken from the project docs. **The measured
+time has to be reported**: the fast lane's measured seconds, which are the whole acceptance of the
+compression half; the node road also reports the full run's, since the maintenance channel's node
+reads exactly that for its completion rule. No reading means it was not done.
 
 ### Step 5: close out
 
@@ -132,7 +134,7 @@ report back.
 |---|---|
 | The call said "look only, do not fix", or some other limit | narrow the scope by what he says, which may mean only the scan and the report |
 | Verification fails | report the failure in detail and stop — do not guess, do not roll back, do not force it |
-| A large-scale test refactor turns up | suggest moving to `/engineering` |
+| A large-scale test refactor turns up | suggest moving to `/pf-route` (the refactor enters the graph as a node) |
 | The project has no tests | report "no test files found" and exit |
 
 **Products go into the report only**: the scan's conclusions enter no repository and land on no

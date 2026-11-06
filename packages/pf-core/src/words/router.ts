@@ -334,17 +334,21 @@ async function pluginWord(word: string, io: WordsIO) {
 /**
  * One plugin word: the rest of the line goes to the plugin that declares it, in this process, through
  * the plugin contract. Whatever the plugin answers comes back as it answered it — the text, and the
- * exit code a plugin that says how its run ended hands back (`main` may answer a number). A plugin
- * that cannot be run is one sentence on stderr naming the plugin, with the non-zero code a failure
- * answers with; the plugin's own streams went out from this same process, so
- * nothing of its stderr is swallowed here.
+ * exit code a plugin that says how its run ended hands back (`main` may answer a number, and a thrown
+ * refusal may carry one: a usage error carries 2, the code the core's own parser answers a refused
+ * line with). A throw that carries no code is the failure this layer names `main failed` at 1. A
+ * plugin that cannot be run is one sentence on stderr naming the plugin, with the non-zero code a
+ * failure answers with; the plugin's own streams went out from this same process, so nothing of its
+ * stderr is swallowed here.
  */
 async function runPluginWord(entry: { plugin: string }, word: string, rest: readonly string[], io: WordsIO) {
   const root = projectRootOf(undefined, io.root);
   const pf = await handleOf(root, io);
   const answer = await pf.conductor.pluginCommand({ word, argv: [...rest] });
   if (!answer.ran) {
-    if (answer.error !== null) return { code: 1, stderr: `plugin '${entry.plugin}': main failed: ${answer.error}\n` };
+    if (answer.error !== null) {
+      return { code: answer.code ?? 1, stderr: `${pluginRefusal(entry.plugin, answer.error, answer.code)}\n` };
+    }
     return {
       code: 1,
       stderr: `plugin '${entry.plugin}': the command \`${word}\` could not be run\n`,
@@ -354,6 +358,11 @@ async function runPluginWord(entry: { plugin: string }, word: string, rest: read
     stdout: answer.text ?? '',
     ...(typeof answer.code === 'number' ? { code: answer.code } : {}),
   };
+}
+
+/** The line a plugin word that did not run leaves: a refusal that named its own code is answered as it is, anything else is a failure at 1. */
+function pluginRefusal(plugin: string, error: string, code: number | null): string {
+  return code === null ? `plugin '${plugin}': main failed: ${error}` : `plugin '${plugin}': ${error}`;
 }
 
 /** The knob names in force for this run: read once, before any settings page is built. */

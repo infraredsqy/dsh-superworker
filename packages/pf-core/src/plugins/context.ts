@@ -68,16 +68,29 @@ export interface CommandRoute {
   readonly ran: boolean;
   /** The text the command answered with; null when it answered none (a failure, or an effectful command that answers no text). */
   readonly text: string | null;
-  /** The exit code `main` answered with a number; null when it answered none. */
+  /** The exit code `main` answered with a number, or the `code: 2` a thrown usage refusal carries; null when neither. */
   readonly code: number | null;
   /** The sentence the failure leaves: no routed word, no `main()`, or the throw itself; null when it ran. */
   readonly error: string | null;
 }
 
 /**
+ * The exit code a thrown plugin refusal asks for: `code: 2` is the one code this seam carries (a
+ * usage error answers 2, the code the core's own parser answers a refused line with). Any other
+ * thrown refusal, and any other number on it, asks for none — which folds to `main failed` at 1.
+ * A number on a thrown error is not a general exit-code channel.
+ */
+export function refusalCodeOf(error: unknown): number | null {
+  if (error === null || typeof error !== 'object') return null;
+  return (error as { code?: unknown }).code === 2 ? 2 : null;
+}
+
+/**
  * Route one plugin command in this process: the word picks the owning plugin out of the routing table, its
  * `main` runs here, and the answer comes back in the four cells above. Every failure leaves one WARNING line
  * and reads as "it did not run"; a command that ran to its end ran even when it answered no text at all.
+ * A thrown refusal may say how the run ended, and this seam carries exactly one code: `code: 2`, the code
+ * a refused line of the core's own answers with; every other refusal carries no code and folds to 1.
  */
 export async function routeCommand(
   argv: readonly string[],
@@ -118,7 +131,7 @@ export async function routeCommand(
       plugin: entry.plugin,
       ran: false,
       text: null,
-      code: null,
+      code: refusalCodeOf(error),
       error: error instanceof Error ? error.message : String(error),
     };
   }

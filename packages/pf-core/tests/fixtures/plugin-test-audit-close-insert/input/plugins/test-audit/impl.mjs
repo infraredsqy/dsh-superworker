@@ -174,8 +174,9 @@ export async function offer(ctx) {
     return null;
   }
 
-  const enable = decl.enable_knob;
-  if (typeof enable === 'string' && enable !== '' && (await ctx.knob(enable)) === 'off') return null;
+  // No switch is read here: `enable_knob` is the host's gate in one place (`enabled()` in
+  // `src/plugins/host.ts`), which skips a plugin whose switch is off before this door is asked, and
+  // counts an unreadable switch as off.
 
   const values = new Map();
   for (const metric of declared) {

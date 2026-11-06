@@ -2,12 +2,16 @@
  * The issue pool's verbs: each verb is one entry of the command surface.
  *
  * The command word and its flags live here; `main` in `impl.mjs` joins this layer to the host context
- * (`ctx.root` is the project root the record directory sits in). The plugin contract has only one road
- * — hand back a string — with no stderr and no exit code, so an error is always thrown: the host
- * context folds the throw into one WARNING line and answers "none" for the pass, and the main flow
- * goes on as usual. The text handed back on success ends with a newline, like a printed line; the two
- * sentences that would have gone to stderr (a skipped batch import, `No changes specified`) are folded
- * into that same text.
+ * (`ctx.root` is the project root the record directory sits in). A command answers text (what a person
+ * reads) or a number (the exit code it asks its caller to leave with), and its two ways of ending are
+ * not the same ending: a **usage error** — an unknown verb, a flag the verb does not take, the wrong
+ * number of positional arguments, a value outside a flag's closed set, a flag the verb requires and the
+ * line left out, a value of the wrong shape (a regex the engine cannot compile) — carries `code: 2` and
+ * is answered with the usage line, the way the core's own words answer a refused line; any other failure
+ * is thrown, and the host folds it into `main failed` with `code: 1` (at a timing's seam it becomes one
+ * WARNING line and "none this round"). The text handed back on success ends with a newline, like a
+ * printed line; the two sentences that would have gone to stderr (a skipped batch import, `No changes
+ * specified`) are folded into that same text.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import {
@@ -17,7 +21,6 @@ import {
   VALID_SEVERITIES,
   VALID_SOURCES,
   VALID_STATUSES,
-  absolutePlanPath,
   ensurePlanDir,
   missingIssue,
   now,
@@ -26,6 +29,26 @@ import {
   withPoolLock,
   writePool,
 } from './storage.mjs';
+
+// ═══ How a refusal ends ══════════════════════════════════════════════════════
+
+/**
+ * A refusal about how the line was written, not about what the pool holds: the verb is unknown, the
+ * flag is not one this verb takes, the positional count is wrong, the value misses a closed set, a flag
+ * the verb requires was left out, the value is of the wrong shape. `code = 2` is what such a line
+ * answers with — the same 2 the core's own parser answers a usage error with — and `main` lets it out
+ * with that code attached. Everything else is a plain `Error`, which the host answers with `code: 1`.
+ */
+export class UsageError extends Error {
+  constructor(sentence) {
+    super(`${USAGE_HEAD}${EOL}${EOL}${sentence}`);
+    this.name = 'UsageError';
+    this.code = 2;
+  }
+}
+
+/** The head of the usage page, and of every usage error's sentence. */
+const USAGE_HEAD = 'usage: issue <verb> [options]';
 
 // ═══ The shape of a record ═══════════════════════════════════════════════════
 
@@ -175,12 +198,20 @@ const SPECS = {
   status: { options: ['verbose'], positional: { min: 0, max: 0 } },
   weight: { options: ['verbose'], positional: { min: 0, max: 0 } },
   top: { options: ['limit', 'brief'], positional: { min: 0, max: 0 } },
-  by_module: { options: [], positional: { min: 0, max: 0 } },
+  'by-module': { options: [], positional: { min: 0, max: 0 } },
   stale: { options: ['threshold'], positional: { min: 0, max: 0 } },
   mark: { options: [], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
   search: { options: ['status', 'severity', 'source', 'limit'], positional: { min: 1, max: 1 } },
-  export_plan: { options: [], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
+  'export-plan': { options: [], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
 };
+
+/**
+ * The verbs are spelled with hyphens (`open-plan`, `by-module`, `export-plan`): these are words a person
+ * recites. The two underscore spellings the surface shipped with stay routable, on the same runner, so
+ * a script already written against `by_module` / `export_plan` does not break; `issue help` prints them
+ * beside the canonical spelling.
+ */
+const VERB_ALIASES = Object.freeze({ by_module: 'by-module', export_plan: 'export-plan' });
 
 /**
  * Short spellings are folded into long ones first (`-v` -> `--verbose`, `-n` -> `--limit`,
@@ -254,7 +285,7 @@ function parseArgs(argv, spec) {
     const name = flagNameOf(token, spec);
     if (name === null) {
       if (looksLikeFlag(token)) {
-        throw new Error(`unrecognized argument: ${token} (run \`issue help\` for the flags this verb takes)`);
+        throw new UsageError(`unrecognized argument: ${token} (run \`issue help\` for the flags this verb takes)`);
       }
       positional.push(token);
       continue;
@@ -262,7 +293,7 @@ function parseArgs(argv, spec) {
     const cell = FLAGS[name];
     const inline = inlineValueOf(token);
     if (cell.kind === 'flag') {
-      if (inline !== undefined) throw new Error(`argument ${cell.long}: takes no value`);
+      if (inline !== undefined) throw new UsageError(`argument ${cell.long}: takes no value`);
       options[name] = true;
       continue;
     }
@@ -280,14 +311,14 @@ function parseArgs(argv, spec) {
       index += 1;
       raw = argv[index];
     }
-    if (raw === undefined) throw new Error(`argument ${cell.long}: expected one value`);
+    if (raw === undefined) throw new UsageError(`argument ${cell.long}: expected one value`);
     if (cell.kind === 'int') {
-      if (!/^[+-]?\d+$/.test(raw)) throw new Error(`argument ${cell.long}: invalid int value: '${raw}'`);
+      if (!/^[+-]?\d+$/.test(raw)) throw new UsageError(`argument ${cell.long}: invalid int value: '${raw}'`);
       options[name] = Number(raw);
       continue;
     }
     if (cell.choices !== undefined && !cell.choices.includes(raw)) {
-      throw new Error(`invalid ${name} "${raw}", valid: ${[...cell.choices].sort().join(', ')}`);
+      throw new UsageError(`invalid ${name} "${raw}", valid: ${[...cell.choices].sort().join(', ')}`);
     }
     options[name] = raw;
   }
@@ -298,7 +329,7 @@ function parseArgs(argv, spec) {
     ? 0
     : spec.positional.min;
   if (count < minimum || count > spec.positional.max) {
-    throw new Error(
+    throw new UsageError(
       `this verb wants ${positionalWanted(spec)} positional argument(s), got ${count} (run \`issue help\`)`,
     );
   }
@@ -354,11 +385,74 @@ function sortedCounts(counts) {
   return out;
 }
 
+// ═══ One pool table → filtered / ranked / counted ════════════════════════════
+// Every read verb is the same three moves over the same table: narrow it by the filters the caller
+// gave, put the rows in one order, then print them (or count them). Each move is written once here and
+// the verbs name it, so `list` and `search` cannot filter one record two ways.
+
+/**
+ * The vocabulary's default for a cell a hand-written record may leave out. One table, so a count, a
+ * filter and a printed row cannot disagree about what an absent `severity` falls back to.
+ */
+const CELL_FALLBACK = { severity: '?', status: '?', module: 'unknown', source: 'scan' };
+
+/** One record's cell as every read prints it: the value it carries, or the vocabulary's default. */
+function cellOf(issue, field) {
+  const value = issue[field];
+  return value === undefined ? CELL_FALLBACK[field] : value;
+}
+
+/** The decision a record stands on: one not settled yet is `unknown`. */
+function decisionOf(issue) {
+  return issue.decision ?? 'unknown';
+}
+
+/** The filter set `list` and `search` share: each filter applies only when the caller spelled it. */
+function filterIssues(issues, options) {
+  let out = issues;
+  if (options.status) out = out.filter((issue) => issue.status === options.status);
+  if (options.severity) out = out.filter((issue) => issue.severity === options.severity);
+  if (options.decision) out = out.filter((issue) => decisionOf(issue) === options.decision);
+  if (options.source) out = out.filter((issue) => cellOf(issue, 'source') === options.source);
+  if (options.module) out = out.filter((issue) => String(issue.module ?? '').includes(options.module));
+  return out;
+}
+
+/** The order the reads start from: newest discovery first. */
+function newestFirst(issues) {
+  return [...issues].sort((a, b) => compareText(b.discovered, a.discovered));
+}
+
+/** One read's answer: the rows under the limit, printed in full or brief. */
+function printed(issues, options) {
+  const limit = options.limit ?? 0;
+  const rows = limit > 0 ? issues.slice(0, limit) : issues;
+  return options.brief ? jsonText(rows.map(briefIssue), 0) : jsonText(rows);
+}
+
+/** How many issues each value of one cell accounts for, keys sorted (the vocabulary's default is a cell of its own). */
+function countsBy(issues, field) {
+  const counts = {};
+  for (const issue of issues) {
+    const cell = cellOf(issue, field);
+    counts[cell] = (counts[cell] ?? 0) + 1;
+  }
+  return sortedCounts(counts);
+}
+
+/** How often a scan must have seen an issue before it counts as stale: `status`'s ceiling and `stale`'s default, one number. */
+const STALE_CHECK_COUNT = 3;
+
+/** The issues at or over that ceiling: still pickable, and checked at least `threshold` times. */
+function staleIssues(issues, threshold) {
+  return issues.filter((issue) => PICKABLE.has(issue.status) && (issue.check_count ?? 0) >= threshold);
+}
+
 function briefIssue(issue) {
   return {
     id: issue.id,
-    severity: issue.severity === undefined ? '?' : issue.severity,
-    status: issue.status === undefined ? '?' : issue.status,
+    severity: cellOf(issue, 'severity'),
+    status: cellOf(issue, 'status'),
     title: issue.title === undefined ? '' : issue.title,
   };
 }
@@ -368,7 +462,7 @@ function briefIssue(issue) {
 async function cmdAdd(args, ctx) {
   if (args.options.from_file) return cmdAddFromFile(args, ctx);
   const uid = args.options.id;
-  if (!uid) throw new Error('--id is required (or use --from-file for batch)');
+  if (!uid) throw new UsageError('--id is required (or use --from-file for batch)');
   const data = readPool(ctx.root);
   if (Object.prototype.hasOwnProperty.call(data.issues, uid)) throw new Error(`issue "${uid}" already exists`);
   const record = buildIssueRecord(args.options, uid, now());
@@ -376,7 +470,7 @@ async function cmdAdd(args, ctx) {
   data.issues[uid] = record;
   await writePool(ctx.root, data);
   const lines = [`Issue created: ${uid}`];
-  if (record.plan_path) lines.push(`Plan path (nonexistent): ${absolutePlanPath(ctx.root, record.plan_path)}`);
+  if (record.plan_path) lines.push(`Plan path (nonexistent): ${resolveFrom(ctx.root, record.plan_path)}`);
   return `${lines.join(EOL)}${EOL}`;
 }
 
@@ -436,24 +530,11 @@ async function cmdAddFromFile(args, ctx) {
 }
 
 async function cmdList(args, ctx) {
-  const data = readPool(ctx.root);
-  let issues = Object.values(data.issues);
-  if (args.options.status) issues = issues.filter((issue) => issue.status === args.options.status);
-  if (args.options.severity) issues = issues.filter((issue) => issue.severity === args.options.severity);
-  if (args.options.module) issues = issues.filter((issue) => String(issue.module ?? '').includes(args.options.module));
-  if (args.options.decision) {
-    issues = issues.filter((issue) => (issue.decision ?? 'unknown') === args.options.decision);
-  }
-  if (args.options.source) issues = issues.filter((issue) => (issue.source ?? 'scan') === args.options.source);
-
+  const issues = filterIssues(Object.values(readPool(ctx.root).issues), args.options);
   const sevOrder = severityOrder();
   // A stable sort: newest discovery first, then by severity.
-  issues = [...issues].sort((a, b) => compareText(b.discovered, a.discovered));
-  issues = stableSort(issues, (issue) => sevOrder[issue.severity] ?? 99);
-
-  const limit = args.options.limit ?? 0;
-  if (limit > 0) issues = issues.slice(0, limit);
-  return args.options.brief ? jsonText(issues.map(briefIssue), 0) : jsonText(issues);
+  const rows = stableSort(newestFirst(issues), (issue) => sevOrder[issue.severity] ?? 99);
+  return printed(rows, args.options);
 }
 
 // ═══ Update: one patch, one record or a batch ════════════════════════════════
@@ -650,7 +731,7 @@ async function cmdResolve(args, ctx) {
 }
 
 async function cmdReject(args, ctx) {
-  if (!args.options.reason) throw new Error('--reason is required for reject');
+  if (!args.options.reason) throw new UsageError('--reason is required for reject');
   const data = readPool(ctx.root);
   const ids = uniqueIds(args.positional);
   for (const uid of ids) get(uid, data);
@@ -699,73 +780,73 @@ async function cmdRemove(args, ctx) {
 
 /** The pool's reading of "not settled yet": `weight` and `status` both count these. */
 const OWED = new Set(['open', 'acknowledged', 'resolving']);
-/** Still pickable: `top` / `by_module` / `stale` list only these (`resolving` is already in someone's hands). */
+/** Still pickable: `top` / `by-module` / `stale` list only these (`resolving` is already in someone's hands). */
 const PICKABLE = new Set(['open', 'acknowledged']);
 
 async function cmdStatus(args, ctx) {
-  const data = readPool(ctx.root);
-  const all = Object.values(data.issues);
+  const all = Object.values(readPool(ctx.root).issues);
   const issues = args.options.verbose ? all : all.filter((issue) => OWED.has(issue.status));
-
-  const bySeverity = {};
-  const byStatus = {};
-  const byModule = {};
-  const bySource = {};
-  for (const issue of issues) {
-    const severity = issue.severity === undefined ? '?' : issue.severity;
-    bySeverity[severity] = (bySeverity[severity] ?? 0) + 1;
-    const status = issue.status === undefined ? '?' : issue.status;
-    byStatus[status] = (byStatus[status] ?? 0) + 1;
-    const module = issue.module === undefined ? 'unknown' : issue.module;
-    byModule[module] = (byModule[module] ?? 0) + 1;
-    const source = issue.source === undefined ? 'scan' : issue.source;
-    bySource[source] = (bySource[source] ?? 0) + 1;
-  }
-  const stale = all.filter((issue) => PICKABLE.has(issue.status) && (issue.check_count ?? 0) >= 3).length;
   const result = {
-    by_severity: sortedCounts(bySeverity),
-    by_status: sortedCounts(byStatus),
-    by_module: sortedCounts(byModule),
-    by_source: sortedCounts(bySource),
-    stale,
+    by_severity: countsBy(issues, 'severity'),
+    by_status: countsBy(issues, 'status'),
+    by_module: countsBy(issues, 'module'),
+    by_source: countsBy(issues, 'source'),
+    stale: staleIssues(all, STALE_CHECK_COUNT).length,
   };
   if (args.options.verbose) result.total = all.length;
   return jsonText(result);
 }
 
+/** The pool's own split of the work that is still outstanding: all of it, and the part somebody here can pay. */
+function payableOf(data) {
+  const actionable = Object.values(data.issues).filter((issue) => OWED.has(issue.status));
+  return {
+    actionable,
+    payable: actionable.filter((issue) => decisionOf(issue) !== 'external'),
+  };
+}
+
+/** The weight formula: the severity weights of the payable half, summed. */
+function weightOf(issues) {
+  return issues.reduce((sum, issue) => sum + (SEVERITY_WEIGHTS[issue.severity] ?? 0), 0);
+}
+
+/**
+ * How heavy this pool is, computed here for whoever asks the reading: the same walk `issue weight`
+ * prints its number from, so a caller that computes an offer reads the pool instead of reading a
+ * printed line back. It throws exactly what `readPool` throws (an unreadable pool is "not known this
+ * pass", never 0).
+ */
+export function poolWeight(root) {
+  return weightOf(payableOf(readPool(root)).payable);
+}
+
 async function cmdWeight(args, ctx) {
   const data = readPool(ctx.root);
-  const actionable = Object.values(data.issues).filter((issue) => OWED.has(issue.status));
-  const payable = actionable.filter((issue) => (issue.decision ?? 'unknown') !== 'external');
-  const weight = payable.reduce((sum, issue) => sum + (SEVERITY_WEIGHTS[issue.severity] ?? 0), 0);
+  const { actionable, payable } = payableOf(data);
+  const weight = weightOf(payable);
   if (!args.options.verbose) return `${weight}${EOL}`;
-  const bySeverity = {};
-  for (const issue of payable) {
-    const severity = issue.severity === undefined ? '?' : issue.severity;
-    bySeverity[severity] = (bySeverity[severity] ?? 0) + 1;
-  }
-  const heldBack = actionable.filter((issue) => (issue.decision ?? 'unknown') === 'external');
+  const heldBack = actionable.filter((issue) => decisionOf(issue) === 'external');
   return jsonText({
     weight,
     counted: payable.length,
-    by_severity: sortedCounts(bySeverity),
+    by_severity: countsBy(payable, 'severity'),
     not_counted_external: heldBack.length,
-    not_counted_external_weight: heldBack.reduce(
-      (sum, issue) => sum + (SEVERITY_WEIGHTS[issue.severity] ?? 0),
-      0,
-    ),
+    not_counted_external_weight: weightOf(heldBack),
   });
 }
 
 async function cmdTop(args, ctx) {
-  const data = readPool(ctx.root);
-  let issues = Object.values(data.issues).filter((issue) => PICKABLE.has(issue.status));
+  const pickable = Object.values(readPool(ctx.root).issues).filter((issue) => PICKABLE.has(issue.status));
   const sevOrder = severityOrder();
-  issues = [...issues].sort((a, b) => compareText(b.discovered, a.discovered));
-  issues = stableSort(issues, (issue) => [sevOrder[issue.severity] ?? 99, issue.status === 'open' ? 0 : 1]);
-  const limit = args.options.limit === undefined ? 5 : args.options.limit;
-  if (limit > 0) issues = issues.slice(0, limit);
-  return args.options.brief ? jsonText(issues.map(briefIssue), 0) : jsonText(issues);
+  const rows = stableSort(
+    newestFirst(pickable),
+    (issue) => [sevOrder[issue.severity] ?? 99, issue.status === 'open' ? 0 : 1],
+  );
+  return printed(rows, {
+    limit: args.options.limit === undefined ? 5 : args.options.limit,
+    brief: args.options.brief,
+  });
 }
 
 async function cmdByModule(args, ctx) {
@@ -773,7 +854,7 @@ async function cmdByModule(args, ctx) {
   const modules = {};
   for (const issue of Object.values(data.issues)) {
     if (!PICKABLE.has(issue.status)) continue;
-    const module = issue.module === undefined ? 'unknown' : issue.module;
+    const module = cellOf(issue, 'module');
     if (modules[module] === undefined) modules[module] = [];
     modules[module].push(issue);
   }
@@ -782,10 +863,8 @@ async function cmdByModule(args, ctx) {
 
 async function cmdStale(args, ctx) {
   const data = readPool(ctx.root);
-  const threshold = args.options.threshold === undefined ? 3 : args.options.threshold;
-  const stale = Object.values(data.issues).filter(
-    (issue) => PICKABLE.has(issue.status) && (issue.check_count ?? 0) >= threshold,
-  );
+  const threshold = args.options.threshold === undefined ? STALE_CHECK_COUNT : args.options.threshold;
+  const stale = staleIssues(Object.values(data.issues), threshold);
   return jsonText(stableSort(stale, (issue) => -(issue.check_count ?? 0)));
 }
 
@@ -830,21 +909,18 @@ async function cmdOpenPlan(args, ctx) {
   const uid = args.positional[0];
   const issue = get(uid, data);
   if (!issue.plan_path) throw new Error(`Issue "${uid}" has no plan_path set`);
-  return `${absolutePlanPath(ctx.root, issue.plan_path)}${EOL}`;
+  return `${resolveFrom(ctx.root, issue.plan_path)}${EOL}`;
 }
 
 async function cmdSearch(args, ctx) {
   const data = readPool(ctx.root);
-  let issues = Object.values(data.issues);
-  if (args.options.status) issues = issues.filter((issue) => issue.status === args.options.status);
-  if (args.options.severity) issues = issues.filter((issue) => issue.severity === args.options.severity);
-  if (args.options.source) issues = issues.filter((issue) => (issue.source ?? 'scan') === args.options.source);
+  const issues = filterIssues(Object.values(data.issues), args.options);
 
   let pattern;
   try {
     pattern = new RegExp(args.positional[0], 'i');
   } catch (error) {
-    throw new Error(`invalid regex: ${error instanceof Error ? error.message : String(error)}`);
+    throw new UsageError(`invalid regex: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   const tier1 = [];
@@ -899,7 +975,7 @@ async function cmdSearch(args, ctx) {
     }
   }
   const limit = args.options.limit === undefined ? 10 : args.options.limit;
-  return jsonText(limit > 0 ? [...tier1, ...tier2, ...tier3].slice(0, limit) : [...tier1, ...tier2, ...tier3]);
+  return printed([...tier1, ...tier2, ...tier3], { limit });
 }
 
 async function cmdExportPlan(args, ctx) {
@@ -924,7 +1000,7 @@ async function cmdExportPlan(args, ctx) {
     if (issue.description) lines.push(`Desc: ${issue.description}`);
     if (issue.suggestion) lines.push(`Suggested: ${issue.suggestion}`);
     if (issue.plan_path) {
-      const resolved = absolutePlanPath(ctx.root, issue.plan_path);
+      const resolved = resolveFrom(ctx.root, issue.plan_path);
       lines.push(`Plan: ${resolved}`);
       if (existsSync(resolved)) {
         try {
@@ -1023,11 +1099,11 @@ const RUNNERS = {
   status: cmdStatus,
   weight: cmdWeight,
   top: cmdTop,
-  by_module: cmdByModule,
+  'by-module': cmdByModule,
   stale: cmdStale,
   mark: cmdMark,
   search: cmdSearch,
-  export_plan: cmdExportPlan,
+  'export-plan': cmdExportPlan,
 };
 
 /**
@@ -1048,7 +1124,7 @@ function flagUsage(key) {
   return `[${short}${cell.long}${tail}]`;
 }
 
-/** The `issue help` list: the verbs and their flags, derived from the command surface's single table. */
+/** The `issue help` list: the verbs and their flags, derived from the command surface's single table, with an old spelling named on the row it still routes to. */
 export function usage() {
   const rows = Object.keys(SPECS).map((word) => {
     const positional = SPECS[word].positional.min === 0
@@ -1057,10 +1133,12 @@ export function usage() {
         ? ' <id>'
         : ' <id…>';
     const flags = SPECS[word].options.map(flagUsage).join(' ');
-    return `  ${word}${positional}${flags.length > 0 ? ` ${flags}` : ''}`;
+    const alias = Object.keys(VERB_ALIASES).find((spoken) => VERB_ALIASES[spoken] === word);
+    return `  ${word}${positional}${flags.length > 0 ? ` ${flags}` : ''}`
+      + `${alias === undefined ? '' : `   (also answers as \`${alias}\`)`}`;
   });
   return [
-    'usage: issue <verb> [options]',
+    USAGE_HEAD,
     '',
     'the issue pool: one file per project, `<root>/.pf/issues/issues.json`.',
     '',
@@ -1080,10 +1158,13 @@ export function usage() {
 export async function main(argv, ctx) {
   const args = [...argv];
   if (args.length === 0) return usage();
-  const word = args[0];
-  if (word === 'help' || word === '--help' || word === '-h') return usage();
+  const spoken = args[0];
+  if (spoken === 'help' || spoken === '--help' || spoken === '-h') return usage();
+  // An old underscore spelling is the same verb: the canonical name is what the tables and the help
+  // page are keyed by, so the rest of this function never hears the alias.
+  const word = VERB_ALIASES[spoken] ?? spoken;
   const runner = RUNNERS[word];
-  if (runner === undefined) throw new Error(`unrecognized command "${word}" (run \`issue help\`)`);
+  if (runner === undefined) throw new UsageError(`unrecognized command "${spoken}" (run \`issue help\`)`);
   // A trailing help flag is the help request: the last cell is exactly `--help` or `-h`, with something before it.
   if (args.length > 1 && (args[args.length - 1] === '--help' || args[args.length - 1] === '-h')) return usage();
   const spec = SPECS[word];

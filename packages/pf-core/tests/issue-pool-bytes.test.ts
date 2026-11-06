@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 // The two sides of the contract: the engine's record foundation and the issue pool plugin's own
 // record layer. They are deliberately separate code — neither reaches into the other.
+import { microTimestampOf as engineMicroTimestampOf } from '../src/clock.ts';
 import { jsonBytes as engineJsonBytes, jsonOptionsForRecord } from '../src/jsonio.ts';
-import { jsonBytes as poolJsonBytes } from '../plugins/issue/tools/storage.mjs';
+import {
+  jsonBytes as poolJsonBytes,
+  microTimestampOf as poolMicroTimestampOf,
+  now as poolNow,
+} from '../plugins/issue/tools/storage.mjs';
 
 /**
  * The byte contract between the issue pool and the engine's record foundation.
@@ -143,5 +148,23 @@ describe('the pool and the engine encode one value to the same bytes', () => {
     expect(Buffer.from(bare.engine).toString('utf8')).toBe('{}');
     const nested = both({ rows: [{}, []] });
     expect(nested.pool).toEqual(nested.engine);
+  });
+});
+
+describe('the moment: the pool and the engine spell one epoch reading the same way', () => {
+  it('one batch of epoch-microsecond readings comes out to the same string on both sides', () => {
+    // A spread of readings: the epoch itself, the first microsecond, the millisecond rollovers, a
+    // real wall-clock stamp, and one whose tail is not zero in all six digits.
+    const batch = [0, 1, 999, 1000, 1001, 1234567, 1767225600000000, 1767225600123456, 2000000000123456];
+    for (const epochUs of batch) {
+      expect(String((poolMicroTimestampOf as (us: number) => string)(epochUs)), String(epochUs))
+        .toBe(String(engineMicroTimestampOf(epochUs)));
+    }
+  });
+
+  it('the pool writes that shape: six fractional digits, a literal Z, and both stamps of one record are it', () => {
+    // The shape `discovered` / `updated_at` take on disk (the command surface's own test pins the two
+    // stamps of one write; this pins the spelling the two implementations agree on).
+    expect(poolNow()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/);
   });
 });

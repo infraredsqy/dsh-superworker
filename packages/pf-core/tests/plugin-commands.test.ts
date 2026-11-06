@@ -116,3 +116,46 @@ describe('a command clash: the core wins and the clash is reported', () => {
     }
   });
 });
+
+/** A plugin whose command refuses every line, carrying whatever number the caller asks it to carry.
+ * (`keep_name` defaults on, so `main` sees the word first: the number is the next cell.) */
+const THROWER_IMPL = [
+  'export function offer() { return null; }',
+  'export function main(argv) {',
+  '  const error = new Error("the line was wrong");',
+  '  if (argv[1] !== "none") error.code = Number(argv[1]);',
+  '  throw error;',
+  '}',
+].join('\n');
+
+describe("a thrown refusal's code: this seam carries 2, and no other number", () => {
+  /**
+   * The seam a usage error travels on (round 2 of the issue work): a plugin that throws may say how the
+   * run ended, and the one code the engine carries is `2` — the code the core's own parser answers a
+   * refused line with. A number on a thrown error is not a general exit-code channel: `0` would let a
+   * refusal leave green, a negative or larger number would reach `process.exitCode` unchecked. Anything
+   * but exactly 2 asks for no code, and the words layer folds it into `main failed` at 1.
+   */
+  it('`code: 2` travels through, `0` / `5` / a negative / no number at all ask for no code', async () => {
+    const lab = makeLab('pf-plugin-cmd-');
+    try {
+      await lab.pf.ledger.init();
+      lab.plugin('thrower', commandsOnlyDecl({ thrower: 'refuses every line' }), { 'impl.mjs': THROWER_IMPL });
+      const cases: Array<[string, number | null]> = [
+        ['2', 2],
+        ['0', null],
+        ['5', null],
+        ['-1', null],
+        ['none', null],
+      ];
+      for (const [asked, expected] of cases) {
+        const answer = await lab.pf.conductor.pluginCommand({ word: 'thrower', argv: [asked] });
+        expect(answer.ran, asked).toBe(false);
+        expect(answer.error, asked).toBe('the line was wrong');
+        expect(answer.code, asked).toBe(expected);
+      }
+    } finally {
+      lab.cleanup();
+    }
+  });
+});

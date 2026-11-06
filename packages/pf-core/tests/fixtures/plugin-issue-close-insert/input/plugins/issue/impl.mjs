@@ -2,6 +2,38 @@
  * The issue plugin's own implementation: the judgement and the node's body, plus the command entry
  * point.
  *
+ * **The machinery in this file is a copy, and it is declared as one.** Seven pieces are written out
+ * again in the sibling plugin that watches test wall clock (`plugins/test-audit/impl.mjs`), because
+ * each plugin folder is installed and removed on its own and nothing is shared between two of them —
+ * not a module, not a template. Each piece has a named destination, so a person can see which of them
+ * still has to move and which one is meant to stay a copy:
+ *
+ *   1. reading the declaration (`plugin.json` beside the entry) — into a `ctx` seam: the engine could
+ *      hand each plugin its own parsed declaration;
+ *   2. pairing it with the prose (the summary, the unit) — each side carries its own, held by the
+ *      pairing test: the prose is the plugin's own words;
+ *   3. the `isCoding` / line-tag reading — into a `ctx` seam: the engine already reads cycles and tags;
+ *   4. the `>=` comparison against the line — into a `ctx` seam: one comparison, in one place;
+ *   5. assembling the offer (title, tags, body builder, one line of why) — each side carries its own,
+ *      held by the pairing test: the shape is shared, the words are not;
+ *   6. the six-significant-digit formatter — into a `ctx` seam: one number is spelled one way;
+ *   7. the generated spec template — into a `ctx` seam: the landing path and the sections are the
+ *      engine's layout, not a plugin's.
+ *
+ * The convergence point for 1, 3, 4, 6 and 7 is those `ctx` seams; none of them exists yet, and the
+ * convergence is never one plugin importing the other's file. What holds the two copies together
+ * today is a contract test that pairs them (`tests/plugin-issue-test-audit-copies.test.ts`), so a
+ * change to either side is a red test rather than a difference somebody has to notice by reading two
+ * files. 2 and 5 stay copies by design; the pairing test is what keeps them saying the same thing.
+ *
+ * **One cell of that pairing is a known divergence, and it is a debt, not a promise.** For a reading
+ * whose six-digit rounding carries into a new decade (999999.7: seven significant digits, six of them
+ * rounding up to 1000000) this side's formatter notices the carry and spells `1e+06`; the test-audit
+ * side keeps the fixed spelling `1000000`. The contract test records both spellings as they stand
+ * today rather than blessing the difference. The debt is on this side's carry branch: when one
+ * spelling is chosen — the fixed one reads better — this side changes, and that cell becomes an
+ * equality like every other cell in the batch.
+ *
  * The host loads this file by path (the `plugin.json` beside it is its declaration), so it imports
  * nothing from the engine: everything it touches is brought by the `ctx` handed in —
  *
@@ -10,7 +42,9 @@
  *                               function that supplies it (the `pool_weight` below), so the pool's
  *                               own number arrives this way
  *     ctx.nodesWithTag(tag)     the ids of nodes still open (todo) carrying one tag
- *     ctx.capture(argv)         run one command inside this process and hand back its output
+ *     ctx.capture(argv)         run one command inside this process and hand back its output (kept for
+ *                               a plugin that really has to ask another word; this one does not: the
+ *                               pool's number is computed by a function it imports)
  *     ctx.specPath(node_id)     where one node's spec.md lands (this tree's own layout)
  *     ctx.root / ctx.cycle / ctx.nodeId / ctx.sig / ctx.dag / ctx.target
  *
@@ -33,7 +67,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { main as runCommand } from './tools/commands.mjs';
+import { main as runCommand, poolWeight } from './tools/commands.mjs';
 
 // ── The declaration beside this file ─────────────────────────────────────────
 // The names (which reading, which line, which tag, which method) live in `plugin.json`; they are not
@@ -81,37 +115,18 @@ const PROSE = {
   },
 };
 
-// ── The reading: handed to the command that owns the pool ────────────────────
-// The pool's number is computed by the command that owns it, so this plugin asks that command — in
-// the host's own process, through `ctx.capture` (that route exists for a plugin to read one command's
-// output: the pool's tool and the plugin live in the same folder, so one read is one call inside the
-// same process).
-
-/** The word of the issue pool command (the declaration says `keep_name: false`, so the host takes the command word itself off). */
-const ISSUE_WORD = 'issue';
-
-const WEIGHT_VERB = 'weight';
+// ── The reading: one function of the pool's own folder ───────────────────────
+// The pool's number is computed by the command surface that owns the pool, so this reading is that
+// same function, imported: one folder, one plugin's files, no plugin contract in the way. What a
+// command prints is for a person to read; a number this plugin judges against a line is not read back
+// out of that text.
 
 /**
- * How heavy the pool is, asked of the command that owns it; `null` when it cannot be read.
- *
- * The answer is the last non-empty line of the command's output; a number that is absent or
- * unrecognizable reads as "not known this pass", never as 0.
+ * How heavy the pool is, computed by the pool's own tools; it throws what the pool's reader throws (an
+ * unreadable pool is a number this pass does not know, never 0).
  */
-export async function pool_weight(ctx) {
-  let out = null;
-  try {
-    out = await ctx.capture([ISSUE_WORD, WEIGHT_VERB]);
-  } catch {
-    return null;
-  }
-  const lines = String(out ?? '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== '');
-  if (lines.length === 0) return null;
-  const value = Number(lines[lines.length - 1]);
-  return Number.isFinite(value) ? value : null;
+export function pool_weight(ctx) {
+  return poolWeight(ctx.root);
 }
 
 // ── Metrics: the declaration's names, this file's words ──────────────────────
@@ -165,11 +180,11 @@ function wired(metric, values, lines) {
  * The insertion this plugin wants right now, or `null` (the usual answer).
  *
  * `null` covers every way this plugin stays silent: the metric has no number, no line is drawn on this
- * line, the number is under the line, the line is not about code, the plugin is switched off, and the
- * metric's node in the graph is still open — one metric has one live node at a time.
+ * line, the number is under the line, the line is not about code, and the metric's node in the graph is
+ * still open — one metric has one live node at a time. A switch turned off is not one of them: that is
+ * the host's gate, and this door is not asked at all in that case.
  *
- * Asking the command late is deliberate: a line with nothing drawn on it, or a plugin switched off
- * for this pass, does not go and ask the pool's command at all.
+ * Asking the pool late is deliberate: a line with nothing drawn on it does not read the pool at all.
  */
 export async function offer(ctx) {
   const decl = declaration();
@@ -189,8 +204,10 @@ export async function offer(ctx) {
     // exactly as it did before this plugin existed.
     return null;
   }
-  const enable = decl.enable_knob;
-  if (enable && (await ctx.knob(enable)) === 'off') return null;
+  // The switch is not read here. `enable_knob` is the host's gate, in one place (`enabled()` in
+  // `src/plugins/host.ts`): a plugin whose switch is off is skipped before this door is asked at all,
+  // and an unreadable switch counts as off there. Asking again here would be a second implementation
+  // of one rule, with its own tolerance.
   const values = {};
   for (const metric of declared) {
     if (!(metric.line in lines)) continue;

@@ -63,8 +63,8 @@ More burns the judgement, so what is over goes into the next batch.
 
 | Situation | What to do |
 |---|---|
-| Talking a single entry's implementation through at length | suggest moving to `/engineering` |
-| A large-scale refactor signal | an entry of its own (threshold and conventions in [`../pf-issue-repair/pool.md`](../pf-issue-repair/pool.md)), and suggest moving to `/engineering` |
+| Talking a single entry's implementation through at length | suggest moving to `/pf-conduct` (at prepare it aligns the request with the code) |
+| A large-scale refactor signal | an entry of its own (threshold and conventions in [`../pf-issue-repair/pool.md`](../pf-issue-repair/pool.md)), and suggest moving to `/pf-route` (the refactor enters the graph as a node) |
 | A batch to repair | `/pf-issue-repair` |
 | The pool is due for a refresh | `/pf-issue-scan` |
 | A new feature that should enter the graph | `/pf-route` |

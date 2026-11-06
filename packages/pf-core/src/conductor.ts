@@ -347,7 +347,7 @@ export interface PluginCommandAnswer {
   plugin: string | null;
   ran: boolean;
   text: string | null;
-  /** The exit code the plugin handed back (a number from `main`); null when it handed back none. */
+  /** The exit code the plugin handed back (a number from `main`, or the `code` a thrown refusal carries); null when it handed back none. */
   code: number | null;
   error: string | null;
 }

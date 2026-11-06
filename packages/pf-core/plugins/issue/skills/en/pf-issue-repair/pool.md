@@ -52,7 +52,8 @@ behaves exactly like the single form.
   pattern, scattered configuration, a feature that takes 3+ files to change); **P3** tidiness
   (naming, stale comments, dead code, formatting).
 - **A large change gets an entry of its own**: a refactor signal of ≥3 files that also changes
-  inter-module dependencies gets an entry of its own, and moving to `/engineering` is suggested.
+  inter-module dependencies gets an entry of its own, and moving to `/pf-route` (the refactor enters
+  the graph as a node) is suggested.
   The pool keeps that piece of debt and its criterion only; the refactor plan is not unfolded
   here.
 - **Search for the same entry before pooling**: before a new finding enters the pool, search the

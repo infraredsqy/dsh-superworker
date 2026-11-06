@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 // The surface under test is this plugin folder's own implementation (the very files the host
 // loads by path).
-import { main as issue } from '../plugins/issue/tools/commands.mjs';
+import { main as issue, poolWeight } from '../plugins/issue/tools/commands.mjs';
+import { pool_weight } from '../plugins/issue/impl.mjs';
 import { EOL } from '../plugins/issue/tools/storage.mjs';
 
 /**
@@ -498,5 +499,66 @@ describe('the gates of the command surface', () => {
     expect(JSON.parse(await out(['list']))).toEqual([]);
     expect(await out(['add', '--id', 'a'])).toContain('Issue created: a');
     expect(existsSync(POOL())).toBe(true);
+  });
+});
+
+describe("the weight is a function of the pool, not a line of printed text", () => {
+  it("poolWeight answers the number `weight` prints, and the plugin's reading is that function: reading it runs no command", async () => {
+    seed({
+      p0: row({ id: 'p0', severity: 'P0' }),
+      p1: row({ id: 'p1', severity: 'P1' }),
+      ext: row({ id: 'ext', severity: 'P0', decision: 'external' }),
+      done: row({ id: 'done', severity: 'P0', status: 'resolved' }),
+    });
+    // P0(8) + P1(4); the external one and the settled one count for nothing.
+    expect(await out(['weight'])).toBe(`12${EOL}`);
+    expect(poolWeight(root)).toBe(12);
+    // The declared source, handed a context with no `capture` at all: the number is computed from the
+    // pool, so nothing has to run a command and read its last line back.
+    expect((pool_weight as (ctx: { root: string }) => number)({ root })).toBe(12);
+    // An absent pool is an empty one, so the reading is 0 ...
+    seed({});
+    expect((pool_weight as (ctx: { root: string }) => number)({ root })).toBe(0);
+    // ... and a pool that cannot be read refuses instead of answering 0: a debt never reads as paid.
+    writeFileSync(POOL(), '{ this is not json', 'utf8');
+    expect(() => (pool_weight as (ctx: { root: string }) => number)({ root })).toThrow(/parse failure/);
+  });
+});
+
+describe('the command words are hyphenated, and the old underscore spellings still route', () => {
+  it('by-module / export-plan are the spellings the page prints; by_module / export_plan answer the same runner', async () => {
+    seed({ a: row({ id: 'a', module: 'm', severity: 'P1' }), b: row({ id: 'b', module: 'ops' }) });
+    expect(await out(['by-module'])).toBe(await out(['by_module']));
+    expect(await out(['export-plan', 'a'])).toBe(await out(['export_plan', 'a']));
+    expect(JSON.parse(await out(['by-module']))).toHaveProperty('m');
+    expect(await out(['export-plan', 'a'])).toContain('Total: 1 issue(s)');
+    const page = await out(['help']);
+    expect(page).toContain('by-module');
+    expect(page).toContain('(also answers as `by_module`)');
+    expect(page).toContain('export-plan');
+    expect(page).toContain('(also answers as `export_plan`)');
+    // An alias is the same verb, down to its parser: the hyphen spelling refuses a stray positional.
+    expect(await err(['by-module', 'extra'])).toContain('positional argument(s)');
+    expect(await err(['export-plan'])).toContain('positional argument(s)');
+  });
+});
+
+describe('one pool table, one reading: filter, order and count are shared by the verbs', () => {
+  it('a record with the optional cells left out is filtered, counted and printed by one fallback everywhere', async () => {
+    // Only the cells a hand-written record cannot leave out.
+    seed({ bare: { id: 'bare', title: 'bare', status: 'open', discovered: '2026-01-01T00:00:00.000001Z' } });
+    // The filter: an absent source counts as `scan` for both read verbs.
+    expect(JSON.parse(await out(['list', '--source', 'scan'])).map((r: { id: string }) => r.id)).toEqual(['bare']);
+    expect(JSON.parse(await out(['search', 'bare', '--source', 'scan'])).map((r: { id: string }) => r.id)).toEqual(['bare']);
+    expect(JSON.parse(await out(['list', '--source', 'manual']))).toEqual([]);
+    // The count: `status` and `weight -v` name the missing severity the same way.
+    expect(JSON.parse(await out(['status'])).by_severity).toEqual({ '?': 1 });
+    expect(JSON.parse(await out(['weight', '-v'])).by_severity).toEqual({ '?': 1 });
+    // The printed row: the brief spelling too.
+    expect(JSON.parse(await out(['list', '--brief']))[0]).toMatchObject({ id: 'bare', severity: '?', status: 'open' });
+    // The stale ceiling is one number: `status`'s count and `stale`'s default agree at 3.
+    seedMore({ stale: { ...row({ id: 'stale' }), check_count: 3 } });
+    expect(JSON.parse(await out(['status'])).stale).toBe(1);
+    expect(JSON.parse(await out(['stale'])).map((r: { id: string }) => r.id)).toEqual(['stale']);
   });
 });
