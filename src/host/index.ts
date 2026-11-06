@@ -66,10 +66,11 @@ export { PathfinderRecordsGateway }
  * one diagnostic line, where a workspace is known (`executor.ts`).
  *
  * The tool wake's listeners live here too: `installToolWake` watches the skill
- * tool's settled calls and the step proposals that carry a user `/pf-*`
- * invocation, and registers the agent-facing tool into the waking agent's own
- * scope — never anywhere else, so a session that never touches a pipeline
- * skill keeps the request header it would have had without this plugin.
+ * tool's settled calls, the step proposals that carry a user `/pf-*` invocation, and
+ * every step of a session whose workspace holds a `.pf/` record, and registers the
+ * agent-facing tool into the waking agent's own scope — never anywhere else, so a
+ * session with no pipeline around it keeps the request header it would have had
+ * without this plugin.
  *
  * @returns whatever the placement seam handed back, so a caller (or a test)
  * can wait for the attempt to settle.

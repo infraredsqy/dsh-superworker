@@ -1,12 +1,13 @@
-/* The agent-facing `pathfinder` tool and its wake: the tool exists only for the
- * agents whose session loads a pipeline skill — by the `skill` tool's call result or
- * by a user `/pf-*` invocation — never for anyone else, and only once per agent.
+/* The agent-facing `pathfinder` tool and its wake: the tool exists for the agents whose
+ * workspace holds a `.pf/` record, and for those whose session loads a pipeline skill —
+ * by the `skill` tool's call result or by a user `/pf-*` invocation — never for anyone
+ * else, and only once per agent.
  *
  * - **零常驻**: an unrelated agent's scope stays without the tool; a settled call of a
- *   tool that is not `skill`, a failed skill load, and a `/some-skill` invocation all
- *   leave the scope unarmed.
- * - **唤醒一次**: both triggers hit the same wake; a second skill load for an armed
- *   agent registers nothing more.
+ *   tool that is not `skill`, a failed skill load, a `/some-skill` invocation, and a
+ *   workspace with no `.pf/` all leave the scope unarmed.
+ * - **唤醒一次**: every trigger hits the same wake; a second skill load, and a second
+ *   step in a record's workspace, register nothing more.
  * - the description the tool registers with stays at or under 400 bytes;
  * - the name lock: the registered name, the README and every markdown page the skills
  *   ship under a `skills/` tree come from one constant — the whole tree is walked, not
@@ -19,7 +20,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, readdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,6 +29,7 @@ import {
   PATHFINDER_TOOL_NAME,
   SKILL_NAME_PREFIX,
   argvOf,
+  hasPipelineRecord,
   installToolWake,
   toolDescriptionOf,
   wakeAgent,
@@ -46,8 +48,12 @@ test.after(() => {
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
 
-/** A stand-in host context: the services by name, an event bus, and the effects it collected. */
-function fakeContext() {
+/**
+ * A stand-in host context: the services by name, an event bus, and the effects it collected.
+ * `options.cwd` is the live session's workspace root the fact trigger reads; omitting it
+ * stands in for a session with no cwd at all (the sandbox root answers then).
+ */
+function fakeContext(options = {}) {
   const provided = {}
   const listeners = {}
   const effects = []
@@ -66,7 +72,7 @@ function fakeContext() {
     effect: (make) => {
       effects.push(make())
     },
-    sessions: { get: () => undefined },
+    sessions: { get: () => (options.cwd === undefined ? undefined : { header: { cwd: options.cwd } }) },
     sandboxPolicy: { workspaceRoot: 'C:\\tool-root' },
     get: () => undefined,
   }
@@ -150,6 +156,45 @@ test('唤醒一次：用户敲 /pf-route 也走同一个唤醒，两条线不各
   ])
   assert.equal(registered.length, 1)
   assert.equal(registered[0].name, PATHFINDER_TOOL_NAME)
+})
+
+test('事实唤醒：工作区有 .pf，第一步的请求里就有工具，不需要任何技能', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'pf-workspace-'))
+  mkdirSync(join(root, '.pf'), { recursive: true })
+  try {
+    const { ctx, listeners } = fakeContext({ cwd: root })
+    apply(ctx)
+    const { agent, registered } = fakeAgent()
+
+    await firePreStep(listeners, { agent }, [])
+    assert.equal(registered.length, 1, '工作区有记录，第一步就上膛')
+    assert.equal(registered[0].name, PATHFINDER_TOOL_NAME)
+
+    await firePreStep(listeners, { agent }, [])
+    assert.equal(registered.length, 1, '同一个 agent 只有一份')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('事实唤醒：工作区没有 .pf 就不点亮；记录出现之后，下一步才上膛', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'pf-workspace-'))
+  try {
+    const { ctx, listeners } = fakeContext({ cwd: root })
+    apply(ctx)
+    const { agent, registered } = fakeAgent()
+
+    assert.equal(hasPipelineRecord(root), false)
+    await firePreStep(listeners, { agent }, [])
+    assert.equal(registered.length, 0, '无关工作区一个字节都不多')
+
+    mkdirSync(join(root, '.pf'), { recursive: true })
+    assert.equal(hasPipelineRecord(root), true)
+    await firePreStep(listeners, { agent }, [])
+    assert.equal(registered.length, 1, '记录出现之后，下一步就上膛')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('工具的形状：名字、描述字节数、参数与输出都是声明的面', () => {

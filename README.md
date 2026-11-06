@@ -11,8 +11,9 @@ instructions, node details, the map of who owes whom, the issue pool — comes f
 writes from the panel go back to the same place.
 
 In a session the pipeline is also reachable as the agent-facing `pathfinder` tool: it answers the
-pipeline's words in place. A session sees the tool only after one of the `pf-*` skills loads —
-until then the session's request header stays exactly as it would be without this plugin.
+pipeline's words in place. A session whose workspace holds a `.pf/` record sees the tool from its
+first step; anywhere else it appears only after one of the `pf-*` skills loads — until then that
+session's request header stays exactly as it would be without this plugin.
 
 ## Status
 
