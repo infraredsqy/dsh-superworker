@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
+import { mkdir, open, readFile, rename } from 'node:fs/promises';
 import * as fsPromises from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { PfError } from './errors.ts';
@@ -8,6 +8,7 @@ import {
   isBusyPath,
   isMissingPath,
   sleep,
+  tryUnlinkWithRetry,
 } from './fs-helpers.ts';
 
 /**
@@ -305,16 +306,13 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
   }
 }
 
-/** Clear a leftover temporary file: if it will not clear, leave it — the original error is the thing to hand out. */
+/**
+ * Clear a leftover temporary file: the foundation's one removal protocol, in its never-throwing
+ * spelling (`fs-helpers.tryUnlinkWithRetry`) — absent counts as cleared, a brief standoff (EPERM,
+ * EACCES, EBUSY) backs off and retries, and if it will not clear it is left in place: the original
+ * error is the thing to hand out. Leaving a `.<name>.<entropy>.tmp` behind is silent, so it must
+ * not be given up on the first busy reading.
+ */
 async function discardTemp(tmp: string): Promise<void> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await unlink(tmp);
-      return;
-    } catch (error) {
-      if (isMissingPath(error)) return;
-      if (!isBusyPath(error) || attempt >= RETRY_ATTEMPTS) return;
-      await sleep(RETRY_BASE_MS * attempt);
-    }
-  }
+  await tryUnlinkWithRetry(tmp);
 }

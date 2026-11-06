@@ -1,8 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { mkdir, open, unlink } from 'node:fs/promises';
+import { mkdir, open } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { PfError } from './errors.ts';
-import { RETRY_ATTEMPTS, RETRY_BASE_MS, isBusyPath, isMissingPath, sleep } from './fs-helpers.ts';
+import { isExistingPath, sleep, unlinkWithRetry } from './fs-helpers.ts';
 import { ledgerLockPath, type PfPaths } from './paths.ts';
 
 /**
@@ -94,7 +94,7 @@ async function acquire(path: string, timeoutMs: number): Promise<void> {
     try {
       handle = await open(path, 'wx');
     } catch (error) {
-      if (errorCode(error) !== 'EEXIST') throw error;
+      if (!isExistingPath(error)) throw error;
       if (Date.now() >= deadline) {
         throw new PfError(
           'lock_timeout',
@@ -114,24 +114,13 @@ async function acquire(path: string, timeoutMs: number): Promise<void> {
   }
 }
 
-/** Delete the lock file; on a standoff back off and retry (the same cadence as removing a record file). */
+/**
+ * Delete the lock file: the foundation's one unlink protocol (`fs-helpers.unlinkWithRetry`), the same
+ * retry a record file's removal takes. A file that is already gone counts as released, and a brief
+ * standoff backs off and retries in both of its spellings — the two PermissionError codes and Node on
+ * Windows' own `EBUSY`; giving up here would leave the lock file on disk, and the next acquire would
+ * wait out the whole timeout before reporting `lock_timeout`.
+ */
 async function release(path: string): Promise<void> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await unlink(path);
-      return;
-    } catch (error) {
-      if (isMissingPath(error)) return;
-      if (!isBusyPath(error) || attempt >= RETRY_ATTEMPTS) throw error;
-      await sleep(RETRY_BASE_MS * attempt);
-    }
-  }
-}
-
-function errorCode(error: unknown): string | undefined {
-  if (error !== null && typeof error === 'object' && 'code' in error) {
-    const code = (error as { code?: unknown }).code;
-    if (typeof code === 'string') return code;
-  }
-  return undefined;
+  await unlinkWithRetry(path);
 }

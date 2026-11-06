@@ -13,7 +13,7 @@ import type {
   CyclesNamespace,
 } from './ledger';
 import { withLedgerLock } from './ledgerlock';
-import { pfPaths, signalPath, startedMarkerPath } from './paths';
+import { pfPaths, signalPath, startedMarkerPath, type PfPaths } from './paths';
 import type {
   CycleHolding,
   CyclePolicies,
@@ -86,10 +86,50 @@ const POLICY_DEFAULTS: Record<string, string | number> = {
   parallel: LINE_POLICIES.parallel.default as number,
 };
 
-interface StateLedger {
+/** The reading of state.json the whole engine shares: the whole document, and its `cycles` table normalized into line records. */
+export interface StateLedger {
   /** The whole document object of state.json: the lines own only the `cycles` table, and every other top-level key is carried back as it was. */
   data: Record<string, unknown>;
   cycles: CycleRecord[];
+}
+
+/** Whether one cell of the `cycles` table is a line record: a JSON object (an array or a bare word is not). */
+function isCycleRecord(value: unknown): value is CycleRecord {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * The one reading of state.json — the record tree's lines table — for the whole engine: the cycles
+ * verbs and the settings chain both ask it, so "where the table is, how an entry is recognized, what
+ * a bad shape reads as" is written here once.
+ *
+ * The whole document is handed back (the lines own only the `cycles` table, every other top-level key
+ * is carried back as it was), and the table is normalized in place: a missing or non-list `cycles` is
+ * an empty table, and entries that are not line records are dropped. Those cells cannot be read as
+ * lines, and the read side keeps that kind of silence everywhere else — dropping them here is what
+ * keeps a hand-edited table from crashing one reader while the other looks past it.
+ */
+export async function readStateLedger(paths: PfPaths): Promise<StateLedger> {
+  const read = await readJsonFile(paths.stateJson, 'state.json');
+  const data = read.kind === 'present' && read.value !== null && typeof read.value === 'object'
+    ? (read.value as Record<string, unknown>)
+    : {};
+  if (!Array.isArray(data.cycles)) data.cycles = [];
+  const table = data.cycles as unknown[];
+  for (let index = table.length - 1; index >= 0; index -= 1) {
+    if (!isCycleRecord(table[index])) table.splice(index, 1);
+  }
+  return { data, cycles: table as CycleRecord[] };
+}
+
+/** One line by exact id — never a prefix guess for the caller; not on the table answers `undefined`. */
+export function findCycleRecord(ledger: StateLedger, cycleId: string): CycleRecord | undefined {
+  return ledger.cycles.find((record) => record.id === cycleId);
+}
+
+/** The lines holding one node right now, read through the same claim reader: both on-disk shapes count. */
+export function holdingCycles(ledger: StateLedger, nodeId: string): CycleRecord[] {
+  return ledger.cycles.filter((record) => holdingIds(record).includes(nodeId));
 }
 
 /** Split a list of tags: trim, drop empty words, keep the order, dedupe; the vocabulary is only a human convention, and the engine takes whatever it is given. */
@@ -249,15 +289,9 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
   const paths = pfPaths(root);
   const dag = createDagNamespace(root);
 
+  /** The record's one reading (see `readStateLedger`), on this tree's paths. */
   async function readState(): Promise<StateLedger> {
-    const read = await readJsonFile(paths.stateJson, 'state.json');
-    const data = read.kind === 'present' && read.value !== null && typeof read.value === 'object'
-      ? (read.value as Record<string, unknown>)
-      : {};
-    if (!('cycles' in data) || !Array.isArray(data.cycles)) {
-      data.cycles = [];
-    }
-    return { data, cycles: data.cycles as CycleRecord[] };
+    return readStateLedger(paths);
   }
 
   /** Write state.json: the whole document is written back as it was (only the cycles table is changed), in construction order (state is not sorted). */
@@ -267,7 +301,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
 
   /** Find this line: by exact id, never guessing a prefix for the caller; an id not on the account is refused on the spot. */
   function findCycle(ledger: StateLedger, id: string): CycleRecord {
-    const found = ledger.cycles.find((record) => record.id === id);
+    const found = findCycleRecord(ledger, id);
     if (found === undefined) {
       throw new Error(`cycle "${id}" not found in state.json`);
     }

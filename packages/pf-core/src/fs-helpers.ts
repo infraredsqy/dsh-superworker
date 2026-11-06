@@ -48,15 +48,25 @@ export function isExistingPath(error: unknown): boolean {
 }
 
 /**
+ * The standoff readings a removal retries on: both spellings of the standoff code `isBusyPath` takes
+ * (some runtimes report "another process holds it" as a PermissionError; Node on Windows spells the
+ * same share violation `EBUSY`). Every removal in the record IO foundation reads it from here, so no
+ * second list can drift shorter than this one.
+ */
+export function isBusyRemoval(error: unknown): boolean {
+  return isBusyPath(error) || errorCodeOf(error) === 'EBUSY';
+}
+
+/**
  * Remove a record file:
  * absent counts as removed already; on a standoff it backs off and retries at the step's
  * own cadence, and if the standoff is still there once the limit is reached the error is
  * handed out as it is.
  *
- * Both spellings of the standoff code are accepted: some runtimes report "another process
- * holds it" as a PermissionError (EPERM/EACCES, the reading `isBusyPath` takes); Node on
- * Windows spells the same share-violation EBUSY — taking only the former would not cover
- * that brief standoff.
+ * Both spellings of the standoff code are accepted, through the one reading above
+ * (`isBusyRemoval`): some runtimes report "another process holds it" as a PermissionError
+ * (EPERM/EACCES, the reading `isBusyPath` takes); Node on Windows spells the same share
+ * violation EBUSY — taking only the former would not cover that brief standoff.
  */
 export async function unlinkWithRetry(path: string): Promise<void> {
   for (let attempt = 1; ; attempt++) {
@@ -65,9 +75,23 @@ export async function unlinkWithRetry(path: string): Promise<void> {
       return;
     } catch (error) {
       if (isMissingPath(error)) return;
-      const busy = isBusyPath(error) || errorCodeOf(error) === 'EBUSY';
-      if (!busy || attempt >= RETRY_ATTEMPTS) throw error;
+      if (!isBusyRemoval(error) || attempt >= RETRY_ATTEMPTS) throw error;
       await sleep(RETRY_BASE_MS * attempt);
     }
+  }
+}
+
+/**
+ * The same removal in its never-throwing spelling, for a leftover nobody is waiting on: a temporary
+ * file the caller is about to hand out the *original* error over. Absent counts as cleared, a
+ * standoff is retried at the same cadence over the same readings (it is the loop above), and once
+ * the limit is reached the file is left where it is — a second error must not cover the first, and
+ * the next write to that directory's record lands beside it.
+ */
+export async function tryUnlinkWithRetry(path: string): Promise<void> {
+  try {
+    await unlinkWithRetry(path);
+  } catch {
+    // Deliberately silent: see the paragraph above.
   }
 }

@@ -132,14 +132,22 @@ export function nodeConfigPath(paths: PfPaths, nodeId: string): string {
 }
 
 /**
- * The location of the machine-layer settings file: `<home>/.pf/config.json` — the same spelling as
- * the project layer. home is resolved in this order: the option the call hands in (tests shut it
- * into a temporary directory), then `PF_HOME_DIR`, then this machine's user home directory. The
- * option wins over the switch on purpose: a sandbox stays closed even when the environment names a
- * home.
+ * The home directory the machine layer lives in: `<home>/.pf/`. home is resolved in this order: the
+ * option the call hands in (tests shut it into a temporary directory), then `PF_HOME_DIR`, then this
+ * machine's user home directory. The option wins over the switch on purpose: a sandbox stays closed
+ * even when the environment names a home.
+ *
+ * That directory is a record directory of its own — the machine layer's settings file hangs in it —
+ * so its writers hold that directory's ledger lock (`<home>/.pf/meta/ledger.lock`): the same protocol
+ * as a project tree's record lock, its own file, never the project tree's.
  */
+export function globalHomeDir(homeDir?: string): string {
+  return homeDir ?? envHomeDir() ?? homedir();
+}
+
+/** The location of the machine-layer settings file: `<home>/.pf/config.json` — the same spelling as the project layer. */
 export function globalConfigPath(homeDir?: string): string {
-  return join(homeDir ?? envHomeDir() ?? homedir(), PF_DIR_NAME, 'config.json');
+  return join(globalHomeDir(homeDir), PF_DIR_NAME, 'config.json');
 }
 
 /** The process-artifact directory of one node: `<pf>/nodes/<node>/temp/` (temporary, not in the repository). */

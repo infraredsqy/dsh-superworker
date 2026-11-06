@@ -1,13 +1,13 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { nowSeconds } from './clock';
-import { cycleHoldingIds } from './cycles';
+import { findCycleRecord, holdingCycles, readStateLedger, type StateLedger } from './cycles';
 import { PfError } from './errors';
 import { atomicWriteJson, jsonOptionsForRecord, readJsonFile } from './jsonio';
 import { assertLedgerInitialized } from './initledger';
 import { withLedgerLock } from './ledgerlock';
-import { globalConfigPath, nodeConfigPath, PF_DIR_NAME, pfPaths, type PfPaths } from './paths';
-import type { CycleRecord } from './types';
+import { globalConfigPath, globalHomeDir, nodeConfigPath, PF_DIR_NAME, pfPaths, type PfPaths } from './paths';
+import type { CyclePolicies, CycleRecord } from './types';
 
 /**
  * Settings: reading and writing along one resolution chain — the same set of knobs is written on the
@@ -89,7 +89,9 @@ import type { CycleRecord } from './types';
  *
  * Writing the line layer: the `policies` slot of `state.json` is written from this one place
  * (`ledger.cycles.setPolicy` goes through the same slot), read and rewritten as a whole document, holding
- * the record tree's lock throughout, past the init gate first.
+ * the record tree's lock throughout, past the init gate first. Writing the machine layer is one record
+ * file's write under the lock of the record directory it lives in (`<home>/.pf/meta/ledger.lock`) — the
+ * same protocol, its own file, never the project tree's.
  */
 
 /** A setting value: word, number, true/false. */
@@ -523,22 +525,16 @@ function cycleLayerValues(
   return out;
 }
 
-/** Find one line's record in state.json; an id that is not there reports `cycle_not_found`. */
-async function cycleRecordOf(paths: PfPaths, cycleId: string): Promise<Record<string, unknown>> {
-  const read = await readJsonFile(paths.stateJson, 'state.json');
-  if (read.kind === 'missing') {
-    throw new PfError('cycle_not_found', paths.stateJson, `this project's record has no cycle "${cycleId}"`);
-  }
-  const state = read.value;
-  const cycles = state !== null && typeof state === 'object' && Array.isArray((state as Record<string, unknown>).cycles)
-    ? ((state as Record<string, unknown>).cycles as unknown[])
-    : [];
-  for (const entry of cycles) {
-    if (entry !== null && typeof entry === 'object' && (entry as Record<string, unknown>).id === cycleId) {
-      return entry as Record<string, unknown>;
-    }
-  }
-  throw new PfError('cycle_not_found', paths.stateJson, `this project's record has no cycle "${cycleId}"`);
+/** The refusal of a line id that is not on the record: the same code and sentence for every verb that names one. */
+function cycleNotFound(paths: PfPaths, cycleId: string): PfError {
+  return new PfError('cycle_not_found', paths.stateJson, `this project's record has no cycle "${cycleId}"`);
+}
+
+/** Find one line's record in state.json through the engine's one lines reading; an id that is not there reports `cycle_not_found`. */
+async function cycleRecordOf(paths: PfPaths, cycleId: string): Promise<CycleRecord> {
+  const record = findCycleRecord(await readStateLedger(paths), cycleId);
+  if (record === undefined) throw cycleNotFound(paths, cycleId);
+  return record;
 }
 
 /**
@@ -568,23 +564,13 @@ async function requireNode(paths: PfPaths, nodeId: string): Promise<void> {
  * line-layer value and the line layer is skipped), and a refusal naming the lines when more than one
  * holds it — a record that puts one node in two lines' hands is inconsistent, and guessing which one is
  * meant would answer with a value that is not in force. The claim list is read through the engine's one
- * holder reader (`cycleHoldingIds`), so both on-disk shapes count: the canonical `[{ id, since }]` and
- * the old bare id string.
+ * holder reader (`holdingCycles`), so both on-disk shapes count: the canonical `[{ id, since }]` and
+ * the old bare id string. The lines table is handed in: the caller already read it once.
  */
-async function cycleHoldingNode(paths: PfPaths, nodeId: string): Promise<string | null> {
-  const read = await readJsonFile(paths.stateJson, 'state.json');
-  if (read.kind === 'missing') return null;
-  const state = read.value;
-  const cycles = state !== null && typeof state === 'object' && Array.isArray((state as Record<string, unknown>).cycles)
-    ? ((state as Record<string, unknown>).cycles as unknown[])
-    : [];
-  const holders: string[] = [];
-  for (const entry of cycles) {
-    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue;
-    const record = entry as Record<string, unknown>;
-    if (!cycleHoldingIds(record as unknown as CycleRecord).includes(nodeId)) continue;
-    holders.push(typeof record.id === 'string' ? record.id : '(a line with no id)');
-  }
+function cycleHoldingNode(ledger: StateLedger, paths: PfPaths, nodeId: string): string | null {
+  const holders = holdingCycles(ledger, nodeId).map((record) =>
+    typeof record.id === 'string' ? record.id : '(a line with no id)',
+  );
   if (holders.length > 1) {
     throw new PfError(
       'ambiguous_holder',
@@ -624,14 +610,14 @@ async function chainValues(
       stated.push(['project', await readLayerValues(paths.configJson, specs, 'project')]);
     }
   }
-  if (narrow.cycle !== undefined) {
-    const record = await cycleRecordOf(paths, narrow.cycle);
-    stated.push(['cycle', cycleLayerValues(record.policies, specs)]);
-  } else if (narrow.node !== undefined) {
-    // The line layer of a node read is the line holding it: none means the node has no value there.
-    const holder = await cycleHoldingNode(paths, narrow.node);
-    if (holder !== null) {
-      const record = await cycleRecordOf(paths, holder);
+  if (narrow.cycle !== undefined || narrow.node !== undefined) {
+    // The lines table is read once per reading: a node read takes the line holding that node as its
+    // line layer (none means the node has no value there), and a line read names its line.
+    const ledger = await readStateLedger(paths);
+    const lineId = narrow.cycle ?? (narrow.node === undefined ? null : cycleHoldingNode(ledger, paths, narrow.node));
+    if (lineId !== null) {
+      const record = findCycleRecord(ledger, lineId);
+      if (record === undefined) throw cycleNotFound(paths, lineId);
       stated.push(['cycle', cycleLayerValues(record.policies, specs)]);
     }
   }
@@ -696,31 +682,18 @@ async function writeCyclePolicy(
 ): Promise<void> {
   assertLedgerInitialized(paths);
   await withLedgerLock(paths, async () => {
-    const read = await readJsonFile(paths.stateJson, 'state.json');
-    const state = read.kind === 'present' && read.value !== null && typeof read.value === 'object'
-      ? (read.value as Record<string, unknown>)
-      : {};
-    const cycles = Array.isArray(state.cycles)
-      ? (state.cycles as Array<Record<string, unknown>>)
-      : [];
-    const record = cycles.find(
-      (entry) => entry !== null && typeof entry === 'object' && entry.id === cycleId,
-    );
-    if (record === undefined) {
-      throw new PfError(
-        'cycle_not_found',
-        paths.stateJson,
-        `this project's record has no cycle "${cycleId}"`,
-      );
-    }
-    const stated = record.policies !== null && typeof record.policies === 'object' && !Array.isArray(record.policies)
-      ? (record.policies as Record<string, unknown>)
+    const ledger = await readStateLedger(paths);
+    const record = findCycleRecord(ledger, cycleId);
+    if (record === undefined) throw cycleNotFound(paths, cycleId);
+    const raw: unknown = record.policies;
+    const stated: CyclePolicies = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+      ? (raw as CyclePolicies)
       : {};
     if (stored === null) delete stated[key];
     else stated[key] = stored;
     record.policies = stated;
     record.updated_at = nowSeconds();
-    await atomicWriteJson(paths.stateJson, state, jsonOptionsForRecord('state'));
+    await atomicWriteJson(paths.stateJson, ledger.data, jsonOptionsForRecord('state'));
   });
 }
 
@@ -778,9 +751,11 @@ async function validated(
 }
 
 /**
- * Land one write on exactly one layer. The project and node layers go past the init gate first and hold
- * the record tree's lock throughout; the line layer goes through the record's own writer (the same gate
- * and lock), and the machine layer is this machine's own file, outside that tree.
+ * Land one write on exactly one layer, every one of them with its read → change → write inside a lock.
+ * The project and node layers go past the init gate first and hold the record tree's lock throughout;
+ * the line layer goes through the record's own writer (the same gate and lock), and the machine layer —
+ * this machine's own file, outside any project tree — holds the lock of the record directory it lives in.
+ * One operation never holds two locks.
  *
  * The node layer is looked up again inside the lock: the check in `validated` is a read with no lock, so
  * a `dag.remove` landing between the two would otherwise have its directory brought back by the atomic
@@ -813,7 +788,12 @@ async function landWrite(
     });
     return;
   }
-  await writeLayerFile(path, key, stored);
+  // The machine layer: one record file with one writer at a time, across processes too. It belongs to
+  // no project tree, so it holds the lock of the record directory it does live in — `<home>/.pf/meta/
+  // ledger.lock`, the same protocol on its own file — and never the project tree's lock: one operation
+  // never holds two locks. Two processes both running `set --global` therefore queue behind one
+  // another instead of each rewriting the whole document from its own stale reading.
+  await withLedgerLock(pfPaths(globalHomeDir(options.homeDir)), () => writeLayerFile(path, key, stored));
 }
 
 // ── the namespace ───────────────────────────────────────────────────────────
