@@ -194,9 +194,9 @@ its own children open at the same time, and together they may not cross it.
 | Input | Where it goes |
 |---|---|
 | `/pf-conduct status` | `cycle list` + `cycle current`, read only, no advance |
-| `/pf-conduct`, exactly one active cycle | carry on: `next --spawn --json` (a bare `next` follows this one active line) |
-| `/pf-conduct`, several active cycles | a bare `next` gets refused, and the error lists the candidate lines and points at `--cycle` — read the candidates out to the user, and whichever one they name is the one: `next --cycle <cycle id> --spawn --json` (it pins the node and lands the prompt, one way or the other; the host opens the next session as this run ends — see "The dispatch path") |
-| `/pf-conduct`, the lines are all there, just none `active` | `cycle status <id> active` puts it back in service, then carry on. A line not in service cannot be driven by naming it either (`next` answers `ask_user` and gives you that command as it stands), but the node it pins can still be closed — recorded, not dispatched; to redo a `shelved` node, first `dag revive <node_id>`. With several candidates, read them out and let the user name one — do not pick for him; that decision belongs in pf-route, settled together with the nodes, and coming straight from there the line should already be `active` — take the row above |
+| `/pf-conduct`, exactly one active cycle | carry on: `advance --json` (a bare `advance` follows this one active line) |
+| `/pf-conduct`, several active cycles | a bare `advance` gets refused, and the error lists the candidate lines and points at `--cycle` — read the candidates out to the user, and whichever one they name is the one: `advance --cycle <cycle id> --json` (it pins the nodes this line has free slots for, lands each prompt, and hands the cells to the executor, which opens one session per cell — see "The dispatch path") |
+| `/pf-conduct`, the lines are all there, just none `active` | `cycle status <id> active` puts it back in service, then carry on. A line not in service cannot be driven by naming it either (`advance` answers `ask_user` and gives you that command as it stands), but a node this line holds can still be settled — recorded, not dispatched; to redo a `shelved` node, first `dag revive <node_id>`. With several candidates, read them out and let the user name one — do not pick for him; that decision belongs in pf-route, settled together with the nodes, and coming straight from there the line should already be `active` — take the row above |
 | `/pf-conduct`, no cycle yet | take "Start-up" below |
 | The user just says what they want done, no cycle yet | take "Start-up", with `--title` set to that sentence |
 
@@ -205,7 +205,7 @@ the graph should be designed through pf-route first):
 
 ```pwsh
 cycle start <slug> --title "<the user's own words>" --tags coding,writing
-next --spawn --json
+advance --json
 ```
 
 With an active cycle already there, `cycle start` gets refused, and only `--force` lets it through
@@ -213,11 +213,12 @@ With an active cycle already there, `cycle start` gets refused, and only `--forc
 call without it, and you write it even when the graph has just one line. `--title` takes only the
 user's own words; it goes into the cycle's name and into no prompt.
 
-`next --spawn` pins what this line should open next (one node by default) and lands the material
-(each prompt and this round's run doc). The spawn step answers by whether this call can open a
-session: with an opener the host opens the session then and there, and the answer carries `spawned`
-with `opened_node`; without one this process has no opener, and it answers one `spawn_error` line
-naming the panel.
+`advance` pins the nodes this line has free slots for (the head of the graph ranking, as many as
+`parallel` allows) and lands the material (each prompt and this round's run doc), then hands the
+cells in hand to the executor, which opens one session per cell. With an opener the host opens the
+sessions then and there, and the answer carries what it pinned and opened; without one this process
+has no opener, and its opening step answers one `spawn_error` line naming the panel, claiming
+nothing.
 Either way **your run ends here — do not wait on it here**: the next round is the host's to open
 (the panel's cell, or the relay firing on `turn/end`); when the host opens nothing, hand the user
 the prompt path and the line in it. Before stopping, tell the user how far you will push; in full
@@ -227,10 +228,11 @@ instruction says stop."
 **How far this line runs depends on the node's own mode alone**: a `checkpoint` node stops at its
 close and hands over to a human; a `manual` node lives in the conversation throughout, and once
 the user explicitly lets it through ("mark it complete, continue") the line carries on like
-`auto`; an `auto` node opens the next one itself when it is done. A line stopping is
-`cycle status <cycle> inactive`, which the close command writes itself; a human puts it back in
-service with `cycle status <cycle> active`, and only then does it pick the next node (why only a
-human writes that, see `docs/conduct-state.md` "the two ways in").
+`auto`; an `auto` node opens the next one itself when it is done. **A stop is the plan's answer**:
+when the plan says it stopped (`checkpoint`, a non-delivered node with `when_shelved=stop`, or
+nothing ready left) and nothing is in hand, `advance` turns the line `inactive` itself; a human puts
+it back in service with `cycle status <cycle> active`, and only then does it pick the next node (why
+only a human writes that, see `docs/conduct-state.md` "the two ways in").
 
 ## Prepare
 
@@ -536,16 +538,16 @@ The close walks these steps in order, and only steps 1 and 2 start at the same t
 | 6 close the node | the three commands below |
 | 7 commit | only the graph, cycle and note written down by closing the node are left to collect, see "Then commit" |
 | 8 push | every commit that should be pushed is pushed successfully before going on |
-| 9 dispatch | go by the `action` step 6 returns |
+| 9 advance | `advance --cycle <cycle> --json`, or the host runs that one itself: go by the `action` the plan gives |
 
 **Steps 1 and 2 are done together**: Doc-sync is a subagent, so you are free the moment it is
 dispatched — write `run.md`'s four sections in that window, and add the docs it synced to the
 change list when it comes back. Step 3's merge-back precondition does not change: it starts only
 once both have landed.
 
-**Dispatch comes last**: close the node first, then commit, then push, and dispatch only at the
-end (why the order is nailed down, see `docs/conduct-state.md` "how a session is woken and closed
-out").
+**The advance comes last**: close the node first, then commit, then push, and let `advance` carry
+the line on only at the end (why the order is nailed down, see `docs/conduct-state.md` "how a
+session is woken and closed out").
 
 Coming in through a pipeline dispatch, run these three in order. `<cycle>` is **the line that
 holds this node**: recognize it in the readings of `cycle current` by node id (one `Node:`
@@ -554,15 +556,18 @@ line per node); `<node>` is the id on the call line.
 ```pwsh
 handoff --form <cycle>   # what this line wants, and what the note looks like: fill it in as printed
 handoff <cycle> <node> completed -s "<one-line summary>" -o '<fill in from the line above>'
-next --after <node> --json
+settle <node> --json
 ```
 
 The `--form` one only prints the shape and moves no state; the
 `handoff <cycle> <node> completed -o …` one **writes the note only** — it closes no node and
-spawns no session; the `next --after` one **closes this node**, then settles the next one and
-writes its prompt to disk (the path is given by the command itself) — when a threshold is crossed
-it answers `insert_node` instead, which only puts nodes into the graph and has no prompt to write.
-None of the three spawns a session; for the note, see "The note and its readings".
+spawns no session; the `settle <node>` one **closes this node**: the verdict it reads off the
+ticket already on disk goes into the line's path, the claim is laid down, the graph node lands
+`completed` / `shelved`, and the close-time plugin seam runs — an offer there may insert a
+maintenance node into the graph. It pins nothing, opens no session, lands no prompt, and does not
+park the line. To see first where the line would go, `plan --after <node> --json` is the closing
+rehearsal: read-only, not one byte written. None of the three spawns a session; for the note, see
+"The note and its readings".
 
 **Then commit** (the two flavours do not take the same road):
 
@@ -598,68 +603,76 @@ disk, committed and pushed nowhere.
 When `git push` is refused (another machine, or another line on this machine pushed first),
 `git pull --rebase` and push again; when it stops on a conflict, hand it to the user. **Every
 commit that should be pushed** goes through successfully before the next step. If it is truly
-stuck, stop and report to the user, giving them the `prompt` path: once the push is fixed,
-`dispatch <cycle>` re-sends it — the node is already closed, and does not need closing again.
+stuck, stop and report to the user with the one command that carries on: once the push is fixed,
+`advance --cycle <cycle>` picks the line up from there — the node has already been settled, and
+does not need settling again.
 
-Once the push succeeds, go by the `action` the `next --after` gave — it carries the commands to
-run and the words to say:
+Once the push succeeds, let `advance --cycle <cycle> --json` carry the line on (with the automatic
+relay on, the host runs that one itself and this session stops here) — the `action` it answers
+carries the commands to run and the words to say:
 
-- `dispatch`: **hand in the ticket and stop** — the handoff is on disk and the node is closed, and
-  the host opens the next round itself (the panel's auto-relay, on by default); this session ends
-  here, and no dispatch command is run. Only when the relay is switched off, or the next round
-  fails to appear, does a person finish that cell in the panel: a `dispatch <cycle>` with no
-  opener behind it only refuses, reading out the panel and
-  the prompt path (see "The dispatch path")
-- `insert_node`: nodes have just been put into the graph, **nothing was pinned** and there is no
-  prompt — commit and push as usual, then run `next --cycle <cycle> --spawn --json`: the picking
-  rules pick them out and land each prompt, and the host opens their sessions as this run ends
-  (with no panel and no relay, hand the user those prompt paths and their lines; this is where a
-  debt node comes from, see "Debt nodes" below)
+- `dispatch`: **hand in the ticket and stop** — the handoff is on disk and the node is settled, and
+  the host opens the next sessions itself (the panel's auto-relay, on by default); this session
+  ends here, and no dispatch command is run. Only when the relay is switched off, or the next round
+  fails to appear, does a person run that one command: `advance --cycle <cycle>` — with no opener
+  behind it, its opening step answers `spawn_error` and claims nothing, reading out the panel and
+  every prompt path (see "The dispatch path")
+- the nodes the close inserted: the `settle` answer names them, each with where its own spec
+  landed — they hang in front of the node this close would have opened next, so the next pick
+  takes one first; the close claims nothing and opens nothing. Commit and push as usual, then run
+  `advance --cycle <cycle> --json`: the picking rules pick them out, land each prompt and hand them
+  to the executor, which opens the sessions (with no panel and no relay, hand the user those prompt
+  paths and their lines; this is where a debt node comes from, see "Debt nodes" below)
 - `stop_pipeline`: say `reason` to the user as it stands (read `attention` out too when it has
-  content), then stop — it does not stop this line while other nodes are still in flight, and
-  `reason` will say so
-- `wait`: read its `note` / `close_with`, do what that command says, and **never poll**
+  content), then stop — a stop is the plan's answer, and `advance` has already turned the line
+  `inactive`; it does not stop this line while other nodes are still in flight, and `reason` will
+  say so. To carry on: `cycle status <cycle> active`, then `advance --cycle <cycle>`
+- `wait`: read its `note` / `close_with`, do what that command says (the one closing this cell is
+  `settle <node>`), and **never poll**
 
 `node_shelved` inside `attention` = this node did not deliver, is out of play waiting for a human
 (it is marked `shelved` on the graph and its downstream is parked): to redo it,
 `dag revive <node_id>` puts it back to `todo`.
 
-**The `handoff` output needs no reading** (it is only a receipt); the `next --after` output is
-walked by its `action`, reading the `note` / `close_with` / `reason` / `attention` / `prompt` /
-`spec` it carries. Beyond that, run no other command and hand-write no state file.
+**The `handoff` output needs no reading** (it is only a receipt); the `settle` output is read for
+the nodes its seam inserted and the one `note` it carries, and the `plan` / `advance` output is
+walked by its `action`, reading the `note` / `close_with` / `reason` / `attention` it carries —
+`advance` prints the paths of the prompts it pinned and opened itself. Beyond that, run no other
+command and hand-write no state file.
 
 **Typed in by hand** (no `[pipeline]`): report the result straight to the user, saying clearly
 where the products landed; the three commands do not run and nothing is dispatched, but commit
 and push run as usual.
 
-**A `checkpoint` node that gets here stops and waits for a human**: the `action` that
-`next --after` returns is `stop_pipeline`, and `reason` says "this round is done; the next node
-opens only once you say continue", appending the two commands that carry on. Tell the user what
-this round handed over and where the record landed, then wait for their answer — when they say
-continue, run in order:
+**A `checkpoint` node that gets here stops and waits for a human**: the plan's answer for this
+cell is `stop_pipeline`, and after the settle and the push `advance` turns the line `inactive`, its
+`note` saying "this round is done; the next node opens only once you say continue", appending the
+two commands that carry on. Tell the user what this round handed over and where the record landed,
+then wait for their answer — when they say continue, run in order:
 
 ```pwsh
 cycle status <cycle> active
-next --spawn --json
+advance --cycle <cycle> --json
 ```
 
-Stopping turns the line `inactive` as always, so putting it back in service cannot be skipped;
-`next --spawn` pins the next node and lands its prompt, the host opens that session as this run
-ends, and this session stops here.
+Stopping turns the line `inactive`, so putting it back in service cannot be skipped; `advance`
+pins the next node, lands its prompt and hands it to the executor, which opens the session, and
+this session stops here.
 Commit and push still come before that next session opens, not a byte skipped. The time between
 the node finishing and your answer coming back may be long, and by then that node and its record
 have settled — a session change along the way does not matter, the record is on disk.
 
-**Debt nodes**: when the close went over this line's debt threshold, the action
-`next --after` returns is `insert_node`: it carries the nodes it put in, each with where its own
-spec landed, plus `note` — **no prompt, and nothing was pinned**, so the line's holding does not
-move. **It can carry more than one node** (when more than one debt is over its line; see "the
-maintenance channel" in `docs/conduct-state.md`). Commit and push as usual, then run
-`next --cycle <cycle> --spawn --json`: the picking rules pick them out and land each prompt, and
-once the sessions the host opens take over, each walks like any other node. They go when they are
-done, and stopping to wait for someone's answer is not among their options. **Every node's spec
-carries a `method: ` line** (which method it names is the declaration's to write, and `doctor`
-prints it): when prepare reads it, run that skill
+**Debt nodes**: when the close went over this line's debt threshold, the close-time seam inside
+`settle` puts the debt node **into the graph**, hung in front of the node this close would have
+opened next, so the ordinary ranking takes it first. The `settle` answer names the nodes it put in,
+each with where its own spec landed, plus `note` — **the close claims nothing and opens nothing**,
+so the line's holding does not move. **It can carry more than one node** (when more than one debt
+is over its line; see "the maintenance channel" in `docs/conduct-state.md`). Commit and push as
+usual, then run `advance --cycle <cycle> --json`: the picking rules pick them out, land each prompt
+and hand them to the executor, and once the sessions the host opens take over, each walks like any
+other node. They go when they are done, and stopping to wait for someone's answer is not among
+their options. **Every node's spec carries a `method: ` line** (which method it names is the
+declaration's to write, and `doctor` prints it): when prepare reads it, run that skill
 yourself — batching, dispatching and settling are all in your hands, and the loop is still this
 flow's "Execute" section; the scope is set by the spec that inserted it, so do not widen it to
 everything yourself. Close out as usual when it is done, then go on to the next.
@@ -758,7 +771,8 @@ steps run on the main tree**, `-C` points at the worktree, and nothing needs mov
    on the main tree, and the shape of history does not change
 3. the full run runs on the main tree (so it is the merged content that gets verified), and once
    it passes, `git worktree remove .pf/worktrees/<node short id>` and
-   `git branch -D pf/<node short id>`, then on to handoff → commit the record → push → dispatch.
+   `git branch -D pf/<node short id>`, then on to handoff → settle → commit the record → push →
+   advance.
    Clear the worktree and the branch away right here rather than leaving them for the next node —
    a taken short id stops the next fork and hands it to the user
 
@@ -798,24 +812,28 @@ This dispatch step is opened by **the host**: the panel's cell and its automatic
 road (`dispatchCell` in `src/host/relay.ts`), and the native opener hands this node's prompt to the
 new session (`src/host/executor.ts`). The engine lands this cell's material first (only when the
 prompt is not on disk yet) and writes the `started` claim only once a session is really out — with
-that claim on disk, this cell is never dispatched a second time. For who calls it, and where to look
-when it breaks, see `docs/conduct-dsh-dispatch.md`.
+that claim on disk, this cell is never dispatched a second time. **The host half is the applier
+now**: after a session it opened ends its turn, the host runs `advance` itself — so the worker's
+road stays `handoff` → `settle` → commit and push → the host opens the next session (with no host,
+run `advance` yourself). For who calls it, and where to look when it breaks, see
+`docs/conduct-dsh-dispatch.md`.
 
 **A process with no opener has no seam for opening a session**: `dispatch <cycle>` reads
-the `started` claim and the prompt on disk, then refuses outright — exit code 2, not one byte
-written, naming the panel (寻路中心) and the path of every prompt; `next --spawn` prints the plan
-and lands the material as usual, and its spawn step answers `spawn_error` only, claiming no node at
-all. A rehearsal runs under `DSH_CONDUCT_SPAWN_DRY_RUN=1`: the call walks the whole way and the claim
-lands too, so take it away with `cycle retry <cycle> <node> --drop` before dispatching for real.
-The tool blocks a double dispatch itself, so on seeing a refusal first check whether that node
-already has a session running — do not force your way in.
+the `started` claim alone, and without one it refuses outright — exit code 2, not one byte
+written, naming the panel (寻路中心), where each prompt would land, and the way to write the
+material first (`prepare --cycle <cycle>`); `advance` prints the plan, pins the nodes and lands no
+material (that is the dispatch's step), and its opening step answers `spawn_error` only,
+claiming nothing. A rehearsal runs under `DSH_CONDUCT_SPAWN_DRY_RUN=1`: the call is made and
+answered, no session opens, and the `started` claim does not land either — so nothing has to be
+undone before a real dispatch. The tool blocks a double dispatch itself, so on seeing a refusal
+first check whether that node already has a session running — do not force your way in.
 
 ## References
 
 The `docs/*.md` referenced here travel inside this skill: open them from the skill directory you are
 reading (`docs/conduct-state.md` sits under this skill's `docs/`).
 
-- The contract and the design: `docs/conduct-state.md` — the full set of `next`'s actions, the
+- The contract and the design: `docs/conduct-state.md` — the full set of `plan`'s actions, the
   close's two ways in and the invariants are all in it (`holding` is a set of nodes, `parallel`
   is this line's cap)
 - Which plugins are installed, and each one's tools and conventions: `doctor` lists what is

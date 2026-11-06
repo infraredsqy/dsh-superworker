@@ -121,9 +121,9 @@ tag 说清一个节点属于哪条线：`writing`（文案）、`coding`（代�
 | 输入 | 走哪 |
 |---|---|
 | `/pf-conduct status` | `cycle list` + `cycle current`，只看不推进 |
-| `/pf-conduct`，恰好一条 active cycle | 接着跑：`next --spawn --json`（裸 `next` 跟的就是这条唯一 active 的线） |
-| `/pf-conduct`，多条 active cycle | 裸 `next` 会被拒，报错列出候选线并指 `--cycle` —— 把候选念给用户，他点名哪条就走哪条：`next --cycle <cycle id> --spawn --json`（这一条钉住节点、落好 prompt，下一个会话由宿主在本趟收手时开出来，见「派发通路」） |
-| `/pf-conduct`，线都在、只是没一条 `active` | `cycle status <id> active` 把它放回服务，再接着跑。不在服务中的线点名也驱动不动（`next` 回 `ask_user`，把那条命令原文给你），但它钉着的那个节点照样收得掉——只登记、不派发；要重做 `shelved` 的节点，先 `dag revive <node_id>`。多条候选摆出来让用户点名，别替他挑——这个决定本该在 pf-route 里就跟节点一起定掉；刚从那儿过来的，线应该已经是 `active` 的，直接走上一行 |
+| `/pf-conduct`，恰好一条 active cycle | 接着跑：`advance --json`（裸 `advance` 跟的就是这条唯一 active 的线） |
+| `/pf-conduct`，多条 active cycle | 裸 `advance` 会被拒，报错列出候选线并指 `--cycle` —— 把候选念给用户，他点名哪条就走哪条：`advance --cycle <cycle id> --json`（这一条钉住这条线腾得出的节点、落好各自那份 prompt，再交执行者把会话开出来，见「派发通路」） |
+| `/pf-conduct`，线都在、只是没一条 `active` | `cycle status <id> active` 把它放回服务，再接着跑。不在服务中的线点名也驱动不动（`advance` 回 `ask_user`，把那条命令原文给你），但它握着的那个节点照样 `settle` 得掉——只登记、不派发；要重做 `shelved` 的节点，先 `dag revive <node_id>`。多条候选摆出来让用户点名，别替他挑——这个决定本该在 pf-route 里就跟节点一起定掉；刚从那儿过来的，线应该已经是 `active` 的，直接走上一行 |
 | `/pf-conduct`，还没有 cycle | 走下面「开机」 |
 | 用户直接说要做的事，还没有 cycle | 走「开机」，`--title` 用他那句话 |
 
@@ -131,14 +131,14 @@ tag 说清一个节点属于哪条线：`writing`（文案）、`coding`（代�
 
 ```pwsh
 cycle start <slug> --title "<用户原话>" --tags coding,writing
-next --spawn --json
+advance --json
 ```
 
 已有 active cycle 时 `cycle start` 会被拒，`--force` 才放行——先想清楚为什么同时有两个。`--tags` **必给**：工具拒收没有它的调用；图里只有一条线也照样写。`--title` 只放用户原话，它进的是 cycle 的名字，不进任何 prompt。
 
-`next --spawn` 那一条命令钉住这条线手里要开的节点、把材料落盘（prompt 与本轮 run 文档），spawn 那一步按这一趟有没有 opener 作答：有 opener 时由宿主当场把会话开出来，答案里带 `spawned` 与 `opened_node`；没有就只回一句 `spawn_error` 并点名面板。两边都是**本趟到此结束**——下一棒由宿主开（面板那一格，或接力在 `turn/end` 上开），所以**别在这里等**：要么本会话直接收手，要么用 `[pipeline]` 调用行继续；宿主没有开着下一棒时，把 prompt 路径和它那一行交给用户。收手前告诉用户你会推到哪儿；全自动就说：「已进入全自动，会一直推到图里没有就绪节点、或某条指令说停。」
+`advance` 那一条命令钉住这条线腾得出的节点（图排名的头几个，`parallel` 允许几个就钉几个）、把材料落盘（各自那份 prompt 与本轮 run 文档），再把手里这些格子交给执行者——每个格子开一个会话：有 opener 时由宿主当场把会话开出来，答案里带着它钉住与开出的那些；没有 opener 时开会话那一步只回一句 `spawn_error`、一个节点都不认领，并点名面板。两边都是**本趟到此结束**——下一棒由宿主开（面板那一格，或接力在 `turn/end` 上开），所以**别在这里等**：要么本会话直接收手，要么用 `[pipeline]` 调用行继续；宿主没有开着下一棒时，把 prompt 路径和它那一行交给用户。收手前告诉用户你会推到哪儿；全自动就说：「已进入全自动，会一直推到图里没有就绪节点、或某条指令说停。」
 
-**这条线跑多远，只看节点自己的 mode**：`checkpoint` 的节点收尾就停下交人；`manual` 的节点整个活在对话里，用户明确放行（「标成完成，继续」）之后线照 `auto` 一样接着走；`auto` 的节点干完自己开下一个。线停下来就是 `cycle status <cycle> inactive`，收尾命令自己写；人用 `cycle status <cycle> active` 把它放回服务，它才会接着挑下一个节点（为什么放回服务只有人能写，见 `docs/conduct-state.md`「两个入口」）。
+**这条线跑多远，只看节点自己的 mode**：`checkpoint` 的节点收尾就停下交人；`manual` 的节点整个活在对话里，用户明确放行（「标成完成，继续」）之后线照 `auto` 一样接着走；`auto` 的节点干完自己开下一个。**停由计划拍板**：计划说停（`checkpoint`、没交付而 `when_shelved=stop`、或图里没有就绪节点了）而手里又没有活时，`advance` 自己把线转成 `inactive`；人用 `cycle status <cycle> active` 把它放回服务，它才会接着挑下一个节点（为什么放回服务只有人能写，见 `docs/conduct-state.md`「两个入口」）。
 
 ## 准备
 
@@ -287,21 +287,21 @@ light 节点上这一步的活也是你干：读 `review-{N}.md`，只修清单�
 | 6 关节点 | 下面那三条命令 |
 | 7 提交 | 只剩关节点写下的图、cycle 与交接单要收，见「然后提交」 |
 | 8 push | 该推的每一次提交都推成功，才往下走 |
-| 9 派发 | 按第 6 步返回的 `action` 走 |
+| 9 推进 | `advance --cycle <cycle> --json`，宿主开着接力时由它自己跑；按计划给的 `action` 走 |
 
 **第 1 步与第 2 步一起做**：Doc-sync 是 subagent，派完你就空了——`run.md` 的四节趁这段窗口写掉，它回来后在改动清单里补上同步出的那几份文档。第 3 步合回的前提不变：两样都落好才起。
 
-**派发排在最后**：先关节点、再提交、再推、最后才派发（顺序为什么钉死，见 `docs/conduct-state.md`「会话是怎么被叫起来、怎么收尾的」）。
+**推进排在最后**：先关节点、再提交、再推，最后才让 `advance` 把这条线往前带（顺序为什么钉死，见 `docs/conduct-state.md`「会话是怎么被叫起来、怎么收尾的」）。
 
 管线派发进来的，接着按顺序跑这三条。`<cycle>` 是**握着这个节点的这条线**：在 `cycle current` 的读数里按节点 id 认（每个节点一行 `Node:`）；`<node>` 就是调用行上那个 id。
 
 ```pwsh
 handoff --form <cycle>   # 这条线要什么、交接单长什么样，照它印的填
 handoff <cycle> <node> completed -s "<一行总结>" -o '<照上一条填>'
-next --after <node> --json
+settle <node> --json
 ```
 
-`--form` 那条只印形状，不动状态；`handoff <cycle> <node> completed -o …` 那条**只写交接单**，不关节点、也不拉会话；`next --after` 那条**关掉这个节点**，再定出下一个、把它的 prompt 写到盘上（路径由命令自己给）——越线时它回的是 `insert_node`，只往图里插节点，没有 prompt 可写。三条都不拉会话；交接单见「交接单与读数」。
+`--form` 那条只印形状，不动状态；`handoff <cycle> <node> completed -o …` 那条**只写交接单**，不关节点、也不拉会话；`settle <node>` 那条**收掉这个节点**：判决从盘上那张交接单读出来，记进这条线的路径，认领落定，图上的节点落成 `completed` / `shelved`，收尾时机的插件接缝跑一遍（那里的一笔 offer 可以往图里插一个维护节点）。它**不钉任何节点、不开会话、不落 prompt，也不把线停下**。想先看一眼这一收把线带到哪儿，跑 `plan --after <node> --json` —— 只读的收尾演练，一个字节都不写。三条都不拉会话；交接单见「交接单与读数」。
 
 **然后提交**（两种档走的不是同一条路）：
 
@@ -327,31 +327,31 @@ git -C .pf push                # 这份仓库有远端才推
 
 `.pf/` 没自成仓库的本地档没有这一步：记录就留在盘上，不提交也不推。
 
-`git push` 被拒（另一台机器、或同机另一条线先推了）就 `git pull --rebase` 再推；停在冲突上就交给用户。**该推的每一次提交都推成功**才走下一步。真卡住就停手报用户，把 `prompt` 路径给他：修好推送后用 `dispatch <cycle>` 补发即可，节点已经关了，不用重关。
+`git push` 被拒（另一台机器、或同机另一条线先推了）就 `git pull --rebase` 再推；停在冲突上就交给用户。**该推的每一次提交都推成功**才走下一步。真卡住就停手报用户，把接着跑的那一条命令给他：修好推送后跑 `advance --cycle <cycle>` 即可，这个节点已经 `settle` 过了，不用重收。
 
-推送成功后，按 `next --after` 那条给的 `action` 走——它自己带着该跑的命令和该说的话：
+推送成功后，让 `advance --cycle <cycle> --json` 把这一棒接下去（宿主开着自动接力时它自己跑这一条，本会话就此收手）——它答回的 `action` 自己带着该跑的命令和该说的话：
 
-- `dispatch`：**交票即止**——交接单已落盘、节点已关，下一棒由宿主自己开出来（面板设置里的自动接力，默认开），本会话到此收手，不要再跑任何派发命令；接力被关掉、或下一棒迟迟没有开出来时，才由人在面板上补那一格：没有 opener 的 `dispatch <cycle>` 只会拒，并把面板与 prompt 路径念给你（见「派发通路」）
-- `insert_node`：刚往图里插了节点，**什么都没钉**，也没有 prompt —— 照常提交、推送，然后 `next --cycle <cycle> --spawn --json`：挑选按正常规则把它们挑出来、落好各自那份 prompt，会话由宿主在本趟收手时开出来（没有面板也没有接力时，把那几份 prompt 与它们那一行交给用户；越线时插的维护节点就是这么来的，见下面「维护节点」）
-- `stop_pipeline`：把 `reason` 照原话说给用户（`attention` 有内容就一起念），然后停手 —— 线里还有别的节点进行中时它不停这条线，`reason` 会说
-- `wait`：读它的 `note` / `close_with`，照那条命令做，**绝不轮询**
+- `dispatch`：**交票即止**——交接单已落盘、节点已 `settle`，会话与下一棒由宿主开出来（面板设置里的自动接力，默认开），本会话到此收手，不要再跑任何派发命令；接力被关掉、或下一棒迟迟没有开出来时，才由人补那一条命令：`advance --cycle <cycle>` —— 这个进程没有 opener 时它只回一句 `spawn_error`、一个节点都不认领，并把面板与每一份 prompt 的路径念给你（见「派发通路」）
+- 插了维护节点：`settle` 的答案点名这一次插进来的那些节点（各自的 spec 落在哪儿）——它们挂在「这一收本该开的下一个节点」之前，下一次挑选按正常排序就第一个取它；收尾这一笔什么都没认领、也没开会话。照常提交、推送，然后跑 `advance --cycle <cycle> --json`：挑选按正常规则把它们挑出来、落好各自那份 prompt、交执行者把会话开出来（没有面板也没有接力时，把那几份 prompt 与它们那一行交给用户；越线时插的维护节点就是这么来的，见下面「维护节点」）
+- `stop_pipeline`：把 `reason` 照原话说给用户（`attention` 有内容就一起念），然后停手 —— 停由计划拍板，`advance` 已经把线转成 `inactive`；线里还有别的节点进行中时它不停这条线，`reason` 会说。要接着跑：`cycle status <cycle> active`，再 `advance --cycle <cycle>`
+- `wait`：读它的 `note` / `close_with`，照那条命令做（收这一格的那条就是 `settle <node>`），**绝不轮询**
 
 `attention` 里的 `node_shelved` = 这个节点没交付，出局等人（图上标 `shelved`，它的下游停着）：要重做就 `dag revive <node_id>` 放回 `todo`。
 
-**`handoff` 那条的输出不用读**（它只回执）；`next --after` 那条的输出按 `action` 走，读它自带的 `note` / `close_with` / `reason` / `attention` / `prompt` / `spec`。除此之外不要再跑别的命令、不要手写状态文件。
+**`handoff` 那条的输出不用读**（它只回执）；`settle` 的输出读它插进来的那些节点与自带的那句 `note`，`plan` / `advance` 的输出按 `action` 走，读它自带的 `note` / `close_with` / `reason` / `attention`——`advance` 钉住与开会话的那几份 prompt 由它自己印路径。除此之外不要再跑别的命令、不要手写状态文件。
 
 **手敲进来的**（没有 `[pipeline]`）把结果直接报给用户，报清产物落在哪；那三条命令不跑、也不派发，提交与 push 照跑。
 
-**`checkpoint` 的节点走到这里就停下等人**：`next --after` 回的 `action` 是 `stop_pipeline`，`reason` 里写着「这一轮跑完了，等你说了继续才开下一个节点」，并附上接着走的那两条命令。把这一轮交了什么、记录落在哪讲给用户，然后等他的答复——他说继续，就按顺序跑：
+**`checkpoint` 的节点走到这里就停下等人**：计划对这一格的答案就是 `stop_pipeline`，`settle` 与推送之后 `advance` 把线转成 `inactive`，`note` 里写着「这一轮跑完了，等你说了继续才开下一个节点」，并附上接着走的那两条命令。把这一轮交了什么、记录落在哪讲给用户，然后等他的答复——他说继续，就按顺序跑：
 
 ```pwsh
 cycle status <cycle> active
-next --spawn --json
+advance --cycle <cycle> --json
 ```
 
-停手照旧把线转成 `inactive`，所以放回服务那一条不能省；`next --spawn` 钉住下一个节点、落好它的 prompt，会话由宿主在本趟收手时开出来，本会话到这里收手。提交与推送照旧排在派生下一个节点之前，一个字节都不省。节点跑完到收到你的答复之间可能隔很久，那个节点和它的记录都已经落定——中途换过会话也没关系，记录在盘上。
+停手把线转成 `inactive`，所以放回服务那一条不能省；`advance --cycle <cycle>` 钉住下一个节点、落好它的 prompt、交执行者把会话开出来，本会话到这里收手。提交与推送照旧排在派发之前，一个字节都不省。节点跑完到收到你的答复之间可能隔很久，那个节点和它的记录都已经落定——中途换过会话也没关系，记录在盘上。
 
-**维护节点**：收尾那一次越过了这条线的维护阈值时，`next --after` 回的动作是 `insert_node`：它带着这一次插进来的节点（各自那份 spec 落在哪儿）和 `note`，**没有 prompt，也什么都没钉** —— 线的持有没动。**它可以带不止一个节点**（越线的债不只一条时，见 `docs/conduct-state.md` 的「维护通道」一节）。照常提交、推送，然后跑 `next --cycle <cycle> --spawn --json`：挑选按正常规则把它们挑出来、落好各自那份 prompt，宿主开出来的会话接手之后，每个都走普通节点那一套。它们干完就走，停下来等人回话不在它们的选项里。**每个节点的 spec 里都带着 `method: ` 一行**（点名的是哪个方法由装进来的插件声明写，`doctor` 印得出来）：准备那一步读到它就照那个技能自己跑——分批、派人、落定全在你手里，循环还是本流程的「执行」那一节；范围由插入它的 spec 定，别自己扩到全库。干完照常收尾，接着走下一个。
+**维护节点**：收尾那一次越过了这条线的维护阈值时，`settle` 里的插件接缝把维护节点插进**图里**：它挂在「这一收本该开的下一个节点」之前，下一次挑选按正常排序就第一个取它——没有特殊分支，也没有随节点交回去的 prompt。`settle` 的答案点名这一次插进来的节点（各自那份 spec 落在哪儿）和一句 `note`，这一笔**什么都没认领、也没开会话**，线的持有没有动。**它可以带不止一个节点**（越线的债不只一条时，见 `docs/conduct-state.md` 的「维护通道」一节）。照常提交、推送，然后跑 `advance --cycle <cycle> --json`：挑选按正常规则把它们挑出来、落好各自那份 prompt、交执行者把会话开出来；宿主开出来的会话接手之后，每个都走普通节点那一套。它们干完就走，停下来等人回话不在它们的选项里。**每个节点的 spec 里都带着 `method: ` 一行**（点名的是哪个方法由装进来的插件声明写，`doctor` 印得出来）：准备那一步读到它就照那个技能自己跑——分批、派人、落定全在你手里，循环还是本流程的「执行」那一节；范围由插入它的 spec 定，别自己扩到全库。干完照常收尾，接着走下一个。
 
 需求做不到、或 spec 自相矛盾：`completed` 换成 `failed`；活是自己主动停手不做的，换 `stopped`。两种都在 `-s` 里写清原因，不挂起等待。这个判决会让收尾把节点标成 `shelved`（出局等人），不用你自己动手标。
 
@@ -404,7 +404,7 @@ git worktree add .pf/worktrees/<节点短id> -b pf/<节点短id>
 
 1. worktree 里把这个节点提成一次提交（代码、文档，提交档还有 run.md 与报告集）：`git -C .pf/worktrees/<节点短id> add -A` 与 `git -C .pf/worktrees/<节点短id> commit -m "feat: <这个节点做了什么>"`，再把主树的最新合进来：`git -C .pf/worktrees/<节点短id> merge <出口分支>`——撞车在 worktree 里解，解完重跑快档
 2. 主树上 `git merge --squash pf/<节点短id>`，再 `git commit -m "feat: <同上那一行>"` 发这个节点的 `feat:` commit：一个节点在主树上就是一次提交，历史形状不变
-3. 全量在主树上跑（对的就是合并后的内容），过了就 `git worktree remove .pf/worktrees/<节点短id>` 与 `git branch -D pf/<节点短id>`，再接着 handoff → 提交记录 → push → 派发。worktree 与分支就在这里清干净，别留给下一个节点——短 id 被占时下一趟 fork 会停手交人
+3. 全量在主树上跑（对的就是合并后的内容），过了就 `git worktree remove .pf/worktrees/<节点短id>` 与 `git branch -D pf/<节点短id>`，再接着 handoff → `settle` → 提交记录 → push → `advance`。worktree 与分支就在这里清干净，别留给下一个节点——短 id 被占时下一趟 fork 会停手交人
 
 主树不在出口分支上、或 squash 仍撞（别的线在你刷新之后又合了一次提交）：停手交用户。
 
@@ -421,15 +421,20 @@ git worktree add .pf/worktrees/<节点短id> -b pf/<节点短id>
 
 ## 派发通路
 
-派发这一步由**宿主**开新会话：面板的那一格与它的自动接力走同一条路（`src/host/relay.ts` 的 `dispatchCell`），原生 opener 把这个节点的 prompt 交给新会话（`src/host/executor.ts`）。引擎先把这一格的材料落盘（prompt 不在盘上时才落），会话真的开出来之后才写 `started` 认领——认领落了盘，这一格就不会再被派第二次。谁调它、断了看哪儿，见 `docs/conduct-dsh-dispatch.md`。
+派发这一步由**宿主**开新会话：面板的那一格与它的自动接力走同一条路（`src/host/relay.ts` 的 `dispatchCell`），原生 opener 把这个节点的 prompt 交给新会话（`src/host/executor.ts`）。引擎先把这一格的材料落盘（prompt 不在盘上时才落），会话真的开出来之后才写 `started` 认领——认领落了盘，这一格就不会再被派第二次。**宿主这一半现在负责落实**：它开出去的会话一结束这一轮，宿主自己跑一遍 `advance`。所以干活的那个会话的路子不变：`handoff` → `settle` → 提交推送 → 宿主开出下一个会话（没有宿主时，`advance` 自己来）。谁调它、断了看哪儿，见 `docs/conduct-dsh-dispatch.md`。
 
-**没有 opener 的进程里没有开会话的接缝**：`dispatch <cycle>` 读盘上的 `started` 与 prompt 之后当场拒——退出码 2，一个字节都不写，句子里点名面板（寻路中心）与每一份 prompt 的路径；`next --spawn` 照印计划、照落材料，spawn 那一步只回 `spawn_error`，一个节点都不认领。演练走 `DSH_CONDUCT_SPAWN_DRY_RUN=1`：调用照走完，认领也会落盘，要真派之前先 `cycle retry <cycle> <node> --drop` 把它撤掉。补发之前工具会自己挡双派发，见到拒绝先查那个节点是不是已经有会话在跑，别硬闯。
+**没有 opener 的进程里没有开会话的接缝**：`dispatch <cycle>` 读一眼盘上的 `started` 就够——不在就
+当场拒，退出码 2，一个字节都不写，句子里点名面板（寻路中心）、每一份 prompt 该落的位置，以及先跑
+`prepare --cycle <cycle>` 把材料写出来这条路；`advance` 照印计划、照钉节点，材料不落（那是派发那一步
+的事），开会话那一步只回 `spawn_error`，一个节点都不认领。演练走 `DSH_CONDUCT_SPAWN_DRY_RUN=1`：调用
+照走完、答案照回，会话不开、`started` 认领也不落盘——所以演练过的那一格什么都不用撤，直接真派即可。
+补发之前工具会自己挡双派发，见到拒绝先查那个节点是不是已经有会话在跑，别硬闯。
 
 ## 参照
 
 这里引到的 `docs/*.md` 跟着这份技能一起装：从你正在读的这个技能目录打开它们，`docs/conduct-state.md` 就在本 skill 目录的 `docs/` 下。
 
-- 契约与设计：`docs/conduct-state.md`——`next` 的动作全集、收尾两个入口、不变量都在里面（`holding` 是一组节点、`parallel` 是这条线的上限）
+- 契约与设计：`docs/conduct-state.md`——`plan` 的动作全集、收尾两个入口、不变量都在里面（`holding` 是一组节点、`parallel` 是这条线的上限）
 - 装了哪些插件、各自的工具与口径：`doctor` 列出装了什么，每份声明自带的技能里写着它自己的工具与口径
 - 方法技能：`~/.dsh/skills/<名>/SKILL.md`——spec 的 `method: ` 行点名；由名字推路径只有这一处（`DSH_HOME` 被钉住时，这个根在 `$DSH_HOME/skills` 下，读之前先看一眼环境变量）
 - 派发与鉴权：`docs/conduct-dsh-dispatch.md`

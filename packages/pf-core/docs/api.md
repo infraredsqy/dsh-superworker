@@ -16,7 +16,7 @@
 - `Pf { root: string; ledger; conductor; config; sessions }` —— `root` 是打开时给的项目根，原样保存。
 - `pf.ledger.dag` 十五动词、`pf.ledger.cycles` 十三动词、`pf.ledger.instructions` 五动词、
   `pf.config` 五动词、`ledger.init` / `ledger.register` / `ledger.cleanTemp`、`pf.sessions` 三动词与
-  `conductor.next` / `conductor.close` / `conductor.closeWith` / `conductor.dispatch` /
+  `conductor.next` / `conductor.close` / `conductor.advance` / `conductor.settle` / `conductor.dispatch` /
   `conductor.doctor` / `conductor.handoff` / `conductor.handoffForm` / `conductor.pluginCommand` /
   `conductor.pluginCommands` / `conductor.prepare` 都在句柄上，全是真实现；没有一个桩。
 - 动作路径即 API 路径：`ledger.dag.add` 这样的动作路径，同时就是将来 API 的命名空间路径——
@@ -54,8 +54,9 @@ usageError
 `{ code, stdout, stderr }`——两个流已是命令面会写出的字节（非空、以换行收尾）。`io` 是本次调用的
 接缝（`WordsIO { root; executor?; git?; homeDir?; pluginsDir?; openerAvailable? }`）：`root`
 替代「进程当前目录」这个隐含依赖（不接受 `--project` 的词读的就是它），`executor` /
-`git` 注入，`openerAvailable` 说出本调用能否真开会话（`next` 的开场开关与 `dispatch` 据此照实回
-答，不认领节点）。本进程自己的三个词（checkout 的 doctor、version、合并驱动的进程交接）归命令面
+`git` 注入，`openerAvailable` 说出本调用能否真开会话（`dispatch` / `advance` 据此照实回答：开不出
+会话的进程里 `dispatch` 一个字节都不写就拒，`advance` 只钉节点、不落材料、不认领会话，两边都把
+面板（寻路中心）与那几份 prompt 的位置念出来）。本进程自己的三个词（checkout 的 doctor、version、合并驱动的进程交接）归命令面
 的适配器答，词面不路由。`describe()` 交出词表的静态索引数据（`WordsIndex`：形状说明、三个
 自述词、动词与组的行、版式常数），顶层清单与 agent 面的帮助页渲染同一份；`topHelp(io)` 交出拼好的
 顶层清单文本（插件词按 `io` 现读）。`COMMANDS` / `GROUPS` / `specOf` / `helpText` / `parse` /
@@ -330,43 +331,56 @@ id，写口认的是节点已有的那个目录。
 
 ## pf.conductor
 
-流水线：推线走的一组动作，十个动词。
+流水线：推线走的一组动作，十一个动词。
 
 | 动作 | 签名 | 一句话语义 |
 | --- | --- | --- |
-| `conductor.next` | `next(input?)` | 读一份只读规划：下一步该干什么，不执行、不写记录 |
+| `conductor.next` | `next(input?)` | 读一份只读规划：下一步该干什么，不执行、不写记录；`after` 问的是收尾预演 |
+| `conductor.settle` | `settle(input?)` | 收这一单：判决进 path、认领放下、图落 `completed` / `shelved`、收尾插件缝跑完；不补槽、不停线、不落材料、不开会话 |
+| `conductor.close` | `close(input?)` | `settle` 加应用步而不开会话：补满空槽，没得做了且手是空的就把线转 `inactive` |
+| `conductor.advance` | `advance(input?)` | 把线推一格：补满空槽（钉）→ 落每格的材料 → 一格开一个会话；停了的线转 `inactive`；交回 `AdvanceReceipt { cycle; pinned; dispatches; parked; plan }` |
 | `conductor.prepare` | `prepare(input?)` | 把一次派发的材料落下来、不开会话：提示词落到它的位置、运行稿立在节点目录、交接单模板随材料交回 `PreparedDispatch { cycle; nodes }`；只有规划交回 `dispatch` 时才有材料可落，别的计划当场拒绝、一个字节不写 |
-| `conductor.dispatch` | `dispatch(input?)` | 把节点交给一个会话，交回收据 `DispatchReceipt { action; cycle; node_id; node_title; prompt; prompt_text; session? }`；`action` 只有 `opened` / `already_open` 两个词 |
+| `conductor.dispatch` | `dispatch(input?)` | 把一格交给一个会话，交回收据 `DispatchReceipt { action; cycle; node_id; node_title; prompt; prompt_text; session? }`；`action` 只有 `opened` / `already_open` 两个词 |
 | `conductor.handoff` | `handoff(input)` | 写一张交接单，落在 signals 下的「线 id / 节点 id」 |
-| `conductor.close` | `close(input?)` | 收线结算 |
-| `conductor.closeWith` | `closeWith(input?)` | 收线结算，并带上调用方自己的收尾答案（`continue` / `stop`、一行理由、点名下一个节点）；落地的动作与 `close` 是同一套 |
 | `conductor.handoffForm` | `handoffForm(input?)` | 这条线要的交接单形状：它问哪几个读数格（不写一个字节） |
 | `conductor.pluginCommand` | `pluginCommand(input)` | 把一个词连同它的行交给声明这个词的插件，在本进程里跑，交回 `PluginCommandAnswer { word; plugin; ran; text; code; error }` |
 | `conductor.pluginCommands` | `pluginCommands()` | 装上的插件声明的命令词，按文件夹次序，带路由表认的那个名字 |
 | `conductor.doctor` | `doctor(options?)` | 体检：记录齐全、引用不悬空、没有成环 |
 
-推线三个动词的口径：`next` 是只读规划；`prepare` 是派发准备的写侧、单独一个入口——它读同一份规划、
-只接受交回 `dispatch` 的那一份，把提示词与运行稿按同样的落点落下（交接单模板随材料交回；线配了
-`source: ticket` 的读数且门上有生效值时，模板多带一格 `reading`），不开会话、不碰执行者；`dispatch` 是整段派发——先读这一格（线、节点）的
-`started` 记号：它已经在盘上就直接答 `already_open`（不碰执行者、不写一个字节；`session`
-缺席，那张收据属于当初开出它的那次调用），否则先过插件的拦下缝（任何一家拦就是拦，错误码
-`dispatch_blocked`，理由逐条列在错误文案里），再做派发准备（与 `prepare` 同一份材料）。
-这一格（线、节点）的提示词**已经在盘上**时，准备这一步整个跳过：那份提示词是钉住它的那一步落的
-（钉住节点的那次 `next` 调用就是 `prepare`），而「提示词在盘上、`started` 记号
-不在」这一对盘上事实本身就是一次派发，哪怕规划此刻还在等交接单——跳过时不落第二份材料，只落
-`started` 记号。绿灯才把请求交给注入的执行者。交回的只是收据：`opened` 带 `session`，说的是会话已经开着；
-节点的收场由 worker 写交接单、再由 `close` 结算。记号随之落盘，规划从此把这一格算作在飞，
-不再派第二遍；执行者缺席或抛出时，记号不落、记录一个字节都不动。记号写不下去当场抛出：
-会话已经出去了而盘上没有凭证，文案带会话 id，并说清再派一次会开出第二个会话；凭证落盘
-之后才回成功。`handoff` 把交接单落盘：线要在册、节点要在认领名单里（否则 `not_holding`，
+推线几步的口径：`next` 是只读规划；`settle` 只做「这一个节点结束了」一件事——两个门先过（节点
+不在认领名单是 `not_holding`，交接单缺席或还是 `pending` 是 `nothing_to_settle`，都一个字节不动），
+插件的收尾半在拿锁之前问完（扫描、载入、逐个询问都在同一份现场上做，插件答多久都不占着锁），进锁
+后线与交接单各重读一次、结算按重读的这份算，动过的记录先留字节快照、中途失败按快照放回去。落地的
+是：判决进 `path`、认领放下、图落 `completed` / `shelved`，随后收尾插入缝把插件要的节点落图——
+插进来的节点挂在**这一单本该开的下一个节点之前**（结算判据挑中的那个是插入的目标，它被重挂到新
+节点之下），于是它按排序排在那件活的前面；结算自己不补槽、不停线、不落材料、不开会话。
+
+`close` 与 `advance` 是同一个应用步的两种收尾：先补满空槽（线自己的 `parallel` 减手里的节点数，
+按图上的次序取，受这条线的选材范围与别的线的持有约束），再读一次计划——交回 `dispatch` 就把手里
+还没开过会话的格子交给执行者（每格一个赛跑着开，一格里一个会话），交回 `stop_pipeline` 且手是空
+的就把线转 `inactive`。`close` 不交执行者（工具在 `PfOpenOptions.executor` 缺席时的那个档），
+`advance` 交；两者都不结算——节点结束这件事归 `settle`。线的决定不从这里进：想停线是
+`ledger.cycles.setStatus(<线>, 'inactive')`，想点名下一个节点是 `ledger.cycles.hold`，判定用的策略
+住在线自己的记录里（节点的 `mode`、线的 `when_shelved`、边界指令的 `stop_after_nodes`），结算只读
+它们。
+
+`prepare` 是派发准备的写侧、单独一个入口——它读同一份规划、只接受交回 `dispatch` 的那一份，把
+提示词与运行稿按同样的落点落下（交接单模板随材料交回；线配了 `source: ticket` 的读数且门上有
+生效值时，模板多带一格 `reading`），不开会话、不碰执行者；`dispatch` 是整段派发——先读这一格
+（线、节点）的 `started` 记号：它已经在盘上就直接答 `already_open`（不碰执行者、不写一个字节；
+`session` 缺席，那张收据属于当初开出它的那次调用），否则先过插件的拦下缝（任何一家拦就是拦，
+错误码 `dispatch_blocked`，理由逐条列在错误文案里），再做派发准备（与 `prepare` 同一份材料）。
+这一格（线、节点）的提示词**已经在盘上**时，准备这一步整个跳过：那份提示词是应用步落的，
+而「提示词在盘上、`started` 记号不在」这一对盘上事实本身就是一次派发，哪怕规划此刻还在等交接单
+——跳过时不落第二份材料，只落 `started` 记号。绿灯才把请求交给注入的执行者，请求带着这一格解析
+出来的 `spawner` 与 `model`（本次调用点名 > 线的策略 > 机器的开关）。交回的只是收据：`opened`
+带 `session`，说的是会话已经开着；节点的收场由 worker 写交接单、再由 `settle` 结算。记号随之落盘，
+规划从此把这一格算作在飞，不再派第二遍；执行者缺席或抛出时，记号不落、记录一个字节都不动。记号
+写不下去当场抛出：会话已经出去了而盘上没有凭证，文案带会话 id，并说清再派一次会开出第二个会话；
+凭证落盘之后才回成功。演练档（`DSH_CONDUCT_SPAWN_DRY_RUN`）下会话不开、记号也不落，格子仍然是
+可派的，演练从来不需要拆。`handoff` 把交接单落盘：线要在册、节点要在认领名单里（否则 `not_holding`，
 什么都没写就拒绝），判决词只收 `completed` / `failed` / `stopped`（`pending` 是重跑的记号），
-票据落在 `signals/<线>/<节点>.json`，同一节点的第二张票整文件顶上。`close` 收线结算：节点不在
-认领名单（`not_holding`）、交接单缺席或还是 `pending`（`nothing_to_settle`）都是红灯，一个字节
-都不动；结算判据与规划共用同一份——判决进 path、认领放下、节点落 `completed` / `shelved`，
-补槽的一格一钉，决定停的把线转 `inactive`（线不在服务中时只记录，线的状态一个字不写）；结算的记录写入全程持锁：
-插件那一半（扫描、载入、逐个询问）在拿锁之前走完，基于同一份现场（线、交接单、图快照），
-插件答多久都不占着锁；进锁后线与交接单各重读一次，结算按重读的这份算，
-动过的记录先留字节快照，中途失败按快照放回去；收尾插入缝在结算之后跑。
+票据落在 `signals/<线>/<节点>.json`，同一节点的第二张票整文件顶上。
 `doctor` 两半都接：插件面是严格面——装上的插件先逐插件列一条（名字、摘要、旋钮、标签、
 方法、来源与命令，全从声明读出），再逐条列坏点；记录面四格——`init` 的四份布局
 齐不齐、图有没有环与悬空引用、线手里的节点还在不在图上，以及合并驱动的两个键在不在本项目
@@ -377,9 +391,9 @@ id，写口认的是节点已有的那个目录。
 不当作在场，下一步该怎么办也一并说清，其余格子照常算完，不被这一格拖住）。
 没有 `.pf/` 的新项目不算红，那一格只说该跑一次 `ledger.init`。
 
-**`closeWith` 与 `close` 落的是同一次结算。** 两个动作共用一套判据、一套落地步骤，区别只在
-收尾答案从哪来：`close` 按判据自己看着办，`closeWith` 收调用方给的那几格——`decision`（`continue` /
-`stop`）、`note`（一行理由）、`named`（点名下一个节点）。`close` 的签名与行为一个字没动。
+**`close` 是 `settle` 加应用步，不开会话。** 用同一套收尾判据，落地多走一步：补满空槽，停了且
+手空的线转 `inactive`。开不开会话是 `close` 与 `advance` 的唯一区别；线接不接着走、下一个点谁，
+不在这里答——那是线的状态（`ledger.cycles.setStatus`）与认领（`ledger.cycles.hold`）的事。
 
 **`handoffForm` 交回 `HandoffForm { cycle; readings }`**：`readings` 是这条线要 worker 上报的读数格
 （`source: ticket` 的声明，且它的 `when_knob` 在链上有生效值），按声明次序，一格一个
@@ -395,14 +409,16 @@ id，写口认的是节点已有的那个目录。
 ### 只读规划（`conductor.next`）
 
 `next` 读图、线、指令、交接单与派发记号，算出「下一步该干什么」，一个字节都不写：它不持锁、
-不认领、不写 prompt、不碰执行者。要把下一步做出去，路是 `conductor.dispatch`——`next` 这条
-路上没有执行的岔口。回答本身就是一份计划：挑中谁、为什么是它、被谁挡在外面、这一步之后停
-在哪儿。
+不认领、不写 prompt、不碰执行者。写侧是各自只做一件事的动作：`conductor.settle` 收这一单
+（判决进 path、认领放下、图落态、收尾插件缝跑完），`conductor.dispatch` 开一格自己的会话，
+`conductor.advance` 把认领、材料、会话按次序串成一步（宿主自己推线时用）。回答本身就是一份计划：
+挑中谁、为什么是它、被谁挡在外面、这一步之后停在哪儿。
 
-动作是六个词之一：`dispatch`（节点与它的 prompt 落点都齐了，交给执行者）、`open_node`（线手
-上还没有节点、或收尾空出了槽，该把排序挑出来的那几个钉下来）、`stop_pipeline`（没得做了 /
-有人叫停 / 这条线不在服务中）、`wait`（时候没到：交接单还没结果或还是 `pending`、会话已经
-开出去了）、`ask_user`（状态自己说不清）、`no_cycle`（一条线都还没有，开线是人的意思）。
+动作是六个词之一：`dispatch`（节点已被认领：交给执行者；它这一格的材料还没落时 `dispatch` 顺手
+补上）、`open_node`（线手上还没有节点、或收尾空出了槽，该把排序挑出来的那几个钉下来）、
+`stop_pipeline`（没得做了 / 有人叫停 / 这条线不在服务中）、`wait`（时候没到：交接单还没结果或
+还是 `pending`、会话已经开出去了）、`ask_user`（状态自己说不清）、`no_cycle`（一条线都还没有，
+开线是人的意思）。
 
 - **ready 与 running 是读出来的标签**：ready = 自己是 todo、依赖都交付（悬空依赖视同交付）、
   且没有别的线拿着；running = 某条线此刻拿着的 todo。盘上只有三态与线的 `holding`，两个标签
@@ -416,10 +432,12 @@ id，写口认的是节点已有的那个目录。
 - **计划交动作，不交写侧的命令**：收节点、落 prompt、钉下一个这些机械步留在动作身后，计划
   只把「还没跑」这件事说成 `settling`。
 
-问法（`NextQuery` 的可选字段，都可不给）：`cycle` 点名一条线；`plan` 明写「只读这一档」，只
-收 `true`——写 `false` 当场拒绝，因为执行归 `conductor.dispatch`；`after` 点名一个已经交回
-交接单的节点，问「按它收，这条线会走到哪」（收尾预演，只算不写）；`decision` / `note` /
-`node` 是收尾那一步的答案：继续或停下、一句理由、改点名哪个节点。
+问法（`NextQuery` 的可选字段，都可不给）：`cycle` 点名一条线；`after` 点名一个已经交回交接单
+的节点，问「按它收，这条线会走到哪」（收尾预演，只算不写）。
+
+命令面一眼对应：`plan` 读这份计划，`settle <node>` 收一单，`cycle hold <cycle> <node>` 钉住计划
+点的那个，`dispatch <cycle>` 开它的会话；`advance` 是钉、材料、会话三步的合成词，标准流程不必
+经过它。
 
 ## 插件
 
@@ -437,8 +455,8 @@ id，写口认的是节点已有的那个目录。
   或只写时机不写动作，都是声明问题。
 - **两道门**：收尾插入——插件交一份 offer（节点标题、标签、正文），经核心机制落图，
   节点、spec.md、依赖边都成为图的一部分；派发拦下——各家各交一句理由，任何一家拦就是拦
-  （错误码 `dispatch_blocked`，理由逐条列在错误文案里）。插入只发生在收尾这一步：`next`
-  是只读规划，不写记录、不插节点。
+  （错误码 `dispatch_blocked`，理由逐条列在错误文案里）。插入只发生在收尾这一步——`settle`，以及
+  把结算串起来的 `close` / `advance`；`next` 是只读规划，不写记录、不插节点。
 - **运行时容忍、doctor 严格**：坏插件在运行时折成一句 WARNING、这一轮不出力，主流程照常；
   doctor 把坏点逐条列出——声明、实现装载、自带技能、认领的来源，外加对着替身项目把实现
   真实问一遍（声明配了门而实现缺入口、答非所问都算坏点）——另报两张撞名表：插件旋钮撞
@@ -458,11 +476,14 @@ id，写口认的是节点已有的那个目录。
 - `class SimulatedExecutor implements Executor` —— 模拟开出一个会话：按次序交回 `sess-1` /
   `sess-2` …，并把收到的每次派发请求记在 `dispatched` 里；脚本是 `'open'`（缺省）、`'throw'`
   （开不出会话就抛）或 `'hang'`（永不落定），给函数就按请求与序号逐次现算。
-- `DispatchRequest { cycle?; node?; role?; prompt; spawner?; dryRun?; zcodeDataDir? }`，
-  `OpenedSession { sessionId?; host? }`。后三格都由派发这一次调用现读：
+- `DispatchRequest { cycle?; node?; role?; prompt; spawner?; model?; dryRun?; zcodeDataDir? }`，
+  `OpenedSession { sessionId?; host? }`。后几格都由派发这一次调用现读：
   - `spawner`：这场会话由哪个 spawner 开（词或路径）。次序是本次调用点名的 `spawner` > 线的
     `spawner` 策略 > 机器的 `DSH_CONDUCT_SPAWNER`；都没说时这一格缺席，执行者自己的缺省说了算。
     本次点名走 `conductor.dispatch({ spawner })`（输入的形状是 `ConductorDispatchInput`）。
+  - `model`：这场会话用哪条模型路由，一个 `provider/model` 的词、整格交给执行者。次序是本次
+    调用点名的 `model` > 线的 `model` 策略 > 机器的 `DSH_CONDUCT_MODEL`；都没说时缺席，执行者
+    自己的缺省说了算。
   - `dryRun`：演练档开着时是 `true`（缺席即关）。调用照做、回执照给，但执行者不许真的开一场会话。
   - `zcodeDataDir`：只有解出的 spawner 是 `zcode` 那个词时才有；ZCode 宿主的 `.zcode` 根就在那里。
 
@@ -477,6 +498,7 @@ id，写口认的是节点已有的那个目录。
 | `PF_PLUGINS_DIR` | 插件目录 | 一个插件一个子目录的那个目录；去掉首尾空白，空值读出厂缺省 `<root>/plugins`；以 `~` 开头的路径按本机 home 展开（光杆 `~` 就是 home 本身） |
 | `DSH_CONDUCT_SPAWNER` | `conductor.dispatch` | 下一场会话由哪个 spawner 开：`dsh` / `zcode`，或一条路径。本次调用点名与线的策略都压过它 |
 | `DSH_CONDUCT_SPAWN_DRY_RUN` | `conductor.dispatch` | 演练档：值不是 `''` / `0` / `false` / `False` 就是开，请求多带 `dryRun: true` |
+| `DSH_CONDUCT_MODEL` | `conductor.dispatch` | 下一场会话用哪条模型路由（`provider/model`，整格交给执行者）。本次调用点名与线的 `model` 策略都压过它；都没说时这一格缺席，执行者的缺省说了算 |
 | `DSH_SESSION_ID` | `ledger.dag.add` | 本进程自己的会话 id：登记节点时作为这个节点的 discussion 会话记进它的会话档。尽力而为，写不进去也不回滚已登记的节点。本引擎只在这一处读它：另一个读点（本机自答「这台机器就是 dsh 宿主」）在引擎里没有落点——引擎不起进程，「这台机器是哪个宿主」由执行者接缝决定 |
 | `ZCODE_DATA_BASE_DIR` | `conductor.dispatch` | ZCode 宿主的数据根（`.zcode` 挂在它下面，本机 home 为缺省）；只有 spawner 解出来是 `zcode` 这个词时请求才带这一格——spawner 写成一条路径时不带，这一格只认那个词 |
 

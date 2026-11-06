@@ -20,6 +20,18 @@
 - 节点目录 `.pf/nodes/<id>/` 由 add 立起、remove 带走：add 只立目录、不立 spec.md（它的缺席就是「要求还没写」），run.md 由派发准备立起。
 - 并行档（`worktree_mode` 为 `fork`）：工作树 `.pf/worktrees/<短 id>`、出口分支 `pf/<短 id>`；那几步 git 由 agent 自己敲，引擎不留那几步的记录、不做合回、也不替它写判决。
 
+## 命令面
+
+- **一个动词 = 一个操作。** `plan` 只读（一个字节不写）、`settle` 只收一单、`cycle hold` 只认领、
+  `dispatch` 只开会话（材料不在盘上时顺手落——那是开它所需的准备）、`handoff` 只写票。选项只塑形：
+  说哪条线、哪个项目、怎么回（`--json`）、用哪个路由（`--spawner` / `--model`）、读哪一单的收尾
+  预演（`--after`）——选项永远不换操作。
+- **组合只能是一个名字就写着合成的动词。** `advance` = 认领 + 材料 + 会话；`close` = 结算 + 补槽 /
+  停线。要按次序做几步就跑那个动词本身；标准流程永远可以用单动作拼出来（`plan` → `cycle hold` →
+  `dispatch`），合成词不新增语义。`tests/words-surface.test.ts` 钉着这几个动词的选项表。
+- **状态归状态、单归单。** 停线跑 `cycle status`，点名下一个跑 `cycle hold`，写约束跑 `instruction`；
+  收尾只管它自己那一单。读用 `plan`，写用那几个写动词，各有各的名字。
+
 ## 语料与测试
 
 - 黄金语料一个用例一个目录（`tests/fixtures/<用例名>/`）：`input/` 是操作前的记录，`op.json` 是一次操作（参数按位展开、不经过 argv），`expected/` 是操作后的产物。`"expect": "return"` 的用例只比返回值，产物带当天日期的用例用 `"clock"` 钉死时钟。

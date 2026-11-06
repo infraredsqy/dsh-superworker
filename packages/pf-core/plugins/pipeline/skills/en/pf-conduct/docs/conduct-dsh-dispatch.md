@@ -13,9 +13,9 @@
   lands this cell's material when the prompt is not on disk, hands the request to the executor seam, and writes
   the `started` claim only once a session is really out.
 - **The automatic relay**: the same `dispatchCell`, fired by `turn/end`. The relay listens to **the sessions this host
-  opened itself** (tracked when a dispatch returns); after each turn it reads the plan once, and only a plan saying
-  `dispatch` opens the next round — a plan saying `wait` is never overridden. The `autoRelay` switch (on by default)
-  turns the trigger off; the button keeps working either way.
+  opened itself** (tracked when a dispatch returns); after each turn the host runs `advance` itself — that is the half
+  that applies the plan. A plan saying `dispatch` opens the next sessions, and a plan saying `wait` is never overridden.
+  The `autoRelay` switch (on by default) turns the trigger off; the button keeps working either way.
 
 **The one seam is `Executor`**: the engine knows only `dispatch(request)` and never opens a session itself. This host
 hangs `openNodeSession` (`executor.ts`) on it, and one open is five steps: probe the host for an `agents` service
@@ -39,9 +39,10 @@ read the started claim -> the plugin dispatch gate -> the material (landed only 
 
 - **The claim is read first.** The first thing `conductor.dispatch` does is look for this cell's `started` on disk;
   when it is there the answer is `already_open`, not one byte is written, and the executor is called not once.
-- **The material lands second.** When the prompt is already on disk (landed by the pinning step) the preparation is
-  skipped; when it is not, `prepareDispatch` lands the prompt and this round's `run.md` (the run doc is created
-  exclusively, and one already written is left untouched).
+- **The material lands second.** When the prompt is already on disk the preparation is skipped; when it is not,
+  `prepareDispatch` lands the prompt and this round's `run.md` (the run doc is created exclusively, and one already
+  written is left untouched). In the standard flow this is where the material is written: `cycle hold` writes the
+  claim only, and landing the material belongs to `dispatch`.
 - **The claim is written last.** `started` lands only once a session is really out. A claim that cannot be written is
   an incident, not a warning: the session is out and nothing on disk says so, so the call throws with the session id
   in the sentence and says that dispatching again opens a second session.
@@ -55,32 +56,32 @@ read the started claim -> the plugin dispatch gate -> the material (landed only 
 
 ## 3. No opener: write nothing
 
-The two verbs in the engine's words layer (`answer()`) read the same one thing: **whether this call has a seam for opening a session**
+The verbs in the engine's words layer (`answer()`) that can open a session read the same one thing: **whether this call has a seam for opening a session**
 (`io.openerAvailable`, filled in by the caller from `sessionOpenerAvailable()`, true under the drill switch alone).
+`settle` opens none, so that question never reaches it.
 
-- `dispatch <cycle>`: it reads the pair of disk facts first, node by node — a `started` on disk counts as "already
-  opened"; without one it requires the prompt on disk (and refuses when it is absent, saying which step writes that
-  prompt). Having read them and confirmed this process has no opener, **it refuses before the engine is reached**:
-  exit code 2, not one byte written, and the sentence names the panel (寻路中心) and the path of every prompt, then
-  gives the two ways a person finishes this cell by hand (dispatch it in the panel, or open a new session and paste
-  that line in). When no node is left to dispatch there is another sentence: a node already opened is not dispatched
-  again.
-- `next --spawn`: the plan still prints and the material still lands (the pinning step lands the prompt anyway),
-  and the spawn step only writes `spawn_error` into the answer, claiming no node at all — the call never reaches the
+- `dispatch <cycle>`: it reads the `started` claim first, node by node — one on disk counts as "already opened";
+  only when none is there does it go on. Having confirmed this process has no opener, **it refuses before the engine
+  is reached**: exit code 2, not one byte written, and the sentence names the panel (寻路中心), where each prompt
+  would land, and the way to write the material first (`prepare --cycle <cycle>`), then gives the two ways a person
+  finishes this cell by hand (dispatch it in the panel, or open a new session and paste that line in). When no node
+  is left to dispatch there is another sentence: a node already opened is not dispatched again.
+- `advance`: the plan still prints, the nodes still get pinned, no material lands (that is the dispatch's step), and
+  the opening step only writes `spawn_error` into the answer, claiming no node at all — the call never reaches the
   engine. That is what "claim nothing" means: a placeholder opener that refused after the claim would leave the cell
   "already open, with no session behind it".
-- `next --after <node>` lands the material and opens nothing (the skill's command carries no `--spawn`). That
-  is the division of labour behind the skill's two commands (first `next --after`, then `dispatch`): the second
-  reads the prompt the first wrote.
+- `settle <node>`: it records the step, marks the node and runs the close's plugin seam through, landing no prompt and
+  opening no session at all. That is the division of labour behind the skill's two commands (first `settle`, then
+  `advance`): the second one pins the node, and the dispatch step lands its prompt and hands it to the executor.
 
 **The drill.** When `DSH_CONDUCT_SPAWN_DRY_RUN` holds anything outside `''` / `0` / `false` / `False`, `engine.mjs`
-hands the engine a `SimulatedExecutor`: the call walks the whole way, the session id is `sess-N`, and the `started`
-claim lands as usual — it rehearses **the whole chain**. So a cell rehearsed that way and really dispatched again
-afterwards needs `cycle retry <cycle> <node> --drop` first, to take the claim away.
+hands the engine a `SimulatedExecutor`: the call is made and answered, the session id is `sess-N`, no session opens,
+and the `started` claim does not land either — it rehearses **the whole chain** and leaves not one byte on disk to
+undo. So a cell rehearsed that way is dispatched for real straight away.
 
 **The host side honours the same switch.** In a drill the native opener creates no agent and answers a receipt
 whose host is `drill`, carrying no session id — which is also why the relay never takes it for one of its own
-sessions. The claim still lands, and it comes away the same way.
+sessions. The claim stays off disk here too, so nothing comes away afterwards.
 
 ## 4. The dispatch chain and its failure modes
 
@@ -94,7 +95,7 @@ sessions. The claim still lands, and it comes away the same way.
   dispatch would open again — either land the claim as that sentence says, or take it all back and start over.
 - **The session died, the claim is still there.** `started` is the only "already opened" evidence, so the plan never
   dispatches that cell again. There is one way to reopen it: `cycle retry <cycle> <node> --drop` (the claim and the
-  old ticket go together), then `cycle hold <cycle> <node>`, then `next --cycle <cycle> --spawn --json`.
+  old ticket go together), then `cycle hold <cycle> <node>`, then `dispatch <cycle>`.
 - **Two lines side by side.** The waking line may be running git on the same tree, and a write hitting `index.lock`
   is a momentary collision: wait a few seconds and re-run the same command, and when two or three tries still do not
   free it, stop and hand it to the user; the lock file belongs to a live process and must not be deleted.
