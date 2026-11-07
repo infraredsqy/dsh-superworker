@@ -15,7 +15,7 @@ import { hashDirectory } from './helpers/hash-dir.ts';
  * red, while a record file that changes must.
  */
 
-const repoRecordDir = fileURLToPath(new URL('../.superworker', import.meta.url));
+const repoRecordDir = fileURLToPath(new URL('../../../.superworker', import.meta.url));
 
 function makeTempTree(): string {
   const root = mkdtempSync(join(tmpdir(), 'superworker-hash-'));

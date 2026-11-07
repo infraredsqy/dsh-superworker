@@ -41,7 +41,7 @@ export default function globalSetup(): () => void {
   }
   const homeSandbox = mkdtempSync(join(tmpdir(), 'superworker-suite-home-'));
   process.env.SUPERWORKER_HOME_DIR = homeSandbox;
-  const recordDir = fileURLToPath(new URL('../.superworker', import.meta.url));
+  const recordDir = fileURLToPath(new URL('../../../.superworker', import.meta.url));
   const before = hashDirectory(recordDir);
   return () => {
     try {

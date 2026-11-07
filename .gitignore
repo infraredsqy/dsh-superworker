@@ -1,8 +1,7 @@
 .tmp/
 .work*/
-# The record ledger of a workspace, local to the machine that runs the pipeline.
-# This checkout's own record is still `.pf` until `migrate 0.1.0` runs here; flip this line then.
-/.pf/
+# The record ledger of a workspace, local to the machine that runs the pipeline
+/.superworker/
 # anchored: the build output is the root's own lib/, not any source directory named lib (tools/lib/)
 /lib/
 # The in-repo engine package (packages/superworker-core) builds its own product into dist/ — its tsdown
