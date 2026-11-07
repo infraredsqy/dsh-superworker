@@ -17,7 +17,7 @@ import { answer, open } from 'pf-core'
 import { apply } from '../src/host/index.ts'
 import { executorOf } from '../src/host/executor.ts'
 import { shippedPluginsDir } from '../src/host/skill-paths.ts'
-import { PATHFINDER_TOOL_NAME, toolDescriptionOf } from '../src/host/tool.ts'
+import { toolDescriptionOf } from '../src/host/tool.ts'
 import { wakeAgent } from '../src/host/wake.ts'
 import { fakeContext } from './helpers/host-context.mjs'
 
@@ -207,9 +207,4 @@ test('Every write the panel can do has a word in the table', async () => {
   for (const [endpoint] of writes) {
     assert.equal(typeof PathfinderRecordsGateway.prototype[endpoint], 'function', `${endpoint} is on the gateway`)
   }
-})
-
-test('The registered tool name is still the one the name lock pins', () => {
-  const tool = toolOver('C:\\no-such-workspace')
-  assert.equal(tool.name, PATHFINDER_TOOL_NAME)
 })

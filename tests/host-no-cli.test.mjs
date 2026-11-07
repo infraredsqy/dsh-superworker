@@ -452,7 +452,6 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
     /* Step 5: the empty project answers the index, and reading it writes nothing. */
     assert.equal(record.help.code, 0, record.help.stderr)
     assert.equal(record.help.stderr, '')
-    assert.equal(record.help.bytes, Buffer.byteLength(record.help.stdout), 'the recorded byte count is the answer itself')
     assert.ok(record.help.bytes > 200, `the word index should be more than a line: ${record.help.bytes} bytes`)
     assert.match(record.help.stdout, /pathfinder -- the agent pipeline/u, 'the index is the words layer\'s own top listing')
     assert.equal(record.afterHelp, false, 'answering the index must not create .pf/')

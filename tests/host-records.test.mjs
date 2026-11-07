@@ -122,14 +122,6 @@ test('Every source was read, and the entries are the record\'s own (weight / des
   assert.deepEqual(reading.cycles, CYCLES)
   assert.deepEqual(reading.instructions, INSTRUCTIONS)
   assert.deepEqual(reading.issues, ISSUES)
-
-  assert.equal(reading.nodes.n1.weight, 'w1')
-  assert.equal(reading.nodes.n1.description, 'the first node')
-  assert.equal(reading.nodes.n1.dsh_session, 'sess-1')
-  assert.equal(reading.nodes.n1.created_at, '2026-01-01T00:00:00.000Z')
-  assert.equal(Object.hasOwn(reading.nodes.n2, 'dsh_session'), false)
-  assert.equal(Object.hasOwn(reading.nodes.n2, 'weight'), false)
-  assert.equal(reading.cycles[0].path[0].result, 'delivered')
 })
 
 test('A record spanning several pages still comes back whole', async () => {

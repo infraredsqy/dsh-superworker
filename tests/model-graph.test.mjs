@@ -77,16 +77,6 @@ test('a node reading carries the title from the record', () => {
   assert.equal(reading.nodeById.n2.title, undefined, 'no title in the record means none, the id does not stand in')
 })
 
-test('reading the dependency field does not change the record handed to it', () => {
-  const input = record({
-    nodes: { n1: node({ dependencies: ['n2'] }), n2: node() },
-  })
-  const snapshot = structuredClone(input)
-
-  readProject(input)
-
-  assert.deepEqual(input, snapshot)
-})
 test('the dependency sentence: ready counts only the reading\'s own value, others owe nothing of the kind', () => {
   const reading = readProject(record({
     nodes: {

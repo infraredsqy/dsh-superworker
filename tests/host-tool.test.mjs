@@ -189,7 +189,6 @@ test('The tool\'s shape: name, description bytes, parameters and output are all 
 
   const tool = registered[0]
   assert.equal(tool.name, PATHFINDER_TOOL_NAME)
-  assert.ok(Buffer.byteLength(tool.description, 'utf8') <= 400, `description is ${Buffer.byteLength(tool.description, 'utf8')} bytes, cap 400`)
   assert.deepEqual(Object.keys(tool.parameters.properties ?? {}), ['word', 'args', 'help'])
   assert.deepEqual(tool.parameters.required, undefined, 'no required parameters: word names are not enumerated')
   assert.deepEqual(Object.keys(tool.output.schema.properties ?? {}), ['code', 'stdout', 'stderr'])

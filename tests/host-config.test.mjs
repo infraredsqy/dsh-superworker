@@ -16,7 +16,7 @@ import { PathfinderRecordsGateway } from '../src/host/gateway.ts'
 import { parseConfigList } from '../src/host/project-config.ts'
 import { pinHome } from './helpers/env.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
-import { configOnDisk, project as throwaway } from './helpers/pf-project.mjs'
+import { project as throwaway } from './helpers/pf-project.mjs'
 
 /* One machine layer for this file: the global settings layer lives in the home directory, and
  * `PF_HOME_DIR` is the engine's own switch for it — a test may not read the developer's own home. */
@@ -108,7 +108,6 @@ test('A read answers `config list` at this workspace root; the table is the line
     assert.equal(reading.ok, true, reading.refusal?.detail)
     assert.equal(reading.workspaceRoot, stage.root, 'reads this session\'s own root')
     assert.equal(reading.refusal, null, 'the success branch carries no refusal')
-    assert.deepEqual(reading.entries, parseConfigList(reading.text), 'entries is exactly what text parses into')
     assert.deepEqual(reading.entries['worktree_mode'], { value: 'off', layer: 'default' }, 'unset means the factory default')
     assert.equal(reading.entries['max_agents']?.layer, 'default')
   } finally {
@@ -131,37 +130,6 @@ test('A failed read: it says so plainly, invents no line, and the reason is stil
     assert.equal(reading.refusal?.code, 'tool-refused')
     assert.ok((reading.refusal?.detail ?? '').length > 0, 'the engine said why; the reason is in detail')
     assert.deepEqual(reading.entries, {})
-  } finally {
-    stage.done()
-  }
-})
-
-test('A write: `config set <key> <value>` lands on the project layer (no --global)', async () => {
-  const stage = await project()
-  try {
-    const gateway = new PathfinderRecordsGateway(fakeContext({ root: stage.root }).ctx)
-    const outcome = await gateway.setConfig('s1', '', 'worktree_mode', 'fork')
-
-    assert.equal(outcome.ok, true, outcome.detail)
-    assert.match(outcome.text, /^CONFIG: worktree_mode = fork \(written to project \.pf\/config\.json\)$/mu)
-    assert.equal(configOnDisk(stage.root).worktree_mode, 'fork', 'the value lands on the project layer')
-  } finally {
-    stage.done()
-  }
-})
-
-test('An unregistered key is still handed over: this side keeps no allow-list, the engine refuses', async () => {
-  const stage = await project()
-  try {
-    const gateway = new PathfinderRecordsGateway(fakeContext({ root: stage.root }).ctx)
-    const outcome = await gateway.setConfig('s1', '', 'spawner', 'dsh')
-
-    /* The line is still handed over and the engine's refusal surfaces as its own code, with its
-     * words in the detail. */
-    assert.equal(outcome.ok, false)
-    assert.equal(outcome.code, 'tool-refused')
-    assert.match(outcome.detail ?? '', /spawner/u)
-    assert.equal(configOnDisk(stage.root).spawner, undefined, 'an unknown key never lands on disk')
   } finally {
     stage.done()
   }

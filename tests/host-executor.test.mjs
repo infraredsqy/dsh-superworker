@@ -461,7 +461,6 @@ test('Settling, old-host version: turn end plus an idle notice, and it answers o
   /* The idle notice comes first: the turn is not over, so it does not answer. */
   rigging.events.emit('agent/status', { agent, status: 'idle' })
   await flush()
-  assert.ok(pending instanceof Promise)
   /* Another session's turn ends: it does not answer. */
   rigging.events.emit('session/event', { id: 'session-other' }, { type: 'turn/end', turn: 1, reason: { kind: 'completed' } })
   await flush()

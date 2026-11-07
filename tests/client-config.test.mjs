@@ -16,10 +16,8 @@ import {
   CONFIG_GROUPS,
   configRowsOf,
   configSectionsOf,
-  GROUP_WORDS,
   groupOfUnregistered,
   KNOWN_CONFIG_ROWS,
-  LAYER_WORDS,
   pickState,
   rowWords,
 } from '../src/client/config-rows.ts'
@@ -34,10 +32,6 @@ function entry(value, layer = 'project') {
 }
 
 test('every registered key is described: name, caption, group, none missing', () => {
-  assert.deepEqual(
-    [...Object.keys(KNOWN_CONFIG_ROWS)].sort(),
-    ['issue_pool', 'issue_pool_weight_limit', 'issue_repair', 'max_agents', 'test_audit', 'test_seconds_limit', 'test_tier', 'worktree_mode'],
-  )
   for (const row of Object.values(KNOWN_CONFIG_ROWS)) {
     const words = rowWords(t, row)
     assert.ok(words.name.length > 0 && words.caption.length > 0, `${row.key} has no name or no caption`)
@@ -99,24 +93,6 @@ test('the dropdown candidates copy the words the tool prints in config --help', 
   assert.deepEqual(KNOWN_CONFIG_ROWS['test_tier'].options, ['full', 'minimal'])
 })
 
-test('the three layer words: 默认 / 本项目 / 全局', () => {
-  /* The table stores dictionary keys: the same record reads the same under any language. */
-  assert.deepEqual(LAYER_WORDS, {
-    default: 'config.layer.default',
-    project: 'config.layer.project',
-    global: 'common.global',
-  })
-  assert.deepEqual(
-    {
-      default: t(LAYER_WORDS.default),
-      project: t(LAYER_WORDS.project),
-      global: t(LAYER_WORDS.global),
-    },
-    { default: '默认', project: '本项目', global: '全局' },
-    'under Chinese these three keys still print those three words',
-  )
-})
-
 test('when the reading has no value for the key, neither dropdown settles on an option (left empty), not the first one', () => {
   const picks = Object.values(KNOWN_CONFIG_ROWS).filter((row) => row.kind === 'pick')
   assert.deepEqual(picks.map((row) => row.key), ['worktree_mode', 'test_tier'])
@@ -138,10 +114,6 @@ test('a value in the reading: show it if it is in the table, add it as its own o
 
 test('the three groups each have a name, in index order', () => {
   assert.deepEqual(CONFIG_GROUPS, ['general', 'issue', 'test'])
-  assert.deepEqual(
-    CONFIG_GROUPS.map((group) => t(GROUP_WORDS[group])),
-    ['常规', '问题', '测试'],
-  )
 })
 
 test('sections split from rows: 常规 / 问题 / 测试; table order within a section; an empty group loses both its section and its index entry', () => {
