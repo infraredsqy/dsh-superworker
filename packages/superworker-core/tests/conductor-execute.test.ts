@@ -417,7 +417,12 @@ describe('transactionality: records agree after an injected failure', () => {
     expect(existsSync(promptOf(lab.root, 'c1', a))).toBe(true);
   });
 
-  it('a failure in the middle of settling: the snapshot is put back and state.json keeps no half record', async () => {
+  // The injection leans on the Windows read-only attribute: there a read-only target stops the atomic
+  // write (it lands by rename). On a POSIX host rename only asks the directory for permission, so a
+  // read-only ideas.json does not stop the write, and a read-only directory stops the state write
+  // first — the failure this case needs cannot be placed between the two writes. The transaction it
+  // pins is platform-neutral; the lever is not.
+  it.skipIf(process.platform !== 'win32')('a failure in the middle of settling: the snapshot is put back and state.json keeps no half record', async () => {
     const lab = freshLab('superworker-execute-');
     const a = await stageOneNodeLine(lab, 'half-settle');
     const superworker = open(lab.root);

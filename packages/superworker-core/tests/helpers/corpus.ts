@@ -40,8 +40,9 @@ import { open } from '../../src/open';
  *   token again, while a stamp the operation newly wrote takes the next number after the highest
  *   one, in ascending value order (`@t6@…`); both spellings are recognised.
  * - both sides put the records through the same formatting (`jsonBytes`, deep-sorted keys for ideas /
- *   issues) and then fold to LF for the byte compare; layout and other non-record files are folded
- *   to LF and compared directly. A failure points at the line number and context of the first
+ *   issues) and then fold to LF for the byte compare; separators fold to `/` at the same time, so a
+ *   fixture recorded on one platform replays green on another. Layout and other non-record files are
+ *   folded to LF and compared directly. A failure points at the line number and context of the first
  *   difference.
  *
  * Some operations produce a **return value** (the plan of `conductor.next` lands in the return
@@ -390,12 +391,32 @@ function isProseProduct(relPath: string): boolean {
  * other file (layout and such) is folded to LF and compared directly.
  */
 function toComparableText(relPath: string, rawText: string, maps: TokenMaps, root: string): string {
-  if (isProseProduct(relPath)) return toLf(detokenize(rawText, maps, root));
+  if (isProseProduct(relPath)) return foldSeparators(toLf(detokenize(rawText, maps, root)), false);
   const kind = recordKindOf(relPath);
   if (kind === null) return toLf(rawText);
   const tokenized = detokenize(rawText, maps, root);
   const bytes = jsonBytes(JSON.parse(tokenized) as unknown, jsonOptionsForRecord(kind));
-  return toLf(Buffer.from(bytes).toString('utf8'));
+  return foldSeparators(toLf(Buffer.from(bytes).toString('utf8')), true);
+}
+
+/**
+ * The expectation side of the same fold: the fixtures were recorded on one platform, so the same
+ * case has to be green on any of them.
+ */
+function comparableExpected(relPath: string, rawText: string): string {
+  if (isProseProduct(relPath)) return foldSeparators(toLf(rawText), false);
+  if (recordKindOf(relPath) !== null) return foldSeparators(toLf(rawText), true);
+  return toLf(rawText);
+}
+
+/**
+ * A separator carries no meaning for the comparison. A record body keeps one as a doubled backslash
+ * (the escaped spelling inside JSON), a text product as a single one; both fold to `/` on either
+ * side, so a fixture recorded on Windows replays green on a POSIX runner and the other way round. A
+ * single backslash in a record body is an escape such as `\n` and is left alone.
+ */
+function foldSeparators(text: string, escaped: boolean): string {
+  return escaped ? text.split('\\\\').join('/') : text.split('\\').join('/');
 }
 
 function listFilesUnder(dir: string): string[] {
@@ -592,7 +613,10 @@ export async function replayCase(caseDir: string, run?: CorpusRunner): Promise<R
         maps,
         root,
       );
-      const expected = toLf(readFileSync(join(expectedDir, ...rel.split('/')), 'utf8'));
+      const expected = comparableExpected(
+        realRel,
+        readFileSync(join(expectedDir, ...rel.split('/')), 'utf8'),
+      );
       if (actual !== expected) problems.push(diffMessage(rel, actual, expected));
     }
     if (byReturn) {
@@ -603,8 +627,8 @@ export async function replayCase(caseDir: string, run?: CorpusRunner): Promise<R
         // The return value is serialised with two-space indentation — the same formatting the record writer
         // prints JSON with — then tokenised and compared byte for byte.
         const actual =
-          toLf(detokenize(JSON.stringify(returned, null, 2), maps, root)) + '\n';
-        const expected = toLf(readFileSync(expectedReturn, 'utf8'));
+          foldSeparators(toLf(detokenize(JSON.stringify(returned, null, 2), maps, root)) + '\n', true);
+        const expected = foldSeparators(toLf(readFileSync(expectedReturn, 'utf8')), true);
         if (actual !== expected) problems.push(diffMessage('return.json', actual, expected));
       }
     }

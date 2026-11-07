@@ -103,7 +103,7 @@ function summaryNumber(log, name) {
   return match === null ? undefined : Number(match[1])
 }
 
-function tailOf(path, lines = 60) {
+function tailOf(path, lines = 160) {
   const text = readFileSync(path, 'utf8').split(/\r?\n/u)
   return text.slice(Math.max(0, text.length - lines)).join('\n')
 }
