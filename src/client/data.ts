@@ -10,15 +10,15 @@
  * `failure.ts`), and a write that fails answers with one; the panel turns it into words
  * (`src/client/words.ts`), because the panel is the only place that knows the reader's language.
  */
-import type { PathfinderReading } from '../host/contract.ts'
-import type { PathfinderConfigReading } from '../host/project-config.ts'
-import type { PathfinderSessionsReading } from '../host/sessions.ts'
+import type { SuperworkerReading } from '../host/contract.ts'
+import type { SuperworkerConfigReading } from '../host/project-config.ts'
+import type { SuperworkerSessionsReading } from '../host/sessions.ts'
 import type { InstructionScope } from '../host/gateway.ts'
 import type { SessionOpenOutcome } from '../host/executor.ts'
 import { RefusedError, type Failure, type FailureCode, type Outcome } from './failure.ts'
 
 /** The namespace, named after the host-half service key. */
-export const NAMESPACE = 'pathfinder'
+export const NAMESPACE = 'superworker'
 
 export type WriteVerb = 'archive' | 'revive' | 'remove'
 
@@ -44,15 +44,15 @@ const WRITE_ENDPOINTS: Readonly<Record<WriteVerb, string>> = {
 export interface PanelPort {
   readonly source: 'remote' | 'carrier' | 'none'
   /** Read the four records of the named workspace; rejects with a {@link RefusedError} when it cannot. */
-  read(sessionId: string, workspaceRoot: string): Promise<PathfinderReading>
+  read(sessionId: string, workspaceRoot: string): Promise<SuperworkerReading>
   /** The most recent session opened for each cell in the named workspace: where card clicks go. */
-  readSessions(sessionId: string, workspaceRoot: string): Promise<PathfinderSessionsReading>
+  readSessions(sessionId: string, workspaceRoot: string): Promise<SuperworkerSessionsReading>
   /** Record an instruction: hand the user's verbatim text and scope to the tool. */
   say(sessionId: string, workspaceRoot: string, text: string, scope: InstructionScope, cycle: string, node: string): Promise<Outcome>
   /** Archive / revive / delete an instruction. */
   write(verb: WriteVerb, sessionId: string, workspaceRoot: string, id: string): Promise<Outcome>
   /** The named workspace's project settings: effective values and which layer each lives on, from the tool's command. */
-  readConfig(sessionId: string, workspaceRoot: string): Promise<PathfinderConfigReading>
+  readConfig(sessionId: string, workspaceRoot: string): Promise<SuperworkerConfigReading>
   /** Write one project setting; it always lands on this project's layer. */
   setConfig(sessionId: string, workspaceRoot: string, key: string, value: string): Promise<Outcome>
   /** Open, on the host, the session that works one node of one line: the plan's prompt goes in as the first instruction. */
@@ -182,12 +182,12 @@ function portFromCall(source: PanelPort['source'], call: PortCall): PanelPort {
   return {
     source,
     async read(sessionId, workspaceRoot) {
-      const answer = await call<PathfinderReading>('read', readArgs(sessionId, workspaceRoot))
+      const answer = await call<SuperworkerReading>('read', readArgs(sessionId, workspaceRoot))
       if (!answer.ok) throw new RefusedError(answer.failure)
       return answer.value
     },
     async readSessions(sessionId, workspaceRoot) {
-      const answer = await call<PathfinderSessionsReading>('readSessions', { sessionId, workspaceRoot })
+      const answer = await call<SuperworkerSessionsReading>('readSessions', { sessionId, workspaceRoot })
       if (!answer.ok) throw new RefusedError(answer.failure)
       return answer.value
     },
@@ -200,7 +200,7 @@ function portFromCall(source: PanelPort['source'], call: PortCall): PanelPort {
       return answer.ok ? answer.value : refused(answer.failure)
     },
     async readConfig(sessionId, workspaceRoot) {
-      const answer = await call<PathfinderConfigReading>('readConfig', { sessionId, workspaceRoot })
+      const answer = await call<SuperworkerConfigReading>('readConfig', { sessionId, workspaceRoot })
       if (!answer.ok) throw new RefusedError(answer.failure)
       return answer.value
     },

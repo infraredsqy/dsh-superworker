@@ -54,9 +54,6 @@ importers:
       jsdom:
         specifier: ^26.1.0
         version: 26.1.0
-      pf-core:
-        specifier: workspace:*
-        version: link:packages/pf-core
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -66,6 +63,9 @@ importers:
       rolldown:
         specifier: ^1.2.14
         version: 1.2.14
+      superworker-core:
+        specifier: workspace:*
+        version: link:packages/superworker-core
       tsdown:
         specifier: ^0.22.2
         version: 0.22.14(typescript@6.0.3)
@@ -73,7 +73,7 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  packages/pf-core:
+  packages/superworker-core:
     devDependencies:
       tsdown:
         specifier: ^0.23.4

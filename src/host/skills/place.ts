@@ -33,9 +33,9 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, rmdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { PLUGIN_SKILL_FILE, loadPlugins, skillFolders, skillProblems } from 'pf-core'
-import type { PluginFolder } from 'pf-core'
-import type { PfSkillsOutcome } from '../failure.ts'
+import { PLUGIN_SKILL_FILE, loadPlugins, skillFolders, skillProblems } from 'superworker-core'
+import type { PluginFolder } from 'superworker-core'
+import type { SkillsOutcome } from '../failure.ts'
 import { effectOf, logLineOf, messageOf, type SkillHostContext } from '../seams.ts'
 import { MANIFEST_DIR, dshHomeOf, shippedPluginsDir, skillRootOf } from '../skill-paths.ts'
 import { SKILL_NAME, readSkillFile, skillNameOfFile } from './frontmatter.ts'
@@ -45,14 +45,14 @@ import { absent, placedSkills, refused, writeManifest, type PlacedSkill } from '
 export const DEFAULT_LANGUAGE = 'zh'
 
 /** What placing the shipped skills hands back: the outcome, and the undo for whatever landed. */
-export interface PfSkillsInstall {
-  readonly outcome: PfSkillsOutcome
+export interface SkillsInstall {
+  readonly outcome: SkillsOutcome
   /** Take back every file this placement wrote; a no-op more than once, and a no-op after a refusal. */
   dispose(): void
 }
 
 /** Options of one placement: which plugin folders, which language the reader is in, and which home to place under. */
-export interface PfSkillsInstallOptions {
+export interface SkillsInstallOptions {
   /** The plugin directory to read; the shipped one by default. */
   readonly pluginsDir?: string
   /** The host's language when this half can learn it; {@link DEFAULT_LANGUAGE} otherwise. */
@@ -187,7 +187,7 @@ function removeEmptyTree(folder: string): void {
 /**
  * Remove one placed file and the directories this line made for it, deepest first.
  *
- * The directories a skill folder holds are its own shape (`shared/pf/`, `subagent-prompts/`), not
+ * The directories a skill folder holds are its own shape (`shared/sw/`, `subagent-prompts/`), not
  * something the manifest records: they follow from the file's own path, so the walk up from the file
  * to the skill's directory is the whole of it. A directory another file still lives in answers
  * ENOTEMPTY and stays, with that file in it — which is why the attempt is the test, rather than a
@@ -233,8 +233,8 @@ function removePlaced(root: string, skills: readonly PlacedSkill[]): string[] {
  */
 export async function installPluginSkills(
   host: SkillHostContext,
-  options: PfSkillsInstallOptions = {},
-): Promise<PfSkillsInstall> {
+  options: SkillsInstallOptions = {},
+): Promise<SkillsInstall> {
   const dshHome = options.dshHome ?? dshHomeOf()
   const root = skillRootOf(dshHome)
   try {
@@ -252,8 +252,8 @@ export async function installPluginSkills(
 async function place(
   calling: SkillHostContext,
   home: string,
-  which: PfSkillsInstallOptions,
-): Promise<PfSkillsInstall> {
+  which: SkillsInstallOptions,
+): Promise<SkillsInstall> {
   const skillRoot = skillRootOf(home)
   const pluginsDir = which.pluginsDir ?? shippedPluginsDir()
   const scan = await loadPlugins(pluginsDir)
@@ -423,7 +423,7 @@ function disposePlacement(
  * instance captures warnings for a failed start only) still leaves two readable records of the same
  * fact: the manifest on disk and the session's own catalog view.
  */
-export function reportPlacement(host: SkillHostContext, outcome: PfSkillsOutcome): void {
+export function reportPlacement(host: SkillHostContext, outcome: SkillsOutcome): void {
   if (outcome.ok) {
     logLineOf(
       host,
@@ -448,7 +448,7 @@ export function reportPlacement(host: SkillHostContext, outcome: PfSkillsOutcome
  */
 export function installSkillsWhenReady(
   ctx: unknown,
-  options: PfSkillsInstallOptions = {},
+  options: SkillsInstallOptions = {},
 ): unknown {
   const host = ctx as SkillHostContext
   const start = async (): Promise<() => void> => {
@@ -457,6 +457,6 @@ export function installSkillsWhenReady(
     return install.dispose
   }
   const effect = effectOf(host)
-  if (effect !== undefined) return effect(start, 'pathfinder: plugin skills')
+  if (effect !== undefined) return effect(start, 'superworker: plugin skills')
   return start()
 }

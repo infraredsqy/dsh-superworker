@@ -2,10 +2,10 @@
  * The panel's own stylesheets.
  *
  * The sheets live in `src/client/styles/`, in the shape they ship in, and the build joins them into
- * `virtual:pf-styles`; that source is the single one, so no second copy lives here. DSH theme values
+ * `virtual:superworker-styles`; that source is the single one, so no second copy lives here. DSH theme values
  * are not bundled: the real panel's aliases are provided by the shell.
  */
-import css from 'virtual:pf-styles'
+import css from 'virtual:superworker-styles'
 import { PANEL_STYLE_ID, dropStyleTag, ensureStyleTag } from './style-tags.ts'
 
 export const PANEL_CSS: string = css

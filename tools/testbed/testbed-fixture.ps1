@@ -142,7 +142,7 @@ function New-TestbedFixture {
   Write-TextFile -Path (Join-Path $storages 'workspace.json') -Text (($document | ConvertTo-Json -Depth 12) + "`n")
 
   $manifest = [ordered]@{
-    kind = 'dsh-pathfinder-testbed-fixture'
+    kind = 'dsh-superworker-testbed-fixture'
     createdAt = $iso
     root = $Root
     home = $testbedHome

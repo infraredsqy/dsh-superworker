@@ -25,7 +25,7 @@ const DSH_HOME_ENV = 'DSH_HOME'
 const DSH_HOME_DIR = '.dsh'
 
 /** This line's own folder under the DSH home, out of the skill root's way so the provider never scans it. */
-export const MANIFEST_DIR = 'pathfinder'
+export const MANIFEST_DIR = 'superworker'
 /** The manifest file naming every file this line placed. */
 export const MANIFEST_FILE = 'skills.json'
 /** The manifest format this file writes and reads; a manifest of another version is refused, not guessed at. */
@@ -62,12 +62,12 @@ export function manifestPathOf(dshHome: string = dshHomeOf()): string {
  * Where the plugin folders this package ships live.
  *
  * The same relative path answers in both trees: the source half walks up to the checkout, and the
- * bundled `lib/host/index.js` walks up to the installed package — `packages/pf-core/plugins/` sits at
+ * bundled `lib/host/index.js` walks up to the installed package — `packages/superworker-core/plugins/` sits at
  * the root either way. `package.json`'s `files` carries it, which is what makes the skills part of
  * the artifact rather than part of the checkout (`tests/package-surface` holds that).
  */
 export function shippedPluginsDir(): string {
-  return fileURLToPath(new URL(`../../packages/pf-core/plugins/`, import.meta.url))
+  return fileURLToPath(new URL(`../../packages/superworker-core/plugins/`, import.meta.url))
 }
 
 /**

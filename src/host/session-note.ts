@@ -9,7 +9,7 @@
  * other's entries. The reading of notes is elsewhere (`sessions.ts`); nothing here judges which
  * session a node should show.
  */
-import { open } from 'pf-core'
+import { open } from 'superworker-core'
 
 /**
  * Note the session just opened for this node as this round's `run` entry. The engine answers

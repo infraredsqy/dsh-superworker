@@ -1,13 +1,13 @@
 /**
- * The wake: putting the agent-facing `pathfinder` tool in front of exactly the agents that have a
+ * The wake: putting the agent-facing `superworker` tool in front of exactly the agents that have a
  * reason to see it, and nowhere else.
  *
- * Three triggers, one wake. A `.pf/` workspace at the step's start (the fact trigger), the `skill`
- * tool's settled call result, and a user's `/pf-*` invocation in a step proposal. An agent with none
+ * Three triggers, one wake. A `.superworker/` workspace at the step's start (the fact trigger), the `skill`
+ * tool's settled call result, and a user's `/superworker-*` invocation in a step proposal. An agent with none
  * of them keeps exactly the request header it would have without this plugin: no trigger, no tool.
  *
  * This module owns only that decision and its memory. The tool's face lives in `tool.ts`, and the
- * opener seam travels on the host face it is handed (`PathfinderToolHost`), so this file imports
+ * opener seam travels on the host face it is handed (`SuperworkerToolHost`), so this file imports
  * neither: the wake depends on the face it registers and on the seams it reads, nothing else.
  *
  * Registration is per agent scope (`agent.ctx.tools.register`) and idempotent: one agent, one
@@ -22,9 +22,9 @@ import {
   PIPELINE_DIR,
   SKILL_NAME_PREFIX,
   SKILL_TOOL_NAME,
-  definePathfinderTool,
-  type PathfinderToolDefinition,
-  type PathfinderToolHost,
+  defineSuperworkerTool,
+  type SuperworkerToolDefinition,
+  type SuperworkerToolHost,
 } from './tool.ts'
 
 /** The wake's own memory: the agents this process has already armed. One process, one table. */
@@ -42,14 +42,14 @@ const awake = /* @__PURE__*/ new WeakSet<object>()
  * so an agent remembered here never comes back to be armed again, and the entry leaves
  * with the agent object when the runtime collects it.
  */
-export function wakeAgent(agent: object, host: PathfinderToolHost): void {
+export function wakeAgent(agent: object, host: SuperworkerToolHost): void {
   if (awake.has(agent)) return
   try {
     const ctx = agentScopeOf(agent)
-    const registry = toolsOf<PathfinderToolDefinition>(ctx)
+    const registry = toolsOf<SuperworkerToolDefinition>(ctx)
     if (registry === undefined) return
-    const dispose = registry.register(definePathfinderTool(host))
-    effectOf(ctx)?.(() => dispose, 'pathfinder: the pathfinder tool')
+    const dispose = registry.register(defineSuperworkerTool(host))
+    effectOf(ctx)?.(() => dispose, 'superworker: the superworker tool')
     awake.add(agent)
   } catch {
     /* The scope is gone or the registration was refused: the agent is not there to arm.
@@ -86,11 +86,11 @@ export function hasPipelineRecord(root: string | undefined): boolean {
  * Wake one agent whose workspace holds a pipeline record.
  *
  * The third trigger, and the one that makes the tool self-serve: a session sitting in a
- * `.pf/` workspace sees the tool from its first request, with no skill loaded and no
+ * `.superworker/` workspace sees the tool from its first request, with no skill loaded and no
  * guess about the conversation. Every other workspace keeps exactly the header it would
  * have had without this plugin — the answer is a fact on disk, not a judgement.
  */
-export function wakeIfPipeline(agent: object, host: PathfinderToolHost): void {
+export function wakeIfPipeline(agent: object, host: SuperworkerToolHost): void {
   if (isAwake(agent)) return
   const id = agentIdOf(agent)
   if (id === undefined) return
@@ -105,13 +105,13 @@ function isSkillLoad(exec: { name?: unknown; agent?: unknown }, result: { isErro
 
 /**
  * Arm the wake: one listener on the skill tool's settled calls, one on the step
- * proposals that carry a user's `/pf-*` invocation, and one on every step where the
+ * proposals that carry a user's `/superworker-*` invocation, and one on every step where the
  * agent's workspace holds a pipeline record. All three hit the same wake, and the
  * returned disposer takes the listeners back (the line's own effect collects it).
  * A host without an event surface takes nothing — the panel keeps working, only the
  * wake is absent.
  */
-export function installToolWake(host: PathfinderToolHost): () => void {
+export function installToolWake(host: SuperworkerToolHost): () => void {
   const bus = busOf(host.ctx)
   if (bus === undefined) return () => undefined
   const offPost = bus.on('tools/post-execute', (exec: unknown, result: unknown, next: () => Promise<unknown>) => {
@@ -123,7 +123,7 @@ export function installToolWake(host: PathfinderToolHost): () => void {
   })
   const offStep = bus.on('agent/pre-step', (payload: unknown, next: () => Promise<unknown>) => {
     /* The fact trigger runs before the proposal settles: registering here lands the tool
-     * in the request this very step assembles, which is what makes a `.pf/` workspace
+     * in the request this very step assembles, which is what makes a `.superworker/` workspace
      * see it from its first step. The other two triggers ride the same step for a
      * session that started anywhere else. */
     const proposed = (payload as { agent?: unknown } | undefined)?.agent

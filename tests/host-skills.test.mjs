@@ -1,13 +1,13 @@
-/* The skills the pf plugins ship: where they are placed, what is taken back, and which view says so.
+/* The skills the superworker plugins ship: where they are placed, what is taken back, and which view says so.
  *
  * What is locked here is what the placement answers for, read from the place it happens:
  *
  * - one placement puts every method the plugin folders declare into the skill root DSH's filesystem
  *   provider scans (`<dshHome>/skills`, the provider's rank 400), one language per method, with the
  *   bytes of the shipped `SKILL.md` untouched — derived from the folders themselves, not from a list
- *   written down here; the pipeline plugin's three core sheets (`pf-conduct` / `pf-route` /
- *   `pf-instruct`) are part of that set, so the dispatch's `/pf-conduct` line has a skill to read on
- *   a clean machine, and a sheet a body points at (`shared/pf/`) travels inside the method's folder;
+ *   written down here; the pipeline plugin's three core sheets (`sw-conduct` / `sw-route` /
+ *   `sw-instruct`) are part of that set, so the dispatch's `/sw-conduct` line has a skill to read on
+ *   a clean machine, and a sheet a body points at (`shared/sw/`) travels inside the method's folder;
  * - the **session's own view** (`list({ cwd, scope })`, the read a session's catalog does) shows the
  *   placed copy winning every name over the old hand-copied copies at rank 500 — that catalog read is
  *   the judgement's own reading — and a bare `list()` with no layer of its own does *not*: that read
@@ -22,10 +22,10 @@
  * The catalog stand-in (`helpers/skill-catalog.mjs`) implements the two real packages' rules — root
  * ranks and the layer merge — over real directories, and holds the two views separately. The probe
  * readings the ranks were first taken from live in this machine's pipeline record
- * (`.pf/nodes/<uuid>/temp/`), which is not part of the repository; nothing here reads them, and the
+ * (`.superworker/nodes/<uuid>/temp/`), which is not part of the repository; nothing here reads them, and the
  * cases below stand on the stand-in's rules alone.
  *
- *   node --test tests/     (npm test builds packages/pf-core first; this file imports the engine by
+ *   node --test tests/     (npm test builds packages/superworker-core first; this file imports the engine by
  *                           name, so without that build it cannot load)
  */
 import test from 'node:test'
@@ -33,7 +33,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadPlugins, skillFolders } from 'pf-core'
+import { loadPlugins, skillFolders } from 'superworker-core'
 import { apply } from '../src/host/index.ts'
 import { SKILL_ROOT_RANK, manifestPathOf, shippedPluginsDir, skillRootOf } from '../src/host/skill-paths.ts'
 import { readSkillFile } from '../src/host/skills/frontmatter.ts'
@@ -68,7 +68,7 @@ async function shippedSkillFile(method) {
 
 /** A home pair per case: the DSH home this line places under, and the agents home the old copies live in. */
 function homes() {
-  const base = mkdtempSync(join(tmpdir(), 'pf-skills-'))
+  const base = mkdtempSync(join(tmpdir(), 'superworker-skills-'))
   const dsh = join(base, 'home')
   const agents = join(base, 'agents')
   mkdirSync(dsh, { recursive: true })
@@ -131,28 +131,28 @@ test('Installing once: skills land in the root DSH reads skills from, the manife
       assert.deepEqual(readFileSync(placed), readFileSync(await shippedSkillFile(name)), `${name}: installing changed the text`)
     }
     /* The siblings a skill points at travel with it (`pool.md`, `scan.md`, `anti-patterns.md`). */
-    assert.ok(existsSync(join(root, 'pf-issue-repair', 'pool.md')), 'the sibling a skill points at was not installed')
+    assert.ok(existsSync(join(root, 'sw-issue-repair', 'pool.md')), 'the sibling a skill points at was not installed')
 
-    /* The dispatch's first line is `/pf-conduct <node>`, so that method has to be in the catalog on a
+    /* The dispatch's first line is `/sw-conduct <node>`, so that method has to be in the catalog on a
      * clean machine: the three core sheets come from the pipeline plugin, beside the four the issue
      * and test-audit plugins ship. */
-    for (const name of ['pf-conduct', 'pf-route', 'pf-instruct']) {
+    for (const name of ['sw-conduct', 'sw-route', 'sw-instruct']) {
       assert.ok(declared.includes(name), `${name}: the release plugin folders carry no such core skill`)
       assert.ok(existsSync(join(root, name, 'SKILL.md')), `${name}: SKILL.md was not placed under ${root}`)
     }
     /* A sheet the body points at lands inside the method's own folder: the placed root is
-     * `<dshHome>/skills/<method>/`, so `../shared/pf/` would point outside the skill. */
+     * `<dshHome>/skills/<method>/`, so `../shared/sw/` would point outside the skill. */
     assert.ok(
-      existsSync(join(root, 'pf-conduct', 'shared', 'pf', 'subagents.md')),
-      'the shared sheet pf-conduct points at was not installed',
+      existsSync(join(root, 'sw-conduct', 'shared', 'superworker', 'subagents.md')),
+      'the shared sheet sw-conduct points at was not installed',
     )
     assert.ok(
-      existsSync(join(root, 'pf-route', 'shared', 'pf', 'toolcraft.md')),
-      'the shared sheet pf-route points at was not installed',
+      existsSync(join(root, 'sw-route', 'shared', 'superworker', 'toolcraft.md')),
+      'the shared sheet sw-route points at was not installed',
     )
-    for (const name of ['pf-conduct', 'pf-route']) {
+    for (const name of ['sw-conduct', 'sw-route']) {
       assert.equal(
-        readFileSync(join(root, name, 'SKILL.md'), 'utf8').includes('../shared/pf/'),
+        readFileSync(join(root, name, 'SKILL.md'), 'utf8').includes('../shared/sw/'),
         false,
         `${name}: the placed body still points outside the skill directory`,
       )
@@ -180,30 +180,30 @@ test('Self-contained: the three core skills each carry the sheets they reference
     const install = await installPluginSkills({}, { dshHome: h.dsh })
     assert.equal(install.outcome.ok, true, `install refused: ${JSON.stringify(install.outcome)}`)
     const root = skillRootOf(h.dsh)
-    /* The placed root is `<dshHome>/skills/<method>/`, so a body that still said `../shared/pf/...`
+    /* The placed root is `<dshHome>/skills/<method>/`, so a body that still said `../shared/sw/...`
      * would point outside the skill: the placement carries each method's own sheets into its folder
      * and ships the body with the in-folder form. */
-    for (const name of ['pf-conduct', 'pf-route', 'pf-instruct']) {
+    for (const name of ['sw-conduct', 'sw-route', 'sw-instruct']) {
       const body = readFileSync(join(root, name, 'SKILL.md'), 'utf8')
-      assert.equal(body.includes('../shared/pf/'), false, `${name}: the placed body still points outside the skill directory`)
-      const referenced = new Set([...body.matchAll(/shared\/pf\/([a-z-]+)\.md/gu)].map((m) => m[1]))
+      assert.equal(body.includes('../shared/sw/'), false, `${name}: the placed body still points outside the skill directory`)
+      const referenced = new Set([...body.matchAll(/shared\/superworker\/([a-z-]+)\.md/gu)].map((m) => m[1]))
       for (const sheet of referenced) {
         assert.ok(
-          existsSync(join(root, name, 'shared', 'pf', `${sheet}.md`)),
-          `${name}: the shared/pf/${sheet}.md the body references was not placed inside its own directory`,
+          existsSync(join(root, name, 'shared', 'superworker', `${sheet}.md`)),
+          `${name}: the shared/sw/${sheet}.md the body references was not placed inside its own directory`,
         )
       }
     }
     /* Only the sheets a method's own body names travel with it. */
     assert.ok(
-      existsSync(join(root, 'pf-route', 'shared', 'pf', 'philosophy.md')),
-      'pf-route: the philosophy.md the body references was not placed',
+      existsSync(join(root, 'sw-route', 'shared', 'superworker', 'philosophy.md')),
+      'sw-route: the philosophy.md the body references was not placed',
     )
-    assert.equal(existsSync(join(root, 'pf-instruct', 'shared')), false, 'pf-instruct references nothing and still carried a sheet')
+    assert.equal(existsSync(join(root, 'sw-instruct', 'shared')), false, 'sw-instruct references nothing and still carried a sheet')
     /* Unloading takes the directories the placement made, not only the files: an emptied folder left
      * behind would be litter under the skill root for every install cycle. */
     install.dispose()
-    for (const name of ['pf-conduct', 'pf-route', 'pf-instruct']) {
+    for (const name of ['sw-conduct', 'sw-route', 'sw-instruct']) {
       assert.equal(existsSync(join(root, name)), false, `${name}: the directory is still in the skill root after uninstall`)
     }
   } finally {
@@ -211,14 +211,14 @@ test('Self-contained: the three core skills each carry the sheets they reference
   }
 })
 
-test('The two copies of a shared sheet are byte-identical: subagents.md is kept in both pf-conduct and pf-route, zh and en each paired', () => {
+test('The two copies of a shared sheet are byte-identical: subagents.md is kept in both sw-conduct and sw-route, zh and en each paired', () => {
   /* The placement rule ("each skill carries the sheets it references") keeps this page duplicated
    * on purpose — the guard here is that the copies never drift. A link cannot replace the second
    * copy: the sheet has to travel inside the method's own folder. */
   const plugins = shippedPluginsDir()
   for (const lang of ['zh', 'en']) {
-    const pages = ['pf-conduct', 'pf-route'].map(
-      (method) => join(plugins, 'pipeline', 'skills', lang, method, 'shared', 'pf', 'subagents.md'),
+    const pages = ['sw-conduct', 'sw-route'].map(
+      (method) => join(plugins, 'pipeline', 'skills', lang, method, 'shared', 'superworker', 'subagents.md'),
     )
     for (const page of pages) assert.ok(existsSync(page), `${lang}: ${page} is not on disk`)
     assert.deepEqual(readFileSync(pages[0]), readFileSync(pages[1]), `${lang}: the two subagents.md copies drifted apart byte-wise`)
@@ -350,17 +350,17 @@ test('Upgrade: the old version the previous manifest recorded is taken back firs
   const h = homes()
   try {
     const root = skillRootOf(h.dsh)
-    const stale = join(root, 'pf-old-version')
+    const stale = join(root, 'superworker-old-version')
     mkdirSync(stale, { recursive: true })
-    writeFileSync(join(stale, 'SKILL.md'), '---\nname: pf-old-version\ndescription: gone\n---\n', 'utf8')
+    writeFileSync(join(stale, 'SKILL.md'), '---\nname: superworker-old-version\ndescription: gone\n---\n', 'utf8')
     writeFileSync(join(stale, 'old.md'), 'old\n', 'utf8')
-    mkdirSync(join(h.dsh, 'pathfinder'), { recursive: true })
+    mkdirSync(join(h.dsh, 'superworker'), { recursive: true })
     writeFileSync(
       manifestPathOf(h.dsh),
       JSON.stringify({
         version: 1,
         root,
-        skills: [{ name: 'pf-old-version', dir: 'pf-old-version', files: ['pf-old-version/SKILL.md', 'pf-old-version/old.md'] }],
+        skills: [{ name: 'superworker-old-version', dir: 'superworker-old-version', files: ['superworker-old-version/SKILL.md', 'superworker-old-version/old.md'] }],
       }),
       'utf8',
     )
@@ -394,7 +394,7 @@ test('Somebody already holds our name in the same root: no overwrite, no coexist
 })
 
 test('Name clash: two plugins ship the same skill name, the install errors and names both', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'pf-skill-conflict-'))
+  const dir = mkdtempSync(join(tmpdir(), 'superworker-skill-conflict-'))
   try {
     const ship = (plugin, lang, method) => {
       const folder = join(dir, plugin, 'skills', lang, method)
@@ -402,8 +402,8 @@ test('Name clash: two plugins ship the same skill name, the install errors and n
       writeFileSync(join(dir, plugin, 'plugin.json'), JSON.stringify({ name: plugin }), 'utf8')
       writeFileSync(join(folder, 'SKILL.md'), `---\nname: ${method}\ndescription: ${plugin}'s ${method}\n---\n\n# ${method}\n`, 'utf8')
     }
-    ship('first-plugin', 'zh', 'pf-taken-name')
-    ship('second-plugin', 'en', 'pf-taken-name')
+    ship('first-plugin', 'zh', 'superworker-taken-name')
+    ship('second-plugin', 'en', 'superworker-taken-name')
 
     const h = homes()
     const install = await installPluginSkills({}, { dshHome: h.dsh, pluginsDir: dir })
@@ -413,30 +413,30 @@ test('Name clash: two plugins ship the same skill name, the install errors and n
     assert.equal(install.outcome.code, 'skill-conflict')
     assert.match(install.outcome.detail, /first-plugin/u, 'the error does not name the first plugin')
     assert.match(install.outcome.detail, /second-plugin/u, 'the error does not name the second plugin')
-    assert.match(install.outcome.detail, /pf-taken-name/u, 'the error does not name that skill')
+    assert.match(install.outcome.detail, /superworker-taken-name/u, 'the error does not name that skill')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
 test('A frontmatter that is not shaped right: it does not install, and the file is named', async () => {
-  const reading = readSkillFile('---\nname: pf-no-description\n---\n\nbody\n')
+  const reading = readSkillFile('---\nname: superworker-no-description\n---\n\nbody\n')
   assert.equal(reading.ok, false, 'a frontmatter with no description was read as a skill')
   assert.match(reading.detail, /description/u)
 
-  const dir = mkdtempSync(join(tmpdir(), 'pf-skill-nameless-'))
+  const dir = mkdtempSync(join(tmpdir(), 'superworker-skill-nameless-'))
   const h = homes()
   try {
-    const folder = join(dir, 'shipper', 'skills', 'zh', 'pf-renamed')
+    const folder = join(dir, 'shipper', 'skills', 'zh', 'superworker-renamed')
     mkdirSync(folder, { recursive: true })
     writeFileSync(join(dir, 'shipper', 'plugin.json'), JSON.stringify({ name: 'shipper' }), 'utf8')
-    writeFileSync(join(folder, 'SKILL.md'), '---\nname: pf-other-name\ndescription: names itself something else\n---\n', 'utf8')
+    writeFileSync(join(folder, 'SKILL.md'), '---\nname: superworker-other-name\ndescription: names itself something else\n---\n', 'utf8')
     const install = await installPluginSkills({}, { dshHome: h.dsh, pluginsDir: dir })
     assert.equal(install.outcome.ok, false)
     assert.equal(install.outcome.code, 'skill-unreadable')
-    assert.match(install.outcome.detail, /pf-renamed/u, 'the error does not name that folder')
-    assert.match(install.outcome.detail, /pf-other-name/u, 'the error does not name the name written in the file')
-    assert.equal(existsSync(join(skillRootOf(h.dsh), 'pf-other-name')), false, 'it errored and wrote anyway')
+    assert.match(install.outcome.detail, /superworker-renamed/u, 'the error does not name that folder')
+    assert.match(install.outcome.detail, /superworker-other-name/u, 'the error does not name the name written in the file')
+    assert.equal(existsSync(join(skillRootOf(h.dsh), 'superworker-other-name')), false, 'it errored and wrote anyway')
   } finally {
     rmSync(dir, { recursive: true, force: true })
     h.clean()
@@ -450,7 +450,7 @@ test('A missing plugin directory, a broken manifest: both are decidable, and not
     assert.equal(empty.outcome.ok, false)
     assert.equal(empty.outcome.code, 'skills-missing')
 
-    mkdirSync(join(h.dsh, 'pathfinder'), { recursive: true })
+    mkdirSync(join(h.dsh, 'superworker'), { recursive: true })
     writeFileSync(manifestPathOf(h.dsh), '{ not json', 'utf8')
     const broken = await installPluginSkills({}, { dshHome: h.dsh })
     assert.equal(broken.outcome.ok, false, 'the manifest was broken and it installed anyway')
@@ -535,7 +535,7 @@ test('apply: the skill install hangs on this line\'s own fiber, on disk once ins
       },
     })
     const dispose = await pending
-    assert.equal(provided.name, 'pathfinder')
+    assert.equal(provided.name, 'superworker')
     assert.equal(reported.length, 1, `a finished install should leave one line: ${reported.join(' / ')}`)
     assert.deepEqual(
       placedSkills(h.dsh).manifest.skills.map((one) => one.name).sort(),

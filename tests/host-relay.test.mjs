@@ -1,7 +1,7 @@
 /* The host half's dispatch relay: the one path the panel's button and the
  * automatic trigger both walk, and the three facts it guarantees.
  *
- * The dispatch runs against the real engine (`pf-core`, in process) over a
+ * The dispatch runs against the real engine (`superworker-core`, in process) over a
  * real record directory in a temporary root: the engine lands the prompt and
  * the run doc, the opener creates the session over stand-ins for the host's
  * session side, and the `started` claim must be on disk before the answer
@@ -21,49 +21,49 @@ import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dispatchCell, installRelay } from '../src/host/relay.ts'
-import { PathfinderRecordsGateway } from '../src/host/gateway.ts'
+import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
 import { PANEL_PREF_FIELDS } from '../src/host/settings-fields.ts'
 import { pinHome } from './helpers/env.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
 import { drainFor, until } from './helpers/wait.mjs'
 import { absentError, readPage } from './helpers/workspace-files-port.mjs'
 
-/* The engine reads this machine's layer (`<home>/.pf/config.json`) during
+/* The engine reads this machine's layer (`<home>/.superworker/config.json`) during
  * dispatch preparation; these cases pin it to a temporary home, never the
  * machine's own. The opener's skill-placement read rides the same pin. */
-const pinned = pinHome(['PF_HOME_DIR', 'DSH_HOME'], 'pf-relay-home-')
+const pinned = pinHome(['SUPERWORKER_HOME_DIR', 'DSH_HOME'], 'superworker-relay-home-')
 test.after(pinned.restore)
 
-/** A real workspace root with a real `.pf` in it: the four layout files, the graph, and one active line holding `holding`. */
+/** A real workspace root with a real `.superworker` in it: the four layout files, the graph, and one active line holding `holding`. */
 function rigRecordRoot(holding) {
-  const root = mkdtempSync(join(tmpdir(), 'pf-relay-ws-'))
-  mkdirSync(join(root, '.pf'), { recursive: true })
-  writeFileSync(join(root, '.pf', '.gitignore'), '*\n')
-  writeFileSync(join(root, '.pf', '.gitattributes'), '* text=auto\n')
-  writeFileSync(join(root, '.pf', 'AGENTS.md'), '# records\n')
-  writeFileSync(join(root, '.pf', 'config.json'), '{}\n')
+  const root = mkdtempSync(join(tmpdir(), 'superworker-relay-ws-'))
+  mkdirSync(join(root, '.superworker'), { recursive: true })
+  writeFileSync(join(root, '.superworker', '.gitignore'), '*\n')
+  writeFileSync(join(root, '.superworker', '.gitattributes'), '* text=auto\n')
+  writeFileSync(join(root, '.superworker', 'AGENTS.md'), '# records\n')
+  writeFileSync(join(root, '.superworker', 'config.json'), '{}\n')
   const nodes = {
     'n-1': { status: 'todo', title: 'first', mode: 'auto', dependencies: [] },
     'n-2': { status: 'todo', title: 'second', mode: 'auto', dependencies: [] },
   }
-  writeFileSync(join(root, '.pf', 'ideas.json'), JSON.stringify({ nodes }))
-  writeFileSync(join(root, '.pf', 'state.json'), JSON.stringify({
+  writeFileSync(join(root, '.superworker', 'ideas.json'), JSON.stringify({ nodes }))
+  writeFileSync(join(root, '.superworker', 'state.json'), JSON.stringify({
     cycles: [{ id: 'c-1', status: 'active', tags: [], holding: holding.map((id) => ({ id, since: '2026-10-18T00:00:00Z' })), path: [] }],
   }))
   return root
 }
 
 /** The claim a dispatch leaves, as it is on disk. */
-const claimPath = (root, cycle, node) => join(root, '.pf', 'meta', 'launch', cycle, node, 'started')
+const claimPath = (root, cycle, node) => join(root, '.superworker', 'meta', 'launch', cycle, node, 'started')
 
 /** Settle the records the way a close leaves them: the closed node delivered, the next one pinned in hand. */
 async function settleClose(root, closed, next) {
-  const ideas = JSON.parse(await readFile(join(root, '.pf', 'ideas.json'), 'utf8'))
+  const ideas = JSON.parse(await readFile(join(root, '.superworker', 'ideas.json'), 'utf8'))
   ideas.nodes[closed].status = 'completed'
-  await writeFile(join(root, '.pf', 'ideas.json'), JSON.stringify(ideas))
-  const state = JSON.parse(await readFile(join(root, '.pf', 'state.json'), 'utf8'))
+  await writeFile(join(root, '.superworker', 'ideas.json'), JSON.stringify(ideas))
+  const state = JSON.parse(await readFile(join(root, '.superworker', 'state.json'), 'utf8'))
   state.cycles[0].holding = [{ id: next, since: '2026-10-18T00:01:00Z' }]
-  await writeFile(join(root, '.pf', 'state.json'), JSON.stringify(state))
+  await writeFile(join(root, '.superworker', 'state.json'), JSON.stringify(state))
 }
 
 /** The negative wait behind the `wait` assertions: the shared drain (see `helpers/wait.mjs`) — it only ever disproves. */
@@ -152,13 +152,13 @@ test('Dispatch lands the claim: the session opens, the started marker is on disk
     assert.equal(outcome.ok, true, JSON.stringify(outcome))
     assert.equal(agents.created.length, 1, 'exactly one session')
     assert.ok(existsSync(claimPath(root, 'c-1', 'n-1')), 'the claim lands with the dispatch')
-    assert.ok(existsSync(join(root, '.pf', 'meta', 'sessions', 'n-1.json')), 'the note is written by the opener')
+    assert.ok(existsSync(join(root, '.superworker', 'meta', 'sessions', 'n-1.json')), 'the note is written by the opener')
     const said = agents.created[0].followups[0]
-    assert.ok(existsSync(join(root, '.pf', 'meta', 'launch', 'c-1', 'n-1', 'prompt.txt')), 'the prompt is landed by dispatch preparation')
-    /* The first instruction is judged against the artifact on disk, not against pf-core wording: the opener
+    assert.ok(existsSync(join(root, '.superworker', 'meta', 'launch', 'c-1', 'n-1', 'prompt.txt')), 'the prompt is landed by dispatch preparation')
+    /* The first instruction is judged against the artifact on disk, not against superworker-core wording: the opener
      * sends the very line dispatch preparation landed in prompt.txt, so reading that back is comparison
      * enough — the identity (node id, [pipeline]) is locked by the artifact. */
-    const prompt = (await readFile(join(root, '.pf', 'meta', 'launch', 'c-1', 'n-1', 'prompt.txt'), 'utf8')).trim()
+    const prompt = (await readFile(join(root, '.superworker', 'meta', 'launch', 'c-1', 'n-1', 'prompt.txt'), 'utf8')).trim()
     assert.equal(said.content[0].text, prompt, 'the first instruction is the dispatch prompt on disk')
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -211,7 +211,7 @@ test('Trigger: the session it opened closes, the plan says dispatch, and the nex
     )
     assert.ok(existsSync(claimPath(root, 'c-1', 'n-2')), 'the next leg\'s claim lands with the dispatch')
     const second = agents.created[1]
-    const promptNext = (await readFile(join(root, '.pf', 'meta', 'launch', 'c-1', 'n-2', 'prompt.txt'), 'utf8')).trim()
+    const promptNext = (await readFile(join(root, '.superworker', 'meta', 'launch', 'c-1', 'n-2', 'prompt.txt'), 'utf8')).trim()
     assert.equal(second.followups[0].content[0].text, promptNext, 'the next leg\'s first instruction is the dispatch prompt on disk')
   } finally {
     installOff()
@@ -258,7 +258,7 @@ test('Dispose trigger: the session is disposed before its turn ends, and the nex
       warnings,
     )
     const second = agents.created[1]
-    const promptNext = (await readFile(join(root, '.pf', 'meta', 'launch', 'c-1', 'n-2', 'prompt.txt'), 'utf8')).trim()
+    const promptNext = (await readFile(join(root, '.superworker', 'meta', 'launch', 'c-1', 'n-2', 'prompt.txt'), 'utf8')).trim()
     assert.equal(second.followups[0].content[0].text, promptNext, 'the next leg\'s first instruction is the dispatch prompt on disk')
   } finally {
     installOff()
@@ -390,7 +390,7 @@ test('The button walks the same path: the gateway\'s openNodeSession endpoint la
   const agents = fakeAgents()
   const { ctx } = context({ root, agents })
   try {
-    const gateway = new PathfinderRecordsGateway(ctx)
+    const gateway = new SuperworkerRecordsGateway(ctx)
     const outcome = await gateway.openNodeSession('caller', '', 'c-1', 'n-1')
     assert.equal(outcome.ok, true, JSON.stringify(outcome))
     assert.equal(agents.created.length, 1)
@@ -422,7 +422,7 @@ test('A cell dispatch that fails: the refusal carries the engine\'s words, no cl
  * only what is read off disk: the engine reads the record by real path, not that the relay line is pinned on its own. */
 test('A dispatch through the alias opens as usual, and the engine reads the record by real path (held by both canonicalisations, no independent reading of the relay one)', async () => {
   const root = rigRecordRoot(['n-1'])
-  const alias = join(tmpdir(), `pf-relay-alias-${randomUUID()}`)
+  const alias = join(tmpdir(), `superworker-relay-alias-${randomUUID()}`)
   symlinkSync(root, alias, 'junction')
   const seen = []
   const agents = fakeAgents()

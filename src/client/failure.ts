@@ -10,7 +10,7 @@
  * One vocabulary covers both, because a caller holding a refusal should not have to know which half
  * produced it: the panel spells any of these codes the same way (`src/client/words.ts`).
  */
-import type { PfRefusalCode } from '../host/failure.ts'
+import type { RecordRefusalCode } from '../host/failure.ts'
 
 /** What the port itself can refuse, on top of whatever the host refuses for. */
 export type PortRefusalCode =
@@ -36,7 +36,7 @@ export type PortRefusalCode =
   | 'unstated'
 
 /** Every reason an operation can be refused, from either half. */
-export type FailureCode = PfRefusalCode | PortRefusalCode
+export type FailureCode = RecordRefusalCode | PortRefusalCode
 
 /** A refusal: which one, plus the detail that goes with it — an argument, a path, a program's output. */
 export interface Failure {

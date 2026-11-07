@@ -45,7 +45,7 @@ export function LineMark(props: { readonly cycle: CycleReading }): React.ReactEl
   const t = useT()
   const { cycle } = props
   const cls = LINE_CLASSES[lineStateOf(cycle)]
-  return <span className={`pf-linemark ${cls}`.trim()} title={stateWord(t, cycle)} />
+  return <span className={`superworker-linemark ${cls}`.trim()} title={stateWord(t, cycle)} />
 }
 
 /**
@@ -66,7 +66,7 @@ export function StateMark(props: { readonly node: NodeReading; readonly at: Date
   const bucket = bucketOf(node)
   if (bucket === 'gate' || bucket === 'shelved') {
     return (
-      <span className="pf-state is-gate" title={gateTitle(t, node, props.at)}>
+      <span className="superworker-state is-gate" title={gateTitle(t, node, props.at)}>
         <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
           <path d="M4.6 2.6v6.8M7.4 2.6v6.8" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
         </svg>
@@ -74,13 +74,13 @@ export function StateMark(props: { readonly node: NodeReading; readonly at: Date
     )
   }
   if (bucket === 'run') {
-    return <span className="pf-state is-run" title={runningTitle(t, node)} />
+    return <span className="superworker-state is-run" title={runningTitle(t, node)} />
   }
   if (bucket === 'todo') {
-    return <span className="pf-state is-next" title={t('state.next')} />
+    return <span className="superworker-state is-next" title={t('state.next')} />
   }
   return (
-    <span className="pf-state is-done" title={t('state.done')}>
+    <span className="superworker-state is-done" title={t('state.done')}>
       <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
         <path d="M2.5 6.5l2.4 2.4 4.6-5.4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
@@ -96,7 +96,7 @@ export function StateMark(props: { readonly node: NodeReading; readonly at: Date
  */
 export function StrandedMark(props: { readonly cycleId: string; readonly nodeId: string }): React.ReactElement {
   const t = useT()
-  return <span className="pf-state is-dead" title={strandedTitle(t, props.cycleId, props.nodeId)} />
+  return <span className="superworker-state is-dead" title={strandedTitle(t, props.cycleId, props.nodeId)} />
 }
 
 /**
@@ -113,9 +113,9 @@ export function DepsChip(props: { readonly node: NodeReading }): React.ReactElem
   if (deps === null) return null
   const said = depsSentence(t, deps)
   return (
-    <span className={`pf-deps${deps.ready ? ' is-ready' : ''}`}>
+    <span className={`superworker-deps${deps.ready ? ' is-ready' : ''}`}>
       {said.head}
-      {said.count === null ? null : <b className="pf-num">{String(said.count)}</b>}
+      {said.count === null ? null : <b className="superworker-num">{String(said.count)}</b>}
       {said.tail}
     </span>
   )

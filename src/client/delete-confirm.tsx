@@ -16,13 +16,13 @@ export function DeleteConfirm(props: {
   const t = useT()
   return (
     <ModalShell labelId="ins-del-name" name={t('notes.delete.name')} onClose={props.onCancel}>
-      <blockquote className="pf-del-said">{props.said}</blockquote>
-      <div className="pf-del-warn">
+      <blockquote className="superworker-del-said">{props.said}</blockquote>
+      <div className="superworker-del-warn">
         <p>{t('notes.delete.warning')}</p>
       </div>
-      <div className="pf-modal-acts">
-        <button type="button" className="pf-btn" onClick={props.onCancel}>{t('common.cancel')}</button>
-        <button type="button" className="pf-btn" onClick={props.onConfirm}>{t('common.delete')}</button>
+      <div className="superworker-modal-acts">
+        <button type="button" className="superworker-btn" onClick={props.onCancel}>{t('common.cancel')}</button>
+        <button type="button" className="superworker-btn" onClick={props.onConfirm}>{t('common.delete')}</button>
       </div>
     </ModalShell>
   )

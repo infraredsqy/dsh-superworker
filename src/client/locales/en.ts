@@ -13,13 +13,13 @@ export const en: Readonly<Record<WordKey, string>> = {
   /* The wordmark is the product's own name, so it stays the same word in every language; the row
    * in DSH's sidebar is where the panel sits; the section is its knobs. The Chinese section word is
    * deliberately 配置 rather than 设置, so it stays apart from the panel's own 设置 pane. */
-  'brand.mark': 'PATHFINDER',
-  'seat.label': 'Pathfinder Center',
-  'settings.section': 'Pathfinder Settings',
+  'brand.mark': 'SUPERWORKER',
+  'seat.label': 'Superworker Center',
+  'settings.section': 'Superworker Settings',
 
   /* ── When the panel has nothing to draw ───────────────────────────────────────────────────── */
-  'panel.not-enabled': 'Pathfinder is not enabled in this workspace.',
-  'panel.no-record': 'This workspace has no Pathfinder record.',
+  'panel.not-enabled': 'Superworker is not enabled in this workspace.',
+  'panel.no-record': 'This workspace has no Superworker record.',
   'panel.ungrouped-empty': 'The ungrouped bucket holds no record; this session belongs to a workspace in the list.',
   'panel.unreadable': 'This workspace’s record cannot be read.',
   'panel.no-session': 'No session is selected, so the workspace cannot be determined.',
@@ -191,7 +191,7 @@ export const en: Readonly<Record<WordKey, string>> = {
   'failure.open-failed': 'The session did not open: {detail}',
   'failure.dispatch-refused': 'The dispatch did not complete: {detail}',
   'failure.no-operation': 'This channel has no {detail} operation.',
-  'failure.not-connected': 'This deployment is not connected to the Pathfinder record service, so records cannot be read.',
+  'failure.not-connected': 'This deployment is not connected to the Superworker record service, so records cannot be read.',
   'failure.no-write-channel': 'This deployment has no usable write channel.',
   'failure.unparsable-answer': 'The host returned data that cannot be parsed.',
   'failure.transport-failed': '{detail}',

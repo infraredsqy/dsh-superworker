@@ -2,7 +2,7 @@
  * The placement record: what this line wrote into a skill root, read back, replaced, and taken back.
  *
  * The manifest is the only thing unloading touches. Every file the placement writes is recorded
- * (`<dshHome>/pathfinder/skills.json`, outside the skill root so the provider never scans it), so an
+ * (`<dshHome>/superworker/skills.json`, outside the skill root so the provider never scans it), so an
  * unload removes exactly those files: not a directory holding somebody else's file, not the old
  * hand-copied copies, not another root's skills. A second install replaces what the previous manifest
  * recorded, so an upgrade leaves no earlier version behind.
@@ -14,7 +14,7 @@
  */
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
-import type { PfSkillRefusal, PfSkillRefusalCode } from '../failure.ts'
+import type { SkillRefusal, SkillRefusalCode } from '../failure.ts'
 import { messageOf } from '../seams.ts'
 import { dshHomeOf, MANIFEST_VERSION, manifestPathOf, skillRootOf } from '../skill-paths.ts'
 import { SKILL_NAME } from './frontmatter.ts'
@@ -36,7 +36,7 @@ export interface SkillsManifest {
 /** Reading the placement record: what is there, or why it cannot be trusted. */
 export type ManifestReading =
   | { readonly ok: true; readonly manifest: SkillsManifest }
-  | PfSkillRefusal
+  | SkillRefusal
 
 /** Whether one filesystem refusal says the path is simply not there — nothing to read, nothing to take back. */
 export function absent(error: unknown): boolean {
@@ -49,7 +49,7 @@ export function absent(error: unknown): boolean {
 }
 
 /** One refusal of this layer's own: a code, and the names this half does not own. */
-export function refused(code: PfSkillRefusalCode, detail: string): PfSkillRefusal {
+export function refused(code: SkillRefusalCode, detail: string): SkillRefusal {
   return { ok: false, code, detail }
 }
 

@@ -1,21 +1,21 @@
 /* I · issue pool — the debt, read the way a register is read: a case is a real row of the record's
  * issue register (severity, evidence, disposition; weights against a policy
  * line). The pool is what nobody has closed, so that is the page; one movable hairline cuts it in
- * two, and the page reads without writing — closing a case is the agent's move in this version. */.pf-issue{
-  --pf-rule: 0.5px;      /* the page's own hairlines: the band, the two heads, the bar */
-  --pf-left: 55%;        /* the pool's column, until a reader moves the bar */
-  --pf-gutter: 11px;     /* the bar between the two halves */
-  --pf-lead: 62px;       /* state mark + severity chip */
-  --pf-mod: 96px;        /* which part of the project the case lives in */
-  --pf-gap: 14px;
+ * two, and the page reads without writing — closing a case is the agent's move in this version. */.superworker-issue{
+  --superworker-rule: 0.5px;      /* the page's own hairlines: the band, the two heads, the bar */
+  --superworker-left: 55%;        /* the pool's column, until a reader moves the bar */
+  --superworker-gutter: 11px;     /* the bar between the two halves */
+  --superworker-lead: 62px;       /* state mark + severity chip */
+  --superworker-mod: 96px;        /* which part of the project the case lives in */
+  --superworker-gap: 14px;
 }/* ?embed=1: this page arrives as one cell of the main panel; the header is the host's business and
  * the page keeps only its own footprint. The wires pane runs the same line.
  *
  * The pool has no page of its own to open any more: every rule below leads with the embed marker.
  * The footprint the standalone page used to state (a full-height flex column) is the shared page's
- * (`tokens.css`: `.pf-page` height; `main.css`: the flex column), stated there once for every page on
+ * (`tokens.css`: `.superworker-page` height; `main.css`: the flex column), stated there once for every page on
  * this panel — this page does not state it a second time. The pane's own `height` / `overflow` are the
- * shared pane shell's (`main.css`: `.pf-pane.is-frame`), not this page's business.
+ * shared pane shell's (`main.css`: `.superworker-pane.is-frame`), not this page's business.
  *
  * Once embedded, the left and right page gutters belong to the host too: the nameplate, the tabs
  * and what the panes hold share one left edge, and one more gutter of this page's own would put
@@ -24,13 +24,13 @@
  *
  * The top of the page does not yield all the way either: the host's own cell lays 8px under the tab
  * row, and the band keeps 12px of its own on top of that — the distance the map's rail and the
- * detail's first head keep. It is the band's side margins that yield, not its top. */.is-embed.pf-issue .pf-page{
+ * detail's first head keep. It is the band's side margins that yield, not its top. */.is-embed.superworker-issue .superworker-page{
   padding: 0;
-}.is-embed.pf-issue .pf-band{ padding-top: 12px; }/* The panel's own reading, in the panel's own marks: one small square per mass the
+}.is-embed.superworker-issue .superworker-band{ padding-top: 12px; }/* The panel's own reading, in the panel's own marks: one small square per mass the
  * band is reading, and how many cases are in it. Those marks are what the panel's
  * node counts are made of, which is why the reading belongs in the body rather
  * than the header's corner, where the shell's own figure stands. It is the last
- * thing in the band and holds the band's right edge. */.pf-issue .pf-band .pf-count{
+ * thing in the band and holds the band's right edge. */.superworker-issue .superworker-band .superworker-count{
   margin-left: auto;
   padding-top: 0;
 }/* ---- the state marks ----------------------------------------------------
@@ -43,80 +43,80 @@
  * go with it. The strip is the weight drawn and the squares are the cases -- one
  * reading of one pool, so those two hold the ends of a single line -- and the
  * control that decides how much of the register is drawn stands at the row's
- * left end, before the instrument, where it costs the list no height at all. */.pf-issue .pf-band{
+ * left end, before the instrument, where it costs the list no height at all. */.superworker-issue .superworker-band{
   flex: none;
   display: flex;
   align-items: center;
   gap: 28px;
   padding: 14px 0 16px;
-  border-bottom: var(--pf-rule) solid var(--dsw-alias-border-l1);
+  border-bottom: var(--superworker-rule) solid var(--dsw-alias-border-l1);
 }/* One hairline from the top of the list to the bottom of the page: the pool on
  * the left, the record on the right, at every height. The hairline is a bar of
  * its own between them, so where it stands is something a reader can move: the
- * two columns are one register read twice and neither of them is the page. */.pf-issue .pf-split{
+ * two columns are one register read twice and neither of them is the page. */.superworker-issue .superworker-split{
   display: grid;
-  grid-template-columns: minmax(0, var(--pf-left)) var(--pf-gutter) minmax(0, 1fr);
+  grid-template-columns: minmax(0, var(--superworker-left)) var(--superworker-gutter) minmax(0, 1fr);
   flex: 1 1 auto;
   min-height: 0;
-}.pf-issue .pf-gutter{
+}.superworker-issue .superworker-gutter{
   position: relative;
   cursor: col-resize;
-}.pf-issue .pf-gutter::before{
+}.superworker-issue .superworker-gutter::before{
   content: '';
   position: absolute;
   top: 0;
   bottom: 0;
   left: 50%;
-  width: var(--pf-rule);
+  width: var(--superworker-rule);
   background: var(--dsw-alias-border-l1);
 }/* While the bar is being moved the reading of that one state hangs on the pane
  * itself (`.is-dragging`), not on the page root: the pane is the whole of this
  * document when it is embedded. A class on `document.documentElement` still
- * matches these three. */.pf-issue .pf-gutter:hover::before, .pf-issue .pf-gutter:focus-visible::before, .pf-issue .is-dragging .pf-gutter::before{ background: var(--dsw-alias-border-l3); }.pf-issue .pf-gutter:focus-visible{ outline: none; }.pf-issue .is-dragging{ cursor: col-resize; }.pf-issue .is-dragging *{ user-select: none; }/* ---- the instrument ------------------------------------------------------
+ * matches these three. */.superworker-issue .superworker-gutter:hover::before, .superworker-issue .superworker-gutter:focus-visible::before, .superworker-issue .is-dragging .superworker-gutter::before{ background: var(--dsw-alias-border-l3); }.superworker-issue .superworker-gutter:focus-visible{ outline: none; }.superworker-issue .is-dragging{ cursor: col-resize; }.superworker-issue .is-dragging *{ user-select: none; }/* ---- the instrument ------------------------------------------------------
  * The frame is the line: one slot per weight unit, the same slot at every
  * reading. The empty ones are the room a pool has left; a pool past the line
  * adds slots past it, and the line stays where it was.
  *
  * The strip is read as one mass rather than slot by slot, so its quiet end sits
  * on the dense tier of the ink ladder: a slot says "there is room here", and no
- * reader counts the roomy ones. */.pf-issue .pf-gauge{ position: relative; }.pf-issue .pf-scale{
+ * reader counts the roomy ones. */.superworker-issue .superworker-gauge{ position: relative; }.superworker-issue .superworker-scale{
   display: grid;
   height: 12px;
-}.pf-issue .pf-block{
+}.superworker-issue .superworker-block{
   border-radius: 1px;
   background: transparent;
-  box-shadow: inset 0 0 0 1px var(--pf-ink-4);
+  box-shadow: inset 0 0 0 1px var(--superworker-ink-4);
   transition: background-color 0.18s var(--ds-ease-in-out), box-shadow 0.18s var(--ds-ease-in-out);
-}.pf-issue .pf-block.is-fill{ background: var(--sev); box-shadow: inset 0 0 0 1px var(--sev); }/* A carried case: on the books, nobody owes it yet. The register's hollow ring
+}.superworker-issue .superworker-block.is-fill{ background: var(--sev); box-shadow: inset 0 0 0 1px var(--sev); }/* A carried case: on the books, nobody owes it yet. The register's hollow ring
  * in the mass's own ink, so the strip and the open half of the register still
- * add up to the pool while the state's rows are hidden. */.pf-issue .pf-block.is-carried{ background: transparent; box-shadow: inset 0 0 0 1px var(--sev); }/* Severity is the one thing the mass and the register must agree on, so both
+ * add up to the pool while the state's rows are hidden. */.superworker-issue .superworker-block.is-carried{ background: transparent; box-shadow: inset 0 0 0 1px var(--sev); }/* Severity is the one thing the mass and the register must agree on, so both
  * read the same ink: four steps of the ladder, heaviest solidest. No alarm
  * colour is spent on a level here -- a P0 in this record is a large amount of
- * debt, not an outage, and the hues that mean "broken" keep their meaning. */.pf-issue .is-P0{ --sev: var(--pf-ink-1); }.pf-issue .is-P1{ --sev: var(--pf-ink-2); }.pf-issue .is-P2{ --sev: var(--pf-ink-3); }.pf-issue .is-P3{ --sev: var(--pf-ink-4); }/* The policy line: the frame's own end, in the page's structural ink, and the
+ * debt, not an outage, and the hues that mean "broken" keep their meaning. */.superworker-issue .is-P0{ --sev: var(--superworker-ink-1); }.superworker-issue .is-P1{ --sev: var(--superworker-ink-2); }.superworker-issue .is-P2{ --sev: var(--superworker-ink-3); }.superworker-issue .is-P3{ --sev: var(--superworker-ink-4); }/* The policy line: the frame's own end, in the page's structural ink, and the
  * only thing on the strip that is not a case. It overshoots the strip by a
  * hair so that it reads as the boundary of the frame rather than as one more
  * slot -- which is what it is on the day a pool gets past it. It is a flat
- * neutral mark, so it draws at the shared hairline weight. */.pf-issue .pf-line{
+ * neutral mark, so it draws at the shared hairline weight. */.superworker-issue .superworker-line{
   position: absolute;
   top: -2px;
-  width: var(--pf-rule);
+  width: var(--superworker-rule);
   height: 16px;
   background: var(--dsw-alias-border-l4);
 }/* ---- the register -------------------------------------------------------
  * Three tracks, the same three from the first head to the last row of the folded
  * tail, exactly as the detail panel keeps its columns: mark and level, the
  * case's own sentence, and where it lives. How long a case has stood is not one
- * of them. */.pf-issue .pf-register{
+ * of them. */.superworker-issue .superworker-register{
   overflow-y: auto;
   min-height: 0;
   padding: 0 24px 56px 0;
-}.pf-issue .pf-register:focus-visible{ outline-offset: -2px; }.pf-issue .pf-row, .pf-issue .pf-head{
+}.superworker-issue .superworker-register:focus-visible{ outline-offset: -2px; }.superworker-issue .superworker-row, .superworker-issue .superworker-head{
   display: grid;
-  grid-template-columns: var(--pf-lead) minmax(0, 1fr) var(--pf-mod);
-  column-gap: var(--pf-gap);
+  grid-template-columns: var(--superworker-lead) minmax(0, 1fr) var(--superworker-mod);
+  column-gap: var(--superworker-gap);
   align-items: center;
   width: 100%;
-}.pf-issue .pf-row{
+}.superworker-issue .superworker-row{
   height: 32px;
   margin: 0;
   padding: 0;
@@ -126,9 +126,9 @@
   font-family: var(--dsw-font-family);
   text-align: left;
   cursor: pointer;
-}.pf-issue .pf-row:hover{ background: var(--dsw-alias-interactive-bg-hover); }.pf-issue .pf-row[aria-current='true']{ background: var(--dsw-alias-interactive-bg-active); }.pf-issue .pf-lead{ display: flex; align-items: center; gap: 8px; min-width: 0; }/* A level is a classification, not a button: a hairline box in the severity's
+}.superworker-issue .superworker-row:hover{ background: var(--dsw-alias-interactive-bg-hover); }.superworker-issue .superworker-row[aria-current='true']{ background: var(--dsw-alias-interactive-bg-active); }.superworker-issue .superworker-lead{ display: flex; align-items: center; gap: 8px; min-width: 0; }/* A level is a classification, not a button: a hairline box in the severity's
  * own ink, the level inside it, and the weight it costs carried in the record
- * where a reader can do the arithmetic. */.pf-issue .pf-sev{
+ * where a reader can do the arithmetic. */.superworker-issue .superworker-sev{
   flex: none;
   min-width: 28px;
   padding: 0 5px;
@@ -141,7 +141,7 @@
   border-radius: 3px;
 }/* The letter says the level and the box's ink says how much debt it is, so the
  * heaviest level is the one level whose letter is drawn at full ink: a P0 chip
- * is a white letter in a white box, and a P3 a dim one in a faint box. */.pf-issue .pf-sev.is-P0{ color: var(--dsw-alias-label-primary); }.pf-issue .pf-sev.is-P1, .pf-issue .pf-sev.is-P2{ color: var(--dsw-alias-label-secondary); }.pf-issue .pf-sev.is-P3{ color: var(--dsw-alias-label-tertiary); }.pf-issue .pf-title{
+ * is a white letter in a white box, and a P3 a dim one in a faint box. */.superworker-issue .superworker-sev.is-P0{ color: var(--dsw-alias-label-primary); }.superworker-issue .superworker-sev.is-P1, .superworker-issue .superworker-sev.is-P2{ color: var(--dsw-alias-label-secondary); }.superworker-issue .superworker-sev.is-P3{ color: var(--dsw-alias-label-tertiary); }.superworker-issue .superworker-title{
   min-width: 0;
   font-size: 14px;
   line-height: 20px;
@@ -150,11 +150,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }/* A case that stands reads one step quieter than one that is still open: it is
- * known work, not work nobody has looked at. */.pf-issue .pf-row.is-acknowledged .pf-title{ color: var(--dsw-alias-label-secondary); }.pf-issue .pf-row.is-resolved .pf-title{ color: var(--dsw-alias-label-tertiary); }/* Dismissed, and drawn the way a register strikes a line: the sentence is
- * still readable and plainly not in play. */.pf-issue .pf-row.is-rejected .pf-title{
+ * known work, not work nobody has looked at. */.superworker-issue .superworker-row.is-acknowledged .superworker-title{ color: var(--dsw-alias-label-secondary); }.superworker-issue .superworker-row.is-resolved .superworker-title{ color: var(--dsw-alias-label-tertiary); }/* Dismissed, and drawn the way a register strikes a line: the sentence is
+ * still readable and plainly not in play. */.superworker-issue .superworker-row.is-rejected .superworker-title{
   color: var(--dsw-alias-label-dimmed);
   text-decoration: line-through;
-}.pf-issue .pf-mod{
+}.superworker-issue .superworker-mod{
   min-width: 0;
   font-family: var(--ds-font-family-code);
   font-size: 12px;
@@ -163,12 +163,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}.pf-issue .pf-head{
+}.superworker-issue .superworker-head{
   padding: 18px 0 8px;
-  border-bottom: var(--pf-rule) solid var(--dsw-alias-border-l2);
+  border-bottom: var(--superworker-rule) solid var(--dsw-alias-border-l2);
 }/* A head names the group and stops there: how many cases are in it is one of the
- * counts in the band, and how much the group weighs is the strip. */.pf-issue .pf-head-label{ font: var(--dsw-font-xs-strong-13); color: var(--dsw-alias-label-secondary); }/* The fold: a control on the grid, in the title's track, naming what it would
- * add and nothing else. The caret reports its own state. */.pf-issue .pf-fold{
+ * counts in the band, and how much the group weighs is the strip. */.superworker-issue .superworker-head-label{ font: var(--dsw-font-xs-strong-13); color: var(--dsw-alias-label-secondary); }/* The fold: a control on the grid, in the title's track, naming what it would
+ * add and nothing else. The caret reports its own state. */.superworker-issue .superworker-fold{
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -182,38 +182,38 @@
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
-}.pf-issue .pf-fold:hover{ background: var(--dsw-alias-interactive-bg-hover); }.pf-issue .pf-fold::after{
+}.superworker-issue .superworker-fold:hover{ background: var(--dsw-alias-interactive-bg-hover); }.superworker-issue .superworker-fold::after{
   content: '\25BE';
   font-size: 9px;
   line-height: 1;
   color: var(--dsw-alias-label-caption);
-}.pf-issue .pf-fold[aria-expanded='true']::after{ content: '\25B4'; }/* ---- the record of one case --------------------------------------------
+}.superworker-issue .superworker-fold[aria-expanded='true']::after{ content: '\25B4'; }/* ---- the record of one case --------------------------------------------
  * The record's own column, and the same distance from the bar as the list on the
  * other side of it: the padding is the column's, not the bar's, because the
- * two halves are equal and only the bar between them is shared. */.pf-issue .pf-case{
+ * two halves are equal and only the bar between them is shared. */.superworker-issue .superworker-case{
   overflow-y: auto;
   min-height: 0;
   padding: 2px 0 56px 24px;
-}.pf-issue .pf-case:focus-visible{ outline-offset: -2px; }/* The level sits at the head of the case and the sentence starts after it; the
+}.superworker-issue .superworker-case:focus-visible{ outline-offset: -2px; }/* The level sits at the head of the case and the sentence starts after it; the
  * rest of the case reads at full width. Everything else the record keeps about a
  * case -- when it was filed, what last touched it, how often it was looked at --
  * is not a fact a reader acts on, and whether it stands is written on its row in
- * the register, which is where the reader came from. */.pf-issue .pf-case-head{
+ * the register, which is where the reader came from. */.superworker-issue .superworker-case-head{
   display: flex;
   align-items: baseline;
   gap: 10px;
   margin: 16px 0 0;
-}.pf-issue .pf-case-head .pf-sev{ font-size: 11px; line-height: 17px; }.pf-issue .pf-code{
+}.superworker-issue .superworker-case-head .superworker-sev{ font-size: 11px; line-height: 17px; }.superworker-issue .superworker-code{
   font-family: var(--ds-font-family-code);
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-caption);
-}.pf-issue .pf-case-title{
+}.superworker-issue .superworker-case-title{
   margin: 0;
   font: var(--dsw-font-base-16);
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
-}.pf-issue .pf-case-id{
+}.superworker-issue .superworker-case-id{
   display: block;
   margin-top: 8px;
   overflow-wrap: anywhere;
@@ -221,35 +221,35 @@
   font-size: 11px;
   line-height: 16px;
   color: var(--dsw-alias-label-dimmed);
-}.pf-issue .pf-case-sec{ margin-top: 24px; }.pf-issue .pf-case-label{
+}.superworker-issue .superworker-case-sec{ margin-top: 24px; }.superworker-issue .superworker-case-label{
   margin: 0 0 8px;
   font: var(--dsw-font-xxs-strong-12);
   letter-spacing: 0.08em;
   color: var(--dsw-alias-label-caption);
-}.pf-issue .pf-case-body{
+}.superworker-issue .superworker-case-body{
   margin: 0;
   font: var(--dsw-font-s-14);
   color: var(--dsw-alias-label-secondary);
   overflow-wrap: anywhere;
 }/* The record's own emphasis, drawn in the page's own inks: a bolded fact is the
- * sentence's own claim, and a path is a path. */.pf-issue .pf-case-body strong{ font-weight: 500; color: var(--dsw-alias-label-primary); }.pf-issue .pf-inline-code{
+ * sentence's own claim, and a path is a path. */.superworker-issue .superworker-case-body strong{ font-weight: 500; color: var(--dsw-alias-label-primary); }.superworker-issue .superworker-inline-code{
   padding: 0 4px;
   font-family: var(--ds-font-family-code);
   font-size: 13px;
   color: var(--dsw-alias-label-secondary);
   background: var(--dsw-alias-markdown-code-block);
   border-radius: 3px;
-}.pf-issue .pf-places{ margin: 0; padding: 0; list-style: none; }.pf-issue .pf-places li{
+}.superworker-issue .superworker-places{ margin: 0; padding: 0; list-style: none; }.superworker-issue .superworker-places li{
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }/* Stacked before the two columns would each be too narrow to read a sentence in.
  * Height is not a reason to stack: both columns are scrollers, so a short frame
  * -- a short window, or the pane this page is a tab of, which is the same thing
- * -- shows fewer rows in each half rather than showing only one of them. */@media (max-width: 900px){.pf-issue{ overflow: auto; }/* The columns stop being scrollers and become two sections of one page, so
-   * the split takes its content's height instead of the frame's. */.is-embed.pf-issue .pf-page{ height: auto; min-height: 100%; overflow: visible; padding-bottom: 24px; }.pf-issue .pf-split{ grid-template-columns: minmax(0, 1fr); flex: none; }/* No room to move a bar in, and nothing for it to separate: the two columns
-   * are two sections of one page and the hairline runs across instead. */.pf-issue .pf-gutter{ display: none; }.pf-issue .pf-case{
-    border-top: var(--pf-rule) solid var(--dsw-alias-border-l1);
+ * -- shows fewer rows in each half rather than showing only one of them. */@media (max-width: 900px){.superworker-issue{ overflow: auto; }/* The columns stop being scrollers and become two sections of one page, so
+   * the split takes its content's height instead of the frame's. */.is-embed.superworker-issue .superworker-page{ height: auto; min-height: 100%; overflow: visible; padding-bottom: 24px; }.superworker-issue .superworker-split{ grid-template-columns: minmax(0, 1fr); flex: none; }/* No room to move a bar in, and nothing for it to separate: the two columns
+   * are two sections of one page and the hairline runs across instead. */.superworker-issue .superworker-gutter{ display: none; }.superworker-issue .superworker-case{
+    border-top: var(--superworker-rule) solid var(--dsw-alias-border-l1);
     padding: 14px 0 0;
-  }.pf-issue .pf-register, .pf-issue .pf-case{ overflow: visible; padding-bottom: 24px; }
+  }.superworker-issue .superworker-register, .superworker-issue .superworker-case{ overflow: visible; padding-bottom: 24px; }
 }

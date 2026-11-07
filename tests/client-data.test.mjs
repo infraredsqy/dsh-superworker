@@ -52,7 +52,7 @@ function refusedWith(failure) {
 
 test('remote namespace installed: it is used, reads call read(sessionId, workspaceRoot, {})', async () => {
   const { calls, namespace } = fakeNamespace()
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
 
   assert.equal(port.source, 'remote')
   const reading = await port.read('s1', 'C:\\picked')
@@ -62,7 +62,7 @@ test('remote namespace installed: it is used, reads call read(sessionId, workspa
 
 test('no workspace picked: an empty string goes in that slot, the host roots it by session identity', async () => {
   const { calls, namespace } = fakeNamespace()
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
 
   await port.read('s1', '')
   assert.deepEqual(calls[0], { method: 'read', values: ['s1', '', {}] })
@@ -70,7 +70,7 @@ test('no workspace picked: an empty string goes in that slot, the host roots it 
 
 test('a namespace one level under remote is recognized too', async () => {
   const { namespace } = fakeNamespace()
-  const port = createPanelPort({ get: (name) => (name === 'remote' ? { pathfinder: namespace } : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote' ? { superworker: namespace } : undefined) })
 
   assert.equal(port.source, 'remote')
   await port.read('s1', '')
@@ -78,7 +78,7 @@ test('a namespace one level under remote is recognized too', async () => {
 
 test('over the remote road, which endpoint each of the three writes calls', async () => {
   const { calls, namespace } = fakeNamespace({ ok: true, value: { ok: true, text: '' } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
 
   await port.write('archive', 's1', 'C:\\picked', 'i-1')
   await port.write('revive', 's1', 'C:\\picked', 'i-1')
@@ -94,7 +94,7 @@ test('over the remote road, which endpoint each of the three writes calls', asyn
 
 test('over the remote road, which endpoint each of the two settings calls calls', async () => {
   const { calls, namespace } = fakeNamespace({ ok: true, value: { workspaceRoot: 'C:\\ws', ok: true, text: '', entries: {} } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
 
   const reading = await port.readConfig('s1', 'C:\\picked')
   await port.setConfig('s1', 'C:\\picked', 'test_tier', 'minimal')
@@ -107,7 +107,7 @@ test('over the remote road, which endpoint each of the two settings calls calls'
 
 test('the add-instruction seam: the endpoint is addInstruction, text and scope passed positionally', async () => {
   const { calls, namespace } = fakeNamespace({ ok: true, value: { ok: true, text: 'INSTRUCTION i-0003' } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
 
   const outcome = await port.say('s1', 'C:\\picked', 'read the record first, then act', 'cycle', 'panel-to-plugin', '')
 
@@ -120,7 +120,7 @@ test('the add-instruction seam: the endpoint is addInstruction, text and scope p
 
 test('the remote layer says no: the write face brings its words back, no pretending it worked', async () => {
   const { namespace } = fakeNamespace({ ok: false, error: { code: 'gateway/internal', message: 'the tool refused' } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
   const outcome = await port.write('archive', 's1', '', 'i-1')
 
   assert.deepEqual(
@@ -131,7 +131,7 @@ test('the remote layer says no: the write face brings its words back, no pretend
 
   /* Codes this half knows cross the boundary as they are: a tool refusal is a tool refusal, no guessing it is somebody else's sentence. */
   const known = fakeNamespace({ ok: false, error: { code: 'tool-refused', message: 'there is no i-0007 entry' } })
-  const carried = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? known.namespace : undefined) })
+  const carried = createPanelPort({ get: (name) => (name === 'remote.superworker' ? known.namespace : undefined) })
   assert.deepEqual(
     await carried.write('archive', 's1', '', 'i-1'),
     { ok: false, code: 'tool-refused', detail: 'there is no i-0007 entry' },
@@ -141,14 +141,14 @@ test('the remote layer says no: the write face brings its words back, no pretend
 
 test('the remote layer fails to read: the reading is rethrown, no empty one made up', async () => {
   const { namespace } = fakeNamespace({ ok: false, error: { message: 'cannot read' } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
 
   await assert.rejects(() => port.read('s1', ''), refusedWith({ code: 'transport-failed', detail: 'cannot read' }))
 })
 
 test('the session-note seam: the endpoint is readSessions(sessionId, workspaceRoot); what it brings back comes back as it is', async () => {
-  const { calls, namespace } = fakeNamespace({ ok: true, value: { workspaceRoot: 'C:\\ws', recordPath: '.pf/meta/sessions', state: 'read', notes: { 'n-1.json': '{"run":[]}' } } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
+  const { calls, namespace } = fakeNamespace({ ok: true, value: { workspaceRoot: 'C:\\ws', recordPath: '.superworker/meta/sessions', state: 'read', notes: { 'n-1.json': '{"run":[]}' } } })
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
 
   const reading = await port.readSessions('s1', 'C:\\picked')
   assert.deepEqual(reading.notes, { 'n-1.json': '{"run":[]}' })
@@ -157,7 +157,7 @@ test('the session-note seam: the endpoint is readSessions(sessionId, workspaceRo
 
 test('the open-session seam: the endpoint is openNodeSession, cycle and node passed positionally; the receipt is never shown as text', async () => {
   const { calls, namespace } = fakeNamespace({ ok: true, value: { ok: true, session: 'session-minted' } })
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
 
   const outcome = await port.openNodeSession('s1', 'C:\\picked', 'panel-to-plugin', 'n1')
 
@@ -169,7 +169,7 @@ test('the open-session seam: the endpoint is openNodeSession, cycle and node pas
   }])
 
   const refused = fakeNamespace({ ok: false, error: { code: 'prompt-missing', message: '' } })
-  const other = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? refused.namespace : undefined) })
+  const other = createPanelPort({ get: (name) => (name === 'remote.superworker' ? refused.namespace : undefined) })
   assert.deepEqual(
     await other.openNodeSession('s1', '', 'c1', 'n1'),
     { ok: false, code: 'prompt-missing' },
@@ -185,27 +185,27 @@ test('namespace not installed: falls back to the carrier layer, endpoints and ar
   const reading = await port.read('s1', 'C:\\picked')
   assert.equal(reading.workspaceRoot, 'C:\\ws')
   assert.equal(calls[0].path, '/api')
-  assert.equal(calls[0].endpoint, 'pathfinder/read')
+  assert.equal(calls[0].endpoint, 'superworker/read')
   assert.deepEqual(calls[0].payload, { args: { sessionId: 's1', workspaceRoot: 'C:\\picked', options: {} } })
 
   await port.write('remove', 's1', 'C:\\picked', 'i-1')
-  assert.equal(calls[1].endpoint, 'pathfinder/removeInstruction')
+  assert.equal(calls[1].endpoint, 'superworker/removeInstruction')
   assert.deepEqual(calls[1].payload, { args: { sessionId: 's1', workspaceRoot: 'C:\\picked', id: 'i-1' } })
 
   await port.readConfig('s1', '')
-  assert.equal(calls[2].endpoint, 'pathfinder/readConfig')
+  assert.equal(calls[2].endpoint, 'superworker/readConfig')
   assert.deepEqual(calls[2].payload, { args: { sessionId: 's1', workspaceRoot: '' } })
 
   await port.setConfig('s1', '', 'issue_repair', 'off')
-  assert.equal(calls[3].endpoint, 'pathfinder/setConfig')
+  assert.equal(calls[3].endpoint, 'superworker/setConfig')
   assert.deepEqual(calls[3].payload, { args: { sessionId: 's1', workspaceRoot: '', key: 'issue_repair', value: 'off' } })
 
   await port.readSessions('s1', '')
-  assert.equal(calls[4].endpoint, 'pathfinder/readSessions')
+  assert.equal(calls[4].endpoint, 'superworker/readSessions')
   assert.deepEqual(calls[4].payload, { args: { sessionId: 's1', workspaceRoot: '' } })
 
   await port.say('s1', 'C:\\picked', 'read the record first, then act', 'node', '', '3fac279b')
-  assert.equal(calls[5].endpoint, 'pathfinder/addInstruction')
+  assert.equal(calls[5].endpoint, 'superworker/addInstruction')
   assert.deepEqual(calls[5].payload, {
     args: { sessionId: 's1', workspaceRoot: 'C:\\picked', text: 'read the record first, then act', scope: 'node', cycle: '', node: '3fac279b' },
   })
@@ -228,7 +228,7 @@ test('neither road connected: the seam tells the truth, a read that cannot read 
 
 test('the channel has no such endpoint: both read and write report no-operation, the endpoint name goes in detail', async () => {
   const partial = { read: async () => ({ ok: true, value: { workspaceRoot: 'C:\\ws' } }) }
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? partial : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? partial : undefined) })
 
   assert.deepEqual(
     await port.write('archive', 's1', '', 'i-1'),
@@ -244,7 +244,7 @@ test('the channel has no such endpoint: both read and write report no-operation,
 
 test('the answer is not something readable: report unparsable-answer, no made-up reading', async () => {
   const { namespace } = fakeNamespace('not an object')
-  const port = createPanelPort({ get: (name) => (name === 'remote.pathfinder' ? namespace : undefined) })
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
 
   await assert.rejects(() => port.read('s1', ''), refusedWith({ code: 'unparsable-answer' }))
   assert.deepEqual(await port.write('archive', 's1', '', 'i-1'), { ok: false, code: 'unparsable-answer' })

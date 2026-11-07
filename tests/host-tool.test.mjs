@@ -1,11 +1,11 @@
-/* The agent-facing `pathfinder` tool and its wake: the tool exists for the agents whose
- * workspace holds a `.pf/` record, and for those whose session loads a pipeline skill —
- * by the `skill` tool's call result or by a user `/pf-*` invocation — never for anyone
+/* The agent-facing `superworker` tool and its wake: the tool exists for the agents whose
+ * workspace holds a `.superworker/` record, and for those whose session loads a pipeline skill —
+ * by the `skill` tool's call result or by a user `/superworker-*` invocation — never for anyone
  * else, and only once per agent.
  *
  * - **never resident**: an unrelated agent's scope stays without the tool; a settled call of a
  *   tool that is not `skill`, a failed skill load, a `/some-skill` invocation, and a
- *   workspace with no `.pf/` all leave the scope unarmed.
+ *   workspace with no `.superworker/` all leave the scope unarmed.
  * - **wakes once**: every trigger hits the same wake; a second skill load, and a second
  *   step in a record's workspace, register nothing more.
  * - the description the tool registers with stays at or under 400 bytes;
@@ -13,7 +13,7 @@
  *   ship under a `skills/` tree come from one constant — the whole tree is walked, not
  *   just `SKILL.md`, and every `SKILL.md` has to name the tool at least once (without
  *   that leg a walk over a corpus that never names it would pass vacuously). A mention is
- *   the bare word: a `pathfinder` that is a segment of a path (the manifest directory) is
+ *   the bare word: a `superworker` that is a segment of a path (the manifest directory) is
  *   a different constant and is not counted.
  *
  *   node --test tests/
@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url'
 import { apply } from '../src/host/index.ts'
 import { executorOf } from '../src/host/executor.ts'
 import {
-  PATHFINDER_TOOL_NAME,
+  SUPERWORKER_TOOL_NAME,
   SKILL_NAME_PREFIX,
   argvOf,
   toolDescriptionOf,
@@ -46,7 +46,7 @@ function toolHost(ctx) {
 
 /* Loading this line places the shipped skills into the DSH skill root; the root these
  * cases would write into is pinned to a temp home here, never the machine's own. */
-const pinned = pinHome(['DSH_HOME'], 'pf-tool-home-')
+const pinned = pinHome(['DSH_HOME'], 'superworker-tool-home-')
 test.after(pinned.restore)
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
@@ -116,36 +116,36 @@ test('Never resident: a call to an unrelated tool, a failed skill load, another 
   assert.equal(registered.length, 0, 'no trigger line armed this agent')
 })
 
-test('Wakes once: the skill tool loads a skill, and the next round this agent\'s scope has one pathfinder, no more', async () => {
+test('Wakes once: the skill tool loads a skill, and the next round this agent\'s scope has one superworker, no more', async () => {
   const { ctx, events } = context()
   apply(ctx)
   const { agent, registered } = fakeAgent()
 
   await firePostExecute(events, { name: 'skill', agent }, { isError: false })
   assert.equal(registered.length, 1, 'registered once')
-  assert.equal(registered[0].name, PATHFINDER_TOOL_NAME)
+  assert.equal(registered[0].name, SUPERWORKER_TOOL_NAME)
 
   await firePostExecute(events, { name: 'skill', agent }, { isError: false })
-  await firePreStep(events, { agent }, [{ source: { kind: 'skill-invocation', name: 'pf-route' } }])
+  await firePreStep(events, { agent }, [{ source: { kind: 'skill-invocation', name: 'sw-route' } }])
   assert.equal(registered.length, 1, 'one copy per agent')
 })
 
-test('Wakes once: a user typing /pf-route goes through the same wake, the two lines do not register each their own', async () => {
+test('Wakes once: a user typing /sw-route goes through the same wake, the two lines do not register each their own', async () => {
   const { ctx, events } = context()
   apply(ctx)
   const { agent, registered } = fakeAgent()
 
   await firePreStep(events, { agent }, [
-    { source: { kind: 'skill-invocation', name: 'pf-route' } },
-    { source: { kind: 'skill-invocation', name: 'pf-conduct' } },
+    { source: { kind: 'skill-invocation', name: 'sw-route' } },
+    { source: { kind: 'skill-invocation', name: 'sw-conduct' } },
   ])
   assert.equal(registered.length, 1)
-  assert.equal(registered[0].name, PATHFINDER_TOOL_NAME)
+  assert.equal(registered[0].name, SUPERWORKER_TOOL_NAME)
 })
 
-test('Fact wake: the workspace has .pf, so the first step request carries the tool, no skill needed', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'pf-workspace-'))
-  mkdirSync(join(root, '.pf'), { recursive: true })
+test('Fact wake: the workspace has .superworker, so the first step request carries the tool, no skill needed', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'superworker-workspace-'))
+  mkdirSync(join(root, '.superworker'), { recursive: true })
   try {
     const { ctx, events } = context({ cwd: root })
     apply(ctx)
@@ -153,7 +153,7 @@ test('Fact wake: the workspace has .pf, so the first step request carries the to
 
     await firePreStep(events, { agent }, [])
     assert.equal(registered.length, 1, 'the workspace has a record, armed on the first step')
-    assert.equal(registered[0].name, PATHFINDER_TOOL_NAME)
+    assert.equal(registered[0].name, SUPERWORKER_TOOL_NAME)
 
     await firePreStep(events, { agent }, [])
     assert.equal(registered.length, 1, 'one copy per agent')
@@ -162,8 +162,8 @@ test('Fact wake: the workspace has .pf, so the first step request carries the to
   }
 })
 
-test('Fact wake: no .pf in the workspace, no arming; once the record appears, the next step arms', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'pf-workspace-'))
+test('Fact wake: no .superworker in the workspace, no arming; once the record appears, the next step arms', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'superworker-workspace-'))
   try {
     const { ctx, events } = context({ cwd: root })
     apply(ctx)
@@ -173,7 +173,7 @@ test('Fact wake: no .pf in the workspace, no arming; once the record appears, th
     await firePreStep(events, { agent }, [])
     assert.equal(registered.length, 0, 'an unrelated workspace gets not one byte more')
 
-    mkdirSync(join(root, '.pf'), { recursive: true })
+    mkdirSync(join(root, '.superworker'), { recursive: true })
     assert.equal(hasPipelineRecord(root), true)
     await firePreStep(events, { agent }, [])
     assert.equal(registered.length, 1, 'once the record appears, the next step arms')
@@ -188,7 +188,7 @@ test('The tool\'s shape: name, description bytes, parameters and output are all 
   wakeAgent(agent, toolHost(ctx))
 
   const tool = registered[0]
-  assert.equal(tool.name, PATHFINDER_TOOL_NAME)
+  assert.equal(tool.name, SUPERWORKER_TOOL_NAME)
   assert.deepEqual(Object.keys(tool.parameters.properties ?? {}), ['word', 'args', 'help'])
   assert.deepEqual(tool.parameters.required, undefined, 'no required parameters: word names are not enumerated')
   assert.deepEqual(Object.keys(tool.output.schema.properties ?? {}), ['code', 'stdout', 'stderr'])
@@ -217,22 +217,22 @@ test('The tool\'s four layers of help: argv is composed from word / args / help,
   wakeAgent(agent, toolHost(ctx))
   const answer = await registered[0].execute({ help: true }, { agent })
   assert.equal(answer.code, 0, answer.stderr)
-  assert.match(answer.stdout, /pathfinder -- the agent pipeline/u, 'asked empty-handed, it answers the whole index')
+  assert.match(answer.stdout, /superworker -- the agent pipeline/u, 'asked empty-handed, it answers the whole index')
 })
 
 test('Name lock: the registered name and the README spelling come from one constant; the skill bodies spell it the same, and every SKILL.md names it', () => {
-  assert.equal(PATHFINDER_TOOL_NAME, 'pathfinder')
-  assert.equal(SKILL_NAME_PREFIX, 'pf-')
+  assert.equal(SUPERWORKER_TOOL_NAME, 'superworker')
+  assert.equal(SKILL_NAME_PREFIX, 'superworker-')
   for (const file of ['README.md', 'README.zh.md']) {
     const text = readFileSync(join(repo, file), 'utf8')
-    assert.match(text, /`pathfinder`/u, `${file} spells the tool the way the registry does`)
+    assert.match(text, /`superworker`/u, `${file} spells the tool the way the registry does`)
   }
   // The skills live under the shipped plugins. Walk *every* markdown page in their
   // `skills/` trees — the pools and the reference pages quote command lines too — and
   // wherever one names the tool it names the registered spelling. A page that never
   // names it is not this lock's business; a `SKILL.md` that never names it is, because
   // otherwise the spelling scan passes without ever reading a spelling this phase wrote.
-  const pluginsRoot = join(repo, 'packages', 'pf-core', 'plugins')
+  const pluginsRoot = join(repo, 'packages', 'superworker-core', 'plugins')
   const files = []
   const collect = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -252,19 +252,19 @@ test('Name lock: the registered name and the README spelling come from one const
   walkSkills(pluginsRoot)
   assert.ok(files.length >= 60, `every shipped skill body is walked (walked ${files.length} files, at least 60)`)
   // The tool is a word, not a directory: `MANIFEST_DIR` in `src/host/skill-paths.ts` happens
-  // to spell `pathfinder` too, and a tool rename must not force the doc path to move. Keep
+  // to spell `superworker` too, and a tool rename must not force the doc path to move. Keep
   // only path-free tokens — not preceded by a slash or a backslash, not followed by a
-  // slash — so `<dshHome>/pathfinder/skills.json` is a path, not a spelling of the tool.
-  const TOOL_MENTION = /(?<![/\\])pathfinder[A-Za-z]*(?!\/)/gu
+  // slash — so `<dshHome>/superworker/skills.json` is a path, not a spelling of the tool.
+  const TOOL_MENTION = /(?<![/\\])superworker[A-Za-z]*(?!\/)/gu
   for (const file of files) {
     const text = readFileSync(file, 'utf8')
     const mentions = text.match(TOOL_MENTION) ?? []
     for (const spelling of mentions) {
-      assert.equal(spelling, PATHFINDER_TOOL_NAME, `${file}: ${spelling} is not the registered spelling`)
+      assert.equal(spelling, SUPERWORKER_TOOL_NAME, `${file}: ${spelling} is not the registered spelling`)
     }
     if (file.endsWith('SKILL.md')) {
-      const named = mentions.filter((spelling) => spelling === PATHFINDER_TOOL_NAME)
-      assert.ok(named.length >= 1, `${file}: names no ${PATHFINDER_TOOL_NAME}, so the name lock spins on nothing`)
+      const named = mentions.filter((spelling) => spelling === SUPERWORKER_TOOL_NAME)
+      assert.ok(named.length >= 1, `${file}: names no ${SUPERWORKER_TOOL_NAME}, so the name lock spins on nothing`)
     }
   }
 })

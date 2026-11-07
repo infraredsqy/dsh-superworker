@@ -4,7 +4,7 @@
 //   node tools/build-client.mjs
 //
 // The sheets in `src/client/styles/` are written in the shape they ship in: every selector already
-// leads with its cell's layer class (`.pf-page` on the main panel, `.pf-issue` on the embedded issue
+// leads with its cell's layer class (`.superworker-page` on the main panel, `.superworker-issue` on the embedded issue
 // pane). A sheet written for a document of its own carries `body { overflow: hidden }`, `:root`
 // tokens and a `*` reset, none of which belong on DSH's document — the `overflow` alone would hide
 // the shell. The source is the artifact, so all this entry does with styles is read the sheets in
@@ -27,11 +27,11 @@ const STYLES = join(root, 'src', 'client', 'styles')
 /**
  * Whether this selector segment carries the layer's class — compared per token, not by substring:
  * split on combinators first, then split each segment on `.` / `#` / `:` / `[` into tokens; only a
- * whole token equal to `pf-page` counts.
+ * whole token equal to `superworker-page` counts.
  *
- * A substring version (`part.includes('.pf-page')`) would treat names like `.pf-pagewrap` and
- * `.pf-pagefoot` as "already inside the panel layer", letting the whole rule escape onto the page
- * root; their tokens are `pf-pagewrap` and the like, unequal to `pf-page`, so the leak is caught.
+ * A substring version (`part.includes('.superworker-page')`) would treat names like `.superworker-pagewrap` and
+ * `.superworker-pagefoot` as "already inside the panel layer", letting the whole rule escape onto the page
+ * root; their tokens are `superworker-pagewrap` and the like, unequal to `superworker-page`, so the leak is caught.
  */
 function hasScopeClass(part, className) {
   return part
@@ -44,7 +44,7 @@ function hasScopeClass(part, className) {
  * The layer ruler: every selector that ships must lead with one of the layer classes — the first
  * segment of a selector must genuinely carry it.
  *
- * A wrong prefix, or a segment the split fails to recognize (classes like `.pf-pagewrap` that embed
+ * A wrong prefix, or a segment the split fails to recognize (classes like `.superworker-pagewrap` that embed
  * the panel root's name), escapes it. Rules that miss their layer fail silently on the page while
  * styling DSH's shell, so this step stops the build instead.
  *
@@ -86,12 +86,12 @@ const bundle = await rolldown({
   external: ['react'],
   plugins: [
     {
-      name: 'pathfinder-styles',
+      name: 'superworker-styles',
       resolveId(source) {
-        return source === 'virtual:pf-styles' ? source : null
+        return source === 'virtual:superworker-styles' ? source : null
       },
       load(id) {
-        return id === 'virtual:pf-styles' ? `export default ${JSON.stringify(css)}` : null
+        return id === 'virtual:superworker-styles' ? `export default ${JSON.stringify(css)}` : null
       },
     },
   ],

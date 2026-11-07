@@ -3,7 +3,7 @@
 > 这页只写**做法**与**已知限制**：这个包怎么发出去、别人怎么装进来、装完怎么核。
 > 它写的是**通用口径**，每次发版本都适用；某一次发布里的临时问题、清理残留的事项不进这页。
 > **这页不写版本号**：插件自己的号与 DSH 的号都不进这页。
-> 包名与仓名都是 `dsh-pathfinder`，侧栏那一格叫「寻路中心」，DSH 设置里那一节叫「寻路配置」。
+> 包名与仓名都是 `dsh-superworker`，侧栏那一格叫「超级工坊」，DSH 设置里那一节叫「工坊配置」。
 
 ## 交付形态：预构建产物随包走
 
@@ -20,19 +20,19 @@ npm run build:products
 单测接在后面。四份产物各自的落点见下面 `files` 那一段。
 
 `package.json` 的 `files` 只收这几样：两个运行时入口、`lib/types/**/*.d.ts`、`locale/*.json`、
-`cordis.patch.yml`、`packages/pf-core/dist/**/*`（引擎的产物：并入宿主半身的那份代码，加上 git 合并驱动要跑的入口），
-以及 `packages/pf-core/plugins/**/*`——插件目录整个进包，随插件装与卸的那几套技能
+`cordis.patch.yml`、`packages/superworker-core/dist/**/*`（引擎的产物：并入宿主半身的那份代码，加上 git 合并驱动要跑的入口），
+以及 `packages/superworker-core/plugins/**/*`——插件目录整个进包，随插件装与卸的那几套技能
 就在里面（一个技能指向同目录的兄弟文件，半个文件夹装出去就是引用的文件不在），技能文本与引擎因此落在
 同一份发布件里。于是 `npm pack` 出的那一个 `.tgz` 就是分发件本身（`lib/client-body.js` 是浏览器
 那一步的中间件，构建脚本用完当场删掉，不进包）。三个运行时口子：
 
 | 口子 | 落点 | 谁用 |
 |---|---|---|
-| `.`（`main`） | `lib/host/index.js` | 宿主半身：装成 `ctx.pathfinder`，那几手端点经网关交出去 |
+| `.`（`main`） | `lib/host/index.js` | 宿主半身：装成 `ctx.superworker`，那几手端点经网关交出去 |
 | `./client` | `lib/client.js` | 浏览器半身：`dsh.client.platform` 是 `web`，外壳按启动名册去拉这一份 |
 | `./locale/*.json` | `locale/{zh,en}.json` | DSH 的插件清单读它来印这一行的名字与说明；与面板自己的对照表是两处（那份在浏览器包里，说面板上的词） |
 
-`dsh.bundle.patch` 指着 `./cordis.patch.yml`（一条 `insert`，行 id `pathfinder`）。装进一个 profile 时
+`dsh.bundle.patch` 指着 `./cordis.patch.yml`（一条 `insert`，行 id `superworker`）。装进一个 profile 时
 `dsh plugin add` 会把这一层并进那个 profile 的 `dsh.profile.bundles`，profile 自己的
 `cordis.patch.yml` 照旧可以按 id 把这一行关掉。
 
@@ -44,7 +44,7 @@ npm run build:products
 
 **这两行都不能摘**：外壳照启动名册先送达 `connection` 那条客户端插件，再应用本包的面板，浏览器半身
 那条取数口子才接得上。摘掉之后面板应用得早，中央栏那一格正文里没有记录的数，摆的是「该部署未连接
-寻路记录服务，无法读取记录。」（宿主那一侧的端点 `pathfinder/read` 照旧是好的）。
+记录服务，无法读取记录。」（宿主那一侧的端点 `superworker/read` 照旧是好的）。
 `locale` 那条管的是语言：不声明它，面板照样画得出来（语言端口会退回包里那份中文对照表），但跟随 DSH
 设置切换语言这一条就接不上了。
 
@@ -110,7 +110,7 @@ git push origin <分支> && git push origin v<version>
 gh run list --workflow publish.yml
 gh run watch
 # 6. 核 registry 上那个号，不是 exit code
-npm view dsh-pathfinder version --registry=https://registry.npmjs.org
+npm view dsh-superworker version --registry=https://registry.npmjs.org
 ```
 
 `prepack` 也在 CI 上现跑一遍 `build:products`，所以装出去的就是这份预构建产物。
@@ -142,7 +142,7 @@ npm view dsh-pathfinder version --registry=https://registry.npmjs.org
 ### 1. 从 npm 装（给所有人装的那一条）
 
 ```sh
-dsh plugin --profile <名字> add dsh-pathfinder      # 用户侧
+dsh plugin --profile <名字> add dsh-superworker      # 用户侧
 ```
 作者侧怎么把这一版推上去，见「发一个版本」——那一条走 CI，这页不写登录与凭据。
 
@@ -155,7 +155,7 @@ dsh plugin --profile <名字> add dsh-pathfinder      # 用户侧
 作者侧把 `npm pack` 出的那一个 `.tgz` 传成 Release 的附件；用户侧下载附件，然后
 
 ```sh
-dsh plugin --profile <名字> add ./dsh-pathfinder-<版本>.tgz
+dsh plugin --profile <名字> add ./dsh-superworker-<版本>.tgz
 ```
 
 这条路与 npm 那一条装的是同一份预构建产物，不跑任何构建脚本。
@@ -171,7 +171,7 @@ dsh plugin --profile <名字> add github:<owner>/<repo>
 
 ```yaml
 allowBuilds:
-  dsh-pathfinder: true
+  dsh-superworker: true
 ```
 
 再装一次。那条授权等于允许这个包在装的时候在你机器上执行代码 —— 只对可信来源这么做，并钉一个
@@ -182,11 +182,11 @@ commit。本仓有的是 `prepack`，它管不到这条路（pnpm 为 git 依赖
 
 ```sh
 dsh --profile <名字> --dump-config                     # 打印合成后的配置树，不起服务
-dsh plugin --profile <名字> remove dsh-pathfinder      # 撤销：依赖与那一层一起摘掉
+dsh plugin --profile <名字> remove dsh-superworker      # 撤销：依赖与那一层一起摘掉
 ```
 
-在 `--dump-config` 的输出里找 `# == dsh-pathfinder` 那一节，它下面的头一个顶层行就是这一行
-（`- id: pathfinder`）；行里的 `name:` 指的就是这个包，宿主入口与浏览器半身两份都得在盘上。
+在 `--dump-config` 的输出里找 `# == dsh-superworker` 那一节，它下面的头一个顶层行就是这一行
+（`- id: superworker`）；行里的 `name:` 指的就是这个包，宿主入口与浏览器半身两份都得在盘上。
 
 层顺序是 profile 的 `dsh.profile.bundles`（按清单次序）→ profile 自己的 `cordis.patch.yml` →
 `$DSH_HOME/cordis.patch.yml` → 命令行上每个 `--patch`，后一层按行 id 覆盖前一层；一条 patch 落到
@@ -194,41 +194,41 @@ dsh plugin --profile <名字> remove dsh-pathfinder      # 撤销：依赖与那
 
 技能不在合成配置里，它落在 DSH 读技能的那个根：这一行装载时，插件文件夹里那几套技能被写进
 `$DSH_HOME/skills/<技能名>/SKILL.md`（缺省跟 DSH 那一家 provider 一样：`DSH_HOME`，否则 `~/.dsh`），
-清单记在 `$DSH_HOME/pathfinder/skills.json`（升级时先按上一次的清单摘掉旧的一份，再写新的）；这一行
+清单记在 `$DSH_HOME/superworker/skills.json`（升级时先按上一次的清单摘掉旧的一份，再写新的）；这一行
 被卸下来时按那份清单摘净，别人的技能一个不碰。那个根里已经有别人的同名副本时，这一行的技能就不装
 （面板照常起来），拒绝里点名两处——这一行的那份与占名的那份——一个字节都不写。
 
 ## 发布件里没有命令，只有一个可执行入口
 
 装插件装的是面板。这个包里没有一条要给人在 shell 里敲的命令：每个词都在进程内作答——会话里是
-`pathfinder` 工具，面板里是那几手端点，两边走同一份 `answer()`。字段上也看得出来：`package.json`
+`superworker` 工具，面板里是那几手端点，两边走同一份 `answer()`。字段上也看得出来：`package.json`
 没有 `bin`，`files` 里没有 `bin/`。
 
 唯一会被别的进程启动的文件是 git 的合并驱动，它在引擎产物里：
 
-- `<装机目录>/packages/pf-core/dist/merge-ledger.mjs`。git 按 `merge.pf.driver` 这条字符串起进程，
+- `<装机目录>/packages/superworker-core/dist/merge-ledger.mjs`。git 按 `merge.superworker.driver` 这条字符串起进程，
   参数是 `%O %A %B %P`；登记在承载记录的那个仓库的 git config 里，`init` 顺带写、`register` 重写。
-- 登记有三种写法：PATH 上有 `pf` 时写 `pf merge-ledger %O %A %B %P`（旧装机的命令还能用），只有
-  `pf-merge-ledger` 时写那一条，两条都没有时写绝对形——两个带引号的路径，解释器加这个文件。
+- 登记有三种写法：PATH 上有 `superworker` 时写 `superworker merge-ledger %O %A %B %P`（旧装机的命令还能用），只有
+  `sw-merge-ledger` 时写那一条，两条都没有时写绝对形——两个带引号的路径，解释器加这个文件。
   绝对形只指向发布件里自己的文件，不回到仓、也不要 `node_modules`，所以装到哪儿都答得起来。
 - `doctor` 的 `merge-driver` 那一格认这三种写法，并判断它在这台机器上真的跑不跑得起来。
 
 卸掉插件：
 
 ```sh
-dsh plugin --profile <名> remove dsh-pathfinder
+dsh plugin --profile <名> remove dsh-superworker
 ```
 
 面板那一行从 profile 的 `dsh.profile.bundles` 里消失；再装上同一个 `.tgz` 就回到新的这份。技能那一半也由发布件供给：`issue` 与 `test-audit` 两个插件带的四条
-（`pf-issue-scan` / `pf-issue-repair` / `pf-issue-discuss` / `pf-test-audit`），加上 `pipeline` 插件带的三条核心技能
-（`pf-conduct` / `pf-route` / `pf-instruct`，每份把它正文指向的 `shared/pf/` 单页带在自己目录里）。
+（`sw-issue-scan` / `sw-issue-repair` / `sw-issue-discuss` / `sw-test-audit`），加上 `pipeline` 插件带的三条核心技能
+（`sw-conduct` / `sw-route` / `sw-instruct`，每份把它正文指向的 `shared/sw/` 单页带在自己目录里）。
 都落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的同哈希，根序 rank 400）。派发的第一行
-`/pf-conduct <节点 id>` 因此在干净机器上也读得到；DSH 自己的 `~\.agents\skills` 是 rank 500 的那一根，
+`/sw-conduct <节点 id>` 因此在干净机器上也读得到；DSH 自己的 `~\.agents\skills` 是 rank 500 的那一根，
 同一个名字在它面前读的是 `$DSH_HOME/skills` 这一份。
 
 ### 盘上留着一个常驻 `ledger.lock` 时
 
-`.pf/meta/ledger.lock` 在引擎这一侧是**文件存在即互斥**：以排他方式建文件，建不上就等，等满 10 秒报 busy，
+`.superworker/meta/ledger.lock` 在引擎这一侧是**文件存在即互斥**：以排他方式建文件，建不上就等，等满 10 秒报 busy，
 记录一个字不改。写完就删，所以它不是常驻文件。
 
 别的读法把锁当成常驻文件（文件一直在盘上，锁的是文件内容），于是在盘上留下一个 0 字节的 `ledger.lock`：
@@ -254,12 +254,12 @@ dsh plugin --profile <名> remove dsh-pathfinder
 `npm test` 走的就是同一条 `build:products`，四份产物一起重建，所以刚跑过它、且没改过源码时，盘上那两份
 与包里的同源。
 
-下面这些只有手动看。合成的隔离工作区里没有 `.pf`，正好是「没有记录」那一态；要看真记录下的读数，就把这一
-行装进你自己那个 profile，在一个有 `.pf` 的工作区里开面板——本仓自己就有一份：
+下面这些只有手动看。合成的隔离工作区里没有 `.superworker`，正好是「没有记录」那一态；要看真记录下的读数，就把这一
+行装进你自己那个 profile，在一个有 `.superworker` 的工作区里开面板——本仓自己就有一份：
 
 - 一份真记录：五格都画得出来——地图上的卡与线、问题池的读数、指令那一栏的三种作用域；
-- 一个没有 `.pf` 的工作区：面板说这个工作区没有记录，五格不画；
-- 一个 `.pf` 在、四份文件读不动的工作区：面板说记录读不动；
+- 一个没有 `.superworker` 的工作区：面板说这个工作区没有记录，五格不画；
+- 一个 `.superworker` 在、四份文件读不动的工作区：面板说记录读不动；
 - 只有问题池、或只有管线的工作区：相应那两格各退化成一行话；
 - 手上的动作：拖明细分隔条、切五个标签、切语言、加一条指令再归档再删掉、改一个配置值看它落盘。
 

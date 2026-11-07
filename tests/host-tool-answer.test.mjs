@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { answer, open } from 'pf-core'
+import { answer, open } from 'superworker-core'
 import { apply } from '../src/host/index.ts'
 import { executorOf } from '../src/host/executor.ts'
 import { shippedPluginsDir } from '../src/host/skill-paths.ts'
@@ -22,7 +22,7 @@ import { wakeAgent } from '../src/host/wake.ts'
 import { fakeContext } from './helpers/host-context.mjs'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
-const shippedPlugins = join(repo, 'packages', 'pf-core', 'plugins')
+const shippedPlugins = join(repo, 'packages', 'superworker-core', 'plugins')
 
 /** A stand-in host context whose sessions resolve nowhere, so the tool reads the sandbox root. */
 const contextOver = (workspaceRoot) => fakeContext({
@@ -48,12 +48,12 @@ function toolOver(workspaceRoot) {
   return registered[0]
 }
 
-/** A temp pf project with the given node titles on the graph. */
+/** A temp superworker project with the given node titles on the graph. */
 async function projectWith(titles) {
-  const root = mkdtempSync(join(tmpdir(), 'pf-tool-answer-'))
-  const pf = open(root)
-  await pf.ledger.init()
-  for (const title of titles) await pf.ledger.dag.add({ title })
+  const root = mkdtempSync(join(tmpdir(), 'superworker-tool-answer-'))
+  const superworker = open(root)
+  await superworker.ledger.init()
+  for (const title of titles) await superworker.ledger.dag.add({ title })
   return {
     root,
     done() {
@@ -73,7 +73,7 @@ test('Byte lock two: the whole index is ≤2600 bytes, and it is the top-level l
   assert.equal(answer.code, 0, answer.stderr)
   const bytes = Buffer.byteLength(answer.stdout, 'utf8')
   assert.ok(bytes <= 2600, `${bytes} bytes for the index`)
-  assert.match(answer.stdout, /pathfinder -- the agent pipeline/u)
+  assert.match(answer.stdout, /superworker -- the agent pipeline/u)
 })
 
 test('Byte lock three: a word page is ≤4096 bytes (the largest page is locked too)', async () => {
@@ -87,7 +87,7 @@ test('Byte lock three: a word page is ≤4096 bytes (the largest page is locked 
 })
 
 test('Byte lock four: the cap constant is 4000, and a long result over it stays whole with the pointer at its tail; under it, no pointer', async () => {
-  const { LONG_RESULT_LIMIT, longResultPointerOf } = await import('pf-core')
+  const { LONG_RESULT_LIMIT, longResultPointerOf } = await import('superworker-core')
   assert.equal(LONG_RESULT_LIMIT, 4000)
   assert.equal(longResultPointerOf('x'.repeat(4000), 'dag list'), null, 'no pointer right up to the cap')
   assert.match(longResultPointerOf('x'.repeat(4001), 'dag list'), /dag info/u)
@@ -122,19 +122,19 @@ test('Byte lock four: the cap constant is 4000, and a long result over it stays 
   }
 })
 
-test('In a project with no .pf, word:"help" still answers the whole index, no error', async () => {
-  const bare = mkdtempSync(join(tmpdir(), 'pf-tool-bare-'))
+test('In a project with no .superworker, word:"help" still answers the whole index, no error', async () => {
+  const bare = mkdtempSync(join(tmpdir(), 'superworker-tool-bare-'))
   try {
     const tool = toolOver(bare)
     const answer = await tool.execute({ word: 'help' }, { agent: { id: 'agent-tool' } })
     assert.equal(answer.code, 0, answer.stderr)
-    assert.match(answer.stdout, /pathfinder -- the agent pipeline/u)
+    assert.match(answer.stdout, /superworker -- the agent pipeline/u)
   } finally {
     rmSync(bare, { recursive: true, force: true })
   }
 })
 
-test('In a project with .pf, the tool\'s dag list is byte-identical to the engine answering the same line', async () => {
+test('In a project with .superworker, the tool\'s dag list is byte-identical to the engine answering the same line', async () => {
   const stage = await projectWith(['alpha node', 'beta node', 'gamma node'])
   try {
     const tool = toolOver(stage.root)
@@ -182,7 +182,7 @@ test('help layered on args: the tool\'s answer is byte-identical to the engine o
 })
 
 test('Every write the panel can do has a word in the table', async () => {
-  const { COMMANDS, GROUPS } = await import('pf-core')
+  const { COMMANDS, GROUPS } = await import('superworker-core')
   // The panel's write endpoints, and the line each one runs (the gateway spells them).
   const writes = [
     ['addInstruction', ['instruction', 'add']],
@@ -203,8 +203,8 @@ test('Every write the panel can do has a word in the table', async () => {
   }
   // The gateway really walks those five endpoints — the mapping above answers for the
   // class's own write surface, checked here by name.
-  const { PathfinderRecordsGateway } = await import('../src/host/gateway.ts')
+  const { SuperworkerRecordsGateway } = await import('../src/host/gateway.ts')
   for (const [endpoint] of writes) {
-    assert.equal(typeof PathfinderRecordsGateway.prototype[endpoint], 'function', `${endpoint} is on the gateway`)
+    assert.equal(typeof SuperworkerRecordsGateway.prototype[endpoint], 'function', `${endpoint} is on the gateway`)
   }
 })

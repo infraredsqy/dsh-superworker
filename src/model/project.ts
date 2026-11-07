@@ -9,7 +9,7 @@
  * the cycle records' holdings: who is working a node is recorded on the cycle
  * side, and the card's own fields only answer "completed or not".
  */
-import type { PathfinderCycle, PathfinderNode, PathfinderStep } from './records.ts'
+import type { SuperworkerCycle, SuperworkerNode, SuperworkerStep } from './records.ts'
 import type {
   ColumnReadings,
   CycleReading,
@@ -61,7 +61,7 @@ interface CutCycle {
 /** One node's own facts, in one batch: the two dependency columns wait until the whole batch's states are out, then come down with the facts. */
 interface NodeFacts {
   readonly id: string
-  readonly node: PathfinderNode
+  readonly node: SuperworkerNode
   readonly state: NodeState
   readonly steps: readonly StepReading[]
   readonly walkedBy: readonly string[]
@@ -105,7 +105,7 @@ export function readProject(input: RecordsAtMoment): ProjectReading {
   }
 }
 
-function cutCycle(cycle: PathfinderCycle, at: Date): CutCycle {
+function cutCycle(cycle: SuperworkerCycle, at: Date): CutCycle {
   const id = text(cycle.id) ?? ''
   const steps: CutStep[] = []
   const path: StepReading[] = []
@@ -132,7 +132,7 @@ function cutCycle(cycle: PathfinderCycle, at: Date): CutCycle {
 
 /** Whether the cycle is in service: use the record's word when it has been written down; until then, read it by whom it currently holds. */
 function inServiceOf(
-  cycle: PathfinderCycle,
+  cycle: SuperworkerCycle,
   recordStatus: string | undefined,
   holding: readonly CutHolding[],
   at: Date,
@@ -144,7 +144,7 @@ function inServiceOf(
 }
 
 /** Whom a cycle holds at that moment: both the list and the single-value spellings are read. */
-function readHolding(cycle: PathfinderCycle, at: Date): readonly CutHolding[] {
+function readHolding(cycle: SuperworkerCycle, at: Date): readonly CutHolding[] {
   const id = text(cycle.id) ?? ''
   const out: CutHolding[] = []
   for (const entry of cycle.holding ?? []) {
@@ -174,7 +174,7 @@ function holdingOf(entry: unknown, at: Date): HoldingReading | null {
 }
 
 /** A step on a cycle: a step not yet laid out at that moment stays out of the reading. */
-function cutStep(step: PathfinderStep, cycleId: string, at: Date): CutStep | null {
+function cutStep(step: SuperworkerStep, cycleId: string, at: Date): CutStep | null {
   const rawStart = toMoment(step.started_at)
   const rawEnd = toMoment(step.ended_at)
   /* The record places this step after that moment: at that moment it had not been laid out yet. A step with no start moment is placed by its end moment. */
@@ -198,7 +198,7 @@ function cutStep(step: PathfinderStep, cycleId: string, at: Date): CutStep | nul
 }
 
 /** A node's state at that moment: the record's own word speaks first; before that word is written down, the steps it has walked decide. */
-function stateOf(node: PathfinderNode, lastVerdict: StepReading | undefined, at: Date): NodeState {
+function stateOf(node: SuperworkerNode, lastVerdict: StepReading | undefined, at: Date): NodeState {
   const word = text(node.status)
   const wordAtCut = writtenBy(toMoment(node.updated_at), at)
   const deliveredAt = cutAt(toMoment(node.completed_at), at)
@@ -213,7 +213,7 @@ function stateOf(node: PathfinderNode, lastVerdict: StepReading | undefined, at:
 
 /** Each node's own facts, in record order; the completed set is taken once here, not once per node. */
 function readFacts(
-  source: Readonly<Record<string, PathfinderNode>>,
+  source: Readonly<Record<string, SuperworkerNode>>,
   cut: readonly CutCycle[],
   at: Date,
 ): readonly NodeFacts[] {

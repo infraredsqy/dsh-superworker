@@ -16,20 +16,20 @@ import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { answer, open } from 'pf-core'
-import { PathfinderRecordsGateway } from '../src/host/gateway.ts'
+import { answer, open } from 'superworker-core'
+import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
 import { shippedPluginsDir } from '../src/host/skill-paths.ts'
 import { pinHome } from './helpers/env.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
-import { configOnDisk, project as throwaway } from './helpers/pf-project.mjs'
+import { configOnDisk, project as throwaway } from './helpers/superworker-project.mjs'
 
 /* One machine layer for this file. The global settings layer lives in the home directory, and
- * `PF_HOME_DIR` is the engine's own switch for it: a test may not read the developer's own home. */
-const pinned = pinHome(['PF_HOME_DIR'], 'pf-host-write-home-')
+ * `SUPERWORKER_HOME_DIR` is the engine's own switch for it: a test may not read the developer's own home. */
+const pinned = pinHome(['SUPERWORKER_HOME_DIR'], 'superworker-host-write-home-')
 after(pinned.restore)
 
-/** A throwaway project: `.pf` laid down by the engine itself, closed again when the case is done. */
-const project = () => throwaway('pf-host-write-')
+/** A throwaway project: `.superworker` laid down by the engine itself, closed again when the case is done. */
+const project = () => throwaway('superworker-host-write-')
 
 /** The words layer's own seams for a project: the root it answers at, and the plugins this package ships. */
 function ioOf(root) {
@@ -42,7 +42,7 @@ function ioOf(root) {
  */
 function instructionsOnDisk(root) {
   try {
-    return JSON.parse(readFileSync(join(root, '.pf', 'instructions.json'), 'utf8')).instructions ?? []
+    return JSON.parse(readFileSync(join(root, '.superworker', 'instructions.json'), 'utf8')).instructions ?? []
   } catch {
     return []
   }
@@ -65,7 +65,7 @@ const context = (workspaceRoot) => fakeContext({
 test('Recording one: the whole sentence lands in the record, and the engine\'s own line comes back', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(context(stage.root))
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
     const said = 'look at the record before acting & do not guess "quotes" in here'
     const outcome = await gateway.addInstruction('s1', '', said, 'global', '', '')
 
@@ -84,7 +84,7 @@ test('Naming a workspace: the write lands on that root, wherever this session it
   const mine = await project()
   const other = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(context(mine.root))
+    const gateway = new SuperworkerRecordsGateway(context(mine.root))
     const outcome = await gateway.addInstruction('s1', other.root, 'this one is for somebody else', 'global', '', '')
 
     assert.equal(outcome.ok, true, outcome.detail)
@@ -102,11 +102,11 @@ test('Binding a cell: the named node lands in the record, and the sentence\'s ta
     const io = ioOf(stage.root)
     const added = await answer(['dag', 'add', 'this cell stops here'], io)
     assert.equal(added.code, 0, added.stderr)
-    const nodes = JSON.parse(readFileSync(join(stage.root, '.pf', 'ideas.json'), 'utf8')).nodes
+    const nodes = JSON.parse(readFileSync(join(stage.root, '.superworker', 'ideas.json'), 'utf8')).nodes
     const node = Object.keys(nodes).find((id) => nodes[id].title === 'this cell stops here')
     assert.ok(node !== undefined, 'the seed node did not land in the graph')
 
-    const gateway = new PathfinderRecordsGateway(context(stage.root))
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
     const outcome = await gateway.addInstruction('s1', '', 'this cell stops here', 'node', '', node)
 
     assert.equal(outcome.ok, true, outcome.detail)
@@ -126,7 +126,7 @@ test('Binding a cell: the named node lands in the record, and the sentence\'s ta
 test('Archiving one: the record stays on disk, the state becomes withdrawn', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(context(stage.root))
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
     await gateway.addInstruction('s1', '', 'archive me', 'global', '', '')
     const id = instructionSaying(stage.root, 'archive me').id
 
@@ -145,7 +145,7 @@ test('Archiving one: the record stays on disk, the state becomes withdrawn', asy
 test('Reviving one: the archived entry goes back to live', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(context(stage.root))
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
     await gateway.addInstruction('s1', '', 'put it back', 'global', '', '')
     const id = instructionSaying(stage.root, 'put it back').id
     await gateway.archiveInstruction('s1', '', id)
@@ -163,7 +163,7 @@ test('Reviving one: the archived entry goes back to live', async () => {
 test('Removing one: the sentence goes with the record, and the tail back is REMOVED', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(context(stage.root))
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
     await gateway.addInstruction('s1', '', 'delete this one', 'global', '', '')
     const id = instructionSaying(stage.root, 'delete this one').id
 
@@ -181,12 +181,12 @@ test('Removing one: the sentence goes with the record, and the tail back is REMO
 test('Writing a setting: it lands on the project layer, and the engine\'s two printed lines come back', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(context(stage.root))
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
     const outcome = await gateway.setConfig('s1', '', 'worktree_mode', 'reuse')
 
     assert.equal(outcome.ok, true, outcome.detail)
-    assert.match(outcome.text, /^CONFIG: worktree_mode = reuse \(written to project \.pf\/config\.json\)$/mu, 'the line that was written')
-    assert.match(outcome.text, /^CONFIG: effective worktree_mode = reuse \(from project \.pf\/config\.json\)$/mu, 'the second line is the effective value')
+    assert.match(outcome.text, /^CONFIG: worktree_mode = reuse \(written to project \.superworker\/config\.json\)$/mu, 'the line that was written')
+    assert.match(outcome.text, /^CONFIG: effective worktree_mode = reuse \(from project \.superworker\/config\.json\)$/mu, 'the second line is the effective value')
     assert.equal(configOnDisk(stage.root).worktree_mode, 'reuse', 'it lands on the project layer')
   } finally {
     stage.done()
@@ -196,7 +196,7 @@ test('Writing a setting: it lands on the project layer, and the engine\'s two pr
 test('Reading settings: every line the engine printed parses into the table, and the success branch carries no refusal', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(context(stage.root))
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
     await gateway.setConfig('s1', '', 'worktree_mode', 'fork')
 
     const reading = await gateway.readConfig('s1', '')
@@ -215,18 +215,18 @@ test('Reading settings: every line the engine printed parses into the table, and
 test('The global layer: a value written into the home copy reads as global, and this hand misreads no layer', async () => {
   const stage = await project()
   try {
-    /* The machine layer, written the way a person would: the engine reads `<PF_HOME_DIR>/.pf/config.json`,
+    /* The machine layer, written the way a person would: the engine reads `<SUPERWORKER_HOME_DIR>/.superworker/config.json`,
      * and only the words layer's own `config list` can say this value came from there. */
-    mkdirSync(join(pinned.home, '.pf'), { recursive: true })
-    writeFileSync(join(pinned.home, '.pf', 'config.json'), `${JSON.stringify({ max_agents: 3 })}\n`)
-    const gateway = new PathfinderRecordsGateway(context(stage.root))
+    mkdirSync(join(pinned.home, '.superworker'), { recursive: true })
+    writeFileSync(join(pinned.home, '.superworker', 'config.json'), `${JSON.stringify({ max_agents: 3 })}\n`)
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
 
     const reading = await gateway.readConfig('s1', '')
 
     assert.equal(reading.ok, true, reading.refusal?.detail)
     assert.deepEqual(reading.entries['max_agents'], { value: '3', layer: 'global' }, 'the home copy outranks the factory default, the layer tag reads global')
   } finally {
-    rmSync(join(pinned.home, '.pf'), { recursive: true, force: true })
+    rmSync(join(pinned.home, '.superworker'), { recursive: true, force: true })
     stage.done()
   }
 })
@@ -234,7 +234,7 @@ test('The global layer: a value written into the home copy reads as global, and 
 test('An empty sentence and an unknown scope are settled on the spot, and the record moves not one character', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(context(stage.root))
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
     const blank = await gateway.addInstruction('s1', '', '   ', 'global', '', '')
     const odd = await gateway.addInstruction('s1', '', 'one sentence', 'everywhere', '', '')
 
@@ -249,7 +249,7 @@ test('An empty sentence and an unknown scope are settled on the spot, and the re
 test('A non-zero engine answer: ok is false, detail is its own sentence, the record unchanged', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(context(stage.root))
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
     const outcome = await gateway.archiveInstruction('s1', '', 'i-nope')
 
     assert.equal(outcome.ok, false)
@@ -263,7 +263,7 @@ test('A non-zero engine answer: ok is false, detail is its own sentence, the rec
 test('Whether a value is legal is the engine\'s call: the sentence it refuses comes back as it was, nothing stays on disk', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(context(stage.root))
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
     const outcome = await gateway.setConfig('s1', '', 'max_agents', '0')
 
     assert.equal(outcome.ok, false)
@@ -279,7 +279,7 @@ test('Whether a value is legal is the engine\'s call: the sentence it refuses co
 test('An unregistered key is still handed over: this side keeps no allow-list, the engine refuses', async () => {
   const stage = await project()
   try {
-    const gateway = new PathfinderRecordsGateway(context(stage.root))
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
     const outcome = await gateway.setConfig('s1', '', 'spawner', 'dsh')
 
     assert.equal(outcome.ok, false)

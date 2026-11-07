@@ -62,7 +62,7 @@ function Expand-TarMember {
 }
 
 # Drop a real record into a synthetic workspace: copy the pointed-to records directory as the
-# workspace's `.pf`. The panel reads exactly that hidden directory in the workspace; synthetic
+# workspace's `.superworker`. The panel reads exactly that hidden directory in the workspace; synthetic
 # workspaces lack it by default, so the instance would only ever draw the "no records" screen.
 # Acts only when the caller (the up action) asks for it; otherwise no workspace is touched.
 function Add-TestbedRecords {
@@ -76,7 +76,7 @@ function Add-TestbedRecords {
   $readings = New-Object System.Collections.Generic.List[object]
   foreach ($ws in $Manifest.workspaces) {
     if ($ws.empty) { continue }
-    $target = Join-Path ([string]$ws.path) '.pf'
+    $target = Join-Path ([string]$ws.path) '.superworker'
     if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
     Copy-Item -LiteralPath $source -Destination $target -Recurse -Force
     $files = @(Get-ChildItem -LiteralPath $target -Recurse -File -Force)
@@ -110,7 +110,7 @@ function New-TestbedProfile {
     # The user layer is an id-targeted patch: config is replaced wholesale rather than merged key by
     # key, so root must be written back along with it.
     $patch = @(
-      '# pf testbed profile layer.',
+      '# superworker testbed profile layer.',
       '# Sessions in this home are stored as plaintext JSONL: the physical encoding is exclusive',
       '# across one session root, and this home is rebuilt from scratch on every provision.',
       '- id: session-persistence-jsonl',
@@ -555,7 +555,7 @@ function Get-StrayTestbedProcess {
     # The default is the profile name this entry point uses: the shipped entry always passes
     # -Profile explicitly; this default is for callers elsewhere that pass only -Root, so that
     # changing the criteria here does not break their invocation style.
-    [string]$Profile = 'pf-testbed',
+    [string]$Profile = 'superworker-testbed',
     [AllowEmptyCollection()][int[]]$InstancePids = @()
   )
   $launcher = Join-Path $Root ('logs\start-' + $Profile + '.cmd')
@@ -702,7 +702,7 @@ function Invoke-TestbedApi {
 function Format-TestbedListCommand {
   param([Parameter(Mandatory=$true)][int]$Port, [Parameter(Mandatory=$true)][string]$Token)
   $body = '{"type":"client-request","rpcId":"list-1","method":"session/list","payload":{"args":{"_request":{}}}}'
-  $cookieJar = '"$env:TEMP\pf-testbed-cookies.txt"'
+  $cookieJar = '"$env:TEMP\superworker-testbed-cookies.txt"'
   $line1 = 'curl.exe -s -f -c ' + $cookieJar + ' "http://127.0.0.1:' + $Port + '/?token=' + $Token + '" -o NUL'
   $line2 = 'curl.exe -s -f -b ' + $cookieJar + ' -H "content-type: application/json" -d ''' + $body + ''' http://127.0.0.1:' + $Port + '/api/session/list'
   # One line; do not join array elements with + (comma and + precedence glues the segments wrong).

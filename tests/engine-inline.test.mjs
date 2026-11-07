@@ -1,6 +1,6 @@
 /* The engine's way into the shipped artifact.
  *
- * The engine lives in this repo as its own package (`packages/pf-core`), and the install face
+ * The engine lives in this repo as its own package (`packages/superworker-core`), and the install face
  * stays one plugin package: the host build has to inline the engine's product rather than leave a
  * package a user would have to install beside it. What is locked here is the shape that carries
  * that, not the wiring — which host module imports the engine belongs to the nodes that give the
@@ -8,8 +8,8 @@
  *
  * Three legs:
  *
- * - the engine is a workspace package of this repo, linked at `node_modules/pf-core`, so the host
- *   half reaches it by name (`from 'pf-core'`) the way it reaches any dependency;
+ * - the engine is a workspace package of this repo, linked at `node_modules/superworker-core`, so the host
+ *   half reaches it by name (`from 'superworker-core'`) the way it reaches any dependency;
  * - the repo's own build externals — the `deps.neverBundle` list `tsdown.config.ts` carries — name
  *   nothing of the engine: the bundler holds no instruction to leave it out;
  * - a bundle whose entry imports the engine by that name comes out carrying the engine's code and
@@ -18,7 +18,7 @@
  *   from `src/host/`: both walk up to this repo's `node_modules`.
  *
  * The engine's product is what the host half will import, and `npm test` builds it before the
- * suite runs (`pnpm --filter pf-core build`, wired into package.json's `test`). Without it the two
+ * suite runs (`pnpm --filter superworker-core build`, wired into package.json's `test`). Without it the two
  * legs that need the product skip themselves with the reason — the same discipline as the browser
  * half's render case.
  *
@@ -32,10 +32,10 @@ import { fileURLToPath } from 'node:url'
 import { rolldown } from 'rolldown'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const engineDir = join(root, 'packages', 'pf-core')
+const engineDir = join(root, 'packages', 'superworker-core')
 const engineProduct = join(engineDir, 'dist', 'index.mjs')
 const built = existsSync(engineProduct)
-const notBuilt = `packages/pf-core/dist/index.mjs is not built yet; npm test builds it first (pnpm --filter pf-core build)`
+const notBuilt = `packages/superworker-core/dist/index.mjs is not built yet; npm test builds it first (pnpm --filter superworker-core build)`
 
 /** The externals the repo's own host build keeps out of the bundle, read from the config the build runs. */
 const { default: tsdownConfig } = await import('../tsdown.config.ts')
@@ -49,7 +49,7 @@ const neverBundle = tsdownConfig.deps?.neverBundle ?? []
  * was. The engine's own word table travels in the bundle as literal text too, and a sentence that
  * happens to end in `from` sits in front of a quote exactly where a specifier would
  * (`… nothing to pick from"`), so the pattern itself refuses what a specifier cannot be. Tightening
- * the pattern matters: a filter applied after a looser match would swallow `from "pf-core"` sitting
+ * the pattern matters: a filter applied after a looser match would swallow `from "superworker-core"` sitting
  * right behind such a sentence, and the scan would answer green to the one accident it exists for.
  */
 function outsideSpecifiers(code) {
@@ -62,20 +62,20 @@ test('package face: the scan does not miss a specifier hugging prose — a `from
   // The accident this whole file exists for, placed where the bundle's own prose makes it easiest to
   // lose: a sentence ending in `from"`, then an import spelled with the same quote style right behind
   // it. A scan that matches loosely and then filters its findings answers `[]` here.
-  assert.deepEqual(outsideSpecifiers('nothing to pick from" from "pf-core"'), ['pf-core'])
+  assert.deepEqual(outsideSpecifiers('nothing to pick from" from "superworker-core"'), ['superworker-core'])
 })
 
 test('package face: the engine is this repo\'s workspace package, the host half reaches it by name', () => {
-  const link = join(root, 'node_modules', 'pf-core')
-  assert.ok(existsSync(link), 'node_modules/pf-core is missing: pnpm install did not link the workspace package')
-  assert.equal(realpathSync(link), realpathSync(engineDir), 'node_modules/pf-core does not point at this repo\'s engine package')
+  const link = join(root, 'node_modules', 'superworker-core')
+  assert.ok(existsSync(link), 'node_modules/superworker-core is missing: pnpm install did not link the workspace package')
+  assert.equal(realpathSync(link), realpathSync(engineDir), 'node_modules/superworker-core does not point at this repo\'s engine package')
   const manifest = JSON.parse(readFileSync(join(engineDir, 'package.json'), 'utf8'))
-  assert.equal(manifest.name, 'pf-core')
+  assert.equal(manifest.name, 'superworker-core')
   assert.equal(manifest.private, true, 'the engine package is private: it is not released on its own, it ships inside the host build')
 })
 
 test('package face: the engine is not among the externals — no build directive leaves it outside the bundle', () => {
-  const offenders = neverBundle.filter((spec) => spec === 'pf-core' || spec.startsWith('pf-core/'))
+  const offenders = neverBundle.filter((spec) => spec === 'superworker-core' || spec.startsWith('superworker-core/'))
   assert.deepEqual(
     offenders,
     [],
@@ -84,7 +84,7 @@ test('package face: the engine is not among the externals — no build directive
 })
 
 test('package face: what the host half gets by name is the engine\'s own product', { skip: built ? false : notBuilt }, () => {
-  const resolved = import.meta.resolve('pf-core')
+  const resolved = import.meta.resolve('superworker-core')
   assert.equal(
     fileURLToPath(resolved),
     engineProduct,
@@ -97,7 +97,7 @@ test('package face: an entry importing the engine bundles into a self-contained 
   const probeDir = mkdtempSync(join(root, '.tmp', 'engine-inline-'))
   try {
     const entry = join(probeDir, 'entry.mjs')
-    writeFileSync(entry, "export { SimulatedExecutor, open } from 'pf-core'\n", 'utf8')
+    writeFileSync(entry, "export { SimulatedExecutor, open } from 'superworker-core'\n", 'utf8')
     const bundle = await rolldown({ input: entry, platform: 'node', external: [...neverBundle] })
     const pieces = (await bundle.generate({ format: 'esm' })).output
     await bundle.close()

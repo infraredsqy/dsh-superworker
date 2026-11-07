@@ -2,8 +2,8 @@
  * The panel's own section inside DSH's settings: one navigation row plus the page it opens.
  *
  * This section lives in DSH's own settings panel, not in the same tree as the main panel, so it
- * cannot reach the sheets bundled into `.pf-page` at build time — it carries its own stylesheet,
- * class names all use the `pfset-` prefix, and colors use only DSH's theme tokens. The page holds
+ * cannot reach the sheets bundled into `.superworker-page` at build time — it carries its own stylesheet,
+ * class names all use the `superworker-settings-` prefix, and colors use only DSH's theme tokens. The page holds
  * only the panel's two display switches, and it reads the same settings form as the panel, so
  * flipping a switch changes the panel on the spot.
  */
@@ -34,7 +34,7 @@ export const SECTION_SLOT = 'settings.section'
  * the browser half asks for the form by it. The two spots spell the same word with no second place
  * validating in between — changing the word here moves this page onto a namespace nobody serves.
  */
-export const SETTINGS_NAMESPACE = 'pathfinder'
+export const SETTINGS_NAMESPACE = 'superworker'
 
 export const SECTION_ORDER = 60
 
@@ -60,16 +60,16 @@ const STYLE_ID = SETTINGS_STYLE_ID
  * aliases certainly exist.
  */
 const CSS = `
-.pfset-page{display:flex;flex-direction:column;padding:8px 0;max-width:760px;font-family:inherit;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary)}
-.pfset-row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:16px 0;border-bottom:0.5px solid var(--dsw-alias-border-l2)}
-.pfset-text{display:flex;flex-direction:column;flex:1 1 auto;min-width:0}
-.pfset-label{font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary)}
-.pfset-desc{margin-top:4px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
-.pfset-switch{flex:none;width:36px;height:20px;padding:2px;border:0;border-radius:999px;corner-shape:round;background:var(--dsw-alias-border-l3);cursor:pointer;display:inline-flex}
-.pfset-switch[aria-checked='true']{background:var(--dsw-alias-link)}
-.pfset-swthumb{width:16px;height:16px;border-radius:50%;corner-shape:round;background:var(--dsw-alias-label-primary);transition:transform 120ms ease}
-.pfset-switch[aria-checked='true'] .pfset-swthumb{transform:translateX(16px)}
-.pfset-msg{margin:0;font-size:12.5px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}
+.superworker-settings-page{display:flex;flex-direction:column;padding:8px 0;max-width:760px;font-family:inherit;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary)}
+.superworker-settings-row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:16px 0;border-bottom:0.5px solid var(--dsw-alias-border-l2)}
+.superworker-settings-text{display:flex;flex-direction:column;flex:1 1 auto;min-width:0}
+.superworker-settings-label{font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary)}
+.superworker-settings-desc{margin-top:4px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.superworker-settings-switch{flex:none;width:36px;height:20px;padding:2px;border:0;border-radius:999px;corner-shape:round;background:var(--dsw-alias-border-l3);cursor:pointer;display:inline-flex}
+.superworker-settings-switch[aria-checked='true']{background:var(--dsw-alias-link)}
+.superworker-settings-swthumb{width:16px;height:16px;border-radius:50%;corner-shape:round;background:var(--dsw-alias-label-primary);transition:transform 120ms ease}
+.superworker-settings-switch[aria-checked='true'] .superworker-settings-swthumb{transform:translateX(16px)}
+.superworker-settings-msg{margin:0;font-size:12.5px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}
 `
 
 export function ensureSettingsStyle(): void {
@@ -97,10 +97,10 @@ function Row(props: {
   readonly control: React.ReactNode
 }): React.ReactElement {
   return (
-    <div className="pfset-row">
-      <div className="pfset-text">
-        <span className="pfset-label">{props.label}</span>
-        <span className="pfset-desc">{props.desc}</span>
+    <div className="superworker-settings-row">
+      <div className="superworker-settings-text">
+        <span className="superworker-settings-label">{props.label}</span>
+        <span className="superworker-settings-desc">{props.desc}</span>
       </div>
       {props.control}
     </div>
@@ -133,20 +133,20 @@ function SettingsPage(props: SettingsSectionProps): React.ReactElement {
   }
 
   return (
-    <div className="pfset-page">
+    <div className="superworker-settings-page">
       <Row
         label={t('settings.archived.label')}
         desc={t('settings.archived.desc')}
         control={(
           <button
             type="button"
-            className="pfset-switch"
+            className="superworker-settings-switch"
             role="switch"
             aria-checked={prefs.archived}
             aria-label={t('settings.archived.label')}
             onClick={() => write(PANEL_PREF_FIELDS.showArchived, !prefs.archived)}
           >
-            <span className="pfset-swthumb" />
+            <span className="superworker-settings-swthumb" />
           </button>
         )}
       />
@@ -156,13 +156,13 @@ function SettingsPage(props: SettingsSectionProps): React.ReactElement {
         control={(
           <button
             type="button"
-            className="pfset-switch"
+            className="superworker-settings-switch"
             role="switch"
             aria-checked={prefs.otherStates}
             aria-label={t('settings.other-states.label')}
             onClick={() => write(PANEL_PREF_FIELDS.showOtherStates, !prefs.otherStates)}
           >
-            <span className="pfset-swthumb" />
+            <span className="superworker-settings-swthumb" />
           </button>
         )}
       />
@@ -172,19 +172,19 @@ function SettingsPage(props: SettingsSectionProps): React.ReactElement {
         control={(
           <button
             type="button"
-            className="pfset-switch"
+            className="superworker-settings-switch"
             role="switch"
             aria-checked={prefs.autoRelay}
             aria-label={t('settings.auto-relay.label')}
             onClick={() => write(PANEL_PREF_FIELDS.autoRelay, !prefs.autoRelay)}
           >
-            <span className="pfset-swthumb" />
+            <span className="superworker-settings-swthumb" />
           </button>
         )}
       />
       {snapshot.status === 'unavailable'
         ? (
-          <p className="pfset-msg">
+          <p className="superworker-settings-msg">
             {t('settings.unavailable', { ns: SETTINGS_NAMESPACE })}
           </p>
         )
@@ -194,7 +194,7 @@ function SettingsPage(props: SettingsSectionProps): React.ReactElement {
           snapping back. The reason is a code on the port's reading, spelled here — the same refusal
           the panel spells on its own note line. */}
       {snapshot.refused
-        ? <p className="pfset-msg" role="status">{failureWord(t, { code: 'settings-refused' })}</p>
+        ? <p className="superworker-settings-msg" role="status">{failureWord(t, { code: 'settings-refused' })}</p>
         : null}
     </div>
   )
@@ -238,7 +238,7 @@ export function registerSettingsSection(ctx: unknown, store: PrefsStore, locale:
         return () => undefined
       }
     }
-    serveOn(owner, attachForm, 'dsh-pathfinder: settings form')
+    serveOn(owner, attachForm, 'dsh-superworker: settings form')
 
     const slots = serviceAt(owner, 'slots') as SlotsService | undefined
     if (slots === undefined || typeof slots.inject !== 'function' || typeof slots.register !== 'function') return
@@ -276,6 +276,6 @@ export function registerSettingsSection(ctx: unknown, store: PrefsStore, locale:
     serveOn(owner, () => {
       contribute()
       return withdraw
-    }, 'dsh-pathfinder: settings page')
+    }, 'dsh-superworker: settings page')
   })
 }

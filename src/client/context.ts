@@ -29,7 +29,7 @@ export interface EffectOwner {
 export function report(what: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error)
   // eslint-disable-next-line no-console -- assembly failures must leave a traceable record
-  console.warn(`dsh-pathfinder: ${what}：${message}`)
+  console.warn(`dsh-superworker: ${what}：${message}`)
 }
 
 /**

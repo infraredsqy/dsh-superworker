@@ -47,12 +47,12 @@ const LAYER_NAMES = LAYER_CLASSES.map((one) => one.replace(/^\./u, ''))
  * Fold a shipped selector back into the page shape this checker asks its questions in.
  *
  * The sheets are stored in the shape they ship in, so a selector leads with its cell's layer class
- * (`.pf-page .pf-cell`, `.is-embed.pf-issue .pf-band`, and plain `.pf-page` for the page
- * root). Every expectation downstream — the mark table's `.pf-cell` / `.is-P0`, the per-name
+ * (`.superworker-page .superworker-cell`, `.is-embed.superworker-issue .superworker-band`, and plain `.superworker-page` for the page
+ * root). Every expectation downstream — the mark table's `.superworker-cell` / `.is-P0`, the per-name
  * rules, the palette map's `:root` / `body` — is written in the sheets' page shape, and those
  * expectations are the check's whole point, so the shape is restored once here rather than rewritten
- * in a dozen places. Only the first class comes off: `.is-embed.pf-issue .pf-page` is a rule whose
- * layer prefix is real and whose subject is a `.pf-page` inside it.
+ * in a dozen places. Only the first class comes off: `.is-embed.superworker-issue .superworker-page` is a rule whose
+ * layer prefix is real and whose subject is a `.superworker-page` inside it.
  *
  * A selector that was nothing but the layer class becomes `body` — the page root the panel's own
  * declarations were written on. (`:root` and `body` collapse into one layer class on the way in, so
@@ -227,7 +227,7 @@ function paletteMap(palette) {
   // sheets are stored layer-prefixed; `bareSelector` folds them back to this shape.
   for (const file of panelFiles) collect(file.rules, s => s === 'body')
   for (const file of panelFiles) collect(file.rules, s => s === ':root')
-  for (const file of panelFiles) collect(file.rules, s => /^\.pf-/.test(s) && s.includes('['))
+  for (const file of panelFiles) collect(file.rules, s => /^\.superworker-/.test(s) && s.includes('['))
   return map
 }
 
@@ -242,14 +242,14 @@ const PALETTES = { light: paletteMap('light'), dark: paletteMap('dark') }
 const LITERAL = /(#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\()/i
 /** Aliases a feature sheet may spend. Anything else is either the theme's own
  * business or a raw palette step. */
-const ALIAS_FAMILIES = /^--(?:dsw-alias-|dsw-elevation|dsw-menu-|dsw-mask-|dsw-radius-|dsw-font-|dsw-focus-|dsw-corner-shape|dsw-specific-|ds-font-|ds-ease-|ds-transition-|pf-)/
+const ALIAS_FAMILIES = /^--(?:dsw-alias-|dsw-elevation|dsw-menu-|dsw-mask-|dsw-radius-|dsw-font-|dsw-focus-|dsw-corner-shape|dsw-specific-|ds-font-|ds-ease-|ds-transition-|superworker-)/
 
 let literalCount = 0
 let rawStepCount = 0
 /* Every custom property the sheets declare themselves: a component may own one for
  * its own layout contract, and reading it back is what makes that a contract. */
 const declared = new Set()
-/* Declarations the panel sheets make themselves. `--pf-*` is this panel's own
+/* Declarations the panel sheets make themselves. `--superworker-*` is this panel's own
  * vocabulary (ink steps, marks, the two floors), so where it is declared is the
  * thing to ask about: the theme sheet carries none of it. */
 const panelDeclared = new Set()
@@ -323,12 +323,12 @@ for (const name of [...panelTokens].sort()) {
 
 /* ---------------------------------------------------------- panel tokens */
 
-/* The same question on the panel's own side: a `--pf-*` name with a letter off
- * (`--pf-ink44`) paints nothing in either palette, raises nothing, and every mark it
+/* The same question on the panel's own side: a `--superworker-*` name with a letter off
+ * (`--superworker-ink44`) paints nothing in either palette, raises nothing, and every mark it
  * inks just goes missing. A name a page's script hands in is written with a fallback. */
 let undeclaredPanelTokens = 0
 for (const name of [...panelTokens].sort()) {
-  if (!name.startsWith('--pf-')) continue
+  if (!name.startsWith('--superworker-')) continue
   if (!panelDeclared.has(name) && !optional.has(name)) {
     undeclaredPanelTokens += 1
     fail('panel token not declared', name)
@@ -372,7 +372,7 @@ const BORDER_EDGE = /^border(?:-top|-bottom|-left|-right)?(-width)?$/
  * so it keeps its width — the same exemption the theme's elevation spec spells out.
  * The panel draws this ring in two places, but the rule lives once, in the
  * tokens.css shared block (lines.css keeps only the linemark size box). */
-const RING_TRACKS = new Set(['tokens.css .pf-state.is-run'])
+const RING_TRACKS = new Set(['tokens.css .superworker-state.is-run'])
 let elevationPairedWithBorder = 0
 let neutralBorderWide = 0
 let stateBorderNarrow = 0
@@ -459,12 +459,12 @@ for (const file of panelFiles) {
 /* -------------------------------------------- hover and the card face */
 
 /* A card carries a reading on its own surface: the amber ring that says a person
- * has to move is an inset shadow on `.pf-card`, and the card's raised look is its
+ * has to move is an inset shadow on `.superworker-card`, and the card's raised look is its
  * fill. A hover that paints either does two things at once — it covers the ring
  * (the reading is gone while the pointer is on it) and, because both paint through
  * the same transition, it sweeps a solid block through the interpolation. So a hover
  * on a card moves the stroke and leaves the face alone; a row keeps its fill. */
-const CARD = /\.(?:pf-card|pf-zcard|pf-case)(?![\w-])/
+const CARD = /\.(?:superworker-card|superworker-zcard|superworker-case)(?![\w-])/
 const HOVER = /:(?:hover|active)\b/
 const FACE_INK = new Set(['background', 'background-color', 'box-shadow', 'filter', 'backdrop-filter', 'opacity'])
 let hoverPaintsFace = 0
@@ -502,7 +502,7 @@ for (const file of panelFiles) {
 function panelTokensFeed(value, depth = 0) {
   if (depth > 6) return false
   for (const name of varNames(value)) {
-    if (!name.startsWith('--pf-')) continue
+    if (!name.startsWith('--superworker-')) continue
     for (const file of panelFiles) {
       for (const rule of file.rules) {
         for (const [property, declared] of rule.declarations) {
@@ -522,7 +522,7 @@ const floorOf = (name, fallback) => {
   const value = found === undefined ? undefined : Number(resolveVars(found, PALETTES.light))
   return Number.isFinite(value) ? value : fallback
 }
-const FLOOR = { A: floorOf('--pf-mark-floor', 3), B: floorOf('--pf-mark-floor-dense', 1.5) }
+const FLOOR = { A: floorOf('--superworker-mark-floor', 3), B: floorOf('--superworker-mark-floor-dense', 1.5) }
 
 /**
  * The marks this panel paints, each tied to the rule that paints it: the check
@@ -534,37 +534,37 @@ const FLOOR = { A: floorOf('--pf-mark-floor', 3), B: floorOf('--pf-mark-floor-de
  * `where` is the instance the reading belongs to, `decl` the rule whose declaration
  * carries the ink (defaulting to `where`). The two differ where one rule paints the
  * same mark in two places that stand on different grounds — a board card
- * (`.pf-card`, `--dsw-alias-bg-layer-1`) and a detail row (`.pf-row`,
+ * (`.superworker-card`, `--dsw-alias-bg-layer-1`) and a detail row (`.superworker-row`,
  * `--dsw-alias-bg-base`) — so one row per place.
  */
 const MARKS = [
-  { what: 'register mark · resolved', where: '.pf-cell', property: 'background', ink: 'var(--pf-ink-2)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: 'card state mark · entering next', where: '.pf-card .pf-state.is-next', decl: '.pf-state.is-next', property: 'border', ink: 'var(--pf-ink-3)', ground: '--dsw-alias-bg-layer-1', tier: 'A' },
-  { what: 'detail row mark · entering next', where: '.pf-row .pf-state.is-next', decl: '.pf-state.is-next', property: 'border', ink: 'var(--pf-ink-3)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: 'issue pool mark · acknowledged', where: '.pf-cell.is-acknowledged', property: 'box-shadow', ink: 'var(--pf-ink-2)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: 'issue pool mark · rejected', where: '.pf-cell.is-rejected', property: 'box-shadow', ink: 'var(--pf-ink-3)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: 'severity tier · heaviest (P0)', where: '.is-P0', property: '--sev', ink: 'var(--pf-ink-1)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: 'severity tier · second (P1)', where: '.is-P1', property: '--sev', ink: 'var(--pf-ink-2)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: 'severity tier · third (P2)', where: '.is-P2', property: '--sev', ink: 'var(--pf-ink-3)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: 'severity tier · lightest (P3, the dense row)', where: '.is-P3', property: '--sev', ink: 'var(--pf-ink-4)', ground: '--dsw-alias-bg-base', tier: 'B' },
-  { what: 'weight bar cell · empty slot', where: '.pf-block', property: 'box-shadow', ink: 'var(--pf-ink-4)', ground: '--dsw-alias-bg-base', tier: 'B' },
+  { what: 'register mark · resolved', where: '.superworker-cell', property: 'background', ink: 'var(--superworker-ink-2)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'card state mark · entering next', where: '.superworker-card .superworker-state.is-next', decl: '.superworker-state.is-next', property: 'border', ink: 'var(--superworker-ink-3)', ground: '--dsw-alias-bg-layer-1', tier: 'A' },
+  { what: 'detail row mark · entering next', where: '.superworker-row .superworker-state.is-next', decl: '.superworker-state.is-next', property: 'border', ink: 'var(--superworker-ink-3)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'issue pool mark · acknowledged', where: '.superworker-cell.is-acknowledged', property: 'box-shadow', ink: 'var(--superworker-ink-2)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'issue pool mark · rejected', where: '.superworker-cell.is-rejected', property: 'box-shadow', ink: 'var(--superworker-ink-3)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'severity tier · heaviest (P0)', where: '.is-P0', property: '--sev', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'severity tier · second (P1)', where: '.is-P1', property: '--sev', ink: 'var(--superworker-ink-2)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'severity tier · third (P2)', where: '.is-P2', property: '--sev', ink: 'var(--superworker-ink-3)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'severity tier · lightest (P3, the dense row)', where: '.is-P3', property: '--sev', ink: 'var(--superworker-ink-4)', ground: '--dsw-alias-bg-base', tier: 'B' },
+  { what: 'weight bar cell · empty slot', where: '.superworker-block', property: 'box-shadow', ink: 'var(--superworker-ink-4)', ground: '--dsw-alias-bg-base', tier: 'B' },
   /* The amber ring is an inset shadow on the card's own face, so the card's fill is
    * its ground — not the layer the card itself sits on. */
-  { what: 'card gate · amber ring', where: '.pf-card.is-gate', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
-  { what: 'card state mark · delivered', where: '.pf-card .pf-state.is-done', decl: '.pf-state.is-done', property: 'color', ink: 'var(--dsw-alias-state-success-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
-  { what: 'detail row mark · delivered', where: '.pf-row .pf-state.is-done', decl: '.pf-state.is-done', property: 'color', ink: 'var(--dsw-alias-state-success-primary)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'card gate · amber ring', where: '.superworker-card.is-gate', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'card state mark · delivered', where: '.superworker-card .superworker-state.is-done', decl: '.superworker-state.is-done', property: 'color', ink: 'var(--dsw-alias-state-success-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'detail row mark · delivered', where: '.superworker-row .superworker-state.is-done', decl: '.superworker-state.is-done', property: 'color', ink: 'var(--dsw-alias-state-success-primary)', ground: '--dsw-alias-bg-base', tier: null },
   /* The same rule paints this ring on three grounds: a board card, a detail row, and the map's own
    * face, where it leads the foot row of the card in hand. The first of the three has no instance on
    * the page right now, so its row is read where it would stand. */
-  { what: 'card state mark · running', where: '.pf-card .pf-state.is-run', decl: '.pf-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-1', tier: null },
-  { what: 'detail row mark · running', where: '.pf-row .pf-state.is-run', decl: '.pf-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-base', tier: null },
-  { what: 'map card · running', where: '.pf-mnode .pf-state.is-run', decl: '.pf-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-2', tier: null },
-  { what: 'issue pool mark · open', where: '.pf-cell.is-open', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-base', tier: null },
-  { what: 'line mark · blocked node', where: '.pf-linemark.is-blocked::before', property: 'background', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'card state mark · running', where: '.superworker-card .superworker-state.is-run', decl: '.superworker-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'detail row mark · running', where: '.superworker-row .superworker-state.is-run', decl: '.superworker-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'map card · running', where: '.superworker-mnode .superworker-state.is-run', decl: '.superworker-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-2', tier: null },
+  { what: 'issue pool mark · open', where: '.superworker-cell.is-open', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'line mark · blocked node', where: '.superworker-linemark.is-blocked::before', property: 'background', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-base', tier: null },
   /* The delete dialog's alert zone: the bar is the mark, and the layer the dialog
    * itself stands on is its ground — the amber tint under the sentence is 8%, so the
    * bar reads against that layer and the check can keep saying so. */
-  { what: 'delete-this row · alert zone left edge', where: '.pf-del-warn', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-2', tier: null },
+  { what: 'delete-this row · alert zone left edge', where: '.superworker-del-warn', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-2', tier: null },
   { what: 'the theme\'s own idle point (the basis of the 1.5 floor)', where: null, property: null, ink: 'var(--dsw-alias-state-idle-primary)', ground: '--dsw-alias-bg-base', tier: null },
 ]
 
@@ -619,8 +619,8 @@ for (const mark of MARKS) {
 /* -------------------------------------------- names meaning two things */
 
 /* A name's own declarations in one file: the rules whose selector is a compound that
- * starts with it (`.pf-mark`, `.pf-mark:hover`). Rules that merely mention it further
- * along (`.pf-line:hover .pf-chev`) style something else, not that object's own shape. */
+ * starts with it (`.superworker-mark`, `.superworker-mark:hover`). Rules that merely mention it further
+ * along (`.superworker-line:hover .superworker-chev`) style something else, not that object's own shape. */
 const NAME_RULE = (name) => new RegExp(`^\\.${name}(?![\\w-])`)
 /** (selector, file) -> property -> value. */
 const bySelector = new Map()
@@ -628,7 +628,7 @@ const namesOf = new Map()
 for (const file of panelFiles) {
   for (const rule of file.rules) {
     for (const selector of rule.selectors) {
-      const names = [...selector.matchAll(/\.(pf-[\w-]+)/g)].map(([, n]) => n).filter(n => NAME_RULE(n).test(selector))
+      const names = [...selector.matchAll(/\.(superworker-[\w-]+)/g)].map(([, n]) => n).filter(n => NAME_RULE(n).test(selector))
       if (!names.length) continue
       const key = selector
       if (!bySelector.has(key)) bySelector.set(key, new Map())
@@ -707,7 +707,7 @@ line(`10 page links      hrefs checked ${linked.size}, broken ${brokenHref}`)
 line(`11 card hover      face-ink declarations ${hoverPaintsFace}`)
 line(`12 panel tokens on html that read an alias (would paint nothing): ${rootTokensWithAlias}`)
 line('')
-line('floors, read from --pf-mark-floor / --pf-mark-floor-dense in src/client/styles/tokens.css:')
+line('floors, read from --superworker-mark-floor / --superworker-mark-floor-dense in src/client/styles/tokens.css:')
 line(`  a mark the reader resolves on its own >= ${FLOOR.A}:1 · one read as density >= ${FLOOR.B}:1`)
 line('')
 line('mark inks with a floor — all of these pass:')

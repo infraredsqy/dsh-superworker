@@ -21,15 +21,15 @@ import {
   instructionArchiveLine,
   instructionRemoveLine,
   instructionReviveLine,
-} from 'pf-core'
-import type { PathfinderReading, PathfinderReadOptions, PathfinderRecords } from './contract.ts'
+} from 'superworker-core'
+import type { SuperworkerReading, SuperworkerReadOptions, SuperworkerRecords } from './contract.ts'
 import type { SessionOpenOutcome } from './executor.ts'
-import type { PfOutcome } from './failure.ts'
-import { parseConfigList, type PathfinderConfigReading } from './project-config.ts'
+import type { RecordOutcome } from './failure.ts'
+import { parseConfigList, type SuperworkerConfigReading } from './project-config.ts'
 import { dispatchCell } from './relay.ts'
 import { readReading } from './records.ts'
 import { aliveAgentIds, workspaceRootOf } from './seams.ts'
-import { readClaims, readSessionNotes, type PathfinderSessionsReading } from './sessions.ts'
+import { readClaims, readSessionNotes, type SuperworkerSessionsReading } from './sessions.ts'
 import { runPf } from './write.ts'
 
 /**
@@ -92,7 +92,7 @@ function markRemote(instance: object, method: string, endpoint: string): void {
  * covers; one less base class, and the minimal test context can still install
  * it.
  */
-export class PathfinderRecordsGateway implements PathfinderRecords {
+export class SuperworkerRecordsGateway implements SuperworkerRecords {
   /** The binding the gateway recognizes endpoints by; its name must match the key given to `ctx.provide`. */
   readonly typertRemote: TypertGatewayBinding<this>
   /** How this half reaches the host context — same name as the `Service` base class field, and the gateway reads from here too. */
@@ -101,14 +101,14 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
   /**
    * @param serviceKey - The service key, i.e. the remote namespace; normally omitted.
    */
-  constructor(ctx: Context, serviceKey = 'pathfinder') {
+  constructor(ctx: Context, serviceKey = 'superworker') {
     this.ctx = ctx
     const registered = new Set<string>()
     for (const method of REMOTE_METHODS) {
       markRemote(this, method, method)
       registered.add(method)
     }
-    /* Unregistered methods must not fail silently: a callable method on the class (subclasses included) without an endpoint marker would be invisible to the browser half, and nothing would error — turn that from silence into noise by failing construction on the spot. True privates like `#pf` are not on the prototype, so the scan cannot see them. */
+    /* Unregistered methods must not fail silently: a callable method on the class (subclasses included) without an endpoint marker would be invisible to the browser half, and nothing would error — turn that from silence into noise by failing construction on the spot. True privates like `#superworker` are not on the prototype, so the scan cannot see them. */
     for (let proto = Object.getPrototypeOf(this); proto !== null && proto !== Object.prototype; proto = Object.getPrototypeOf(proto)) {
       for (const name of Object.getOwnPropertyNames(proto)) {
         if (name === 'constructor' || registered.has(name)) continue
@@ -129,7 +129,7 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * @param sessionId - Session identity; the workspace file gateway resolves paths by it.
    * @param workspaceRoot - The workspace root to read; an empty string means this session's own root.
    */
-  async read(sessionId: SessionId, workspaceRoot: string, options?: PathfinderReadOptions): Promise<PathfinderReading> {
+  async read(sessionId: SessionId, workspaceRoot: string, options?: SuperworkerReadOptions): Promise<SuperworkerReading> {
     const signal = options?.signal ?? NEVER_ABORT
     const root = await rootFor(this.ctx, sessionId, workspaceRoot)
     return readReading(this.ctx.workspaceFiles, { sessionId, workspaceRoot: root }, signal)
@@ -152,12 +152,12 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * @param cycle - Which cycle to bind, by cycle id; pass an empty string for other scopes.
    * @param node - Which node to bind, by node id; pass an empty string for other scopes.
    */
-  async addInstruction(sessionId: SessionId, workspaceRoot: string, text: string, scope: InstructionScope, cycle: string, node: string): Promise<PfOutcome> {
+  async addInstruction(sessionId: SessionId, workspaceRoot: string, text: string, scope: InstructionScope, cycle: string, node: string): Promise<RecordOutcome> {
     const line = instructionAddLine({ text, scope, cycle, node })
     if (!line.ok) {
       return { ok: false, code: line.code, ...(line.detail.length > 0 ? { detail: line.detail } : {}) }
     }
-    return this.#pf(sessionId, workspaceRoot, line.argv)
+    return this.#superworker(sessionId, workspaceRoot, line.argv)
   }
 
   /**
@@ -165,24 +165,24 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * the archive, leaving the sentence itself in place.
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    */
-  async archiveInstruction(sessionId: SessionId, workspaceRoot: string, id: string): Promise<PfOutcome> {
-    return this.#pf(sessionId, workspaceRoot, instructionArchiveLine(id))
+  async archiveInstruction(sessionId: SessionId, workspaceRoot: string, id: string): Promise<RecordOutcome> {
+    return this.#superworker(sessionId, workspaceRoot, instructionArchiveLine(id))
   }
 
   /**
    * Move an archived instruction back into the active pile.
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    */
-  async reviveInstruction(sessionId: SessionId, workspaceRoot: string, id: string): Promise<PfOutcome> {
-    return this.#pf(sessionId, workspaceRoot, instructionReviveLine(id))
+  async reviveInstruction(sessionId: SessionId, workspaceRoot: string, id: string): Promise<RecordOutcome> {
+    return this.#superworker(sessionId, workspaceRoot, instructionReviveLine(id))
   }
 
   /**
    * Remove an instruction together with its sentence from the records; this cannot be undone.
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    */
-  async removeInstruction(sessionId: SessionId, workspaceRoot: string, id: string): Promise<PfOutcome> {
-    return this.#pf(sessionId, workspaceRoot, instructionRemoveLine(id))
+  async removeInstruction(sessionId: SessionId, workspaceRoot: string, id: string): Promise<RecordOutcome> {
+    return this.#superworker(sessionId, workspaceRoot, instructionRemoveLine(id))
   }
 
   /**
@@ -197,7 +197,7 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * The parameter list stays on one line with no trailing comma, same reason as `read`.
    * @param workspaceRoot - The workspace root to read; an empty string means this session's own root.
    */
-  async readConfig(sessionId: SessionId, workspaceRoot: string): Promise<PathfinderConfigReading> {
+  async readConfig(sessionId: SessionId, workspaceRoot: string): Promise<SuperworkerConfigReading> {
     const project = await rootFor(this.ctx, sessionId, workspaceRoot)
     const outcome = await runPf(project, ['config', 'list'])
     if (!outcome.ok) {
@@ -236,8 +236,8 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * errors, answers non-zero, writes nothing, and its message surfaces verbatim.
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    */
-  async setConfig(sessionId: SessionId, workspaceRoot: string, key: string, value: string): Promise<PfOutcome> {
-    return this.#pf(sessionId, workspaceRoot, ['config', 'set', key, value])
+  async setConfig(sessionId: SessionId, workspaceRoot: string, key: string, value: string): Promise<RecordOutcome> {
+    return this.#superworker(sessionId, workspaceRoot, ['config', 'set', key, value])
   }
 
   /**
@@ -255,7 +255,7 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
    * The parameter list stays on one line with no trailing comma, same reason as `read`.
    * @param workspaceRoot - The workspace root to read; an empty string means this session's own root.
    */
-  async readSessions(sessionId: SessionId, workspaceRoot: string, options?: PathfinderReadOptions): Promise<PathfinderSessionsReading> {
+  async readSessions(sessionId: SessionId, workspaceRoot: string, options?: SuperworkerReadOptions): Promise<SuperworkerSessionsReading> {
     const root = await rootFor(this.ctx, sessionId, workspaceRoot)
     const scope = { sessionId, workspaceRoot: root }
     const signal = options?.signal ?? NEVER_ABORT
@@ -293,9 +293,9 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
   }
 
   /**
-   * The single write path shared by the five write endpoints; the true private `#pf` is not on the prototype, so the endpoint table's missing-registration scan cannot see it.
+   * The single write path shared by the five write endpoints; the true private `#superworker` is not on the prototype, so the endpoint table's missing-registration scan cannot see it.
    */
-  async #pf(sessionId: SessionId, workspaceRoot: string, args: readonly string[], said?: string): Promise<PfOutcome> {
+  async #superworker(sessionId: SessionId, workspaceRoot: string, args: readonly string[], said?: string): Promise<RecordOutcome> {
     const root = await rootFor(this.ctx, sessionId, workspaceRoot)
     return runPf(root, args, said)
   }

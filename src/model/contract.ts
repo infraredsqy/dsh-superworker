@@ -8,20 +8,20 @@
  * for someone to print.
  */
 import type {
-  PathfinderCycle,
-  PathfinderInstruction,
-  PathfinderIssue,
-  PathfinderNode,
+  SuperworkerCycle,
+  SuperworkerInstruction,
+  SuperworkerIssue,
+  SuperworkerNode,
 } from './records.ts'
 
 /** What the model needs: the four records, plus "read up to which moment". */
 export interface RecordsAtMoment {
   /** Keys are node ids; entries are the records verbatim. */
-  readonly nodes: Readonly<Record<string, PathfinderNode>>
-  readonly cycles: readonly PathfinderCycle[]
-  readonly instructions: readonly PathfinderInstruction[]
+  readonly nodes: Readonly<Record<string, SuperworkerNode>>
+  readonly cycles: readonly SuperworkerCycle[]
+  readonly instructions: readonly SuperworkerInstruction[]
   /** The issue pool reading's own input: which entries are on the books is decided by each one's discovered moment. */
-  readonly issues: Readonly<Record<string, PathfinderIssue>>
+  readonly issues: Readonly<Record<string, SuperworkerIssue>>
   readonly at: Date
 }
 

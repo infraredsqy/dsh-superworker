@@ -1,0 +1,29 @@
+{
+  "action": "dispatch",
+  "cycle": "c1",
+  "node_id": "@node-a@",
+  "node_title": "one",
+  "nodes": [
+    {
+      "node_id": "@node-a@",
+      "node_title": "one",
+      "mode": "auto",
+      "prompt": "@root@\\.superworker\\meta\\launch\\c1\\@node-a@\\prompt.txt",
+      "prompt_text": "/sw-conduct @node-a@ [pipeline]\n"
+    },
+    {
+      "node_id": "@node-b@",
+      "node_title": "two",
+      "mode": "auto",
+      "prompt": "@root@\\.superworker\\meta\\launch\\c1\\@node-b@\\prompt.txt",
+      "prompt_text": "/sw-conduct @node-b@ [pipeline]\n"
+    }
+  ],
+  "mode": "auto",
+  "prompt": "",
+  "prompt_text": "",
+  "steps": [
+    "write each node's prompt text to its own prompt.txt under @root@\\.superworker\\meta\\launch\\c1",
+    "DSH: spawn one session per node (`dispatch <cycle>` does all of them; `advance --cycle <cycle>` is the one-shot spelling: pin the free slots, then dispatch)"
+  ]
+}

@@ -39,15 +39,15 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { open, type Executor, type Pf } from 'pf-core'
+import { open, type Executor, type Pf } from 'superworker-core'
 import { canonicalWorkspaceRoot, executorOf, type SessionOpenOutcome } from './executor.ts'
-import type { PfRefusalCode } from './failure.ts'
+import type { RecordRefusalCode } from './failure.ts'
 import { busOf, logLineOf, messageOf } from './seams.ts'
 import { PANEL_PREF_FIELDS } from './settings-fields.ts'
 import { shippedPluginsDir } from './skill-paths.ts'
 
 /** The one refusal this layer adds: the engine (or the opener inside it) said no. */
-export type DispatchRefusalCode = PfRefusalCode | 'dispatch-refused'
+export type DispatchRefusalCode = RecordRefusalCode | 'dispatch-refused'
 
 /** What one dispatch answers: the session it opened, or why it refused. */
 export type DispatchOutcome = SessionOpenOutcome

@@ -6,20 +6,20 @@
  * questions about a page that is never built.
  *
  * Order is load-bearing. The embedded sheet is a standalone document where it was drawn, and inside
- * the panel it competes with the main panel's sheets for the same element names (`.pf-row` in the
- * detail pane, the main panel's own `.pf-head`); it wins those by "same specificity, later in
+ * the panel it competes with the main panel's sheets for the same element names (`.superworker-row` in the
+ * detail pane, the main panel's own `.superworker-head`); it wins those by "same specificity, later in
  * order", so it follows the main panel's sheets here. The main panel's sheet order follows the layer
  * order a reader sees.
  */
 export const SHEETS = [
-  { sheet: 'tokens.css', root: '.pf-page' },
-  { sheet: 'main.css', root: '.pf-page' },
-  { sheet: 'map.css', root: '.pf-page' },
-  { sheet: 'lines.css', root: '.pf-page' },
-  { sheet: 'detail.css', root: '.pf-page' },
-  { sheet: 'notes.css', root: '.pf-page' },
-  { sheet: 'register.css', root: '.pf-issue' },
-  { sheet: 'settings.css', root: '.pf-page' },
+  { sheet: 'tokens.css', root: '.superworker-page' },
+  { sheet: 'main.css', root: '.superworker-page' },
+  { sheet: 'map.css', root: '.superworker-page' },
+  { sheet: 'lines.css', root: '.superworker-page' },
+  { sheet: 'detail.css', root: '.superworker-page' },
+  { sheet: 'notes.css', root: '.superworker-page' },
+  { sheet: 'register.css', root: '.superworker-issue' },
+  { sheet: 'settings.css', root: '.superworker-page' },
 ]
 
 /**

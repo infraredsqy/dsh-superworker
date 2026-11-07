@@ -301,7 +301,7 @@ test('the cycle: what it holds, what steps it walked, who under it waits on a pe
 test('the payload the data bridge hands in works as input directly', () => {
   const payload = {
     workspaceRoot: 'C:\\workspace-for-tests',
-    recordPath: '.pf',
+    recordPath: '.superworker',
     sources: { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'missing' },
     nodes: { n1: node() },
     cycles: [cycle()],

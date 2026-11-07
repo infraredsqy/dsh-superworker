@@ -21,7 +21,7 @@ const json = (value) => JSON.stringify(value, null, 2) + '\n'
 
 /** Two cells on one line, the first delivered: a drawing to pan and pinch. */
 const record = () => ({
-  '.pf/ideas.json': json({
+  '.superworker/ideas.json': json({
     nodes: {
       n1: {
         title: 'the starting cell',
@@ -40,7 +40,7 @@ const record = () => ({
       },
     },
   }),
-  '.pf/state.json': json({
+  '.superworker/state.json': json({
     cycles: [
       {
         id: 'c1',
@@ -70,8 +70,8 @@ async function fieldAndCanvas(mounted) {
   assert.notEqual(mapTab, undefined, 'the map tab is not in the tab strip')
   await act(async () => { mapTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
   await settle()
-  const field = container.querySelector('.pf-field')
-  const canvas = container.querySelector('.pf-canvas')
+  const field = container.querySelector('.superworker-field')
+  const canvas = container.querySelector('.superworker-canvas')
   assert.notEqual(field, null, 'the map field is missing')
   assert.notEqual(canvas, null, 'the map canvas is missing')
   return { field, canvas }

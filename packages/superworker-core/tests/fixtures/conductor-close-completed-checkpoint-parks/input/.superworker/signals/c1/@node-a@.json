@@ -1,0 +1,10 @@
+{
+  "cycle": "c1",
+  "node": "@node-a@",
+  "status": "completed",
+  "summary": "delivered",
+  "outputs": {
+    "deliverable": ".superworker/nodes/@node-a@/sw-conduct.md"
+  },
+  "timestamp": "@t2@"
+}

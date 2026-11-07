@@ -16,7 +16,7 @@ import { fakeContext as standIn } from './helpers/host-context.mjs'
  * the record service — so the root they would write into is pinned to a temp home here, never the
  * machine's own. `apply` returns the placement seam; these cases do not wait on it, they only check
  * that loading still installs the service (the placement has its own file, `host-skills`). */
-const pinned = pinHome(['DSH_HOME'], 'pf-plugin-home-')
+const pinned = pinHome(['DSH_HOME'], 'superworker-plugin-home-')
 test.after(pinned.restore)
 
 const signal = new AbortController().signal
@@ -31,7 +31,7 @@ function context({ live = {}, stored = {}, sandboxRoot = 'C:\\fallback-root' } =
 }
 
 test('The plugin name and dependency declaration are the host\'s four', () => {
-  assert.equal(name, 'pathfinder-records')
+  assert.equal(name, 'superworker-records')
   assert.deepEqual(inject, ['workspaceFiles', 'sessions', 'sandboxPolicy', 'tools'])
 })
 
@@ -53,7 +53,7 @@ test('The export surface is the five things the plugin contract wants: internals
     assert.equal(entry[internal], undefined, `${internal} has no outside consumer and must not come through the entry again`)
   }
   /* The gateway class stays on the export surface: `tests/client-render` builds a fresh gateway from the entry. */
-  assert.equal(typeof entry.PathfinderRecordsGateway, 'function')
+  assert.equal(typeof entry.SuperworkerRecordsGateway, 'function')
 })
 
 test('The live session header speaks: the cwd it wrote is the root readings are taken at', async () => {
@@ -62,7 +62,7 @@ test('The live session header speaks: the cwd it wrote is the root readings are 
     stored: { s1: { header: { cwd: 'C:\\from-the-stored-header' } } },
   })
   apply(ctx)
-  const reading = await provided.pathfinder.read('s1', { signal })
+  const reading = await provided.superworker.read('s1', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\from-the-live-session')
   assert.ok(asked.length > 0)
@@ -75,7 +75,7 @@ test('The live session header speaks: the cwd it wrote is the root readings are 
 test('With no live session, the stored session header speaks', async () => {
   const { ctx, provided, asked } = context({ stored: { s2: { header: { cwd: 'C:\\from-the-stored-header' } } } })
   apply(ctx)
-  const reading = await provided.pathfinder.read('s2', { signal })
+  const reading = await provided.superworker.read('s2', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\from-the-stored-header')
   assert.equal(asked[0].scope.workspaceRoot, 'C:\\from-the-stored-header')
@@ -88,7 +88,7 @@ test('A live header ends the stored one\'s say: with no cwd in it, the sandbox p
     sandboxRoot: 'C:\\sandbox-root-for-tests',
   })
   apply(ctx)
-  const reading = await provided.pathfinder.read('s4', { signal })
+  const reading = await provided.superworker.read('s4', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\sandbox-root-for-tests')
   assert.equal(asked[0].scope.workspaceRoot, 'C:\\sandbox-root-for-tests')
@@ -102,7 +102,7 @@ test('With cwd in neither session header, it falls to the sandbox policy root', 
     sandboxRoot: 'C:\\sandbox-root-for-tests',
   })
   apply(ctx)
-  const reading = await provided.pathfinder.read('s3', { signal })
+  const reading = await provided.superworker.read('s3', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\sandbox-root-for-tests')
   assert.equal(asked[0].scope.workspaceRoot, 'C:\\sandbox-root-for-tests')
@@ -111,7 +111,7 @@ test('With cwd in neither session header, it falls to the sandbox policy root', 
 test('A session nobody knows still goes to the sandbox policy root, and the read does not throw', async () => {
   const { ctx, provided } = context({ sandboxRoot: 'C:\\sandbox-root-for-tests' })
   apply(ctx)
-  const reading = await provided.pathfinder.read('nobody-knows-me', { signal })
+  const reading = await provided.superworker.read('nobody-knows-me', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\sandbox-root-for-tests')
   assert.deepEqual(reading.sources, { nodes: 'missing', cycles: 'missing', instructions: 'missing', issues: 'missing' })
@@ -121,10 +121,10 @@ test('A session nobody knows still goes to the sandbox policy root, and the read
 test('The service is installed on ctx, and the caller\'s abort signal is handed on to the port', async () => {
   const { ctx, provided, asked } = context({ sandboxRoot: 'C:\\sandbox-root-for-tests' })
   apply(ctx)
-  assert.equal(typeof provided.pathfinder.read, 'function')
+  assert.equal(typeof provided.superworker.read, 'function')
 
   const controlled = new AbortController()
-  await provided.pathfinder.read('s9', '', { signal: controlled.signal })
+  await provided.superworker.read('s9', '', { signal: controlled.signal })
   assert.ok(asked.length > 0, 'the trip must really reach the port before the signal can arrive')
   for (const call of asked) {
     assert.equal(call.signal, controlled.signal, 'the signal the port sees must be the caller\'s, not one the endpoint minted')

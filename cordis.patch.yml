@@ -1,4 +1,4 @@
-# Mount point for the dsh-pathfinder line: `dsh plugin add` installs it, so a profile never needs
+# Mount point for the dsh-superworker line: `dsh plugin add` installs it, so a profile never needs
 # manual edits to cordis.patch.yml. The profile layer can still disable the line by id.
 #
 # This id is the line's identity and also the name of its settings namespace — in DSH one plugin
@@ -7,5 +7,5 @@
 # the namespace, and the panel section silently lands where no data is read.
 
 - insert:
-    - id: pathfinder
-      name: dsh-pathfinder
+    - id: superworker
+      name: dsh-superworker

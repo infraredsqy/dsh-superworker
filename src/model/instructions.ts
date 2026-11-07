@@ -13,7 +13,7 @@
  * always counts: a binding to a cycle or node no longer present, or an
  * unrecognized scope spelling, all read as in force.
  */
-import type { PathfinderInstruction } from './records.ts'
+import type { SuperworkerInstruction } from './records.ts'
 import type { CycleReading, InstructionGroupReading, InstructionReading, NodeReading, ProjectReading } from './contract.ts'
 import { cutAt, field, text, toMoment } from './fields.ts'
 
@@ -25,7 +25,7 @@ import { cutAt, field, text, toMoment } from './fields.ts'
  * counts is judged only among the spoken ones.
  */
 export function readInstructions(
-  source: readonly PathfinderInstruction[],
+  source: readonly SuperworkerInstruction[],
   nodeById: Readonly<Record<string, NodeReading>>,
   cycleById: Readonly<Record<string, CycleReading>>,
   at: Date,

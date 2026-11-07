@@ -23,7 +23,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { canonicalWorkspaceRoot, executorOf, openNodeSession } from '../src/host/executor.ts'
-import { PATHFINDER_TOOL_NAME } from '../src/host/tool.ts'
+import { SUPERWORKER_TOOL_NAME } from '../src/host/tool.ts'
 import { pinHome } from './helpers/env.mjs'
 import { until, flush } from './helpers/wait.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
@@ -32,16 +32,16 @@ import { fakeWorkspaceFiles } from './helpers/workspace-files-port.mjs'
 /* Opening a session also reads the placement record under the DSH home to confirm the skills the
  * plugins placed against this workspace's own catalog view. These cases exercise the opener's flow,
  * not that placement, so the home they read is pinned to a temp one here — never the machine's own. */
-const pinned = pinHome(['DSH_HOME'], 'pf-executor-home-')
+const pinned = pinHome(['DSH_HOME'], 'superworker-executor-home-')
 test.after(pinned.restore)
 
 /** One cell's plan line, the way the dispatch preparation writes it: one line, nothing after it. */
-const PROMPT_LINE = '/pf-conduct n1 [pipeline]'
+const PROMPT_LINE = '/sw-conduct n1 [pipeline]'
 /* In the dict it wears its trailing newline, the way the file sits on disk; the port moves lines, not bytes, so the line arrives without that terminator. */
 const PROMPT = `${PROMPT_LINE}\n`
 
 /** The dict key the port reads the prompt from. */
-const promptPath = (cycle, node) => `.pf/meta/launch/${cycle}/${node}/prompt.txt`
+const promptPath = (cycle, node) => `.superworker/meta/launch/${cycle}/${node}/prompt.txt`
 
 /** A promise whose release the test holds. */
 function defer() {
@@ -161,8 +161,8 @@ function context({ files, agents, sessions, defaultModel, workspaceRegistry, age
 
 /** A real workspace root for the note the opener writes, with the plan prompt in the port's dict. `prompt: null` means the cell has none. */
 function rig({ files = {}, node = 'n1', cycle = 'c1', prompt = PROMPT, ...rest } = {}) {
-  mkdirSync(join(tmpdir(), 'pf-executor-'), { recursive: true })
-  const root = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-'))
+  mkdirSync(join(tmpdir(), 'superworker-executor-'), { recursive: true })
+  const root = mkdtempSync(join(tmpdir(), 'superworker-executor-', 'ws-'))
   const dict = { ...files }
   if (prompt !== null) dict[promptPath(cycle, node)] = prompt
   const agents = fakeAgents(rest)
@@ -172,7 +172,7 @@ function rig({ files = {}, node = 'n1', cycle = 'c1', prompt = PROMPT, ...rest }
 
 /** The note the opener writes for one node, as it is on disk. */
 function noteOnDisk(root, node) {
-  return JSON.parse(readFileSync(join(root, '.pf', 'meta', 'sessions', `${node}.json`), 'utf8'))
+  return JSON.parse(readFileSync(join(root, '.superworker', 'meta', 'sessions', `${node}.json`), 'utf8'))
 }
 
 /**
@@ -182,7 +182,7 @@ function noteOnDisk(root, node) {
  * never what it points at.
  */
 function aliasOf(root) {
-  const alias = join(tmpdir(), `pf-executor-alias-${randomUUID()}`)
+  const alias = join(tmpdir(), `superworker-executor-alias-${randomUUID()}`)
   symlinkSync(root, alias, 'junction')
   return alias
 }
@@ -257,7 +257,7 @@ test('Grouping and attach: with no workspace service it still opens, leaving one
   assert.match(lines[0], /^warn: could not attach/u)
   assert.ok(lines[0].includes(`${rigging.cycle}/${rigging.node}`), 'the line names the cell')
   assert.ok(lines[0].includes(realpathSync(rigging.root)), 'the line names the workspace')
-  assert.ok(existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')), 'the session opens and the note lands as usual')
+  assert.ok(existsSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n1.json')), 'the session opens and the note lands as usual')
 })
 
 test('Grouping and attach: the session is already open when the host refuses the attach, so it degrades to cwd-only and leaves one line', async () => {
@@ -295,7 +295,7 @@ test('Grouping and attach: the session is already open when the host refuses the
   assert.ok(lines[0].includes('cwd-only'), 'the line says the session degraded to cwd-only')
   assert.equal(rigging.agents.created[0].followups.length, 1, 'the first instruction still arrives: an ungrouped session does not idle')
   assert.ok(
-    existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')),
+    existsSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n1.json')),
     'the note lands after the degrade too: no orphan without paper',
   )
 })
@@ -324,7 +324,7 @@ test('Canonical spelling: a session opened through another spelling gets the rea
       'the session header cwd is the real path: after the workspace layer realpaths, it must match the record',
     )
     assert.deepEqual(created, [real], 'the workspace service is asked for the workspace by real path, not by the caller spelling')
-    assert.ok(existsSync(join(real, '.pf', 'meta', 'sessions', `${rigging.node}.json`)), 'the note lands under the same root')
+    assert.ok(existsSync(join(real, '.superworker', 'meta', 'sessions', `${rigging.node}.json`)), 'the note lands under the same root')
   } finally {
     rmSync(alias, { recursive: true, force: true })
     assert.ok(existsSync(rigging.root), 'removing the alias does not take the root it points at')
@@ -335,7 +335,7 @@ test('Canonical spelling: two spellings of one root queue on one line, and the s
   /* Both opens start together: which seat reaches create first belongs to arrival order, so the case waits for "create was called". */
   const doors = createDoors()
   const rigging = rig({
-    files: { [promptPath('c1', 'n2')]: '/pf-conduct n2 [pipeline]\n' },
+    files: { [promptPath('c1', 'n2')]: '/sw-conduct n2 [pipeline]\n' },
     gate: doors.gate,
   })
   const alias = aliasOf(rigging.root)
@@ -364,7 +364,7 @@ test('Canonical spelling: two spellings of one root queue on one line, and the s
  * "never refuse to open a session for one spelling" — is pinned by the two cases above, where an open through a junction
  * spelling comes back `ok` with the real path in hand. */
 test('Canonical spelling: a root with no real path comes back as it went in', async () => {
-  const missing = join(tmpdir(), `pf-executor-missing-${randomUUID()}`)
+  const missing = join(tmpdir(), `superworker-executor-missing-${randomUUID()}`)
   assert.equal(await canonicalWorkspaceRoot(missing), missing)
 })
 
@@ -375,8 +375,8 @@ test('The note is written by the opener: one more run entry, the other entries l
     run: [{ session: 'session-old', host: 'dsh', at: '2026-10-02T00:00:00Z' }],
   }
   const rigging = rig({ files: {}, node: 'n1' })
-  mkdirSync(join(rigging.root, '.pf', 'meta', 'sessions'), { recursive: true })
-  writeFileSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json'), JSON.stringify(before))
+  mkdirSync(join(rigging.root, '.superworker', 'meta', 'sessions'), { recursive: true })
+  writeFileSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n1.json'), JSON.stringify(before))
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
   rigging.agents.created[0].whenIdle.resolve()
@@ -395,8 +395,8 @@ test('The note is written by the opener: one more run entry, the other entries l
 
 test('An unreadable note is no roadblock: the bad page is replaced with one that writes', async () => {
   const rigging = rig({ node: 'n1' })
-  mkdirSync(join(rigging.root, '.pf', 'meta', 'sessions'), { recursive: true })
-  writeFileSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json'), '{broken')
+  mkdirSync(join(rigging.root, '.superworker', 'meta', 'sessions'), { recursive: true })
+  writeFileSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n1.json'), '{broken')
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
   rigging.agents.created[0].whenIdle.resolve()
@@ -435,7 +435,7 @@ test('Settling, wait-interface version: the waiter aborts while the session is o
     'the session id stays in outcome\'s own field; naming is left to the cell',
   )
   assert.ok(detail.includes('caller gave up'))
-  assert.ok(existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')), 'the note has landed: the session is out there, so the paper must have it')
+  assert.ok(existsSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n1.json')), 'the note has landed: the session is out there, so the paper must have it')
   rigging.agents.created[0].whenIdle.resolve()
 })
 
@@ -449,7 +449,7 @@ test('Settling, wait-interface version: the wait interface throws, the refusal c
     !(outcome.detail ?? '').includes(rigging.agents.created[0].options.sessionId),
     'the session id stays in outcome\'s own field; naming is left to the cell',
   )
-  assert.ok(existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')), 'the session is out there: the note is on disk')
+  assert.ok(existsSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n1.json')), 'the session is out there: the note is on disk')
 })
 
 test('Settling, old-host version: turn end plus an idle notice, and it answers only once both are seen', async () => {
@@ -480,9 +480,9 @@ test('Settling, old-host version: the session is disposed before its turn ends, 
 })
 
 test('One line per workspace: two opens go strictly one after another, and both open', async () => {
-  mkdirSync(join(tmpdir(), 'pf-executor-'), { recursive: true })
-  const root = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-'))
-  const files = { [promptPath('c1', 'n1')]: PROMPT, [promptPath('c1', 'n2')]: '/pf-conduct n2 [pipeline]\n' }
+  mkdirSync(join(tmpdir(), 'superworker-executor-'), { recursive: true })
+  const root = mkdtempSync(join(tmpdir(), 'superworker-executor-', 'ws-'))
+  const files = { [promptPath('c1', 'n1')]: PROMPT, [promptPath('c1', 'n2')]: '/sw-conduct n2 [pipeline]\n' }
 /* Order on one line belongs to arrival order: the case waits for "create was called" and does not order the two opens. */
   const doors = createDoors()
   const agents = fakeAgents({ gate: doors.gate })
@@ -501,14 +501,14 @@ test('One line per workspace: two opens go strictly one after another, and both 
   const outcomes = await bounded(Promise.all([first, second]), 'both opens settle')
   for (const outcome of outcomes) assert.equal(outcome.ok, true, JSON.stringify(outcome))
   assert.notEqual(agents.created[0].options.sessionId, agents.created[1].options.sessionId, 'each session has its own id')
-  assert.ok(existsSync(join(root, '.pf', 'meta', 'sessions', 'n1.json')))
-  assert.ok(existsSync(join(root, '.pf', 'meta', 'sessions', 'n2.json')))
+  assert.ok(existsSync(join(root, '.superworker', 'meta', 'sessions', 'n1.json')))
+  assert.ok(existsSync(join(root, '.superworker', 'meta', 'sessions', 'n2.json')))
 })
 
 test('One line per workspace: one rejection does not poison the next, and the second still opens', async () => {
-  mkdirSync(join(tmpdir(), 'pf-executor-'), { recursive: true })
-  const root = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-'))
-  const files = { [promptPath('c1', 'n1')]: PROMPT, [promptPath('c1', 'n2')]: '/pf-conduct n2 [pipeline]\n' }
+  mkdirSync(join(tmpdir(), 'superworker-executor-'), { recursive: true })
+  const root = mkdtempSync(join(tmpdir(), 'superworker-executor-', 'ws-'))
+  const files = { [promptPath('c1', 'n1')]: PROMPT, [promptPath('c1', 'n2')]: '/sw-conduct n2 [pipeline]\n' }
   const agents = fakeAgents({
     gate: (_record, index) => (index === 0 ? Promise.reject(new Error('create blew up')) : Promise.resolve()),
   })
@@ -523,13 +523,13 @@ test('One line per workspace: one rejection does not poison the next, and the se
   agents.created[1].whenIdle.resolve()
   const outcome = await two
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
-  assert.ok(existsSync(join(root, '.pf', 'meta', 'sessions', 'n2.json')), 'the second note lands as usual')
+  assert.ok(existsSync(join(root, '.superworker', 'meta', 'sessions', 'n2.json')), 'the second note lands as usual')
 })
 
 test('Different workspaces do not queue: settling only comes up once both sides are in create', async () => {
-  mkdirSync(join(tmpdir(), 'pf-executor-'), { recursive: true })
-  const rootA = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-a-'))
-  const rootB = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-b-'))
+  mkdirSync(join(tmpdir(), 'superworker-executor-'), { recursive: true })
+  const rootA = mkdtempSync(join(tmpdir(), 'superworker-executor-', 'ws-a-'))
+  const rootB = mkdtempSync(join(tmpdir(), 'superworker-executor-', 'ws-b-'))
   const files = { [promptPath('c1', 'n1')]: PROMPT }
   const holds = [defer(), defer()]
   let taken = 0
@@ -552,7 +552,7 @@ test('No dispatch prompt: it refuses by name and builds and writes nothing', asy
   assert.equal(outcome.ok, false)
   assert.equal(outcome.code, 'prompt-missing')
   assert.equal(rigging.agents.created.length, 0)
-  assert.ok(!existsSync(join(rigging.root, '.pf', 'meta', 'sessions', `${rigging.node}.json`)), 'no session, no note')
+  assert.ok(!existsSync(join(rigging.root, '.superworker', 'meta', 'sessions', `${rigging.node}.json`)), 'no session, no note')
 })
 
 test('A dispatch prompt that is all blank: that counts as none too, refused rather than opening an empty session', async () => {
@@ -636,14 +636,14 @@ test('Composition: the preset resolve refuses, the open lands as open-failed wit
   assert.ok((outcome.detail ?? '').includes('roster blew up'), 'the refusal carries the words the roster threw')
   assert.equal(rigging.agents.created.length, 0, 'an open whose resolve failed builds no agent')
   assert.ok(
-    !existsSync(join(rigging.root, '.pf', 'meta', 'sessions', `${rigging.node}.json`)),
+    !existsSync(join(rigging.root, '.superworker', 'meta', 'sessions', `${rigging.node}.json`)),
     'no session, no note',
   )
 })
 
 /* ---- the session's own tool, armed by the opener ---- */
 
-test('Wake: the opened session gets the pathfinder tool before the first instruction lands, exactly once', async () => {
+test('Wake: the opened session gets the superworker tool before the first instruction lands, exactly once', async () => {
   const rigging = rig()
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
@@ -652,14 +652,14 @@ test('Wake: the opened session gets the pathfinder tool before the first instruc
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const record = rigging.agents.created[0]
   assert.equal(record.registered.length, 1, 'registered exactly once')
-  assert.equal(record.registered[0].name, PATHFINDER_TOOL_NAME, 'the registered one is the pathfinder tool')
+  assert.equal(record.registered[0].name, SUPERWORKER_TOOL_NAME, 'the registered one is the superworker tool')
   assert.deepEqual(record.sequence, ['register', 'followup'], 'the tool enters the scope first, the first instruction after')
 })
 
 test('Wake: a session with no tools surface still opens as usual (the wake stays silent by contract)', async () => {
   // bespoke: an agent whose ctx has no tools service
-  mkdirSync(join(tmpdir(), 'pf-executor-'), { recursive: true })
-  const root = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-'))
+  mkdirSync(join(tmpdir(), 'superworker-executor-'), { recursive: true })
+  const root = mkdtempSync(join(tmpdir(), 'superworker-executor-', 'ws-'))
   let made
   const bareAgents = {
     create(options) {
@@ -698,7 +698,7 @@ test('The dispatch seam\'s drill switch: a request with dryRun answers a drill r
   assert.deepEqual(receipt, { host: 'drill' }, 'the drill receipt says only that this is a drill, carrying no session id')
   assert.equal(rigging.agents.created.length, 0, 'the drill finds no session-opening call at all')
   assert.ok(
-    !existsSync(join(rigging.root, '.pf', 'meta', 'sessions', `${rigging.node}.json`)),
+    !existsSync(join(rigging.root, '.superworker', 'meta', 'sessions', `${rigging.node}.json`)),
     'the drill writes no note either',
   )
 })
@@ -732,9 +732,9 @@ function placeOneSkill(name) {
   const ours = join(root, name, 'SKILL.md')
   mkdirSync(join(root, name), { recursive: true })
   writeFileSync(ours, `---\nname: ${name}\ndescription: placed by the plugin\n---\n\n# ${name}\n`, 'utf8')
-  mkdirSync(join(pinned.home, 'pathfinder'), { recursive: true })
+  mkdirSync(join(pinned.home, 'superworker'), { recursive: true })
   writeFileSync(
-    join(pinned.home, 'pathfinder', 'skills.json'),
+    join(pinned.home, 'superworker', 'skills.json'),
     JSON.stringify({ version: 1, root, skills: [{ name, dir: name, files: [`${name}/SKILL.md`] }] }),
     'utf8',
   )
@@ -743,7 +743,7 @@ function placeOneSkill(name) {
 
 /** Take the record back off the temp home, so the next case starts with this line having placed nothing. */
 function clearPlacement() {
-  rmSync(join(pinned.home, 'pathfinder'), { recursive: true, force: true })
+  rmSync(join(pinned.home, 'superworker'), { recursive: true, force: true })
   rmSync(join(pinned.home, 'skills'), { recursive: true, force: true })
 }
 
@@ -777,7 +777,7 @@ test('Session-side diagnostic: when a same-named copy under the project root out
     t.skip(`needs process isolation: DSH_HOME was overwritten in the shared process by another test file's pin (now points at ${process.env.DSH_HOME}, not this file's ${pinned.home})`)
     return
   }
-  const name = 'pf-issue-repair'
+  const name = 'sw-issue-repair'
   const ours = placeOneSkill(name)
   const rigging = rig()
   const projectCopy = join(rigging.root, '.dsh', 'skills', name, 'SKILL.md')
@@ -810,7 +810,7 @@ test('Session-side diagnostic: when this copy wins its own name in the session v
     t.skip(`needs process isolation: DSH_HOME was overwritten in the shared process by another test file's pin (now points at ${process.env.DSH_HOME}, not this file's ${pinned.home})`)
     return
   }
-  const name = 'pf-issue-repair'
+  const name = 'sw-issue-repair'
   const ours = placeOneSkill(name)
   const rigging = rig()
   try {
@@ -842,10 +842,10 @@ test('The catalog diagnostic is off the queue: with the catalog never answering,
     t.skip(`needs process isolation: DSH_HOME was overwritten in the shared process by another test file's pin (now points at ${process.env.DSH_HOME}, not this file's ${pinned.home})`)
     return
   }
-  const name = 'pf-issue-repair'
+  const name = 'sw-issue-repair'
   placeOneSkill(name)
   try {
-    const rigging = rig({ files: { [promptPath('c1', 'n2')]: '/pf-conduct n2 [pipeline]\n' } })
+    const rigging = rig({ files: { [promptPath('c1', 'n2')]: '/sw-conduct n2 [pipeline]\n' } })
     let releaseCatalog
     const catalogGate = new Promise((resolve) => { releaseCatalog = resolve })
     let firstSettled = false

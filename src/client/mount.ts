@@ -1,5 +1,5 @@
 /**
- * The mount points of Pathfinder Center in DSH's own two spots: an item in the sidebar's panel
+ * The mount points of Superworker Center in DSH's own two spots: an item in the sidebar's panel
  * icon column, and the center-column cell.
  *
  * Both slots are already declared by others (the seats are declared at runtime by ui-layout /
@@ -17,7 +17,7 @@
  * down.
  */
 import * as React from 'react'
-import type { PathfinderPanelApi } from './index.ts'
+import type { SuperworkerPanelApi } from './index.ts'
 import { injectAt, report, serveOn, type SlotsService } from './context.ts'
 import { serviceAt } from './data.ts'
 import { localeOf, LOCALE_NS } from './locale.ts'
@@ -32,7 +32,7 @@ export const PANEL_ORDER = 1
  * The word on that sidebar row.
  *
  * A key rather than the word: the row carries the panel's own name — the wordmark over the panel is
- * the product's English name, the package and repo stay `dsh-pathfinder` — and which language says
+ * the product's English name, the package and repo stay `dsh-superworker` — and which language says
  * it is the reader's business. The row is registered with a `label` FUNCTION, which DSH calls while
  * drawing, so the word is looked up on every frame and a language switch needs no re-registration.
  */
@@ -161,7 +161,7 @@ function PanelIcon(props: { readonly size?: number }): React.ReactElement {
 }
 
 /**
- * Wire Pathfinder Center's two spots onto their slots.
+ * Wire Superworker Center's two spots onto their slots.
  *
  * The two registrations happen in one pass, and both withdrawers go to the same `effect`'s cleanup;
  * the cleanup's order is: withdraw the registrations first, then take down the two style tags — the
@@ -181,10 +181,10 @@ function PanelIcon(props: { readonly size?: number }): React.ReactElement {
  */
 export function registerSeats(
   ctx: unknown,
-  api: PathfinderPanelApi,
+  api: SuperworkerPanelApi,
   dropStyles: () => void,
 ): void {
-  injectAt(ctx, ['slots'], 'the two Pathfinder Center seats did not mount', (owner) => {
+  injectAt(ctx, ['slots'], 'the two Superworker Center seats did not mount', (owner) => {
     const slots = serviceAt(owner, 'slots') as SlotsService | undefined
     if (slots === undefined || typeof slots.inject !== 'function' || typeof slots.register !== 'function') return
     const nav = createSessionNav(ctx)
@@ -195,7 +195,7 @@ export function registerSeats(
         for (const dispose of disposers.reverse()) dispose()
         dropStyles()
       }
-    }, 'dsh-pathfinder: seats')
+    }, 'dsh-superworker: seats')
   })
 }
 
@@ -209,7 +209,7 @@ export function registerSeats(
  */
 function contribute(
   slots: SlotsService,
-  api: PathfinderPanelApi,
+  api: SuperworkerPanelApi,
   nav: SessionNav,
   workspaces: WorkspaceSource,
 ): (() => void)[] {

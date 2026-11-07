@@ -5,7 +5,7 @@
 #   pwsh -File tools/testbed/testbed.ps1 -Action check   run all five spec completion criteria 1-5, printing each reading; non-zero exit on failure
 #   pwsh -File tools/testbed/testbed.ps1 -Action down    stop only the PID this script recorded (verify the command line first, never kill by process name)
 #
-# Everything it creates lives under -Root (default %LOCALAPPDATA%\dsh-pathfinder-testbed): not in the repo, never touches the main home.
+# Everything it creates lives under -Root (default %LOCALAPPDATA%\dsh-superworker-testbed): not in the repo, never touches the main home.
 #
 # This file is the dispatch and the report, nothing else: which action runs, the reading assembly per criterion
 # (Add-Report / Add-Criterion) and the two files a check leaves behind. Everything an action calls lives in the
@@ -15,7 +15,7 @@
 #
 # Parameters: -Workspace renames the workspace, -SessionCount adds a second session, -EmptyWorkspace adds a session-less workspace,
 # -Plugin swaps the plugin installed into the profile (default is this repo; relative paths are resolved against the caller's current
-# directory; a `.tgz` from npm pack installs in package form), -SeedRecords drops a real record into a synthetic workspace (copied as `.pf`,
+# directory; a `.tgz` from npm pack installs in package form), -SeedRecords drops a real record into a synthetic workspace (copied as `.superworker`,
 # effective on the up action only; without it the workspace is untouched — the default run creates one workspace and one session.
 
 #Requires -Version 5.1
@@ -23,7 +23,7 @@
 param(
   [Parameter(Mandatory = $true)][ValidateSet('up', 'check', 'down')][string]$Action,
   [string]$Root = '',
-  [string]$Profile = 'pf-testbed',
+  [string]$Profile = 'superworker-testbed',
   [string]$Workspace = 'workspace-alpha',
   [int]$SessionCount = 1,
   [string]$EmptyWorkspace = '',
@@ -38,7 +38,7 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'testbed-lib.ps1')
 
-if ($Root.Length -eq 0) { $Root = Join-Path $env:LOCALAPPDATA 'dsh-pathfinder-testbed' }
+if ($Root.Length -eq 0) { $Root = Join-Path $env:LOCALAPPDATA 'dsh-superworker-testbed' }
 if ($MainHome.Length -eq 0) { $MainHome = Join-Path $env:USERPROFILE '.dsh' }
 # The default plugin is this repo: two levels up from `tools\testbed\` is the project root.
 if ($Plugin.Length -eq 0) { $Plugin = Join-Path $PSScriptRoot '..\..' }
@@ -74,7 +74,7 @@ if ($Action -eq 'up') {
     -SessionCount $SessionCount -EmptyWorkspace $EmptyWorkspace -DshCmd $DshCmd -NodeExe $NodeExe
   $testbedHome = [string]$manifest.home
   # Optional: drop a real record into a synthetic workspace (the panel reads the workspace-level
-  # `.pf`). Without it the workspace is untouched — the default run and check's five criteria never
+  # `.superworker`). Without it the workspace is untouched — the default run and check's five criteria never
   # pass through here.
   $recordsReading = @()
   if ($SeedRecords.Length -gt 0) {
@@ -112,7 +112,7 @@ if ($Action -eq 'up') {
   Write-Host "panel mount  : settings namespace '$($mountReading.namespace)' is served by the live instance (namespaces=$($mountReading.namespaceCount)) ｜ boot manifest lists $($mountReading.clientBundleRef) (page $($mountReading.pageBytes) chars)"
   Write-Host "panel builds : $(@($pluginReading.artifacts | ForEach-Object { "$($_.relative) $($_.bytes)B" }) -join ', ')"
   foreach ($reading in $recordsReading) {
-    Write-Host "records      : .pf seeded into $($reading.workspacePath) (files=$($reading.fileCount) bytes=$($reading.totalBytes))"
+    Write-Host "records      : .superworker seeded into $($reading.workspacePath) (files=$($reading.fileCount) bytes=$($reading.totalBytes))"
   }
   Write-Host ''
   foreach ($line in (Get-TestbedListCommandLines -Port $ready.port -Token $ready.token -SessionIds @($manifest.sessions | ForEach-Object { [string]$_.sessionId }))) {

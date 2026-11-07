@@ -1,4 +1,4 @@
-/* dsh-pathfinder · the line-name column left of the detail pane.
+/* dsh-superworker · the line-name column left of the detail pane.
  *
  * The column answers only "which line to look at": the mark is drawn left of the name, and the row
  * carries no numbers and no action of its own — a line's own numbers are written outside the panel
@@ -6,27 +6,27 @@
  *
  * The row itself — its height, its inset, the cell left of the name, the name's face — is the object
  * this column and the map's rail both use, so it is declared in `tokens.css`. What stands here is
- * what this column owns: the split, the draggable width, and the body. */.pf-page .pf-detail{
+ * what this column owns: the split, the draggable width, and the body. */.superworker-page .superworker-detail{
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   align-items: stretch;
-}/* The column. Its width is draggable: the seam is `tokens.css`'s width grip (`.pf-grip`), except it
- * stands in the flow — it moves this column's width, the body swaps, the window does not. */.pf-page .pf-lineside{
-  flex: 0 0 var(--pf-side-w, var(--pf-line-w));
+}/* The column. Its width is draggable: the seam is `tokens.css`'s width grip (`.superworker-grip`), except it
+ * stands in the flow — it moves this column's width, the body swaps, the window does not. */.superworker-page .superworker-lineside{
+  flex: 0 0 var(--superworker-side-w, var(--superworker-line-w));
   min-width: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-}.pf-page .pf-detail .pf-lineside{
+}.superworker-page .superworker-detail .superworker-lineside{
   /* The rail and the list sit on one top line: both take the page's own inset rather than the rail
    * starting a step higher than the first head. */
-  padding: var(--pf-detail-top) 0 var(--pf-detail-foot);
+  padding: var(--superworker-detail-top) 0 var(--superworker-detail-foot);
 }/* The whole row is the one control it holds: the column lists lines to look at, and picking one is
- * the only act a row carries. */.pf-page .pf-linepick{
+ * the only act a row carries. */.superworker-page .superworker-linepick{
   flex: 1 1 auto;
   height: 100%;
   padding: 0;
-}.pf-page .pf-linemain{
+}.superworker-page .superworker-linemain{
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;

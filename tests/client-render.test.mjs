@@ -1,8 +1,8 @@
 /* The built browser half, mounted on its own: the artifact the package ships is handed to the shell,
  * boots onto a roster, draws itself, walks every pane, and leaves the console clean.
  *
- * The record comes from the in-memory port stand-in, so this file needs no `.pf` directory on disk,
- * no `pf` command and no fixture of its own: the panel reads through a port. The panel's copy and
+ * The record comes from the in-memory port stand-in, so this file needs no `.superworker` directory on disk,
+ * no `superworker` command and no fixture of its own: the panel reads through a port. The panel's copy and
  * layout are deliberately not measured here — they move far more often than the four things below,
  * and a test pinning them costs an edit per change; the readings that do need a record are walked by
  * hand. The one reading from a record that is measured here is which lines the panel names: the
@@ -23,7 +23,7 @@ const json = (value) => JSON.stringify(value, null, 2) + '\n'
 
 /** A record with something in every one of the four sources: the panes draw content rather than an empty state. */
 const record = () => ({
-  '.pf/ideas.json': json({
+  '.superworker/ideas.json': json({
     nodes: {
       n1: {
         title: 'the first node',
@@ -53,7 +53,7 @@ const record = () => ({
       },
     },
   }),
-  '.pf/state.json': json({
+  '.superworker/state.json': json({
     cycles: [
       {
         id: 'c1',
@@ -84,13 +84,13 @@ const record = () => ({
       },
     ],
   }),
-  '.pf/instructions.json': json({
+  '.superworker/instructions.json': json({
     instructions: [
       { id: 'i1', text: 'something the user said', scope: 'global', target: 'stage', state: 'live', cycle: null, node: null, at: '2026-01-07T00:00:00.000Z', resolved_at: null, note: 'a note' },
       { id: 'i2', text: 'a line taken back', scope: 'cycle', target: 'stage', state: 'archived', cycle: 'c1', node: null, at: '2026-01-03T00:00:00.000Z', resolved_at: '2026-01-08T00:00:00.000Z', note: null },
     ],
   }),
-  '.pf/issues/issues.json': json({
+  '.superworker/issues/issues.json': json({
     version: 1,
     issues: {
       p1: {
@@ -117,15 +117,15 @@ test('this build: the shell loads, the panel draws, every tab opens, cycle names
   const { window, act, container, ledger, loaded, panel, asked, consoleErrors, settle } = mounted
 
   /* ---- what the shell got: one spec under this id, and a factory that exports apply ---- */
-  assert.equal(loaded?.id, 'dsh-pathfinder', 'the shell knows this build by its id')
+  assert.equal(loaded?.id, 'dsh-superworker', 'the shell knows this build by its id')
   assert.equal(typeof mounted.client.apply, 'function', 'this build exports apply')
 
   /* ---- what it installed: one service, three rows on the roster ---- */
-  assert.equal(panel?.id, 'pathfinder', 'the panel registered as a service')
+  assert.equal(panel?.id, 'superworker', 'the panel registered as a service')
   assert.equal(ledger.size, 3, `this layer registers three: ${[...ledger.keys()].join(', ')}`)
 
   /* ---- what it drew ---- */
-  assert.notEqual(container.querySelector('.pf-page'), null, 'the panel page is drawn')
+  assert.notEqual(container.querySelector('.superworker-page'), null, 'the panel page is drawn')
   assert.ok((container.textContent ?? '').length > 0, 'there are words on the panel')
   assert.ok(asked.length > 0, 'it asked the host half for the record')
 
@@ -150,14 +150,14 @@ test('this build: the shell loads, the panel draws, every tab opens, cycle names
   assert.notEqual(detailTab, undefined, 'the detail tab is not in the tab strip')
   await act(async () => { detailTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
   await settle()
-  const picks = [...container.querySelectorAll('#pane-detail .pf-linepick')]
-  assert.deepEqual(picks.map((one) => one.querySelector('.pf-cycle')?.textContent), ['c1', 'c2'], 'one row per cycle in the sidebar')
+  const picks = [...container.querySelectorAll('#pane-detail .superworker-linepick')]
+  assert.deepEqual(picks.map((one) => one.querySelector('.superworker-cycle')?.textContent), ['c1', 'c2'], 'one row per cycle in the sidebar')
   const second = picks[1]
   await act(async () => { second.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
   await settle()
   assert.equal(second.getAttribute('aria-current'), 'true', 'the second cycle was clicked: the sidebar marks it')
   assert.equal(picks[0].getAttribute('aria-current'), 'false', 'the first cycle is no longer the selected one')
-  const rows = [...container.querySelectorAll('#pane-detail .pf-row')].map((row) => row.getAttribute('data-id'))
+  const rows = [...container.querySelectorAll('#pane-detail .superworker-row')].map((row) => row.getAttribute('data-id'))
   assert.deepEqual(rows, ['n1'], 'the detail lists the cells this cycle walked: c2 walked only n1')
 
   /* The drawing is read where the reader sees it: open the map, then read its cards. The map's touch
@@ -171,9 +171,9 @@ test('this build: the shell loads, the panel draws, every tab opens, cycle names
    * no id at all. Printing only the first walker leaves a cell that is merely in a line's hand with
    * no name on it, so the three cells below are the whole of this reading. */
   const tagsOf = (id) => {
-    const card = container.querySelector(`.pf-mnode[data-id="${id}"]`)
+    const card = container.querySelector(`.superworker-mnode[data-id="${id}"]`)
     assert.notEqual(card, null, `card ${id} is not on the map`)
-    return [...card.querySelectorAll('.pf-mtag')].map((tag) => tag.textContent)
+    return [...card.querySelectorAll('.superworker-mtag')].map((tag) => tag.textContent)
   }
   assert.deepEqual(tagsOf('n1'), ['c1·c2'], 'a cell walked by two cycles: both are printed, in record order')
   assert.deepEqual(tagsOf('n2'), ['c1'], 'a cycle only holds it, has not walked it: that cycle still prints')

@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "dsh-pathfinder",
-    "description": "把 `.pf/` 管线记录做成 DSH 里一块看得见的工作面板：宿主半身按会话所属的工作区读那份记录，浏览器半身把读数画成工作面板。"
+    "title": "dsh-superworker",
+    "description": "把 `.superworker/` 管线记录做成 DSH 里一块看得见的工作面板：宿主半身按会话所属的工作区读那份记录，浏览器半身把读数画成工作面板。"
   }
 }

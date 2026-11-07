@@ -1,0 +1,10 @@
+# The line endings of these files are ours: every record is written with LF, and no machine's
+# core.autocrlf has any business rewriting that.
+** -text
+
+# Records merge entry-wise, not line by line; the driver is sw-merge-ledger, and that command is
+# registered in each machine's git config (ledger.register).
+ideas.json merge=superworker
+state.json merge=superworker
+instructions.json merge=superworker
+signals/** merge=superworker

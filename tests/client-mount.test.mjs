@@ -1,4 +1,4 @@
-/* The two mount points of Pathfinder Center: locks in "which two seats get registered" and "unmount cleans up".
+/* The two mount points of Superworker Center: locks in "which two seats get registered" and "unmount cleans up".
  *
  * For each seat: the slot name, entry id / key, order, the word the sidebar row shows (looked up
  * through the lookup table, not a literal), and the fact that the central section is handed exactly
@@ -33,7 +33,7 @@ import { WORD_TABLES } from '../src/client/locales/index.ts'
 import { PANEL_STYLE_ID, SETTINGS_STYLE_ID, dropStyleTag, ensureStyleTag } from '../src/client/style-tags.ts'
 import { fakeLocaleService, fakeSlotRoster } from './helpers/dsh-standins.mjs'
 
-const PANEL_ID = 'pathfinder'
+const PANEL_ID = 'superworker'
 
 /**
  * A stand-in context: `slots`, `effect`, and `inject` all present, shaped like a real deployment;
@@ -69,7 +69,7 @@ function fakePanel({ locale = createLocalePort() } = {}) {
   const Panel = () => null
   return {
     id: PANEL_ID,
-    title: '寻路中心',
+    title: '超级工坊',
     port: { source: 'none' },
     prefs: {},
     locale,
@@ -205,13 +205,13 @@ test('disposing the effect: both seats come off the ledger and both style tags a
   })
 
   /* The two tags are mounted by the same pair of markers: the real rendering route cannot be resolved in Node. */
-  ensureStyleTag(PANEL_STYLE_ID, '.pf-page{color:red}')
-  ensureStyleTag(SETTINGS_STYLE_ID, '.pfset-page{color:red}')
+  ensureStyleTag(PANEL_STYLE_ID, '.superworker-page{color:red}')
+  ensureStyleTag(SETTINGS_STYLE_ID, '.superworker-settings-page{color:red}')
   assert.equal(ledger.size, 2)
   assert.equal(dom.window.document.getElementById(PANEL_STYLE_ID) === null, false)
   assert.equal(dom.window.document.getElementById(SETTINGS_STYLE_ID) === null, false)
 
-  const seats = effects.find((one) => one.name === 'dsh-pathfinder: seats')
+  const seats = effects.find((one) => one.name === 'dsh-superworker: seats')
   assert.equal(seats === undefined, false)
   seats.dispose()
 
@@ -410,7 +410,7 @@ test('with no locale service present: this layer speaks Chinese from the bundled
   const service = fakeLocaleService()
   port.attach(service)
   service.switchTo('en')
-  assert.equal(port.getSnapshot().t(SEAT_WORD), 'Pathfinder Center')
+  assert.equal(port.getSnapshot().t(SEAT_WORD), 'Superworker Center')
   port.attach(null)
   assert.equal(port.getSnapshot().active, FALLBACK_LOCALE)
 })

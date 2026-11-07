@@ -7,8 +7,8 @@
  *   points; the YAML quotes are parsed off and not counted.
  * - **no command menu in a fence**: a fenced block that lists three or more distinct sub-words
  *   of one group is a menu — something the model has to guess at — unless every one of
- *   those lines is a placeholder template (`pf issue resolve <id> --reason "<…>"`), which
- *   is a working trio, not a menu. This pins that fenced `pf <group> <verb>` shape only:
+ *   those lines is a placeholder template (`superworker issue resolve <id> --reason "<…>"`), which
+ *   is a working trio, not a menu. This pins that fenced `superworker <group> <verb>` shape only:
  *   prose, tables, a list split across fences, a top-level verb with no group, and an
  *   underscored sub-word are all outside what it reads. The block the rule was measured
  *   on (`pool.md` before phase 5) is kept as a frozen literal and asserted red here, so
@@ -19,7 +19,7 @@
  *   headings dropped, whitespace collapsed). The same comparison runs on a page against
  *   itself first and must find a hit — a detector that can no longer see anything would
  *   otherwise read exactly like a clean corpus.
- * - **surface sentence carries three parameters**: the paragraph of a `SKILL.md` that names `pathfinder` also carries
+ * - **surface sentence carries three parameters**: the paragraph of a `SKILL.md` that names `superworker` also carries
  *   `` `word` ``, `` `args` `` and `` `help` `` — structural, so a skill may reword the
  *   sentence but not drop a parameter.
  *
@@ -32,7 +32,7 @@ import { basename, dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
-const pluginsRoot = join(repo, 'packages', 'pf-core', 'plugins')
+const pluginsRoot = join(repo, 'packages', 'superworker-core', 'plugins')
 
 /** Every file under `dir` whose basename the predicate keeps. */
 function filesUnder(dir, keep) {
@@ -103,19 +103,19 @@ test('Description fits the catalog: every SKILL.md frontmatter description is at
   }
 })
 
-/** The sub-word lines of a fence: `pf <group> <sub-word> …` — the shape a menu or a
+/** The sub-word lines of a fence: `superworker <group> <sub-word> …` — the shape a menu or a
  *  usage template is written in. A line whose second slot is `<command>` is neither: it
  *  does not name a sub-word the block could run. */
-const COMMAND_LINE = /^\s*pf\s+([a-z][a-z-]+)\s+([a-z][a-z-]*)\b/u
+const COMMAND_LINE = /^\s*superworker\s+([a-z][a-z-]+)\s+([a-z][a-z-]*)\b/u
 /** An angle-bracket placeholder (`<id>`, `"<…>"`, `<node>`): the slot the reader fills in. */
 const PLACEHOLDER = /<[^<>]+>/u
 
 /**
  * The command-menu rule, and the measurement behind it. At HEAD, fences holding three
  * or more distinct sub-words of one group are exactly four: the
- * `issue/skills/{en,zh}/pf-issue-repair/pool.md` blocks (`status / top / search /
- * weight`, runnable as written — the real menus) and the two `pf-issue-repair/SKILL.md`
- * blocks (`resolve / update / reject`, every line `pf issue <sub> <id> --reason "<…>"`
+ * `issue/skills/{en,zh}/sw-issue-repair/pool.md` blocks (`status / top / search /
+ * weight`, runnable as written — the real menus) and the two `sw-issue-repair/SKILL.md`
+ * blocks (`resolve / update / reject`, every line `superworker issue <sub> <id> --reason "<…>"`
  * — a working trio). Fences with exactly two distinct sub-words: zero. The rule, then:
  * a block is a **menu** (red, reported by its fence's own line) when one group appears
  * with three or more distinct sub-words and the block is not a template, a template
@@ -123,7 +123,7 @@ const PLACEHOLDER = /<[^<>]+>/u
  * and so cannot be run as written. A command-menu block is what a reader has to turn
  * into a `--help` ask; the parameterised trio is usage, and stays green.
  *
- * What this pins is that one fenced shape — a `pf <group> <verb>` line inside a single
+ * What this pins is that one fenced shape — a `superworker <group> <verb>` line inside a single
  * fence. It reads one fence at a time and takes the second slot for the verb, so prose
  * that lists commands, a table of them, a list spread across two fences, a top-level
  * verb with no group, and an underscored sub-word are all invisible to it. A green run
@@ -161,13 +161,13 @@ function menuFindingsIn(text, file) {
   return findings
 }
 
-test('The command menu in a fence: a `pf <group> <verb>` fence with three sub-words of one group is a menu, unless every line is a placeholder template', () => {
+test('The command menu in a fence: a `superworker <group> <verb>` fence with three sub-words of one group is a menu, unless every line is a placeholder template', () => {
   assert.ok(skillMarkdown.length >= 60, `every shipped skill body is walked (walked ${skillMarkdown.length} files, at least 60)`)
   const findings = skillMarkdown.flatMap((file) =>
     menuFindingsIn(readFileSync(file, 'utf8'), relative(repo, file)),
   )
   const report = findings
-    .map((hit) => `${hit.file}:${hit.line} pf ${hit.group} [${hit.subs.join(' ')}]`)
+    .map((hit) => `${hit.file}:${hit.line} superworker ${hit.group} [${hit.subs.join(' ')}]`)
     .join('\n')
   assert.ok(findings.length === 0, `these fences hand over a command menu:\n${report}`)
 
@@ -176,11 +176,11 @@ test('The command menu in a fence: a `pf <group> <verb>` fence with three sub-wo
   // because the menu was deleted, and only this leg proves the rule can still see one.
   const oldPoolMenu = [
     '```pwsh',
-    'pf issue <command> --help    # look at it before touching anything',
-    'pf issue status             # the present state',
-    'pf issue top --limit 10     # by priority',
-    "pf issue search '<regex>'    # locate; search like words in one go with |",
-    'pf issue weight -v          # how the weighted sum adds up',
+    'superworker issue <command> --help    # look at it before touching anything',
+    'superworker issue status             # the present state',
+    'superworker issue top --limit 10     # by priority',
+    "superworker issue search '<regex>'    # locate; search like words in one go with |",
+    'superworker issue weight -v          # how the weighted sum adds up',
     '```',
   ].join('\n')
   const frozen = menuFindingsIn(oldPoolMenu, '<frozen: pool.md @ 5bdfdfb>')
@@ -311,12 +311,12 @@ test('No restating shared/: a SKILL.md and the shared/ beside it share no run of
   }
 })
 
-/** A path-free mention of the tool: `pathfinder` as a word, not a directory in a path. */
-const TOOL_MENTION = /(?<![/\\])pathfinder[A-Za-z]*(?!\/)/u
+/** A path-free mention of the tool: `superworker` as a word, not a directory in a path. */
+const TOOL_MENTION = /(?<![/\\])superworker[A-Za-z]*(?!\/)/u
 /** The three parameter tokens the surface sentence carries, the same in either language. */
 const PARAMETER_TOKENS = ['`word`', '`args`', '`help`']
 
-test('Surface sentence carries three parameters: every paragraph naming pathfinder carries `word` / `args` / `help`', () => {
+test('Surface sentence carries three parameters: every paragraph naming superworker carries `word` / `args` / `help`', () => {
   assert.ok(skillFiles.length >= 14, `every shipped skill is walked (walked ${skillFiles.length} files, at least 14)`)
   let pages = 0
   for (const file of skillFiles) {
@@ -344,7 +344,7 @@ test('Surface sentence carries three parameters: every paragraph naming pathfind
       assert.deepEqual(
         missing,
         [],
-        `${relative(repo, file)}:${paragraph.line} this paragraph names pathfinder but is missing ${missing.join(' / ')}`,
+        `${relative(repo, file)}:${paragraph.line} this paragraph names superworker but is missing ${missing.join(' / ')}`,
       )
     }
   }

@@ -11,10 +11,10 @@
  * returned as usual.
  */
 import { RECORD_LAUNCH, RECORD_SESSIONS } from './contract.ts'
-import { isAbsent, readWholeFile, type PathfinderScope, type WorkspaceDirectoryEntry, type WorkspaceFilesPort } from './records.ts'
+import { isAbsent, readWholeFile, type SuperworkerScope, type WorkspaceDirectoryEntry, type WorkspaceFilesPort } from './records.ts'
 
 /** What the panel gets when it fetches session notes. */
-export interface PathfinderSessionsReading {
+export interface SuperworkerSessionsReading {
   /** The absolute workspace root read this time, same name as the four-records reading. */
   readonly workspaceRoot: string
   /** The directory layer where the notes live, workspace-relative. */
@@ -51,9 +51,9 @@ export interface PathfinderSessionsReading {
  */
 export async function readSessionNotes(
   port: WorkspaceFilesPort,
-  scope: PathfinderScope,
+  scope: SuperworkerScope,
   signal: AbortSignal,
-): Promise<Omit<PathfinderSessionsReading, 'claims' | 'alive'>> {
+): Promise<Omit<SuperworkerSessionsReading, 'claims' | 'alive'>> {
   const reading = { workspaceRoot: scope.workspaceRoot, recordPath: RECORD_SESSIONS }
   let entries: readonly WorkspaceDirectoryEntry[]
   try {
@@ -86,7 +86,7 @@ export async function readSessionNotes(
  */
 export async function readClaims(
   port: WorkspaceFilesPort,
-  scope: PathfinderScope,
+  scope: SuperworkerScope,
   signal: AbortSignal,
 ): Promise<Record<string, string>> {
   const claims: Record<string, string> = {}

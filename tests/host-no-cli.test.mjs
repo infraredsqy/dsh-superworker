@@ -1,17 +1,17 @@
-/* The whole pipeline from the shipped shape, with no `pf` on PATH and no checkout behind it.
+/* The whole pipeline from the shipped shape, with no `superworker` on PATH and no checkout behind it.
  *
  * What a real install supplies: the package unpacked into a directory of its own, and the
  * agent-facing half then answers out of that directory — the engine's built product, beside the
  * plugins folder and the host bundle. Nothing in that directory reaches back into this repository,
  * and nothing there is a command: the pipeline answers in-process. So this case assembles exactly
- * the shipped `files` list, proves the tree holds no `bin/` and no `pf` executable, and runs the
- * flow from it in a child process whose PATH has every directory holding a `pf` command taken out.
- * The child proves `pf` is unresolvable from inside itself before it runs anything; a step that
+ * the shipped `files` list, proves the tree holds no `bin/` and no `superworker` executable, and runs the
+ * flow from it in a child process whose PATH has every directory holding a `superworker` command taken out.
+ * The child proves `superworker` is unresolvable from inside itself before it runs anything; a step that
  * tried to shell out would surface `ENOENT`.
  *
  * One child run, six legs:
  *
- * - the empty target project has no `.pf/`, and `help` answers the word index there (exit 0);
+ * - the empty target project has no `.superworker/`, and `help` answers the word index there (exit 0);
  * - `init` → `dag add` ×2 → `cycle create` → `cycle start` → `plan` → `advance` → `handoff` →
  *   `settle` → `plan` again → `advance` again, every word exit 0 with an empty stderr. The words
  *   layer's own spelling is used: `cycle start` opens the line (a created line cannot be started —
@@ -48,28 +48,28 @@ import { covered, filesUnder } from './helpers/npm-files.mjs'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
 const manifest = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'))
-const engineProduct = join(repo, 'packages', 'pf-core', 'dist', 'index.mjs')
+const engineProduct = join(repo, 'packages', 'superworker-core', 'dist', 'index.mjs')
 const hostEntry = join(repo, 'lib', 'host', 'index.js')
 /* The one runtime dependency the host bundle declares beside the engine: the host half's peer, which
  * the plugin's own `peerDependencies` says the install supplies. A real profile provides it; this
  * case provides it outside the assembled tree, never inside it. */
 const peerPackage = join(repo, 'node_modules', '@deepseek-ai', 'dsh-typert-protocol')
 const notBuilt =
-  'the release shape is not built here: packages/pf-core/dist/index.mjs or lib/host/index.js is missing, ' +
+  'the release shape is not built here: packages/superworker-core/dist/index.mjs or lib/host/index.js is missing, ' +
   'or node_modules/@deepseek-ai/dsh-typert-protocol (the host bundle\'s peer) is not installed. ' +
   '`npm test` builds the engine product; `npm run types && npm run bundle` builds the host bundle.'
 const skip = existsSync(engineProduct) && existsSync(hostEntry) && existsSync(peerPackage) ? false : notBuilt
 
-/** The names a `pf` command takes on the three platforms this repo runs on. */
-const PF_NAMES = ['pf', 'pf.cmd', 'pf.exe']
+/** The names a `superworker` command takes on the three platforms this repo runs on. */
+const CLI_NAMES = ['superworker', 'superworker.cmd', 'superworker.exe']
 
 /** Every file in a tree whose leaf name is one of the command's own spellings. */
-function pfExecutables(dir) {
+function executables(dir) {
   const found = []
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
-    if (entry.isDirectory()) found.push(...pfExecutables(full))
-    else if (PF_NAMES.includes(entry.name.toLowerCase())) found.push(full)
+    if (entry.isDirectory()) found.push(...executables(full))
+    else if (CLI_NAMES.includes(entry.name.toLowerCase())) found.push(full)
   }
   return found
 }
@@ -103,7 +103,7 @@ function envValue(env, name) {
 /**
  * Drop a variable from an environment copy whatever case the copy spells it in, and say what it
  * held. A plain `delete env[name]` only finds the host's own spelling: a copy carrying `Node_Options`
- * or `pf_home_dir` would keep the variable, and the child would inherit a headlessness the case
+ * or `superworker_home_dir` would keep the variable, and the child would inherit a headlessness the case
  * thought it had taken away.
  */
 function dropEnvKey(env, name) {
@@ -122,7 +122,7 @@ function dropEnvKey(env, name) {
  * the copy, the node options, and the session id. Each is read and dropped by name, whatever case
  * the copy happens to carry.
  */
-const SCRUBBED = ['PF_PLUGINS_DIR', 'DSH_CONDUCT_SPAWN_DRY_RUN', 'DSH_SESSION_ID', 'NODE_OPTIONS', 'NODE_PATH']
+const SCRUBBED = ['SUPERWORKER_PLUGINS_DIR', 'DSH_CONDUCT_SPAWN_DRY_RUN', 'DSH_SESSION_ID', 'NODE_OPTIONS', 'NODE_PATH']
 
 /**
  * The shipped shape: exactly the manifest's `files` entries, plus a manifest of the same name,
@@ -189,8 +189,8 @@ const record = {
   /* The keys of its own environment, not their values: the parent checks that the switches it took
    * out did not come back under another spelling. */
   envKeys: Object.keys(process.env),
-  beforeInit: existsSync(join(project, '.pf')),
-  pf: null,
+  beforeInit: existsSync(join(project, '.superworker')),
+  superworker: null,
   help: null,
   steps: [],
   held: [],
@@ -203,12 +203,12 @@ const record = {
 
 /* The "no command on PATH" gate, made explicit from inside the child: if a shell ever tried the
  * command, this is the same resolution it would fail on. */
-const gate = spawnSync('pf', ['--version'], { encoding: 'utf8', windowsHide: true })
-record.pf = { error: gate.error?.code ?? null, status: gate.status }
-if (gate.error?.code !== 'ENOENT') throw new Error('a pf command is still resolvable inside the child: ' + JSON.stringify(record.pf))
-if (record.beforeInit) throw new Error('the target project already had a .pf before the flow started')
+const gate = spawnSync('superworker', ['--version'], { encoding: 'utf8', windowsHide: true })
+record.superworker = { error: gate.error?.code ?? null, status: gate.status }
+if (gate.error?.code !== 'ENOENT') throw new Error('a superworker command is still resolvable inside the child: ' + JSON.stringify(record.superworker))
+if (record.beforeInit) throw new Error('the target project already had a .superworker before the flow started')
 
-const engine = await import(pathToFileURL(join(release, 'packages', 'pf-core', 'dist', 'index.mjs')).href)
+const engine = await import(pathToFileURL(join(release, 'packages', 'superworker-core', 'dist', 'index.mjs')).href)
 const executor = new engine.SimulatedExecutor()
 const io = { root: project, executor, homeDir: home, openerAvailable: true }
 const step = async (label, argv) => {
@@ -217,10 +217,10 @@ const step = async (label, argv) => {
   return answer
 }
 
-/* Layer 1 has to answer before any .pf exists: the index is a word, not a record read. */
+/* Layer 1 has to answer before any .superworker exists: the index is a word, not a record read. */
 const help = await engine.answer(['help'], io)
 record.help = { code: help.code, bytes: Buffer.byteLength(help.stdout ?? ''), stdout: help.stdout ?? '', stderr: help.stderr ?? '' }
-record.afterHelp = existsSync(join(project, '.pf'))
+record.afterHelp = existsSync(join(project, '.superworker'))
 
 await step('init', ['init'])
 await step('dag add (first leg)', ['dag', 'add', 'first leg'])
@@ -232,7 +232,7 @@ await step('cycle create', ['cycle', 'create', 'seed', '--tags', 'coding', '--ti
 await step('cycle start', ['cycle', 'start', 'c-1', '--tags', 'coding', '--force', '--title', 'the flow'])
 await step('plan', ['plan', '--cycle', 'c-1'])
 await step('dispatch', ['dispatch', 'c-1'])
-record.held = JSON.parse(readFileSync(join(project, '.pf', 'state.json'), 'utf8'))
+record.held = JSON.parse(readFileSync(join(project, '.superworker', 'state.json'), 'utf8'))
   .cycles.find((cycle) => cycle.id === 'c-1')
   .holding.map((entry) => entry.id)
 record.executor = snapshot(executor.dispatched)
@@ -297,7 +297,7 @@ const ctx = {
 }
 await host.apply(ctx)
 const shape = () => ({ registered: registered.map((definition) => definition.name), schemas: tools.schemas.length })
-record.host = { service: typeof provided.pathfinder, listeners: Object.keys(listeners), beforeWake: shape() }
+record.host = { service: typeof provided.superworker, listeners: Object.keys(listeners), beforeWake: shape() }
 /* The wake exactly as the host fires it: a settled 'skill' call, then the agent's own scope. */
 const agent = { id: 'agent-1', ctx: { tools, effect(make) { make() } } }
 const wake = async () => {
@@ -310,7 +310,7 @@ record.host.afterWake = shape()
 await wake()
 record.host.afterSecondWake = shape()
 
-const manifestPath = join(home, 'pathfinder', 'skills.json')
+const manifestPath = join(home, 'superworker', 'skills.json')
 record.skills = existsSync(manifestPath)
   ? JSON.parse(readFileSync(manifestPath, 'utf8')).skills.flatMap((skill) => skill.files.map((file) => join(home, 'skills', file)))
   : null
@@ -319,8 +319,8 @@ record.skills = existsSync(manifestPath)
  * layer the bundle carries, and the sentence lands in the project. A write that reached for a command
  * entry would have to find one — and this tree has none. */
 const said = 'the release shape wrote this'
-const answered = await provided.pathfinder.addInstruction('agent-1', project, said, 'global', '', '')
-const instructionFile = join(project, '.pf', 'instructions.json')
+const answered = await provided.superworker.addInstruction('agent-1', project, said, 'global', '', '')
+const instructionFile = join(project, '.superworker', 'instructions.json')
 record.write = {
   outcome: snapshot(answered),
   landed: existsSync(instructionFile)
@@ -332,7 +332,7 @@ record.write = {
 process.stdout.write(JSON.stringify(record) + '\\n')
 `
 
-test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still runs, and an empty project answers the word index first', { skip }, () => {
+test('Release shape with no bin/: with no `superworker` on PATH the whole pipeline still runs, and an empty project answers the word index first', { skip }, () => {
   /* A stale host bundle is the one failure the rest of this case cannot see: the assembled tree copies
    * whatever `lib/host/index.js` already is, so a write path that still named a command could hide
    * behind a bundle built before that change. The bundle must therefore be newer than every source it
@@ -351,7 +351,7 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
       `lib/host/index.js is older than ${newest.file}: the host bundle is stale. Rebuild it with \`npm run types && npm run bundle\` (or \`npm test\`, which builds it).`,
     )
   }
-  const work = mkdtempSync(join(tmpdir(), 'pf-no-cli-'))
+  const work = mkdtempSync(join(tmpdir(), 'superworker-no-cli-'))
   try {
     const release = join(work, 'release')
     const project = join(work, 'project')
@@ -362,7 +362,7 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
     /* Step 1: the shipped list, and the shape it must have. */
     const inventory = ship(release)
     assert.equal(existsSync(join(release, 'bin')), false, 'the assembled tree must not hold a bin/ directory')
-    assert.deepEqual(pfExecutables(release), [], 'the assembled tree must not hold a pf executable')
+    assert.deepEqual(executables(release), [], 'the assembled tree must not hold a superworker executable')
     assert.equal(JSON.parse(readFileSync(join(release, 'package.json'), 'utf8')).bin, undefined, 'the release manifest must not name a command')
     for (const required of [
       'cordis.patch.yml',
@@ -371,9 +371,9 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
       'lib/types/host/index.d.ts',
       'locale/en.json',
       'locale/zh.json',
-      'packages/pf-core/dist/index.mjs',
-      'packages/pf-core/dist/merge-ledger.mjs',
-      'packages/pf-core/plugins/pipeline/plugin.json',
+      'packages/superworker-core/dist/index.mjs',
+      'packages/superworker-core/dist/merge-ledger.mjs',
+      'packages/superworker-core/plugins/pipeline/plugin.json',
     ]) {
       assert.ok(inventory.some((entry) => entry.path === required), `the shipped shape is missing ${required}`)
     }
@@ -382,7 +382,7 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
     /* Step 1b: the static lock. Nothing the release carries spells a command entry, and no host source
      * names a `bin/` path in either spelling. The engine text that used to spell one is gone with the
      * command, so the lock reads what ships and asks it to stay empty. */
-    assert.deepEqual(filesSaying(release, 'bin/pf.mjs'), [], 'the assembled tree must carry no reference to a command entry')
+    assert.deepEqual(filesSaying(release, 'bin/superworker.mjs'), [], 'the assembled tree must carry no reference to a command entry')
     assert.deepEqual(
       filesSaying(hostSrcDir, 'bin/'),
       [],
@@ -398,12 +398,12 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
     mkdirSync(join(work, 'node_modules', '@deepseek-ai'), { recursive: true })
     symlinkSync(peerPackage, join(work, 'node_modules', '@deepseek-ai', 'dsh-typert-protocol'), 'junction')
 
-    /* Step 2: the child, on an environment that cannot reach a pf command. */
+    /* Step 2: the child, on an environment that cannot reach a superworker command. */
     writeFileSync(join(work, 'run.mjs'), CHILD)
     const entries = (process.env.PATH ?? '').split(delimiter).filter((entry) => entry.length > 0)
-    const removed = entries.filter((entry) => PF_NAMES.some((name) => existsSync(join(entry, name))))
+    const removed = entries.filter((entry) => CLI_NAMES.some((name) => existsSync(join(entry, name))))
     const kept = entries.filter((entry) => !removed.includes(entry))
-    const env = { ...process.env, PF_HOME_DIR: home, DSH_HOME: home }
+    const env = { ...process.env, SUPERWORKER_HOME_DIR: home, DSH_HOME: home }
     const wasSet = SCRUBBED.filter((name) => envValue(env, name) !== undefined)
     for (const name of SCRUBBED) dropEnvKey(env, name)
     /* The scrub is a reading, not a hope: after the drops, no spelling of these names is left in
@@ -438,8 +438,8 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
       record,
     }
 
-    /* The gate: no pf from inside the child, and no .pf in the target before anything ran. */
-    assert.deepEqual(record.pf, { error: 'ENOENT', status: null }, `pf is still resolvable inside the child: ${JSON.stringify(record.pf)}`)
+    /* The gate: no superworker from inside the child, and no .superworker in the target before anything ran. */
+    assert.deepEqual(record.superworker, { error: 'ENOENT', status: null }, `superworker is still resolvable inside the child: ${JSON.stringify(record.superworker)}`)
     /* The child's own environment is the reading that counts: of the five names taken out of the
      * copy, none came back under any spelling. */
     const leaked = SCRUBBED.filter((name) =>
@@ -447,14 +447,14 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
     assert.deepEqual(leaked, [], `the child inherited these after the scrub: ${JSON.stringify(leaked)}`)
     assert.equal(record.path, kept.join(delimiter), 'the child saw exactly the filtered PATH')
     assert.ok(record.cwd.toLowerCase().includes(basename(work).toLowerCase()), `the child must stand in the temp project, not the checkout: ${record.cwd}`)
-    assert.equal(record.beforeInit, false, 'the target project must have no .pf/ before the flow')
+    assert.equal(record.beforeInit, false, 'the target project must have no .superworker/ before the flow')
 
     /* Step 5: the empty project answers the index, and reading it writes nothing. */
     assert.equal(record.help.code, 0, record.help.stderr)
     assert.equal(record.help.stderr, '')
     assert.ok(record.help.bytes > 200, `the word index should be more than a line: ${record.help.bytes} bytes`)
-    assert.match(record.help.stdout, /pathfinder -- the agent pipeline/u, 'the index is the words layer\'s own top listing')
-    assert.equal(record.afterHelp, false, 'answering the index must not create .pf/')
+    assert.match(record.help.stdout, /superworker -- the agent pipeline/u, 'the index is the words layer\'s own top listing')
+    assert.equal(record.afterHelp, false, 'answering the index must not create .superworker/')
 
     /* Step 4: the flow, word by word, all eight plus the graph it runs on. */
     assert.deepEqual(
@@ -489,9 +489,9 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
 
     /* init wrote the four layout files; the graph holds the two nodes. */
     for (const file of ['.gitignore', '.gitattributes', 'AGENTS.md', 'config.json']) {
-      assert.ok(existsSync(join(project, '.pf', file)), `init did not land .pf/${file}`)
+      assert.ok(existsSync(join(project, '.superworker', file)), `init did not land .superworker/${file}`)
     }
-    const state = JSON.parse(readFileSync(join(project, '.pf', 'state.json'), 'utf8'))
+    const state = JSON.parse(readFileSync(join(project, '.superworker', 'state.json'), 'utf8'))
     const seed = state.cycles.find((cycle) => cycle.id === 'seed')
     const flow = state.cycles.find((cycle) => cycle.id === 'c-1')
     assert.deepEqual(seed.holding, [], 'the line `cycle create` opened must stay empty: it is not the line the flow runs on')
@@ -502,8 +502,8 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
     assert.equal(record.executor.length, 1, `exactly one dispatch reached the executor: ${JSON.stringify(record.executor)}`)
     assert.equal(record.executor[0].node, node)
     assert.equal(record.executor[0].cycle, 'c-1')
-    assert.match(record.executor[0].prompt, new RegExp(`^/pf-conduct ${node} \\[pipeline\\]`, 'u'), 'the executor was handed the prompt the engine landed')
-    const launch = join(project, '.pf', 'meta', 'launch', 'c-1', node)
+    assert.match(record.executor[0].prompt, new RegExp(`^/sw-conduct ${node} \\[pipeline\\]`, 'u'), 'the executor was handed the prompt the engine landed')
+    const launch = join(project, '.superworker', 'meta', 'launch', 'c-1', node)
     assert.ok(existsSync(join(launch, 'started')), 'the started claim must be on disk after dispatch')
     assert.ok(existsSync(join(launch, 'prompt.txt')), 'dispatch preparation lands the prompt')
     assert.equal(
@@ -514,15 +514,15 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
 
     /* handoff wrote the ticket; settle recorded it and released the hand (the receipt's own plan asks for the
      * next claim); hold claimed that pick; dispatch landed its material and opened its session. */
-    const ticket = JSON.parse(readFileSync(join(project, '.pf', 'signals', 'c-1', `${node}.json`), 'utf8'))
+    const ticket = JSON.parse(readFileSync(join(project, '.superworker', 'signals', 'c-1', `${node}.json`), 'utf8'))
     assert.equal(ticket.node, node)
     assert.equal(ticket.status, 'completed')
     assert.equal(ticket.summary, 'leg one done')
-    const settled = JSON.parse(readFileSync(join(project, '.pf', 'state.json'), 'utf8')).cycles.find((cycle) => cycle.id === 'c-1')
+    const settled = JSON.parse(readFileSync(join(project, '.superworker', 'state.json'), 'utf8')).cycles.find((cycle) => cycle.id === 'c-1')
     assert.equal(settled.path.length, 1, 'settle puts exactly one step in the line\'s path')
     assert.equal(settled.path[0].node, node)
     assert.equal(settled.path[0].result, 'completed')
-    const ideas = JSON.parse(readFileSync(join(project, '.pf', 'ideas.json'), 'utf8')).nodes
+    const ideas = JSON.parse(readFileSync(join(project, '.superworker', 'ideas.json'), 'utf8')).nodes
     assert.equal(ideas[node].status, 'completed', 'the settled node is completed on the graph')
     assert.equal(record.planAfterSettle.action, 'open_node', 'the plan asks for the next claim')
     const nextLeg = record.planAfterSettle.nodes[0]
@@ -534,7 +534,7 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
     assert.equal(settleReceipt.result, 'completed')
     assert.equal(settleReceipt.plan.action, 'open_node')
     /* hold claimed the next leg; dispatch opened its session: the material is on disk and the claim too. */
-    const afterNext = JSON.parse(readFileSync(join(project, '.pf', 'state.json'), 'utf8')).cycles.find((cycle) => cycle.id === 'c-1')
+    const afterNext = JSON.parse(readFileSync(join(project, '.superworker', 'state.json'), 'utf8')).cycles.find((cycle) => cycle.id === 'c-1')
     assert.equal(afterNext.holding.length, 1, 'hold claimed the next node')
     const claimed = afterNext.holding[0].id
     assert.equal(claimed, record.planAfterSettle.node_id, 'the claim is the node the plan named')
@@ -542,20 +542,20 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
     assert.equal(ideas[claimed].status, 'todo', 'the next leg is still to do')
     assert.match(byLabel['hold (the next leg)'].stdout, /^CURRENT_NODE: c-1 /mu)
     assert.match(byLabel['dispatch (the next leg)'].stdout, /^opened /mu)
-    const nextLaunch = join(project, '.pf', 'meta', 'launch', 'c-1', claimed)
+    const nextLaunch = join(project, '.superworker', 'meta', 'launch', 'c-1', claimed)
     assert.ok(existsSync(join(nextLaunch, 'prompt.txt')), 'the dispatch landed the next leg\'s prompt')
     assert.ok(existsSync(join(nextLaunch, 'started')), 'the dispatch opened the next leg\'s session')
     assert.equal(record.executorFinal.length, 2, 'the second dispatch opened the next leg')
     assert.equal(record.executorFinal[1].node, claimed)
 
     /* Step 6: the host bundle applies, registers nothing by itself, and arms the wake. */
-    assert.equal(record.host.service, 'object', 'apply installed the pathfinder service')
+    assert.equal(record.host.service, 'object', 'apply installed the superworker service')
     for (const event of ['session/event', 'tools/post-execute', 'agent/pre-step']) {
       assert.ok(record.host.listeners.includes(event), `apply did not arm ${event}`)
     }
     assert.deepEqual(record.host.beforeWake, { registered: [], schemas: 0 }, `apply alone must register no tool: ${JSON.stringify(record.host.beforeWake)}`)
-    assert.deepEqual(record.host.afterWake, { registered: ['pathfinder'], schemas: 0 }, `the wake must register the tool: ${JSON.stringify(record.host.afterWake)}`)
-    assert.deepEqual(record.host.afterSecondWake, { registered: ['pathfinder'], schemas: 0 }, 'a second wake registers nothing more')
+    assert.deepEqual(record.host.afterWake, { registered: ['superworker'], schemas: 0 }, `the wake must register the tool: ${JSON.stringify(record.host.afterWake)}`)
+    assert.deepEqual(record.host.afterSecondWake, { registered: ['superworker'], schemas: 0 }, 'a second wake registers nothing more')
     assert.ok(Array.isArray(record.skills) && record.skills.length > 0, 'the release\'s plugin skills must be found through the host bundle\'s own location')
     for (const file of record.skills) {
       assert.ok(file.toLowerCase().startsWith(join(home, 'skills').toLowerCase()), `a skill was placed outside the temp home: ${file}`)
@@ -576,8 +576,8 @@ test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still 
     assert.equal(record.write.binAfter, false, 'the assembled tree must still hold no bin/ after the write')
 
     /* One real run's full record, for a report: opt-in, and only into the repo's gitignored scratch.
-     *   PF_NO_CLI_RECORD=1 node --test tests/host-no-cli.test.mjs */
-    if (process.env.PF_NO_CLI_RECORD === '1') {
+     *   NO_CLI_RECORD=1 node --test tests/host-no-cli.test.mjs */
+    if (process.env.NO_CLI_RECORD === '1') {
       const out = join(repo, '.tmp', 'host-no-cli-record.json')
       mkdirSync(dirname(out), { recursive: true })
       writeFileSync(out, `${JSON.stringify(run, null, 2)}\n`)

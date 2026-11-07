@@ -1,18 +1,18 @@
-/* dsh-pathfinder · the selected line's node list in the detail pane: three tracks — state mark /
+/* dsh-superworker · the selected line's node list in the detail pane: three tracks — state mark /
  * title / what this row still owes.
  *
  * The column left of the line name has already said which line; this moment reads which cells are
  * still on the line, who owes prerequisites, and which cell wants a person. Rows and group heads
  * share these tracks; each group carries its own fold, and the number at the group head's right
- * prints only while folded. */.pf-page .pf-row{
+ * prints only while folded. */.superworker-page .superworker-row{
   display: grid;
-  grid-template-columns: var(--pf-mark) minmax(0, 1fr) auto;
+  grid-template-columns: var(--superworker-mark) minmax(0, 1fr) auto;
   column-gap: 12px;
   align-items: center;
   padding: 0 8px;
   border-radius: var(--dsw-radius-xs);
-  height: var(--pf-row);
-}.pf-page .pf-sec.is-folded .pf-row{ display: none; }.pf-page .pf-rowtitle{
+  height: var(--superworker-row);
+}.superworker-page .superworker-sec.is-folded .superworker-row{ display: none; }.superworker-page .superworker-rowtitle{
   min-width: 0;
   font-size: 14px;
   line-height: 20px;
@@ -22,7 +22,7 @@
   white-space: nowrap;
   /* The title is content and may be selected and carried off. */
   user-select: text;
-}.pf-page .pf-row.is-todo .pf-rowtitle{ color: var(--dsw-alias-label-secondary); }.pf-page .pf-rowfigs{
+}.superworker-page .superworker-row.is-todo .superworker-rowtitle{ color: var(--dsw-alias-label-secondary); }.superworker-page .superworker-rowfigs{
   min-width: 0;
   text-align: right;
   font-size: 13px;
@@ -30,24 +30,24 @@
   color: var(--dsw-alias-label-secondary);
   white-space: nowrap;
 }/* A gated row carries the gate's own word below the title's track: the mark says "this cell wants
-   a person", and the word says which gate. */.pf-page .pf-rowgate{
+   a person", and the word says which gate. */.superworker-page .superworker-rowgate{
   grid-column: 2 / -1;
   grid-row: 2;
 }/* The number at a group head's right prints only while the group is folded: folded, it is the one
    thing the group can still say; unfolded, the rows are in front of the reader and counting again
    would say the same thing twice (the instructions pane's count is not this rule's business; it
-   always stands). */.pf-page .pf-sec:not(.is-folded) .pf-rowcount{ display: none; }/* ---- this list's own rhythm -------------------------------------------------
+   always stands). */.superworker-page .superworker-sec:not(.is-folded) .superworker-rowcount{ display: none; }/* ---- this list's own rhythm -------------------------------------------------
  * The list hands itself both ends: the pane's 8px under the tab rail is not a page's top margin, so
  * without the inset the first section head stands flush against the rail, and the last row would
  * run into the frame's bottom edge with nothing under it.
  *
  * Sections are readings, not rows of one table: each head bars a block of its own, and the air
  * between two of them is what says where one reading stops. Fourteen pixels let the heads run
- * together into a single wall; these numbers hold the blocks apart. */.pf-page .pf-detail .pf-scroll{
-  padding: var(--pf-detail-top) 0 var(--pf-detail-foot);
-}.pf-page .pf-detail .pf-sec + .pf-sec{
+ * together into a single wall; these numbers hold the blocks apart. */.superworker-page .superworker-detail .superworker-scroll{
+  padding: var(--superworker-detail-top) 0 var(--superworker-detail-foot);
+}.superworker-page .superworker-detail .superworker-sec + .superworker-sec{
   margin-top: 22px;
-}.pf-page .pf-detail .pf-rowhead{
+}.superworker-page .superworker-detail .superworker-rowhead{
   height: 30px;
   margin-bottom: 8px;
 }

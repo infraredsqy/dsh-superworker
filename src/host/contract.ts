@@ -12,21 +12,21 @@
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { PathfinderReading, RecordSourceKey } from '../model/records.ts'
+import type { SuperworkerReading, RecordSourceKey } from '../model/records.ts'
 
 export type {
-  PathfinderCycle,
-  PathfinderHolding,
-  PathfinderInstruction,
-  PathfinderIssue,
-  PathfinderNode,
-  PathfinderReading,
-  PathfinderSourceState,
-  PathfinderStep,
+  SuperworkerCycle,
+  SuperworkerHolding,
+  SuperworkerInstruction,
+  SuperworkerIssue,
+  SuperworkerNode,
+  SuperworkerReading,
+  SuperworkerSourceState,
+  SuperworkerStep,
 } from '../model/records.ts'
 
 /** The directory layer holding the records, workspace-relative. */
-export const RECORD_DIR = '.pf'
+export const RECORD_DIR = '.superworker'
 
 /** Workspace-relative locations of the four sources; keys match the model layer's source keys ({@link RecordSourceKey}). */
 export const RECORD_SOURCES: Readonly<Record<RecordSourceKey, string>> = {
@@ -67,7 +67,7 @@ export const RECORD_LAUNCH = `${RECORD_DIR}/meta/launch`
 export const LAUNCH_PROMPT_FILE = 'prompt.txt'
 
 /** Options that may accompany a read. */
-export interface PathfinderReadOptions {
+export interface SuperworkerReadOptions {
   readonly signal?: AbortSignal
 }
 
@@ -81,9 +81,9 @@ export interface PathfinderReadOptions {
  * read; an empty string means "not named", in which case it is resolved from
  * the session identity.
  */
-export interface PathfinderRecords {
+export interface SuperworkerRecords {
   /**
    * @param workspaceRoot - The workspace root to read, absolute; an empty string means this session's own root.
    */
-  read(sessionId: SessionId, workspaceRoot: string, options?: PathfinderReadOptions): Promise<PathfinderReading>
+  read(sessionId: SessionId, workspaceRoot: string, options?: SuperworkerReadOptions): Promise<SuperworkerReading>
 }

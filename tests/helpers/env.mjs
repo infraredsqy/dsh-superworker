@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /** Both names the host half and the engine read a home from. */
-export const HOME_SWITCHES = ['PF_HOME_DIR', 'DSH_HOME']
+export const HOME_SWITCHES = ['SUPERWORKER_HOME_DIR', 'DSH_HOME']
 
 /**
  * Point the home switches at `home` for the caller's stretch; `restore` puts every value the
@@ -29,11 +29,11 @@ export function pinTo(home, names = HOME_SWITCHES) {
 /**
  * Point the home switches at a fresh temporary directory for the caller's stretch.
  *
- * `names` is which switches to pin — the machine layer's (`PF_HOME_DIR`), the DSH skill root's
+ * `names` is which switches to pin — the machine layer's (`SUPERWORKER_HOME_DIR`), the DSH skill root's
  * (`DSH_HOME`), or both. Every value the machine had is handed back by `restore`, which also takes
  * the temporary home away: a file registers it with `test.after`, a case calls it in `finally`.
  */
-export function pinHome(names = HOME_SWITCHES, prefix = 'pf-home-') {
+export function pinHome(names = HOME_SWITCHES, prefix = 'superworker-home-') {
   const home = mkdtempSync(join(tmpdir(), prefix))
   const unpin = pinTo(home, names)
   const restore = () => {

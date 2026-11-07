@@ -13,7 +13,7 @@
  * description (`P3/P2/P1/P0 = 1/2/4/8`), the latter is a cycle's own
  * `issue_pool_weight_limit`.
  */
-import type { PathfinderCycle, PathfinderIssue, PathfinderNode } from './records.ts'
+import type { SuperworkerCycle, SuperworkerIssue, SuperworkerNode } from './records.ts'
 import type {
   IssueGroupReading,
   IssueReading,
@@ -47,9 +47,9 @@ const GROUPS: readonly { readonly key: IssueState; readonly standing: boolean }[
 ]
 
 export function readPool(
-  nodes: Readonly<Record<string, PathfinderNode>>,
-  cycles: readonly PathfinderCycle[],
-  issues: Readonly<Record<string, PathfinderIssue>>,
+  nodes: Readonly<Record<string, SuperworkerNode>>,
+  cycles: readonly SuperworkerCycle[],
+  issues: Readonly<Record<string, SuperworkerIssue>>,
   at: Date,
 ): PoolReading {
   const weights = readWeights(nodes)
@@ -138,7 +138,7 @@ export function readPool(
   }
 }
 
-export function readWeights(nodes: Readonly<Record<string, PathfinderNode>>): PoolWeights | null {
+export function readWeights(nodes: Readonly<Record<string, SuperworkerNode>>): PoolWeights | null {
   for (const node of Object.values(nodes)) {
     const said = `${node.title ?? ''} ${node.description ?? ''}`
     const found = WEIGHT_MAP.exec(said)
@@ -152,7 +152,7 @@ export function readWeights(nodes: Readonly<Record<string, PathfinderNode>>): Po
 /**
  * The policy line: which cycle set its own `issue_pool_weight_limit`.
  */
-export function readLine(cycles: readonly PathfinderCycle[]): number | null {
+export function readLine(cycles: readonly SuperworkerCycle[]): number | null {
   for (const cycle of cycles) {
     const held = cycle.policies?.[WEIGHT_LIMIT]
     if (typeof held === 'number') return held

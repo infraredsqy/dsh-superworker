@@ -52,7 +52,7 @@ export function NotesPane(props: {
           onAdd={props.onAdd}
         />
       )}
-      <div className="pf-scroll" id="notes-scroll" role="region" aria-label={t('notes.scroll.aria')} tabIndex={0}>
+      <div className="superworker-scroll" id="notes-scroll" role="region" aria-label={t('notes.scroll.aria')} tabIndex={0}>
         {props.project === null ? null : (
           <InstructionBook
             project={props.project}
@@ -135,8 +135,8 @@ function InstructionAdd(props: {
   }
 
   return (
-    <form className="pf-add" id="add" onSubmit={submit}>
-      <span className="pf-pick">
+    <form className="superworker-add" id="add" onSubmit={submit}>
+      <span className="superworker-pick">
         <select
           aria-label={t('notes.scope.aria')}
           value={chosen.value}
@@ -154,7 +154,7 @@ function InstructionAdd(props: {
         value={text}
         onChange={(event) => setText(event.target.value)}
       />
-      <button type="submit" className="pf-btn">{t('notes.add')}</button>
+      <button type="submit" className="superworker-btn">{t('notes.add')}</button>
     </form>
   )
 }
@@ -180,12 +180,12 @@ function InstructionBook(props: {
     : project.instructions.filter((entry) => entry.standing)
   const groups = groupInstructions(project, visible)
   if (project.instructions.length === 0) {
-    return <p className="pf-innone">{t('notes.empty')}</p>
+    return <p className="superworker-innone">{t('notes.empty')}</p>
   }
   return (
     <React.Fragment>
       {groups.length === 0
-        ? <p className="pf-innone">{t('notes.empty-live')}</p>
+        ? <p className="superworker-innone">{t('notes.empty-live')}</p>
         : groups.map((group) => {
           const live = group.entries.filter((entry) => entry.inForce).length
           const isFolded = folded[group.key] === true
@@ -193,18 +193,18 @@ function InstructionBook(props: {
           const hidden = Math.max(0, group.entries.length - live - NOTES_ROWS)
           const shown = isOpen ? group.entries : group.entries.slice(0, live + NOTES_ROWS)
           return (
-            <section className={`pf-sec${isFolded ? ' is-folded' : ''}`} key={group.key}>
+            <section className={`superworker-sec${isFolded ? ' is-folded' : ''}`} key={group.key}>
               <button
                 type="button"
-                className="pf-rowhead"
+                className="superworker-rowhead"
                 aria-expanded={!isFolded}
                 onClick={() => setFolded((table) => ({ ...table, [group.key]: !isFolded }))}
               >
-                <span className="pf-rowhead-key">{groupWord(t, group)}</span>
-                <span className="pf-rowhead-figs">
-                  <b className="pf-num">{live}</b>
+                <span className="superworker-rowhead-key">{groupWord(t, group)}</span>
+                <span className="superworker-rowhead-figs">
+                  <b className="superworker-num">{live}</b>
                   {t('notes.in-force')}
-                  <React.Fragment>{' · '}<b className="pf-num">{group.entries.length}</b>{unit(t, 'notes.entries.one', 'notes.entries.other', group.entries.length)}</React.Fragment>
+                  <React.Fragment>{' · '}<b className="superworker-num">{group.entries.length}</b>{unit(t, 'notes.entries.one', 'notes.entries.other', group.entries.length)}</React.Fragment>
                 </span>
               </button>
               {shown.map((entry) => (
@@ -219,14 +219,14 @@ function InstructionBook(props: {
               ))}
               {hidden > 0 && !isOpen
                 ? (
-                  <button type="button" className="pf-trim" onClick={() => setOpen((table) => ({ ...table, [group.key]: true }))}>
+                  <button type="button" className="superworker-trim" onClick={() => setOpen((table) => ({ ...table, [group.key]: true }))}>
                     {t('common.expand-more', { count: hidden })}
                   </button>
                 )
                 : null}
               {hidden > 0 && isOpen
                 ? (
-                  <button type="button" className="pf-trim" onClick={() => setOpen((table) => ({ ...table, [group.key]: false }))}>
+                  <button type="button" className="superworker-trim" onClick={() => setOpen((table) => ({ ...table, [group.key]: false }))}>
                     {t('common.collapse')}
                   </button>
                 )
@@ -250,19 +250,19 @@ function InstructionRow(props: {
   const moment = entry.inForce ? entry.saidAt : (entry.closedAt ?? entry.saidAt)
   const mark = entry.inForce ? '' : entry.standing ? t('notes.out-of-scope') : t('notes.archived-mark')
   return (
-    <article className={`pf-ins${entry.inForce ? '' : ' is-out'}`} title={entry.nodeId ?? ''}>
-      <div className="pf-ins-text">{entry.text ?? ''}</div>
-      <div className="pf-ins-read" title={`${entry.inForce ? t('notes.said-at') : t('notes.said-mark', { mark })} ${timeOf(t, moment, at)}`}>
-        {mark.length === 0 ? null : <span className="pf-ins-mark">{mark}</span>}
-        <span className="pf-num">{dayLabel(t, dayParts(moment, at))}</span>
+    <article className={`superworker-ins${entry.inForce ? '' : ' is-out'}`} title={entry.nodeId ?? ''}>
+      <div className="superworker-ins-text">{entry.text ?? ''}</div>
+      <div className="superworker-ins-read" title={`${entry.inForce ? t('notes.said-at') : t('notes.said-mark', { mark })} ${timeOf(t, moment, at)}`}>
+        {mark.length === 0 ? null : <span className="superworker-ins-mark">{mark}</span>}
+        <span className="superworker-num">{dayLabel(t, dayParts(moment, at))}</span>
       </div>
-      <span className="pf-ins-acts">
+      <span className="superworker-ins-acts">
         {entry.standing
-          ? <button type="button" className="pf-mini" title={t('notes.archive.tip')} onClick={() => props.onArchive(entry.id)}>{t('common.archive')}</button>
-          : <button type="button" className="pf-mini" title={t('notes.revive.tip')} onClick={() => props.onRevive(entry.id)}>{t('common.revive')}</button>}
+          ? <button type="button" className="superworker-mini" title={t('notes.archive.tip')} onClick={() => props.onArchive(entry.id)}>{t('common.archive')}</button>
+          : <button type="button" className="superworker-mini" title={t('notes.revive.tip')} onClick={() => props.onRevive(entry.id)}>{t('common.revive')}</button>}
         <button
           type="button"
-          className="pf-mini"
+          className="superworker-mini"
           title={t('notes.delete.tip')}
           onClick={() => props.onDelete(entry)}
         >
@@ -270,7 +270,7 @@ function InstructionRow(props: {
         </button>
       </span>
       {entry.note === undefined ? null : (
-        <div className="pf-ins-foot"><span className="pf-ins-note">{entry.note}</span></div>
+        <div className="superworker-ins-foot"><span className="superworker-ins-note">{entry.note}</span></div>
       )}
     </article>
   )

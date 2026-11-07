@@ -19,7 +19,7 @@
  *    (`cwd` alone joins nothing) — a host that answers no attachable
  *    workspace, or refuses the attach after the session is minted, leaves the
  *    session open cwd-only with one log line instead of failing an open that
- *    already has a live session in it — arm the session's `pathfinder` tool,
+ *    already has a live session in it — arm the session's `superworker` tool,
  *    arm the opening round's listeners, hand the prompt over as the first
  *    instruction, and note the session through the engine's writer — this side
  *    only names the entry;
@@ -50,10 +50,10 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentRegistry, AgentSetup } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createUserMessage } from '@deepseek-ai/dsh-llm/message'
-import type { Executor } from 'pf-core'
+import type { Executor } from 'superworker-core'
 import { LAUNCH_PROMPT_FILE, RECORD_LAUNCH } from './contract.ts'
-import type { PfFailure, PfRefusalCode } from './failure.ts'
-import { isAbsent, readWholeFile, type PathfinderScope } from './records.ts'
+import type { RecordFailure, RecordRefusalCode } from './failure.ts'
+import { isAbsent, readWholeFile, type SuperworkerScope } from './records.ts'
 import {
   agentsOf,
   logLineOf,
@@ -70,7 +70,7 @@ import { wakeAgent } from './wake.ts'
 /** What one open brought back: the session now working this node. The id is an address for the panel's navigation, not a word a reader is shown. */
 export type SessionOpenOutcome =
   | { readonly ok: true; readonly session: string }
-  | { readonly ok: false; readonly code: PfRefusalCode; readonly detail?: string }
+  | { readonly ok: false; readonly code: RecordRefusalCode; readonly detail?: string }
 
 /** Options an in-process caller may hand an open; over the wire the open runs to its own end. */
 export interface SessionOpenOptions {
@@ -91,7 +91,7 @@ export interface SessionOpenOptions {
    */
   readonly onOpened?: (session: string) => void
   /**
-   * The opener seam the session's own `pathfinder` tool opens through. A dispatched session arms its
+   * The opener seam the session's own `superworker` tool opens through. A dispatched session arms its
    * tool before its first step; when that tool opens a session of its own (`dag open`), the opener
    * watches it the same way, so a caller passes its own seam here and the nesting keeps the watcher.
    * Absent: this module's plain {@link executorOf}, unwatched.
@@ -106,7 +106,7 @@ export interface SessionOpenOptions {
  * place. The refusal is this record-path guard's own code (`arg-not-allowed`);
  * the offending value rides as the detail.
  */
-function segmentFailure(value: string): PfFailure | undefined {
+function segmentFailure(value: string): RecordFailure | undefined {
   const SAFE_SEGMENT = /^[A-Za-z0-9_.:+-]{1,200}$/
   if (value.length === 0 || value === '.' || value === '..' || !SAFE_SEGMENT.test(value)) {
     return { ok: false, code: 'arg-not-allowed', detail: value }
@@ -120,7 +120,7 @@ function segmentFailure(value: string): PfFailure | undefined {
  * itself — a deployment without it gets a refusal naming the piece. An open
  * that never happened must not read as one that failed halfway.
  */
-function sessionSideOf(ctx: Context): AgentRegistry | PfFailure {
+function sessionSideOf(ctx: Context): AgentRegistry | RecordFailure {
   const agents = agentsOf(ctx)
   if (agents === undefined) return { ok: false, code: 'no-session-service', detail: 'agents' }
   return agents
@@ -167,7 +167,7 @@ export async function canonicalWorkspaceRoot(root: string): Promise<string> {
 }
 
 /** Why an open stopped after (or without) a session: the reason rides verbatim as the refusal's detail. */
-function openFailure(reason: string): { ok: false; code: PfRefusalCode; detail: string } {
+function openFailure(reason: string): { ok: false; code: RecordRefusalCode; detail: string } {
   return { ok: false, code: 'open-failed', detail: reason }
 }
 
@@ -239,7 +239,7 @@ export async function openNodeSession(
   const root = await canonicalWorkspaceRoot(workspaceRoot)
 
   const signal = options?.signal ?? new AbortController().signal
-  const scope: PathfinderScope = { sessionId, workspaceRoot: root }
+  const scope: SuperworkerScope = { sessionId, workspaceRoot: root }
   let prompt: string
   try {
     prompt = await readWholeFile(ctx.workspaceFiles, scope, `${RECORD_LAUNCH}/${cycle}/${node}/${LAUNCH_PROMPT_FILE}`, signal)

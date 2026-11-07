@@ -1,4 +1,4 @@
-/* dsh-pathfinder · settings —— this workspace's own project settings, read here and edited here.
+/* dsh-superworker · settings —— this workspace's own project settings, read here and edited here.
  *
  * The pane is two objects side by side: an index down the left edge with one line per category (the
  * count says how many settings it holds), and the page the rows stand on. A row is the key's name
@@ -10,11 +10,11 @@
  * measures against the space it actually has. */
 
 /* ---- the pane: an index that owns the left edge, a page that takes the rest -----------------*/
-.pf-page .pf-cfg{
+.superworker-page .superworker-cfg{
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
-}.pf-page .pf-cfgnav{
+}.superworker-page .superworker-cfgnav{
   flex: none;
   width: 248px;
   display: flex;
@@ -22,12 +22,12 @@
   gap: 18px;
   padding: 14px 20px 16px 0;
   border-right: 0.5px solid var(--dsw-alias-border-l1);
-}.pf-page .pf-cfglist{
+}.superworker-page .superworker-cfglist{
   display: flex;
   flex-direction: column;
   gap: 2px;
 }/* One line of the index: the category's name, and how many rows it holds. The line in play takes
-   the same fill DSH puts under a chosen row; hovering any other takes the step below it. */.pf-page .pf-cfgitem{
+   the same fill DSH puts under a chosen row; hovering any other takes the step below it. */.superworker-page .superworker-cfgitem{
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   column-gap: 10px;
@@ -40,31 +40,31 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-}.pf-page .pf-cfgitem:hover{
+}.superworker-page .superworker-cfgitem:hover{
   background: var(--dsw-alias-interactive-bg-hover);
-}.pf-page .pf-cfgitem[aria-current='true']{
+}.superworker-page .superworker-cfgitem[aria-current='true']{
   background: var(--dsw-alias-interactive-bg-active);
-}.pf-page .pf-cfgitem-name{
+}.superworker-page .superworker-cfgitem-name{
   font: var(--dsw-font-s-strong-14);
   color: var(--dsw-alias-label-primary);
-}.pf-page .pf-cfgitem-count{
+}.superworker-page .superworker-cfgitem-count{
   font: var(--dsw-font-xxxs-11);
   font-family: var(--ds-font-family-code);
   font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-caption);
 }/* The footer names the file every value on this page lives in: the layer tag on a row says whether
    the value came from this file or from the factory. It stays at the foot of the index, so the words
-   are read once and the rows above stay about values. */.pf-page .pf-cfgnavfoot{
+   are read once and the rows above stay about values. */.superworker-page .superworker-cfgnavfoot{
   margin-top: auto;
   padding: 12px 10px 0;
   border-top: 0.5px solid var(--dsw-alias-border-l1);
   display: flex;
   flex-direction: column;
   gap: 2px;
-}.pf-page .pf-cfgnavfoot-term{
+}.superworker-page .superworker-cfgnavfoot-term{
   font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-dimmed);
-}.pf-page .pf-cfgnavfoot-path{
+}.superworker-page .superworker-cfgnavfoot-path{
   font: var(--dsw-font-xxxs-11);
   font-family: var(--ds-font-family-code);
   color: var(--dsw-alias-label-tertiary);
@@ -75,7 +75,7 @@
    the width ruler the rows are laid out against (`container-type`). It carries no top padding: a
    pinned section head pins to the scrollport's edge, and a top padding would leave the head hanging
    a padding's width below it while rows travelled past above. The first section's own top margin
-   stands in for that space. */.pf-page .pf-cfgpage{
+   stands in for that space. */.superworker-page .superworker-cfgpage{
   container-type: inline-size;
   flex: 1 1 auto;
   min-width: 0;
@@ -87,16 +87,16 @@
    all, and the browser would clamp the index's jump back to nothing; the page grows this much tail
    on demand — what the jump needs (a whole scrollport standing below its head) past the content
    already standing. It draws nothing and reads as nothing: the scroll range is all it carries. */
-.pf-page .pf-cfgtail{
-  height: var(--pf-cfgtail, 0);
+.superworker-page .superworker-cfgtail{
+  height: var(--superworker-cfgtail, 0);
 }/* ---- section heads -------------------------------------------------------------------------
  * The category's name over a hairline to the page's right edge, held at the top while its rows are
- * read — the reader who has scrolled a long category can still say which category it is. */.pf-page
-.pf-cfgsec:first-child{
+ * read — the reader who has scrolled a long category can still say which category it is. */.superworker-page
+.superworker-cfgsec:first-child{
   margin-top: 20px;
-}.pf-page .pf-cfgsec + .pf-cfgsec{
+}.superworker-page .superworker-cfgsec + .superworker-cfgsec{
   margin-top: 26px;
-}.pf-page .pf-cfgsechead{
+}.superworker-page .superworker-cfgsechead{
   position: sticky;
   top: 0;
   z-index: 1;
@@ -105,11 +105,11 @@
   gap: 14px;
   padding: 2px 0 8px;
   background: var(--dsw-alias-bg-base);
-}.pf-page .pf-cfgsecname{
+}.superworker-page .superworker-cfgsecname{
   font: var(--dsw-font-base-16);
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
-}.pf-page .pf-cfgserule{
+}.superworker-page .superworker-cfgserule{
   flex: 1 1 auto;
   height: 0.5px;
   background: var(--dsw-alias-border-l2);
@@ -117,11 +117,11 @@
  * Each cell is the name over its sentence, the value at the cell's right edge, and the layer tag in
  * the last column. The line between two rows is drawn on the row below, so a section's first two
  * cells sit on the head's rule with no second line. An odd count ends the section on one wide row:
- * nothing is left standing in an empty cell. */.pf-page .pf-cfgrows{
+ * nothing is left standing in an empty cell. */.superworker-page .superworker-cfgrows{
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: 48px;
-}.pf-page .pf-cfgrow{
+}.superworker-page .superworker-cfgrow{
   display: grid;
   /* The last column takes the layer tag's own measure, with 64px as its floor (the widest Chinese
      layer word) — English's "This project" is longer than that, and a pill clamped to 64px would
@@ -131,30 +131,30 @@
   align-items: center;
   padding: 20px 0;
   border-top: 0.5px solid var(--dsw-alias-border-l1);
-}.pf-page .pf-cfgrow:nth-child(-n + 2){
+}.superworker-page .superworker-cfgrow:nth-child(-n + 2){
   border-top: 0;
-}.pf-page .pf-cfgrow:last-child:nth-child(odd){
+}.superworker-page .superworker-cfgrow:last-child:nth-child(odd){
   grid-column: 1 / -1;
-}.pf-page .pf-cfgrowname{
+}.superworker-page .superworker-cfgrowname{
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1px;
-}.pf-page .pf-vlayer{
+}.superworker-page .superworker-vlayer{
   justify-self: end;
 }/* The page cannot hold two columns any more: every row takes the whole measure, and the line
    between rows is re-stacked — the first row keeps the head's rule alone. */
 @container (max-width: 1000px){
-  .pf-page .pf-cfgrows{
+  .superworker-page .superworker-cfgrows{
     grid-template-columns: minmax(0, 1fr);
   }
-  .pf-page .pf-cfgrow:nth-child(-n + 2){
+  .superworker-page .superworker-cfgrow:nth-child(-n + 2){
     border-top: 0.5px solid var(--dsw-alias-border-l1);
   }
-  .pf-page .pf-cfgrow:first-child{
+  .superworker-page .superworker-cfgrow:first-child{
     border-top: 0;
   }
-  .pf-page .pf-cfgrow:last-child:nth-child(odd){
+  .superworker-page .superworker-cfgrow:last-child:nth-child(odd){
     grid-column: auto;
   }
 }

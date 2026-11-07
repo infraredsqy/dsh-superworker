@@ -1,11 +1,11 @@
 {
-  "name": "dsh-pathfinder",
+  "name": "dsh-superworker",
   "version": "0.1.0-rc.1",
-  "description": "The `.pf/` pipeline record as a work panel in DSH: the host half reads that record for the current session's workspace and hands it to the browser half",
+  "description": "The `.superworker/` pipeline record as a work panel in DSH: the host half reads that record for the current session's workspace and hands it to the browser half",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/infraredsqy/dsh-pathfinder.git"
+    "url": "git+https://github.com/infraredsqy/dsh-superworker.git"
   },
   "publishConfig": {
     "tag": "latest"
@@ -31,11 +31,11 @@
     "lib/types/**/*.d.ts",
     "locale/*.json",
     "cordis.patch.yml",
-    "packages/pf-core/dist/**/*",
-    "packages/pf-core/plugins/**/*"
+    "packages/superworker-core/dist/**/*",
+    "packages/superworker-core/plugins/**/*"
   ],
   "scripts": {
-    "build:products": "pnpm --filter pf-core build && npm run types && npm run bundle && npm run bundle:client",
+    "build:products": "pnpm --filter superworker-core build && npm run types && npm run bundle && npm run bundle:client",
     "prepack": "npm run build:products",
     "bundle": "tsdown",
     "bundle:client": "node tools/build-client.mjs",
@@ -43,7 +43,7 @@
     "types": "tsc -b tsconfig.host.json",
     "types:model": "tsc -p src/model/tsconfig.json",
     "types:client": "tsc -p src/client/tsconfig.json",
-    "typecheck": "tsc -b tsconfig.host.json --noEmit && tsc -p src/model/tsconfig.json && tsc -p src/client/tsconfig.json && pnpm --filter pf-core run typecheck",
+    "typecheck": "tsc -b tsconfig.host.json --noEmit && tsc -p src/model/tsconfig.json && tsc -p src/client/tsconfig.json && pnpm --filter superworker-core run typecheck",
     "test": "npm run build:products && node tools/test-all.mjs"
   },
   "dsh": {
@@ -80,7 +80,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "jsdom": "^26.1.0",
-    "pf-core": "workspace:*",
+    "superworker-core": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "rolldown": "^1.2.14",

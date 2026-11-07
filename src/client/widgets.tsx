@@ -18,7 +18,7 @@ import { useT } from './locale.ts'
  *
  * @param props - The view id (`map`, `detail`, `notes`, `issue`, `config` — the tab row's own ids),
  *   whether the pane is the visible one, whether the workspace has no node record at all, what this
- *   pane's own sheet hangs on it beyond `pf-pane`, whether it fills the frame's footprint, a region
+ *   pane's own sheet hangs on it beyond `superworker-pane`, whether it fills the frame's footprint, a region
  *   name for panes whose head is not their label, and the body.
  */
 export function PaneFrame(props: {
@@ -36,7 +36,7 @@ export function PaneFrame(props: {
   const t = useT()
   return (
     <section
-      className={`pf-pane${props.className === undefined ? '' : ` ${props.className}`}`}
+      className={`superworker-pane${props.className === undefined ? '' : ` ${props.className}`}`}
       id={`pane-${props.id}`}
       role="tabpanel"
       aria-labelledby={`tab-${props.id}`}
@@ -44,7 +44,7 @@ export function PaneFrame(props: {
       data-fill={props.fill === true ? '' : undefined}
       hidden={!props.active}
     >
-      {props.noNodes ? <p className="pf-innone">{t(NOT_ENABLED_WORD)}</p> : props.children}
+      {props.noNodes ? <p className="superworker-innone">{t(NOT_ENABLED_WORD)}</p> : props.children}
     </section>
   )
 }
@@ -91,7 +91,7 @@ export function Grip(props: {
   const base = React.useRef(value)
   return (
     <div
-      className={props.className ?? 'pf-grip'}
+      className={props.className ?? 'superworker-grip'}
       id={props.id}
       ref={props.gripRef}
       role="separator"
@@ -152,9 +152,9 @@ export function Grip(props: {
 /** A count pill: which state, how many. The combined one for uncategorized states carries no empty-state class. */
 export function Pill(props: { readonly cls: string; readonly n: number; readonly label: string }): React.ReactElement {
   return (
-    <span className="pf-pill" title={props.label}>
-      <i className={`pf-cell${props.cls.length === 0 ? '' : ` ${props.cls}`}`} />
-      <b className="pf-num">{`× ${String(props.n)}`}</b>
+    <span className="superworker-pill" title={props.label}>
+      <i className={`superworker-cell${props.cls.length === 0 ? '' : ` ${props.cls}`}`} />
+      <b className="superworker-num">{`× ${String(props.n)}`}</b>
     </span>
   )
 }
@@ -186,11 +186,11 @@ export function ModalShell(props: {
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
   return (
-    <div className="pf-modal" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <div className="pf-modal-panel" role="dialog" aria-modal="true" aria-labelledby={props.labelId} ref={panel} tabIndex={-1}>
-        <div className="pf-modal-head">
-          <span className="pf-modal-name" id={props.labelId} title={props.nameTitle}>{props.name}</span>
-          <button type="button" className="pf-mini" onClick={onClose}>{t('common.close')}</button>
+    <div className="superworker-modal" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <div className="superworker-modal-panel" role="dialog" aria-modal="true" aria-labelledby={props.labelId} ref={panel} tabIndex={-1}>
+        <div className="superworker-modal-head">
+          <span className="superworker-modal-name" id={props.labelId} title={props.nameTitle}>{props.name}</span>
+          <button type="button" className="superworker-mini" onClick={onClose}>{t('common.close')}</button>
         </div>
         {props.children}
       </div>
@@ -237,7 +237,7 @@ export function CommitNumberInput(props: {
   }
   return (
     <input
-      className={`pf-numin${props.unset ? ' is-unset' : ''}`}
+      className={`superworker-numin${props.unset ? ' is-unset' : ''}`}
       type={props.type ?? 'number'}
       min={props.type === 'text' ? undefined : 1}
       spellCheck={props.spellCheck}

@@ -7,7 +7,7 @@
  * side's declared injection dependencies must still be there.
  *
  * Only `package.json`, the patch file's on-disk presence and the plugin folders under
- * `packages/pf-core/plugins` (which are checked in, not built) are read here — not `lib/` (not built
+ * `packages/superworker-core/plugins` (which are checked in, not built) are read here — not `lib/` (not built
  * in a fresh clone), and `npm pack` is not run.
  *
  *   node --test tests/
@@ -74,7 +74,7 @@ test('package face: engines.dsh states a non-empty range', () => {
 /*
  * No command travels with this package.
  *
- * The pipeline answers in-process: the `pathfinder` tool inside a session, the panel's endpoints, and
+ * The pipeline answers in-process: the `superworker` tool inside a session, the panel's endpoints, and
  * git's merge driver. Nothing in this artifact is meant to be typed at a shell, so the manifest names
  * no command and the artifact carries no `bin/`.
  */
@@ -89,7 +89,7 @@ test('package face: this package ships no command: no `bin` field, no `bin/` und
 
 test('package face: the engine build ships with the package, and the build chain builds it first', () => {
   const files = manifest.files ?? []
-  for (const rel of ['packages/pf-core/dist/index.mjs', 'packages/pf-core/dist/merge-ledger.mjs']) {
+  for (const rel of ['packages/superworker-core/dist/index.mjs', 'packages/superworker-core/dist/merge-ledger.mjs']) {
     assert.ok(
       files.some((pattern) => covered(pattern, rel)),
       `${rel} is not in the package: the shipped runtime carries no engine: files=${JSON.stringify(files)}`,
@@ -97,7 +97,7 @@ test('package face: the engine build ships with the package, and the build chain
   }
   assert.match(
     manifest.scripts?.['build:products'] ?? '',
-    /pnpm --filter pf-core build/u,
+    /pnpm --filter superworker-core build/u,
     `the build chain does not build the engine, so the dist in the package is stale or missing outright: build:products=${JSON.stringify(manifest.scripts?.['build:products'])}`,
   )
 })
@@ -120,7 +120,7 @@ test('package face: the build chain has one home, prepack and test both call it,
   }
   const chain = scripts['build:products'] ?? ''
   const steps = [
-    ['engine build', /pnpm --filter pf-core build/u],
+    ['engine build', /pnpm --filter superworker-core build/u],
     ['types', /npm run types(?![\w:])/u],
     ['host half', /npm run bundle(?![\w:])/u],
     ['browser half', /npm run bundle:client/u],
@@ -161,7 +161,7 @@ test('package face: the exports key set is the three runtime mouths plus cordis.
 })
 
 /*
- * The plugins this package ships, folder and all: `packages/pf-core/plugins/<plugin>/` carries the
+ * The plugins this package ships, folder and all: `packages/superworker-core/plugins/<plugin>/` carries the
  * declaration, the implementation and the skills, and the host half reads a plugin's skills straight
  * out of it at load. A folder that ships only in the checkout is a panel whose skills appear for the
  * author and for nobody who installed the package — and the failure is silent, because a plugin
@@ -172,22 +172,22 @@ test('package face: the exports key set is the three runtime mouths plus cordis.
  * are not there.
  */
 test('package face: the shipped plugin directories go in whole, and no plugin skill file is missing', () => {
-  const pluginsDir = fileURLToPath(new URL('../packages/pf-core/plugins', import.meta.url))
-  assert.ok(existsSync(pluginsDir), 'packages/pf-core/plugins is not on disk: the skills have no source')
+  const pluginsDir = fileURLToPath(new URL('../packages/superworker-core/plugins', import.meta.url))
+  assert.ok(existsSync(pluginsDir), 'packages/superworker-core/plugins is not on disk: the skills have no source')
   const files = manifest.files ?? []
-  const shipped = filesUnder(pluginsDir).map((relative) => `packages/pf-core/plugins/${relative}`)
-  assert.ok(shipped.length > 0, 'packages/pf-core/plugins is empty')
+  const shipped = filesUnder(pluginsDir).map((relative) => `packages/superworker-core/plugins/${relative}`)
+  assert.ok(shipped.length > 0, 'packages/superworker-core/plugins is empty')
   const uncovered = shipped.filter((relative) => !files.some((pattern) => covered(pattern, relative)))
   assert.deepEqual(uncovered, [], 'these plugin files are not covered by any files pattern, so the installed product lacks them')
 })
 
 test('package face: every SKILL.md a plugin hands out is on disk and has a place in the package', () => {
-  const pluginsDir = fileURLToPath(new URL('../packages/pf-core/plugins', import.meta.url))
+  const pluginsDir = fileURLToPath(new URL('../packages/superworker-core/plugins', import.meta.url))
   const files = manifest.files ?? []
   const skills = filesUnder(pluginsDir).filter((relative) => relative.endsWith('/SKILL.md'))
   assert.ok(skills.length > 0, 'no plugin in the package carries a skill')
   for (const relative of skills) {
-    const full = `packages/pf-core/plugins/${relative}`
+    const full = `packages/superworker-core/plugins/${relative}`
     assert.ok(files.some((pattern) => covered(pattern, full)), `${full} is not in the package`)
   }
 })

@@ -1,15 +1,15 @@
-/* dsh-pathfinder · instructions —— the user's own sentences, ordered by placement: one sentence per
+/* dsh-superworker · instructions —— the user's own sentences, ordered by placement: one sentence per
  * row, the sentence at left, its current reading at right (a counted one reports when it was said;
  * a not-counted one first reports what became of it, then the day). Grouping, sorting and whether
  * something counts all live in the model layer (`src/model`, the record's own business); this side
- * only draws. */.pf-page .pf-ins{
+ * only draws. */.superworker-page .superworker-ins{
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   column-gap: 12px;
   padding: 8px;
 }/* A hairline between rows: written the same way as the settings pane — the line is drawn between
    two rows and none is left hanging at the end (in a short list that one is conspicuous and reads
-   as one more row coming). */.pf-page .pf-ins + .pf-ins{ border-top: 0.5px solid var(--dsw-alias-border-l1); }.pf-page .pf-ins-text{
+   as one more row coming). */.superworker-page .superworker-ins + .superworker-ins{ border-top: 0.5px solid var(--dsw-alias-border-l1); }.superworker-page .superworker-ins-text{
   grid-column: 1;
   grid-row: 1;
   min-width: 0;
@@ -21,7 +21,7 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
-}.pf-page .pf-ins.is-out .pf-ins-text{ color: var(--dsw-alias-label-caption); }.pf-page .pf-ins-read{
+}.superworker-page .superworker-ins.is-out .superworker-ins-text{ color: var(--dsw-alias-label-caption); }.superworker-page .superworker-ins-read{
   grid-column: 2;
   grid-row: 1;
   /* The reading stands against the right edge, not against its own column's head: the actions
@@ -35,7 +35,7 @@
   white-space: nowrap;
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-caption);
-}.pf-page .pf-ins-mark{ color: var(--dsw-alias-label-tertiary); }/* A row-inline action: archive / restore / delete. They live in the same cell as the reading —
+}.superworker-page .superworker-ins-mark{ color: var(--dsw-alias-label-tertiary); }/* A row-inline action: archive / restore / delete. They live in the same cell as the reading —
    after DSH's sidebar row: with no pointer on it the cell holds only the reading (against the
    right edge, pushing nothing), and once the pointer enters, the reading gives way and the actions
    step up. Two layouts share one cell, and the sentence column's width never moves, so no text
@@ -43,7 +43,7 @@
    Unpointed, it is uninked but still occupies its cell and still reachable: keyboard Tab reveals
    it on the spot — an invisible button that cannot be touched cannot be clicked either.
    When a row carries more than one action (delete standing beside archive), they line up in this
-   cell — the same feel, and still no change to the row's width. */.pf-page .pf-ins-acts{
+   cell — the same feel, and still no change to the row's width. */.superworker-page .superworker-ins-acts{
   grid-column: 2;
   grid-row: 1;
   justify-self: end;
@@ -51,14 +51,14 @@
   display: flex;
   align-items: center;
   gap: 6px;
-}.pf-page .pf-ins .pf-mini{
+}.superworker-page .superworker-ins .superworker-mini{
   opacity: 0;
   pointer-events: none;
-}.pf-page .pf-ins:hover .pf-mini, .pf-page .pf-ins:focus-within .pf-mini{
+}.superworker-page .superworker-ins:hover .superworker-mini, .superworker-page .superworker-ins:focus-within .superworker-mini{
   opacity: 1;
   pointer-events: auto;
-}.pf-page .pf-ins:hover .pf-ins-read, .pf-page .pf-ins:focus-within .pf-ins-read{ visibility: hidden; }/* On devices with no hover, both layouts stand at once: the actions stay out and the reading yields to a third column. */@media (hover: none){.pf-page .pf-ins{ grid-template-columns: minmax(0, 1fr) auto auto; }.pf-page .pf-ins-read{ grid-column: 2; }.pf-page .pf-ins-acts{ grid-column: 3; }.pf-page .pf-ins .pf-mini{ opacity: 1; pointer-events: auto; }
-}.pf-page .pf-ins-foot{
+}.superworker-page .superworker-ins:hover .superworker-ins-read, .superworker-page .superworker-ins:focus-within .superworker-ins-read{ visibility: hidden; }/* On devices with no hover, both layouts stand at once: the actions stay out and the reading yields to a third column. */@media (hover: none){.superworker-page .superworker-ins{ grid-template-columns: minmax(0, 1fr) auto auto; }.superworker-page .superworker-ins-read{ grid-column: 2; }.superworker-page .superworker-ins-acts{ grid-column: 3; }.superworker-page .superworker-ins .superworker-mini{ opacity: 1; pointer-events: auto; }
+}.superworker-page .superworker-ins-foot{
   grid-column: 1 / -1;
   grid-row: 2;
   display: flex;
@@ -67,25 +67,25 @@
   margin-top: 3px;
 }/* The closing remark takes its own line, indented one cell and edged with a thin line: the
    original is the user's words, this one the record's own annotation; in the same color they
-   would wrongly read as one paragraph. */.pf-page .pf-ins-note{
+   would wrongly read as one paragraph. */.superworker-page .superworker-ins-note{
   min-width: 0;
   padding-left: 9px;
   border-left: 0.5px solid var(--dsw-alias-border-l2);
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-caption);
   user-select: text;
-}.pf-page .pf-sec.is-folded .pf-ins{ display: none; }/* ---- Add a note: the sentence verbatim, the scope named --------------------
+}.superworker-page .superworker-sec.is-folded .superworker-ins{ display: none; }/* ---- Add a note: the sentence verbatim, the scope named --------------------
  * It stands at the very top of this pane: first write what is to be said, then read down the
- * entries currently governing me. */.pf-page .pf-add{
+ * entries currently governing me. */.superworker-page .superworker-add{
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
   padding-bottom: 10px;
-}/* This scope field is the same object as the workspace one (`.pf-pick`, living in tokens.css): the
+}/* This scope field is the same object as the workspace one (`.superworker-pick`, living in tokens.css): the
    same arrow, the same outline, the same type tier. It runs a little wider — words like "this
    cell" or "this line" are shorter than workspace names, but the option list below must be wider
-   than the field, and 96px is the floor at which that column reads comfortably. */.pf-page .pf-add .pf-pick select{ min-width: 96px; }.pf-page .pf-add input{
+   than the field, and 96px is the floor at which that column reads comfortably. */.superworker-page .superworker-add .superworker-pick select{ min-width: 96px; }.superworker-page .superworker-add input{
   flex: 1 1 auto;
   min-width: 0;
   padding: 5px 10px;
@@ -94,7 +94,7 @@
   background: var(--dsw-alias-bg-layer-1);
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-xs);
-}.pf-page .pf-add input::placeholder{ color: var(--dsw-alias-label-dimmed); }/* The nothing-here reading: say which it is — "none in force right now", or "the record never had any". */.pf-page .pf-innone{
+}.superworker-page .superworker-add input::placeholder{ color: var(--dsw-alias-label-dimmed); }/* The nothing-here reading: say which it is — "none in force right now", or "the record never had any". */.superworker-page .superworker-innone{
   margin: 6px 0 0;
   font: var(--dsw-font-xs-13);
   color: var(--dsw-alias-label-caption);
@@ -107,7 +107,7 @@
  * The alert zone grows after Gitea's delete-repository one: an amber bar on the left edge lifts
  * the sentence off the sheet, over a very shallow amber ground. It is lighter than that one — it
  * does not restate what is being deleted (the original lies right above) and asks nobody to
- * retype a name: what is taken here is one sentence. */.pf-page .pf-del-said{
+ * retype a name: what is taken here is one sentence. */.superworker-page .superworker-del-said{
   margin: 0 14px;
   padding: 8px;
   max-height: 168px;
@@ -119,13 +119,13 @@
   border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: var(--dsw-radius-xs);
   user-select: text;
-}.pf-page .pf-del-warn{
+}.superworker-page .superworker-del-warn{
   margin: 10px 14px 0;
   padding: 8px 10px;
   border-radius: var(--dsw-radius-xs);
   background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, transparent);
   box-shadow: inset 2px 0 0 var(--dsw-alias-state-warn-primary);
-}.pf-page .pf-del-warn p{
+}.superworker-page .superworker-del-warn p{
   margin: 0;
   font: var(--dsw-font-xs-13);
   line-height: 20px;

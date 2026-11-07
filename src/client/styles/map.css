@@ -1,4 +1,4 @@
-/* dsh-pathfinder · map — one drawing that carries both "who owes whom" and "which card to look at".
+/* dsh-superworker · map — one drawing that carries both "who owes whom" and "which card to look at".
  *
  * The horizontal axis is one the record really has (a card stands one column right of its deepest
  * prerequisite); the vertical axis is typography. Emphasis is not painted on with another colour: it
@@ -12,11 +12,11 @@
 
 /* ---- Across: the rail, then the drawing ---------------------------------- */
 
-.pf-page .pf-map-pane {
+.superworker-page .superworker-map-pane {
   overflow: hidden;
 }
 
-.pf-page .pf-map {
+.superworker-page .superworker-map {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -28,13 +28,13 @@
  * whole drawing stays on screen, whichever row is pressed. A line that has touched nothing in this
  * workspace is greyed out and holds no press: the row itself is the reading. The row is the object
  * both left columns share (`tokens.css`); what stands here is the column the rows stand in. */
-.pf-page .pf-rail {
+.superworker-page .superworker-rail {
   flex: none;
-  width: calc(var(--pf-line-w) + 18px);
+  width: calc(var(--superworker-line-w) + 18px);
   /* The 18px on the right is the ground between the list and the drawing: pressed any closer, the
      list reads as a column of labels laid on top of the map. The 176px left of it is the column the
      detail pane gives its lines. */
-  padding: var(--pf-detail-top) 18px var(--pf-detail-foot) 0;
+  padding: var(--superworker-detail-top) 18px var(--superworker-detail-foot) 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -43,25 +43,25 @@
 
 /* The rail's own two facts about a row: it is a flex item the scrolling column must not squeeze, and
  * it is a button with a platform dress to take off — the paint is the shared row's. */
-.pf-page .pf-rail-item {
+.superworker-page .superworker-rail-item {
   flex: none;
   appearance: none;
 }
 
-.pf-page .pf-rail-item:disabled {
+.superworker-page .superworker-rail-item:disabled {
   cursor: default;
 }
 
 /* A line this workspace holds nothing for: the name drops to the dimmed ink. The cell keeps its own
  * colour — what the line is doing is the record's reading, and it reads the same whichever workspace
  * the panel has open. */
-.pf-page .pf-rail-item:disabled .pf-cycle {
+.superworker-page .superworker-rail-item:disabled .superworker-cycle {
   color: var(--dsw-alias-label-dimmed);
 }
 
 /* ---- The drawing --------------------------------------------------------- */
 
-.pf-page .pf-field {
+.superworker-page .superworker-field {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
@@ -74,7 +74,7 @@
   touch-action: none;
 }
 
-.pf-page .pf-field.is-panning {
+.superworker-page .superworker-field.is-panning {
   cursor: grabbing;
 }
 
@@ -82,8 +82,8 @@
  * "the drawing stops here". The fade turns that cut into the page's own ground, which reads as "there
  * is more, just out of sight". It lies over the drawing and takes no pointer, so pan and zoom are
  * untouched. */
-.pf-page .pf-field::before,
-.pf-page .pf-field::after {
+.superworker-page .superworker-field::before,
+.superworker-page .superworker-field::after {
   content: '';
   position: absolute;
   top: 0;
@@ -93,12 +93,12 @@
   pointer-events: none;
 }
 
-.pf-page .pf-field::before {
+.superworker-page .superworker-field::before {
   left: 0;
   background: linear-gradient(to right, var(--dsw-alias-bg-base), transparent);
 }
 
-.pf-page .pf-field::after {
+.superworker-page .superworker-field::after {
   right: 0;
   background: linear-gradient(to left, var(--dsw-alias-bg-base), transparent);
 }
@@ -106,27 +106,27 @@
 /* The canvas is one absolutely positioned plane: everything is placed in canvas coordinates and
  * transformed in one go. Zooming changes no layout, so there is no reflow and no scrollbar — the
  * wheel is the zoom itself. */
-.pf-page .pf-canvas {
+.superworker-page .superworker-canvas {
   position: absolute;
   left: 0;
   top: 0;
   transform-origin: 0 0;
 }
 
-.pf-page .pf-wires,
-.pf-page .pf-mnodes {
+.superworker-page .superworker-wires,
+.superworker-page .superworker-mnodes {
   position: absolute;
   left: 0;
   top: 0;
 }
 
-.pf-page .pf-wires {
+.superworker-page .superworker-wires {
   overflow: visible;
 }
 
 /* One wire: 1px on screen, always (it narrows with the scale inside the canvas and `vector-effect`
  * pins it back to one pixel). */
-.pf-page .pf-mwire {
+.superworker-page .superworker-mwire {
   fill: none;
   stroke: var(--dsw-alias-border-l2);
   stroke-width: 1;
@@ -134,7 +134,7 @@
 }
 
 /* Both ends lit: this wire belongs to the chain being read, so it takes ink. */
-.pf-page .pf-mwire.is-lit {
+.superworker-page .superworker-mwire.is-lit {
   stroke: var(--dsw-alias-border-l4);
 }
 
@@ -151,7 +151,7 @@
  * The frame scales with the drawing (1.6px in canvas pixels) but never falls below 0.9px on screen:
  * at the overview it becomes a hairline that still circles every card, and zoomed in it does not grow
  * until it swallows half the box. */
-.pf-page .pf-mnode {
+.superworker-page .superworker-mnode {
   position: absolute;
   display: flex;
   flex-direction: column;
@@ -177,18 +177,18 @@
 }
 
 /* Delivered: a green frame. */
-.pf-page .pf-mnode.is-done {
+.superworker-page .superworker-mnode.is-done {
   --edge: var(--dsw-alias-state-success-primary);
 }
 
 /* In hand: the link colour, the one colour on this page that means "moving". */
-.pf-page .pf-mnode.is-run {
+.superworker-page .superworker-mnode.is-run {
   --edge: var(--dsw-alias-link);
 }
 
 /* Waiting for a person (a checkpoint, a parked cell, a manual step): an amber frame, and the card a
    reader meets first on the page. */
-.pf-page .pf-mnode.is-gate {
+.superworker-page .superworker-mnode.is-gate {
   --edge: var(--dsw-alias-state-warn-primary);
 }
 
@@ -198,16 +198,16 @@
  *
  * The ground is opaque throughout: wires run beneath the cards, and a half-transparent card leaks a
  * wire across its face. */
-.pf-page .pf-mnode:not(.is-lit) {
+.superworker-page .superworker-mnode:not(.is-lit) {
   --edge-mix: 32%;
   background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 55%, var(--dsw-alias-bg-base));
 }
 
-.pf-page .pf-mnode.is-lit {
+.superworker-page .superworker-mnode.is-lit {
   background: var(--dsw-alias-bg-layer-2);
 }
 
-.pf-page .pf-mnode.is-gate.is-lit {
+.superworker-page .superworker-mnode.is-gate.is-lit {
   background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, var(--dsw-alias-bg-layer-1));
 }
 
@@ -215,8 +215,8 @@
  * and a lit card has no headroom left on it. The veil is the theme's own hover material laid over
  * whatever ground the card has, so an inked card and a dim one answer the pointer by the same
  * amount. */
-.pf-page .pf-mnode:hover,
-.pf-page .pf-mnode:focus-visible {
+.superworker-page .superworker-mnode:hover,
+.superworker-page .superworker-mnode:focus-visible {
   background-image: linear-gradient(var(--dsw-alias-interactive-bg-hover), var(--dsw-alias-interactive-bg-hover));
 }
 
@@ -235,22 +235,22 @@
  *
  * Wires keep the rule they have everywhere: in ink only when both of their ends are lit.
  */
-.pf-page .pf-field.is-scoped .pf-mnode:not(.is-lit) {
+.superworker-page .superworker-field.is-scoped .superworker-mnode:not(.is-lit) {
   --edge-mix: 0%;
 }
 
-.pf-page .pf-field.is-scoped .pf-mnode.is-ahead {
+.superworker-page .superworker-field.is-scoped .superworker-mnode.is-ahead {
   background: var(--dsw-alias-bg-layer-1);
 }
 
-.pf-page .pf-field.is-scoped .pf-mnode.is-ahead .pf-mtitle {
+.superworker-page .superworker-field.is-scoped .superworker-mnode.is-ahead .superworker-mtitle {
   color: var(--dsw-alias-label-secondary);
 }
 
 /* Two lines: the title, and the row of the line's id, the mark and the moment. The title leads —
  * every card's first line is its title, so a card that belongs to no line is not a line shorter than
  * its neighbours, and the row under it sits at the card's foot whatever the title's length. */
-.pf-page .pf-mtitle {
+.superworker-page .superworker-mtitle {
   flex: none;
   overflow: hidden;
   font-size: 18px;
@@ -261,7 +261,7 @@
   white-space: nowrap;
 }
 
-.pf-page .pf-mnode.is-lit .pf-mtitle {
+.superworker-page .superworker-mnode.is-lit .superworker-mtitle {
   color: var(--dsw-alias-label-primary);
 }
 
@@ -269,7 +269,7 @@
  * is one, then whatever the cell is waiting for, and the moment against the right edge. The ring
  * takes a column of its own, so the one card that is running carries its id one step right of its
  * neighbours'. `margin-top: auto` pins the row to the foot of the box. */
-.pf-page .pf-mmeta {
+.superworker-page .superworker-mmeta {
   display: flex;
   flex: none;
   align-items: center;
@@ -283,8 +283,8 @@
 
 /* The line's own id on the card's foot: the word both left columns print, so it wears their face
  * too. Its 11px and 15px belong to this row's rhythm rather than to a type tier, and the moment
- * beside it is a figure, which keeps the code face (`.pf-num`). */
-.pf-page .pf-mtag {
+ * beside it is a figure, which keeps the code face (`.superworker-num`). */
+.superworker-page .superworker-mtag {
   flex: none;
   overflow: hidden;
   font-family: var(--dsw-font-family);
@@ -295,7 +295,7 @@
   white-space: nowrap;
 }
 
-.pf-page .pf-mtime {
+.superworker-page .superworker-mtime {
   margin-left: auto;
   font-size: 10px;
   color: var(--dsw-alias-label-caption);
@@ -310,24 +310,24 @@
  * The middle tier keeps the title alone, centred in the box: a single line pinned to the top of the
  * box reads as the top of something that was cut off. */
 
-.pf-page .pf-field.is-lod-dot .pf-mtag,
-.pf-page .pf-field.is-lod-dot .pf-mtitle,
-.pf-page .pf-field.is-lod-dot .pf-mmeta {
+.superworker-page .superworker-field.is-lod-dot .superworker-mtag,
+.superworker-page .superworker-field.is-lod-dot .superworker-mtitle,
+.superworker-page .superworker-field.is-lod-dot .superworker-mmeta {
   display: none;
 }
 
-.pf-page .pf-field.is-lod-mid .pf-mnode {
+.superworker-page .superworker-field.is-lod-mid .superworker-mnode {
   justify-content: center;
 }
 
-.pf-page .pf-field.is-lod-mid .pf-mtag,
-.pf-page .pf-field.is-lod-mid .pf-mmeta {
+.superworker-page .superworker-field.is-lod-mid .superworker-mtag,
+.superworker-page .superworker-field.is-lod-mid .superworker-mmeta {
   display: none;
 }
 
 /* ---- The two buttons at the top right ------------------------------------ */
 
-.pf-page .pf-tools {
+.superworker-page .superworker-tools {
   position: absolute;
   top: 12px;
   right: 12px;
@@ -336,7 +336,7 @@
   gap: 4px;
 }
 
-.pf-page .pf-tool {
+.superworker-page .superworker-tool {
   display: grid;
   place-items: center;
   width: 28px;
@@ -349,18 +349,18 @@
   cursor: pointer;
 }
 
-.pf-page .pf-tool:hover {
+.superworker-page .superworker-tool:hover {
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-3);
   border-color: var(--dsw-alias-border-l4);
 }
 
-.pf-page .pf-tool[aria-pressed='true'] {
+.superworker-page .superworker-tool[aria-pressed='true'] {
   color: var(--dsw-alias-label-primary);
   border-color: var(--dsw-alias-border-l4);
 }
 
-.pf-page .pf-tool svg {
+.superworker-page .superworker-tool svg {
   width: 15px;
   height: 15px;
   fill: none;

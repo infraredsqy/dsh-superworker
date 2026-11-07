@@ -95,19 +95,19 @@ export function DetailPane(props: {
   const picked = pickedCycleOf(cycles, props.lineId)
   return (
     <PaneFrame id="detail" active={props.active} noNodes={props.noNodes} fill>
-      <div className="pf-detail" style={{ ['--pf-side-w' as string]: `${props.sideWidth}px` }}>
-        <div className="pf-lineside" role="group" aria-label={t('detail.lines.aria')}>
+      <div className="superworker-detail" style={{ ['--superworker-side-w' as string]: `${props.sideWidth}px` }}>
+        <div className="superworker-lineside" role="group" aria-label={t('detail.lines.aria')}>
           {cycles.map((cycle) => (
-            <div className="pf-lineitem" key={cycle.id}>
+            <div className="superworker-lineitem" key={cycle.id}>
               <button
                 type="button"
-                className="pf-linepick"
+                className="superworker-linepick"
                 aria-current={cycle.id === picked?.id}
                 aria-label={`${cycle.id} · ${stateWord(t, cycle)}`}
                 onClick={() => props.onPickLine(cycle.id)}
               >
                 <LineMark cycle={cycle} />
-                <span className="pf-cycle">{cycle.id}</span>
+                <span className="superworker-cycle">{cycle.id}</span>
               </button>
             </div>
           ))}
@@ -125,8 +125,8 @@ export function DetailPane(props: {
           onCommit={props.onSideCommit}
           resetTo={SIDE_DEFAULT}
         />
-        <div className="pf-linemain">
-          <div className="pf-scroll" role="region" aria-label={t('view.detail')} tabIndex={0}>
+        <div className="superworker-linemain">
+          <div className="superworker-scroll" role="region" aria-label={t('view.detail')} tabIndex={0}>
             {picked === null || props.project === null ? null : <DetailList cycle={picked} project={props.project} stranded={props.stranded} onOpenNode={props.onOpenNode} openingNode={props.openingNode} />}
           </div>
         </div>
@@ -156,23 +156,23 @@ function DetailGroup(props: { readonly group: Group; readonly nodes: readonly No
   const t = useT()
   const [folded, setFolded] = React.useState(false)
   return (
-    <section className={`pf-sec${folded ? ' is-folded' : ''}`}>
+    <section className={`superworker-sec${folded ? ' is-folded' : ''}`}>
       <button
         type="button"
-        className="pf-rowhead"
+        className="superworker-rowhead"
         aria-expanded={!folded}
         onClick={() => setFolded((value) => !value)}
       >
-        <span className="pf-rowhead-key">{t(group.word)}</span>
+        <span className="superworker-rowhead-key">{t(group.word)}</span>
         {folded
-          ? <span className="pf-rowhead-figs pf-rowcount"><b className="pf-num">{props.nodes.length}</b>{unit(t, 'detail.folded.cells.one', 'detail.folded.cells.other', props.nodes.length)}</span>
+          ? <span className="superworker-rowhead-figs superworker-rowcount"><b className="superworker-num">{props.nodes.length}</b>{unit(t, 'detail.folded.cells.one', 'detail.folded.cells.other', props.nodes.length)}</span>
           : null}
       </button>
       {props.nodes.map((node) => (
-        <div className={`pf-row ${group.cls}`} key={node.id} data-id={node.id} title={gateTitle(t, node, props.at)}>
+        <div className={`superworker-row ${group.cls}`} key={node.id} data-id={node.id} title={gateTitle(t, node, props.at)}>
           <StateMark node={node} at={props.at} dead={props.stranded[node.id] ?? null} />
-          <span className="pf-rowtitle" title={nodeHover(node)}>{nodeName(node)}</span>
-          <span className="pf-rowfigs">
+          <span className="superworker-rowtitle" title={nodeHover(node)}>{nodeName(node)}</span>
+          <span className="superworker-rowfigs">
             {group.deps ? <DepsChip node={node} /> : null}
             {/* The one cell a session can be opened for is a ready one: the other sections say their
                 own states and carry no action. The figs column is the row's own room for it — ready
@@ -181,14 +181,14 @@ function DetailGroup(props: { readonly group: Group; readonly nodes: readonly No
                 (settling takes the model minutes, and a second click would open a second session
                 on the same cell). */}
             {group.key === 'ready' ? (
-              <button type="button" className="pf-mini" disabled={props.openingNode === node.id} onClick={() => props.onOpenNode(node.id)}>{t('node.open')}</button>
+              <button type="button" className="superworker-mini" disabled={props.openingNode === node.id} onClick={() => props.onOpenNode(node.id)}>{t('node.open')}</button>
             ) : null}
           </span>
           {/* The section already says its own gate kind: a node gated that same way adds no second
               badge here. Both sides are the structured kind — a gate's kind against the kinds this
               section silences. */}
           {node.gate !== null && !group.silences.includes(node.gate.kind)
-            ? <span className={`pf-gate pf-rowgate${node.state === 'todo' ? ' is-quiet' : ''}`}>{gateWord(t, node.gate)}</span>
+            ? <span className={`superworker-gate superworker-rowgate${node.state === 'todo' ? ' is-quiet' : ''}`}>{gateWord(t, node.gate)}</span>
             : null}
         </div>
       ))}

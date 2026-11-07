@@ -13,7 +13,7 @@ lands by review, and an answer may take a while.
   depends on; `tests/package-surface.test.mjs` holds them, and the browser half's built artifact is
   held by `tests/client-render.test.mjs`.
 - **A new behaviour needs a case, not a pin on the copy.** The wording and the layout move too often
-  to hold in a test; the readings that need a real `.pf/` are walked by hand on the list in
+  to hold in a test; the readings that need a real `.superworker/` are walked by hand on the list in
   [docs/publish.md](docs/publish.md).
 
 ## Commits

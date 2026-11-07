@@ -31,7 +31,7 @@ import { createStore } from './store.ts'
  * settings namespace (`SETTINGS_NAMESPACE`), which is a different registry in a different service —
  * the two are allowed to share a word without colliding.
  */
-export const LOCALE_NS = 'pathfinder'
+export const LOCALE_NS = 'superworker'
 
 /**
  * The language the panel speaks when nothing tells it otherwise.

@@ -2,19 +2,19 @@
  * The host half's write surface: every record-touching action on the panel is
  * answered by the engine's own words layer, in this process.
  *
- * No JSON is assembled here and nothing under `.pf` is touched; the words layer
+ * No JSON is assembled here and nothing under `.superworker` is touched; the words layer
  * does the writing and prints its own reasons for refusal. There is no command
  * between the panel and the engine — no entry file, no child process, no PATH
  * lookup, no shell — so nothing on the way can re-interpret a value; the
  * agent-facing tool answers through this same layer. The user's verbatim
  * sentence may be any sentence, with spaces, quotes and `&`: it rides as one
- * argv cell, the way the tool hands its own line over. `PF_PLUGINS_DIR` is the
+ * argv cell, the way the tool hands its own line over. `SUPERWORKER_PLUGINS_DIR` is the
  * engine's deployment switch, not this side's: the host half names the
  * folder it ships (`shippedPluginsDir()`) rather than reading that switch, so
  * moving it moves the engine's view and not the panel's.
  */
-import { answer, type Executor, type WordsIO } from 'pf-core'
-import type { PfOutcome } from './failure.ts'
+import { answer, type Executor, type WordsIO } from 'superworker-core'
+import type { RecordOutcome } from './failure.ts'
 import { hostGitRunner } from './git.ts'
 import { shippedPackageRoot, shippedPluginsDir } from './skill-paths.ts'
 
@@ -46,7 +46,7 @@ export function answerHandleOf(root: string, opener?: { readonly executor: Execu
  * @param args - The word line, as the words layer spells it.
  * @param said - The user's verbatim sentence, appended to the line as one last cell, as-is.
  */
-export async function runPf(workspaceRoot: string, args: readonly string[], said?: string): Promise<PfOutcome> {
+export async function runPf(workspaceRoot: string, args: readonly string[], said?: string): Promise<RecordOutcome> {
   const settled = await answer(said === undefined ? args : [...args, said], answerHandleOf(workspaceRoot))
   if (settled.code === 0) return { ok: true, text: settled.stdout.trim() }
   /* A non-zero answer is not this plugin's sentence to write: the words layer said its own

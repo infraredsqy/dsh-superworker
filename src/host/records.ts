@@ -10,17 +10,17 @@
  */
 import { RECORD_DIR, RECORD_SOURCES } from './contract.ts'
 import type {
-  PathfinderCycle,
-  PathfinderInstruction,
-  PathfinderIssue,
-  PathfinderNode,
-  PathfinderReading,
-  PathfinderSourceState,
+  SuperworkerCycle,
+  SuperworkerInstruction,
+  SuperworkerIssue,
+  SuperworkerNode,
+  SuperworkerReading,
+  SuperworkerSourceState,
 } from './contract.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** Where to read from during a fetch. */
-export interface PathfinderScope {
+export interface SuperworkerScope {
   /** Session identity; the workspace file gateway resolves paths by it. */
   readonly sessionId: SessionId
   /** The workspace root to read, absolute; records are looked up below it. */
@@ -55,9 +55,9 @@ export interface WorkspaceFilePage {
  * the lenient matching at the method position.
  */
 export interface WorkspaceFilesPort {
-  list(scope: PathfinderScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>
+  list(scope: SuperworkerScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>
   read(
-    scope: PathfinderScope,
+    scope: SuperworkerScope,
     path: string,
     range: { readonly offset?: number; readonly limit?: number },
     signal: AbortSignal,
@@ -117,10 +117,10 @@ function isMapLike(value: unknown): value is Record<string, unknown> {
  * matching accumulator's own field types instead of a bare `unknown`.
  */
 type Collected =
-  | { readonly slot: 'nodes'; readonly value: Record<string, PathfinderNode> }
-  | { readonly slot: 'cycles'; readonly value: readonly PathfinderCycle[] }
-  | { readonly slot: 'instructions'; readonly value: readonly PathfinderInstruction[] }
-  | { readonly slot: 'issues'; readonly value: Record<string, PathfinderIssue> }
+  | { readonly slot: 'nodes'; readonly value: Record<string, SuperworkerNode> }
+  | { readonly slot: 'cycles'; readonly value: readonly SuperworkerCycle[] }
+  | { readonly slot: 'instructions'; readonly value: readonly SuperworkerInstruction[] }
+  | { readonly slot: 'issues'; readonly value: Record<string, SuperworkerIssue> }
 
 /**
  * Collect one collection: key names as in the records, entries copied
@@ -145,14 +145,14 @@ function collect(key: keyof typeof COLLECTION_KEY, parsed: unknown): Collected |
   if (!isMapLike(value)) return undefined
   // The map slots walk separately so each builds its own entry type: the item copy lands through a judged write, not a claim.
   if (key === 'nodes') {
-    const entries: Record<string, PathfinderNode> = {}
+    const entries: Record<string, SuperworkerNode> = {}
     for (const [id, item] of Object.entries(value)) {
       if (!isMapLike(item)) return undefined
       entries[id] = { ...item }
     }
     return { slot: 'nodes', value: entries }
   }
-  const entries: Record<string, PathfinderIssue> = {}
+  const entries: Record<string, SuperworkerIssue> = {}
   for (const [id, item] of Object.entries(value)) {
     if (!isMapLike(item)) return undefined
     entries[id] = { ...item }
@@ -172,7 +172,7 @@ function collect(key: keyof typeof COLLECTION_KEY, parsed: unknown): Collected |
  */
 export async function readWholeFile(
   port: WorkspaceFilesPort,
-  scope: PathfinderScope,
+  scope: SuperworkerScope,
   path: string,
   signal: AbortSignal,
 ): Promise<string> {
@@ -216,9 +216,9 @@ export async function readWholeFile(
  */
 export async function readReading(
   port: WorkspaceFilesPort,
-  scope: PathfinderScope,
+  scope: SuperworkerScope,
   signal: AbortSignal,
-): Promise<PathfinderReading> {
+): Promise<SuperworkerReading> {
   const recording = new Map<string, readonly WorkspaceDirectoryEntry[] | undefined>()
   const listDir = async (dir: string): Promise<readonly WorkspaceDirectoryEntry[] | undefined> => {
     const known = recording.get(dir)
@@ -234,18 +234,18 @@ export async function readReading(
     return entries
   }
 
-  const sources: Record<keyof typeof RECORD_SOURCES, PathfinderSourceState> = {
+  const sources: Record<keyof typeof RECORD_SOURCES, SuperworkerSourceState> = {
     nodes: 'missing',
     cycles: 'missing',
     instructions: 'missing',
     issues: 'missing',
   }
   /* The accumulators wear the reading's own field types: every fill below is judged against them. The reading itself is assembled once, by the contextually typed literal in `finish`, both at the no-records early exit and at the end. */
-  const nodes: Record<string, PathfinderNode> = {}
-  const cycles: PathfinderCycle[] = []
-  const instructions: PathfinderInstruction[] = []
-  const issues: Record<string, PathfinderIssue> = {}
-  const finish = (): PathfinderReading => ({
+  const nodes: Record<string, SuperworkerNode> = {}
+  const cycles: SuperworkerCycle[] = []
+  const instructions: SuperworkerInstruction[] = []
+  const issues: Record<string, SuperworkerIssue> = {}
+  const finish = (): SuperworkerReading => ({
     workspaceRoot: scope.workspaceRoot,
     recordPath: RECORD_DIR,
     sources,

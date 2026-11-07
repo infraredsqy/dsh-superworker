@@ -1,6 +1,6 @@
 /**
- * Entry of the browser-half plugin: mounts the panel as the service `ctx.pathfinderPanel`, then
- * wires up the settings section, Pathfinder Center's sidebar items, and the center-column cell.
+ * Entry of the browser-half plugin: mounts the panel as the service `ctx.superworkerPanel`, then
+ * wires up the settings section, Superworker Center's sidebar items, and the center-column cell.
  *
  * Readings arrive through the port; the panel only draws. The panel's own preferences come from
  * settings and are written back to settings.
@@ -12,16 +12,16 @@ import { createPanelPort, serviceAt, type PanelPort } from './data.ts'
 import { createLocalePort, LocaleProvider, localeOf, type LocaleService, type LocaleSource } from './locale.ts'
 import { currentSessionOf, knownSessionsOf, sessionsSnapshotOf } from './sessions-view.ts'
 import { registerSeats, SEAT_WORD } from './mount.ts'
-import { PathfinderPanel } from './panel.tsx'
+import { SuperworkerPanel } from './panel.tsx'
 import { createPrefsSource, type PrefsStore } from './prefs.ts'
 import { dropSettingsStyle, registerSettingsSection } from './settings.tsx'
 import { dropStyle, ensureStyle } from './styles.ts'
 import type { WorkspaceSource } from './workspaces.ts'
 
 /** The panel's identity: used as key by the center-column cell and as id by the sidebar row. */
-export const PANEL_ID = 'pathfinder'
+export const PANEL_ID = 'superworker'
 
-export const SERVICE_KEY = 'pathfinderPanel'
+export const SERVICE_KEY = 'superworkerPanel'
 
 /**
  * The body of the panel's stylesheet, as the bundle carries it: re-exported so a caller that holds
@@ -39,7 +39,7 @@ export {
   SettingsSection,
 } from './settings.tsx'
 
-/** The identities of the two Pathfinder Center spots, readable off the bundle. */
+/** The identities of the two Superworker Center spots, readable off the bundle. */
 export { createWorkspaceNav, PANEL_ORDER, SEAT_WORD } from './mount.ts'
 
 /** Why and which session a card opens: the session-list projections, readable off the bundle. */
@@ -63,7 +63,7 @@ export type { WorkspaceChoice, WorkspaceSnapshot, WorkspaceSource } from './work
 /** Markers of the two injected stylesheets in the document: neither should remain after unmount. */
 export { PANEL_STYLE_ID, SETTINGS_STYLE_ID } from './style-tags.ts'
 
-export interface PathfinderPanelApi {
+export interface SuperworkerPanelApi {
   readonly id: string
   /** The panel's declared name, in the language in force when it is read. */
   readonly title: string
@@ -102,7 +102,7 @@ export function apply(ctx: unknown): void {
   injectAt(ctx, ['locale'], 'the locale layer did not attach', (owner) => {
     locale.attach((serviceAt(owner, 'locale') as LocaleService | undefined) ?? null)
   })
-  const api: PathfinderPanelApi = {
+  const api: SuperworkerPanelApi = {
     id: PANEL_ID,
     /* A getter rather than a captured string: the panel's name is read by whoever asks, which may be
      * after the reader has changed language. The panel and the row it sits on are one object, so
@@ -132,7 +132,7 @@ export function apply(ctx: unknown): void {
 /**
  * The component actually rendered by the seat side.
  *
- * It adds one thing over {@link PathfinderPanel}: the center-column cell sits at the root scope and
+ * It adds one thing over {@link SuperworkerPanel}: the center-column cell sits at the root scope and
  * does not inject `sessionId`, so this layer picks the current one from the `useSessions` snapshot;
  * when the seat passes a `sessionId` itself, that one wins. The same snapshot also yields a roster
  * the panel uses to check whether a record's session exists on this machine.
@@ -149,7 +149,7 @@ function Entry(props: PanelArgs & { readonly useSessions?: unknown }): React.Rea
   return React.createElement(
     LocaleProvider,
     { source: props.locale },
-    React.createElement(PathfinderPanel, {
+    React.createElement(SuperworkerPanel, {
       port: props.port,
       sessionId,
       prefs: props.prefs,

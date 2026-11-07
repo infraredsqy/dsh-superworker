@@ -9,7 +9,7 @@
  * also the tool's business: no key list is kept here — whatever is printed
  * gets read.
  */
-import type { PfRefusal } from './failure.ts'
+import type { RecordRefusal } from './failure.ts'
 
 /** Which layer a value actually lives on. */
 export type ConfigLayer = 'default' | 'project' | 'global'
@@ -70,14 +70,14 @@ export interface ConfigEntry {
  * (`src/client/words.ts`). What the tool itself said, when it said anything, rides along in
  * `refusal.detail`.
  */
-export interface PathfinderConfigReading {
+export interface SuperworkerConfigReading {
   /** The absolute workspace root read this time, same name as the four-records reading; settings land in its record. */
   readonly workspaceRoot: string
   readonly ok: boolean
   /** The tool's own output on success; empty on failure, whose reason is a code. */
   readonly text: string
   /** Why the tool's run failed; `null` when it did not. */
-  readonly refusal: PfRefusal | null
+  readonly refusal: RecordRefusal | null
   /** Every printed line, keyed by setting key. Keys never printed are not here. */
   readonly entries: Readonly<Record<string, ConfigEntry>>
 }
@@ -89,7 +89,7 @@ function layerOf(word: string): ConfigLayer | null {
 }
 
 /**
- * Parse the lines `pf config list` prints into a table. Unrecognizable lines
+ * Parse the lines `superworker config list` prints into a table. Unrecognizable lines
  * are skipped (the tool also prints things like `Warning:` on that stream —
  * that is other output); a line whose value is empty is skipped too: an empty
  * value yields no reading.

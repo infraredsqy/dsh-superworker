@@ -7,7 +7,7 @@
  * these two take readings only and touch no DOM, so they can be measured and
  * pinned down here and nowhere else.
  */
-import type { PathfinderReading, PathfinderSourceState } from './records.ts'
+import type { SuperworkerReading, SuperworkerSourceState } from './records.ts'
 import type { CycleReading, NodeBucket, NodeRank, NodeReading, ProjectReading } from './contract.ts'
 
 export type { NodeBucket, NodeRank }
@@ -92,7 +92,7 @@ export function lineStateOf(cycle: CycleReading): CycleState {
  * things — the former has not been read, the latter is the conclusion drawn
  * from reading.
  */
-export function everySourceIs(reading: PathfinderReading, state: PathfinderSourceState): boolean {
+export function everySourceIs(reading: SuperworkerReading, state: SuperworkerSourceState): boolean {
   const states = Object.values(reading.sources)
   return states.length > 0 && states.every((one) => one === state)
 }

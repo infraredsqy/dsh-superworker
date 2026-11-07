@@ -79,8 +79,8 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
   })
 
   /* ---- the host half behind it, read through the in-memory port ---- */
-  const { PathfinderRecordsGateway } = await import(pathToFileURL(join(repoRoot, 'src', 'host', 'index.ts')).href)
-  const gateway = new PathfinderRecordsGateway({
+  const { SuperworkerRecordsGateway } = await import(pathToFileURL(join(repoRoot, 'src', 'host', 'index.ts')).href)
+  const gateway = new SuperworkerRecordsGateway({
     workspaceFiles: fakeWorkspaceFiles(record),
     /* The real host resolves a session's workspace from its header's cwd. */
     sessions: { get: () => ({ header: { cwd: workspaceRoot } }) },
@@ -112,7 +112,7 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
   const provided = {}
   const form = fakeSettingsForm({}, { watchCount: true })
   const services = {
-    'remote.pathfinder': remoteFace,
+    'remote.superworker': remoteFace,
     slots,
     configForms: { get: () => form },
     uiWorkspace: { openSession: () => undefined },
@@ -176,6 +176,6 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
     consoleErrors,
     settle,
     unmount,
-    tabs: () => [...container.querySelectorAll('.pf-tab')],
+    tabs: () => [...container.querySelectorAll('.superworker-tab')],
   }
 }

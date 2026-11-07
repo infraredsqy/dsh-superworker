@@ -1,5 +1,5 @@
 /**
- * Why a pathfinder operation was refused, as a code rather than a sentence.
+ * Why a superworker operation was refused, as a code rather than a sentence.
  *
  * The host half cannot know which language the reader is looking at: the panel's language is a
  * browser-side fact, decided in the browser and stored in the Host's settings document, and a host
@@ -12,7 +12,7 @@
  */
 
 /** Every reason this half can refuse an operation. */
-export type PfRefusalCode =
+export type RecordRefusalCode =
   /** An argument cannot address a record: the segment gate in `executor.ts` refused it. */
   | 'arg-not-allowed'
   /** The words layer answered non-zero; `detail` is its own output. */
@@ -31,8 +31,8 @@ export type PfRefusalCode =
   | 'dispatch-refused'
 
 /** A refusal: which one, plus the untranslatable detail that goes with it. */
-export interface PfRefusal {
-  readonly code: PfRefusalCode
+export interface RecordRefusal {
+  readonly code: RecordRefusalCode
   readonly detail?: string
 }
 
@@ -43,17 +43,17 @@ export interface PfRefusal {
  * this plugin's, and the config reader parses exactly this stream. On failure the reason is a code,
  * with the words layer's own words — when it said any — in `detail`.
  */
-export type PfOutcome =
+export type RecordOutcome =
   | { readonly ok: true; readonly text: string }
-  | { readonly ok: false; readonly code: PfRefusalCode; readonly detail?: string }
+  | { readonly ok: false; readonly code: RecordRefusalCode; readonly detail?: string }
 
 /** The failure branch of an outcome, named so a launcher can return it before an outcome exists. */
-export type PfFailure = Extract<PfOutcome, { readonly ok: false }>
+export type RecordFailure = Extract<RecordOutcome, { readonly ok: false }>
 
 /**
  * Why installing the shipped plugin skills was refused, as a code rather than a sentence.
  *
- * This is a second vocabulary, deliberately not part of {@link PfRefusalCode}: that one is what the
+ * This is a second vocabulary, deliberately not part of {@link RecordRefusalCode}: that one is what the
  * panel spells, and it is decided while answering a request from a browser. Skills are placed once,
  * when the line loads, before any request exists — nobody reads these codes in a language of their
  * choosing, so they never reach the panel's word tables. What they must be is decidable: a caller
@@ -62,7 +62,7 @@ export type PfFailure = Extract<PfOutcome, { readonly ok: false }>
  * `detail` carries the names this half does not own: the plugins and skill names the engine reported,
  * the resolved paths, the two places a shadowed skill was found in.
  */
-export type PfSkillRefusalCode =
+export type SkillRefusalCode =
   /** The host exposes no skills service, so the session's own catalog view cannot be read. */
   | 'no-skill-registry'
   /** The package's own plugin directory yields no plugin at all — the skills it should ship are not there. */
@@ -81,9 +81,9 @@ export type PfSkillRefusalCode =
   | 'manifest-unreadable'
 
 /** A skill-install refusal: which one, plus the names and paths that go with it. */
-export interface PfSkillRefusal {
+export interface SkillRefusal {
   readonly ok: false
-  readonly code: PfSkillRefusalCode
+  readonly code: SkillRefusalCode
   readonly detail: string
 }
 
@@ -93,12 +93,12 @@ export interface PfSkillRefusal {
  * The outcome says what was **placed**, never what a session sees: placing happens before any
  * session exists, so the only evidence this half can honestly carry is the skill root it wrote and
  * the manifest naming every file it wrote there. Whether the placed copy wins a name in a session's
- * own view is a separate reading ({@link PfSkillViewOutcome}), taken where a workspace is known.
+ * own view is a separate reading ({@link SkillViewOutcome}), taken where a workspace is known.
  *
  * On refusal `detail` names what went wrong; a refusal leaves nothing placed by this attempt, so the
  * caller has no half state to reason about.
  */
-export type PfSkillsOutcome =
+export type SkillsOutcome =
   | {
       readonly ok: true
       readonly names: readonly string[]
@@ -107,7 +107,7 @@ export type PfSkillsOutcome =
       /** The manifest recording exactly what was placed, so unloading takes back only that. */
       readonly manifest: string
     }
-  | PfSkillRefusal
+  | SkillRefusal
 
 /**
  * What one session-view diagnostic read of the placed skills returns.
@@ -117,6 +117,6 @@ export type PfSkillsOutcome =
  * the placement. An empty `names` means this line has nothing placed, so there is nothing to read
  * back — an empty outcome is not a claim of victory.
  */
-export type PfSkillViewOutcome =
+export type SkillViewOutcome =
   | { readonly ok: true; readonly names: readonly string[] }
-  | PfSkillRefusal
+  | SkillRefusal

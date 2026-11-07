@@ -42,7 +42,7 @@ function SevChip(props: { readonly issue: IssueReading }): React.ReactElement | 
   if (issue.severity === undefined) return null
   return (
     <span
-      className={`pf-sev ${sevClass(issue.severity)}`}
+      className={`superworker-sev ${sevClass(issue.severity)}`}
       title={t('pool.severity.tip', { severity: issue.severity, weight: issue.weight })}
     >
       {issue.severity}
@@ -124,7 +124,7 @@ export function IssuePool(props: {
   }
 
   const onRegisterKey = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    const rows = [...(event.currentTarget.querySelectorAll('button.pf-row[data-issue]'))] as HTMLElement[]
+    const rows = [...(event.currentTarget.querySelectorAll('button.superworker-row[data-issue]'))] as HTMLElement[]
     if (rows.length === 0) return
     const at = rows.indexOf(event.target as HTMLElement)
     let next: HTMLElement | undefined
@@ -147,17 +147,17 @@ export function IssuePool(props: {
    * collapses to one sentence — the same one the other five panes say. The ledger, the split between
    * the halves, and the "case" all speak what the record does not say about itself — nothing is
    * drawn for what does not exist. */
-  if (pool.rows.length === 0) return <p className="pf-innone">{t(NOT_ENABLED_WORD)}</p>
+  if (pool.rows.length === 0) return <p className="superworker-innone">{t(NOT_ENABLED_WORD)}</p>
 
-  const splitStyle = left === null ? undefined : ({ ['--pf-left' as string]: `${String(left)}px` } as React.CSSProperties)
+  const splitStyle = left === null ? undefined : ({ ['--superworker-left' as string]: `${String(left)}px` } as React.CSSProperties)
 
   return (
-    <div className={`pf-page${dragging ? ' is-dragging' : ''}`}>
-      <section className="pf-band">
-        <div className="pf-seg" role="group" aria-label={t('pool.detail-level.aria')}>
+    <div className={`superworker-page${dragging ? ' is-dragging' : ''}`}>
+      <section className="superworker-band">
+        <div className="superworker-seg" role="group" aria-label={t('pool.detail-level.aria')}>
           <button
             type="button"
-            className="pf-segbtn"
+            className="superworker-segbtn"
             aria-pressed={!props.showOtherStates}
             title={t('pool.lean.tip', { state: issueWord(t, 'open'), count: pool.census.open })}
             onClick={() => props.onShowOtherStates(false)}
@@ -166,7 +166,7 @@ export function IssuePool(props: {
           </button>
           <button
             type="button"
-            className="pf-segbtn"
+            className="superworker-segbtn"
             aria-pressed={props.showOtherStates}
             title={otherStatesWord(t, pool)}
             onClick={() => props.onShowOtherStates(true)}
@@ -175,7 +175,7 @@ export function IssuePool(props: {
           </button>
         </div>
         {pool.weights === null || pool.line === null ? null : <Gauge pool={pool} />}
-        <div className="pf-count">
+        <div className="superworker-count">
           {pool.census.open > 0
             ? <Pill cls="is-open" n={pool.census.open} label={issueWord(t, 'open')} />
             : null}
@@ -193,9 +193,9 @@ export function IssuePool(props: {
         </div>
       </section>
 
-      <div className="pf-split" id="split" style={splitStyle} ref={splitRef}>
+      <div className="superworker-split" id="split" style={splitStyle} ref={splitRef}>
         <div
-          className="pf-register"
+          className="superworker-register"
           id="register"
           role="region"
           aria-label={t('pool.scroll.aria')}
@@ -231,17 +231,17 @@ export function IssuePool(props: {
                     onPick={select}
                   />
                 )) : null}
-                <div className="pf-row">
-                  <span className="pf-lead" />
+                <div className="superworker-row">
+                  <span className="superworker-lead" />
                   <button
                     type="button"
-                    className="pf-fold"
+                    className="superworker-fold"
                     aria-expanded={open}
                     onClick={() => setFolds((table) => ({ ...table, [group.key]: !open }))}
                   >
                     {open ? t('common.collapse') : t('common.expand-more', { count: group.count })}
                   </button>
-                  <span className="pf-mod" />
+                  <span className="superworker-mod" />
                 </div>
               </React.Fragment>
             )
@@ -252,7 +252,7 @@ export function IssuePool(props: {
             here it is given only this pane's currently measured two ends. */}
         <Grip
           id="gutter"
-          className="pf-gutter"
+          className="superworker-gutter"
           label={t('pool.grip.aria')}
           value={bar.now}
           min={bar.min}
@@ -264,7 +264,7 @@ export function IssuePool(props: {
           onDragging={setDragging}
         />
 
-        <aside className="pf-case" id="case" role="region" aria-label={t('pool.case.aria')} tabIndex={0}>
+        <aside className="superworker-case" id="case" role="region" aria-label={t('pool.case.aria')} tabIndex={0}>
           {selected === null ? null : <CaseFile issue={selected} />}
         </aside>
       </div>
@@ -304,26 +304,26 @@ function Gauge(props: { readonly pool: PoolReading }): React.ReactElement {
     return () => cancelAnimationFrame(frame)
   }, [])
   return (
-    <div className="pf-gauge" id="gauge" role="group" aria-label={t('pool.gauge.aria')}>
+    <div className="superworker-gauge" id="gauge" role="group" aria-label={t('pool.gauge.aria')}>
       <div
-        className="pf-scale"
+        className="superworker-scale"
         id="scale"
         style={{ gap: `${String(SLOTS)}px`, gridTemplateColumns: `repeat(${String(units)}, ${String(SLOT)}px)` }}
       >
         {blocks.map((block, at) => (
           <i
-            className={`pf-block ${sevClass(block.severity)}${block.carried ? ' is-carried' : ''}${filled && !block.carried ? ' is-fill' : ''}`}
+            className={`superworker-block ${sevClass(block.severity)}${block.carried ? ' is-carried' : ''}${filled && !block.carried ? ' is-fill' : ''}`}
             key={`b${String(at)}`}
             title={block.title}
             style={{ transitionDelay: `${String(Math.min(at, 24) * 6)}ms` }}
           />
         ))}
         {Array.from({ length: Math.max(0, units - blocks.length) }, (_, at) => (
-          <i className="pf-block" key={`e${String(at)}`} />
+          <i className="superworker-block" key={`e${String(at)}`} />
         ))}
       </div>
       <i
-        className="pf-line"
+        className="superworker-line"
         style={{ left: `${String(line * (SLOT + SLOTS) - SLOTS)}px` }}
         title={t('pool.policy-line.tip', { value: line })}
       />
@@ -335,9 +335,9 @@ function Gauge(props: { readonly pool: PoolReading }): React.ReactElement {
 function RegisterHead(props: { readonly group: IssueGroupReading }): React.ReactElement {
   const t = useT()
   return (
-    <div className="pf-head">
-      <span className="pf-lead" />
-      <span className="pf-head-label">{issueWord(t, props.group.key)}</span>
+    <div className="superworker-head">
+      <span className="superworker-lead" />
+      <span className="superworker-head-label">{issueWord(t, props.group.key)}</span>
     </div>
   )
 }
@@ -351,17 +351,17 @@ function RegisterRow(props: {
   return (
     <button
       type="button"
-      className={`pf-row is-${issue.status}`}
+      className={`superworker-row is-${issue.status}`}
       data-issue={issue.id}
       aria-current={props.current}
       onClick={() => props.onPick(issue.id)}
     >
-      <span className="pf-lead">
-        <i className={`pf-cell is-${issue.status}`} />
+      <span className="superworker-lead">
+        <i className={`superworker-cell is-${issue.status}`} />
         <SevChip issue={issue} />
       </span>
-      <span className="pf-title" title={issue.title ?? ''}>{issue.title ?? ''}</span>
-      {issue.module === undefined ? null : <span className="pf-mod" title={issue.module}>{issue.module}</span>}
+      <span className="superworker-title" title={issue.title ?? ''}>{issue.title ?? ''}</span>
+      {issue.module === undefined ? null : <span className="superworker-mod" title={issue.module}>{issue.module}</span>}
     </button>
   )
 }
@@ -371,18 +371,18 @@ function CaseFile(props: { readonly issue: IssueReading }): React.ReactElement {
   const { issue } = props
   return (
     <React.Fragment>
-      <div className="pf-case-head">
+      <div className="superworker-case-head">
         <SevChip issue={issue} />
-        <h2 className="pf-case-title">{issue.title ?? ''}</h2>
+        <h2 className="superworker-case-title">{issue.title ?? ''}</h2>
       </div>
-      <span className="pf-case-id" title={issue.id}>{issue.id}</span>
+      <span className="superworker-case-id" title={issue.id}>{issue.id}</span>
       {issue.description === undefined ? null : <CaseSection label={t('pool.case.description')} body={prose(issue.description)} />}
       {issue.suggestion === undefined ? null : <CaseSection label={t('pool.case.suggestion')} body={prose(issue.suggestion)} />}
       {issue.files.length === 0 ? null : (
-        <section className="pf-case-sec">
-          <h3 className="pf-case-label">{t('pool.case.locations')}</h3>
-          <ul className="pf-places">
-            {issue.files.map((file) => <li className="pf-code" key={file} title={file}>{file}</li>)}
+        <section className="superworker-case-sec">
+          <h3 className="superworker-case-label">{t('pool.case.locations')}</h3>
+          <ul className="superworker-places">
+            {issue.files.map((file) => <li className="superworker-code" key={file} title={file}>{file}</li>)}
           </ul>
         </section>
       )}
@@ -394,9 +394,9 @@ function CaseFile(props: { readonly issue: IssueReading }): React.ReactElement {
 /** A section inside the case: only the sections the record truly carries take the page. */
 function CaseSection(props: { readonly label: string; readonly body: React.ReactNode }): React.ReactElement {
   return (
-    <section className="pf-case-sec">
-      <h3 className="pf-case-label">{props.label}</h3>
-      <p className="pf-case-body">{props.body}</p>
+    <section className="superworker-case-sec">
+      <h3 className="superworker-case-label">{props.label}</h3>
+      <p className="superworker-case-body">{props.body}</p>
     </section>
   )
 }
@@ -410,7 +410,7 @@ function prose(said: string): React.ReactNode {
   while (found !== null) {
     if (found.index > at) out.push(...proseLines(said.slice(at, found.index)))
     out.push(found[1] === undefined
-      ? <code className="pf-inline-code" key={`c${String(at)}`}>{found[2]}</code>
+      ? <code className="superworker-inline-code" key={`c${String(at)}`}>{found[2]}</code>
       : <strong key={`s${String(at)}`}>{found[1]}</strong>)
     at = found.index + found[0].length
     found = pattern.exec(said)

@@ -1,0 +1,18 @@
+{
+  "path": "conductor.handoff",
+  "args": [
+    {
+      "cycle": "c1",
+      "node": "@node-a@",
+      "status": "completed",
+      "summary": "the round is delivered",
+      "outputs": {
+        "deliverable": ".superworker/nodes/@node-a@/sw-conduct.md",
+        "acceptance": [
+          "the spec is met"
+        ],
+        "touched": []
+      }
+    }
+  ]
+}

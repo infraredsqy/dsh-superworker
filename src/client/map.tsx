@@ -316,7 +316,7 @@ export function MapPane(props: {
         if (a !== null && joined !== null) pinchFrom(a, joined)
         return
       }
-      if ((event.target as Element).closest('.pf-tools') !== null) return
+      if ((event.target as Element).closest('.superworker-tools') !== null) return
       const first = event.changedTouches[0]
       if (first === undefined) return
       touchId.current = first.identifier
@@ -396,7 +396,7 @@ export function MapPane(props: {
     /* A touch presses by the touch listeners' road as well: its pointer twin must not re-anchor the
      * pan (a second finger landing would move the anchor out from under the first). */
     if (event.pointerType === 'touch') return
-    if ((event.target as Element).closest('.pf-tools') !== null) return
+    if ((event.target as Element).closest('.superworker-tools') !== null) return
     beginPan(event.clientX, event.clientY)
   }
 
@@ -477,12 +477,12 @@ export function MapPane(props: {
   }
 
   return (
-    <PaneFrame id="map" active={props.active} noNodes={props.noNodes} className="pf-map-pane">
+    <PaneFrame id="map" active={props.active} noNodes={props.noNodes} className="superworker-map-pane">
       <div
-        className="pf-map"
+        className="superworker-map"
         style={{ ['--card-w' as string]: `${String(CARD_W)}px`, ['--card-h' as string]: `${String(CARD_H)}px` }}
       >
-        <aside className="pf-rail" role="group" aria-label={t('map.scope.aria')}>
+        <aside className="superworker-rail" role="group" aria-label={t('map.scope.aria')}>
           <RailItem label={t('common.global')} cycle={null} pressed={liveScope === null} onPress={() => pickScope(null)} />
           {(props.project?.cycles ?? []).map((cycle) => (
             <RailItem
@@ -499,7 +499,7 @@ export function MapPane(props: {
         </aside>
 
         <div
-          className={`pf-field is-lod-${lod}${grabbing ? ' is-panning' : ''}${liveScope === null ? '' : ' is-scoped'}`}
+          className={`superworker-field is-lod-${lod}${grabbing ? ' is-panning' : ''}${liveScope === null ? '' : ' is-scoped'}`}
           ref={field}
           role="region"
           aria-label={t('map.region.aria')}
@@ -509,15 +509,15 @@ export function MapPane(props: {
           onPointerCancel={onPointerEnd}
           onPointerLeave={onPointerEnd}
         >
-          <div className="pf-canvas" style={canvasStyle}>
-            <svg className="pf-wires" width={placement.width} height={placement.height} aria-hidden="true">
+          <div className="superworker-canvas" style={canvasStyle}>
+            <svg className="superworker-wires" width={placement.width} height={placement.height} aria-hidden="true">
               <g>
                 {edges
                   .filter((edge) => placement.pos[edge.from] !== undefined && placement.pos[edge.to] !== undefined)
                   .map((edge) => (
                     <path
                       key={`${edge.from}:${edge.to}`}
-                      className={`pf-mwire${emphasis.lit.has(edge.from) && emphasis.lit.has(edge.to) ? ' is-lit' : ''}`}
+                      className={`superworker-mwire${emphasis.lit.has(edge.from) && emphasis.lit.has(edge.to) ? ' is-lit' : ''}`}
                       data-from={edge.from}
                       data-to={edge.to}
                       d={wirePath(placement.pos[edge.from] as { x: number; y: number }, placement.pos[edge.to] as { x: number; y: number })}
@@ -525,7 +525,7 @@ export function MapPane(props: {
                   ))}
               </g>
             </svg>
-            <div className="pf-mnodes">
+            <div className="superworker-mnodes">
               {placement.drawn.map((node) => {
                 const at = placement.pos[node.id]
                 if (at === undefined) return null
@@ -548,10 +548,10 @@ export function MapPane(props: {
             </div>
           </div>
 
-          <div className="pf-tools">
+          <div className="superworker-tools">
             <button
               type="button"
-              className="pf-tool"
+              className="superworker-tool"
               id="map-fit"
               aria-pressed={mode === 'fit'}
               aria-label={t('map.overview.aria')}
@@ -565,7 +565,7 @@ export function MapPane(props: {
             </button>
             <button
               type="button"
-              className="pf-tool"
+              className="superworker-tool"
               id="map-refresh"
               aria-label={t('map.refresh.aria')}
               title={t('map.refresh.aria')}
@@ -596,7 +596,7 @@ function RailItem(props: {
   return (
     <button
       type="button"
-      className="pf-rail-item"
+      className="superworker-rail-item"
       aria-pressed={props.pressed}
       aria-label={props.cycle === null ? props.label : `${props.label} · ${stateWord(t, props.cycle)}`}
       disabled={props.disabled === true}
@@ -605,8 +605,8 @@ function RailItem(props: {
       {/* Every row holds the mark's cell open, drawing in it or not: that is what puts this column's
           names on the same edge as the detail pane's. The whole-workspace row reads no line, so its
           cell stands empty. */}
-      {props.cycle === null ? <span className="pf-linemark" /> : <LineMark cycle={props.cycle} />}
-      <span className="pf-cycle">{props.label}</span>
+      {props.cycle === null ? <span className="superworker-linemark" /> : <LineMark cycle={props.cycle} />}
+      <span className="superworker-cycle">{props.label}</span>
     </button>
   )
 }
@@ -647,15 +647,15 @@ function Card(props: {
   return (
     <button
       type="button"
-      className={`pf-mnode ${edgeOf(node)}${dead ? ' is-dead' : ''}${props.lit ? ' is-lit' : ''}${!props.lit && props.ahead ? ' is-ahead' : ''}`}
+      className={`superworker-mnode ${edgeOf(node)}${dead ? ' is-dead' : ''}${props.lit ? ' is-lit' : ''}${!props.lit && props.ahead ? ' is-ahead' : ''}`}
       data-id={node.id}
       style={{ left: `${String(props.point.x)}px`, top: `${String(props.point.y)}px` }}
       title={props.focused && canGo ? `${hover} · ${t('map.card.go')}` : hover}
       aria-label={t('map.card.aria', { node: hover })}
       onClick={props.onPress}
     >
-      <span className="pf-mtitle">{nodeName(node)}</span>
-      <span className="pf-mmeta">
+      <span className="superworker-mtitle">{nodeName(node)}</span>
+      <span className="superworker-mmeta">
         {/* The mark leads the row: a round in hand wears the ring, and one whose session is gone
             wears the stranded × in its place — the same slot, because it is the same reading (what
             is happening to this cell right now). The lines' ids follow, in the order the model gives
@@ -665,11 +665,11 @@ function Card(props: {
         {node.running
           ? (dead
             ? <StrandedMark cycleId={props.dead} nodeId={node.id} />
-            : <span className="pf-state is-run" title={runningTitle(t, node)} />)
+            : <span className="superworker-state is-run" title={runningTitle(t, node)} />)
           : null}
-        {owners.length === 0 ? null : <span className="pf-mtag">{owners.join('·')}</span>}
-        {node.gate === null ? null : <span className="pf-gate">{gateWord(t, node.gate)}</span>}
-        <span className="pf-mtime pf-num">{moment === null ? '' : timeOf(t, moment, props.at)}</span>
+        {owners.length === 0 ? null : <span className="superworker-mtag">{owners.join('·')}</span>}
+        {node.gate === null ? null : <span className="superworker-gate">{gateWord(t, node.gate)}</span>}
+        <span className="superworker-mtime superworker-num">{moment === null ? '' : timeOf(t, moment, props.at)}</span>
       </span>
     </button>
   )

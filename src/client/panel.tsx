@@ -13,7 +13,7 @@
  * the port in `prefs.ts`.
  */
 import * as React from 'react'
-import type { PathfinderReading } from '../host/contract.ts'
+import type { SuperworkerReading } from '../host/contract.ts'
 import type { InstructionReading } from '../model/index.ts'
 import { everySourceIs, readProject, readSessions, strandedCycleOf } from '../model/index.ts'
 import type { PrefField, PrefsSource, ViewId } from './prefs.ts'
@@ -64,7 +64,7 @@ const NO_SESSIONS: ReadonlySet<string> = new Set<string>()
 /** How far one reading has got, widened with this shell's own phase. Which words a failure reads as is
  * decided where it is drawn. */
 type Load =
-  | LoadOf<PathfinderReading>
+  | LoadOf<SuperworkerReading>
   /** No session is selected, so there is no workspace to read and no failure to speak of. */
   | { readonly phase: 'no-session' }
 
@@ -84,7 +84,7 @@ function usePreference<T>(stored: T): [T, (next: T) => void] {
   return [local, setLocal]
 }
 
-export function PathfinderPanel(props: PanelProps): React.ReactElement {
+export function SuperworkerPanel(props: PanelProps): React.ReactElement {
   const { port, sessionId, openSession, knownSessions } = props
   /* Every word this pane prints comes from here. The translator reads the active language at call
    * time, so a redraw after a language switch says the new one without anything being re-created. */
@@ -331,13 +331,13 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
             : null
 
   return (
-    <div className="pf-page">
-      <header className="pf-head">
-        <div className="pf-head-left">
-          <div className="pf-head-top">
-            <span className="pf-brand">{t('brand.mark')}</span>
+    <div className="superworker-page">
+      <header className="superworker-head">
+        <div className="superworker-head-left">
+          <div className="superworker-head-top">
+            <span className="superworker-brand">{t('brand.mark')}</span>
             {items.length === 0 ? null : (
-              <span className="pf-pick">
+              <span className="superworker-pick">
                 <select
                   aria-label={t('workspace.aria')}
                   value={chosen?.workspaceId ?? ''}
@@ -352,12 +352,12 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
           </div>
         </div>
         {nothing === null ? (
-          <div className="pf-tabs" role="tablist">
+          <div className="superworker-tabs" role="tablist">
             {VIEWS.map((id) => (
               <button
                 key={id}
                 type="button"
-                className="pf-tab"
+                className="superworker-tab"
                 id={`tab-${id}`}
                 role="tab"
                 aria-selected={id === tab}
@@ -372,10 +372,10 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
       </header>
 
       {nothing === null ? (
-      <div className="pf-stage">
+      <div className="superworker-stage">
         {/* The frame fills the footprint in every view — each pane scrolls what does not fit inside
             itself — and every pane inside it is a direct child, so its own `flex` does the sharing. */}
-        <div className="pf-frame is-fill" id="frame">
+        <div className="superworker-frame is-fill" id="frame">
           <MapPane
             active={tab === 'map'}
             noNodes={noNodes}
@@ -417,9 +417,9 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
           />
 
           {/* This pane acts as its own page root: the `is-embed` yield marker hangs on it together
-              with the page marker (`pf-issue`), and the build gateway folds that sheet by its own
+              with the page marker (`superworker-issue`), and the build gateway folds that sheet by its own
               page marker. */}
-          <PaneFrame id="issue" active={tab === 'issue'} noNodes={false} className="is-frame is-embed pf-issue" fill>
+          <PaneFrame id="issue" active={tab === 'issue'} noNodes={false} className="is-frame is-embed superworker-issue" fill>
             {project === null ? null : (
               <IssuePool project={project} showOtherStates={otherStates} onShowOtherStates={pickOtherStates} />
             )}
@@ -436,13 +436,13 @@ export function PathfinderPanel(props: PanelProps): React.ReactElement {
         </div>
       </div>
       ) : (
-        <div className="pf-none">
+        <div className="superworker-none">
           <p>{nothing}</p>
         </div>
       )}
 
       {note === null ? null : (
-        <p className="pf-innone">{note.kind === 'said' ? note.text : failureWord(t, note.failure)}</p>
+        <p className="superworker-innone">{note.kind === 'said' ? note.text : failureWord(t, note.failure)}</p>
       )}
 
       {deleting === null ? null : (

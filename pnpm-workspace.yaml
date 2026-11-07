@@ -1,5 +1,5 @@
 # This repo is a pnpm workspace, and the file is tracked: the engine lives in-repo as its own
-# package (`packages/pf-core`, carried in whole with its own package.json, tsconfig, build and
+# package (`packages/superworker-core`, carried in whole with its own package.json, tsconfig, build and
 # test config), and a fresh clone's install surface has to come out the same. It is the one
 # file that decides which directories are projects, so it may not be left to the install-time
 # rewrite that used to keep it out of the repository.

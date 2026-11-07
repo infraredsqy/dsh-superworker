@@ -10,7 +10,7 @@
  */
 
 /** The outcome of one source's fetch this round. */
-export type PathfinderSourceState =
+export type SuperworkerSourceState =
   /** Fetched; the collection holds its content. */
   | 'read'
   /** The workspace has no such piece (not listed in the directory). */
@@ -19,7 +19,7 @@ export type PathfinderSourceState =
   | 'unusable'
 
 /** A node in the records: fields copied from the record, value types as written by whichever spelling actually appears in the record. */
-export interface PathfinderNode {
+export interface SuperworkerNode {
   readonly title?: string
   readonly description?: string
   readonly tags?: readonly string[]
@@ -41,7 +41,7 @@ export interface PathfinderNode {
 }
 
 /** One step walked on a cycle. */
-export interface PathfinderStep {
+export interface SuperworkerStep {
   readonly node?: string
   readonly started_at?: string | null
   readonly ended_at?: string | null
@@ -50,14 +50,14 @@ export interface PathfinderStep {
 }
 
 /** The entry where a cycle holds a node. */
-export interface PathfinderHolding {
+export interface SuperworkerHolding {
   readonly id?: string
   readonly since?: string | null
   readonly [field: string]: unknown
 }
 
 /** One cycle in the records. */
-export interface PathfinderCycle {
+export interface SuperworkerCycle {
   readonly id?: string
   readonly title?: string
   readonly status?: string
@@ -67,18 +67,18 @@ export interface PathfinderCycle {
   /** The policies this cycle hangs: keys and values as in the record. */
   readonly policies?: Readonly<Record<string, unknown>>
   /** Who is working it: the list-of-holdings spelling. */
-  readonly holding?: readonly PathfinderHolding[]
+  readonly holding?: readonly SuperworkerHolding[]
   /** Who is working it: the single-value spelling. */
   readonly current_node?: string | null
   /** The hold moment paired with `current_node`, the record's verbatim text. */
   readonly current_started_at?: string | null
   /** The steps this cycle has walked, in record order. */
-  readonly path?: readonly PathfinderStep[]
+  readonly path?: readonly SuperworkerStep[]
   readonly [field: string]: unknown
 }
 
 /** One instruction in the records. */
-export interface PathfinderInstruction {
+export interface SuperworkerInstruction {
   readonly id?: string
   readonly text?: string
   readonly scope?: string
@@ -107,7 +107,7 @@ export interface PathfinderInstruction {
 }
 
 /** One issue in the pool. */
-export interface PathfinderIssue {
+export interface SuperworkerIssue {
   readonly id?: string
   readonly title?: string
   /** The severity tier. */
@@ -134,7 +134,7 @@ export interface PathfinderIssue {
 export type RecordSourceKey = 'nodes' | 'cycles' | 'instructions' | 'issues'
 
 /** The result of one fetch. */
-export interface PathfinderReading {
+export interface SuperworkerReading {
   /** Which workspace root this reading was taken from — the caller-named one, or this session's own when none was named. Absolute path. */
   readonly workspaceRoot: string
   /** The directory layer holding the records, workspace-relative. */
@@ -143,11 +143,11 @@ export interface PathfinderReading {
    * Each of the four sources' outcome this round, keyed by {@link RecordSourceKey}.
    * Sources that could not be fetched yield empty collections below: the panel draws "absent from the records".
    */
-  readonly sources: Readonly<Record<RecordSourceKey, PathfinderSourceState>>
+  readonly sources: Readonly<Record<RecordSourceKey, SuperworkerSourceState>>
   /** Keys are node ids. */
-  readonly nodes: Readonly<Record<string, PathfinderNode>>
-  readonly cycles: readonly PathfinderCycle[]
-  readonly instructions: readonly PathfinderInstruction[]
+  readonly nodes: Readonly<Record<string, SuperworkerNode>>
+  readonly cycles: readonly SuperworkerCycle[]
+  readonly instructions: readonly SuperworkerInstruction[]
   /** Keys are issue ids. */
-  readonly issues: Readonly<Record<string, PathfinderIssue>>
+  readonly issues: Readonly<Record<string, SuperworkerIssue>>
 }

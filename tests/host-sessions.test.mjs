@@ -41,20 +41,20 @@ const signal = new AbortController().signal
 test('One directory carried back as it is: every file there, names and contents unchanged', async () => {
   const note = JSON.stringify({ node: 'n-1', v: 1, run: [{ session: 'session-7', at: '2026-10-18T00:00:00Z' }] })
   const port = fakePort({
-    '.pf/meta/sessions/n-1.json': note,
-    '.pf/meta/sessions/a-note-jotted-down.txt': 'copied as is even though it is not JSON',
+    '.superworker/meta/sessions/n-1.json': note,
+    '.superworker/meta/sessions/a-note-jotted-down.txt': 'copied as is even though it is not JSON',
   })
   const reading = await readSessionNotes(port, scope, signal)
 
   assert.equal(reading.state, 'read')
-  assert.equal(reading.recordPath, '.pf/meta/sessions')
+  assert.equal(reading.recordPath, '.superworker/meta/sessions')
   assert.equal(reading.workspaceRoot, 'C:\\ws')
   assert.deepEqual(reading.notes, { 'n-1.json': note, 'a-note-jotted-down.txt': 'copied as is even though it is not JSON' })
 })
 
 test('The unreadable one is skipped, the rest carry over; a directory entry is not carried', async () => {
   const port = fakePort({
-    '.pf/meta/sessions/n-1.json': '{"run": []}',
+    '.superworker/meta/sessions/n-1.json': '{"run": []}',
   }, { phantom: ['ghost.json'] })
   const reading = await readSessionNotes(port, scope, signal)
 
@@ -74,9 +74,9 @@ test('That directory absent (another machine, a fresh clone of the record): empt
 
 test('The claims layer: cells carrying a started marker come in, the value being the line the cell sits on', async () => {
   const port = fakePort({
-    '.pf/meta/launch/c-1/n-1/prompt.txt': '/pf-conduct n-1 [pipeline]\n',
-    '.pf/meta/launch/c-1/n-1/started': '4242 started 2026-10-18T00:00:00Z\n',
-    '.pf/meta/launch/c-2/n-2/prompt.txt': '/pf-conduct n-2 [pipeline]\n',
+    '.superworker/meta/launch/c-1/n-1/prompt.txt': '/sw-conduct n-1 [pipeline]\n',
+    '.superworker/meta/launch/c-1/n-1/started': '4242 started 2026-10-18T00:00:00Z\n',
+    '.superworker/meta/launch/c-2/n-2/prompt.txt': '/sw-conduct n-2 [pipeline]\n',
   })
   const claims = await readClaims(port, scope, signal)
 

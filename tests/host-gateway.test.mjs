@@ -16,14 +16,14 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PathfinderRecordsGateway } from '../src/host/gateway.ts'
+import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
 import { absentError, readPage } from './helpers/workspace-files-port.mjs'
 import { pinHome } from './helpers/env.mjs'
 
 /* One machine layer for this file: the settings endpoint reads the global layer, which lives in the
- * home directory — `PF_HOME_DIR` is the engine's own switch for it, so this case never reads (or is
+ * home directory — `SUPERWORKER_HOME_DIR` is the engine's own switch for it, so this case never reads (or is
  * steered by) the developer's own home. */
-const pinned = pinHome(['PF_HOME_DIR'], 'pf-gateway-home-')
+const pinned = pinHome(['SUPERWORKER_HOME_DIR'], 'superworker-gateway-home-')
 after(pinned.restore)
 
 /** The nine endpoints, matching the table in `gateway.ts`. */
@@ -47,22 +47,22 @@ const wired = await Promise.all([
 
 /** Build a minimal record: a little content in each of the four files, enough for a reading to pick up; plus one session note. */
 function syntheticWorkspace({ note = true } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'pf-gateway-'))
-  mkdirSync(join(root, '.pf', 'issues'), { recursive: true })
-  writeFileSync(join(root, '.pf', 'ideas.json'), JSON.stringify({
+  const root = mkdtempSync(join(tmpdir(), 'superworker-gateway-'))
+  mkdirSync(join(root, '.superworker', 'issues'), { recursive: true })
+  writeFileSync(join(root, '.superworker', 'ideas.json'), JSON.stringify({
     nodes: { 'n-1': { id: 'n-1', title: 'one cell', status: 'todo', created_at: '2026-10-01T00:00:00Z' } },
     edges: [],
   }))
-  writeFileSync(join(root, '.pf', 'state.json'), JSON.stringify({
+  writeFileSync(join(root, '.superworker', 'state.json'), JSON.stringify({
     cycles: [{ id: 'line-1', status: 'active', created_at: '2026-10-01T00:00:00Z', path: [], holding: [] }],
   }))
-  writeFileSync(join(root, '.pf', 'instructions.json'), JSON.stringify({
+  writeFileSync(join(root, '.superworker', 'instructions.json'), JSON.stringify({
     instructions: [{ id: 'i-1', text: 'one sentence', scope: 'global', state: 'live', at: '2026-10-01T00:00:00Z' }],
   }))
-  writeFileSync(join(root, '.pf', 'issues', 'issues.json'), JSON.stringify({ issues: {} }))
+  writeFileSync(join(root, '.superworker', 'issues', 'issues.json'), JSON.stringify({ issues: {} }))
   if (note) {
-    mkdirSync(join(root, '.pf', 'meta', 'sessions'), { recursive: true })
-    writeFileSync(join(root, '.pf', 'meta', 'sessions', 'n-1.json'), JSON.stringify({
+    mkdirSync(join(root, '.superworker', 'meta', 'sessions'), { recursive: true })
+    writeFileSync(join(root, '.superworker', 'meta', 'sessions', 'n-1.json'), JSON.stringify({
       node: 'n-1',
       v: 1,
       discussion: [{ session: 'session-talk', at: '2026-10-01T00:00:00Z' }],
@@ -107,13 +107,13 @@ async function liveGateway(root) {
 
   new TypertRegistry(ctx)
   const gateway = new TypertGatewayService(ctx)
-  ctx.provide('pathfinder', new PathfinderRecordsGateway(ctx))
+  ctx.provide('superworker', new SuperworkerRecordsGateway(ctx))
   const peer = { signal: new AbortController().signal, principal: { kind: 'owner' } }
   return {
     ctx,
     call: async (method, args) => {
       try {
-        return { ok: true, value: await gateway.invoke({ namespace: 'pathfinder', method, args, peer }) }
+        return { ok: true, value: await gateway.invoke({ namespace: 'superworker', method, args, peer }) }
       } catch (error) {
         return { ok: false, code: error?.code, message: error?.message ?? String(error) }
       }
@@ -202,7 +202,7 @@ test('readSessions honors the abort signal on options: the caller\'s own reaches
    * options.signal, like read's, is reachable only in-process. So this case measures it the in-process
    * way read does: call the method directly and see whose signal reaches the port. */
   const seen = []
-  const gateway = new PathfinderRecordsGateway({
+  const gateway = new SuperworkerRecordsGateway({
     workspaceFiles: {
       async list(scope, path, signal) {
         seen.push(signal)
@@ -228,7 +228,7 @@ test('readSessions honors the abort signal on options: the caller\'s own reaches
 
 /** A bare gateway over an empty record tree, with the agent registry this case names (`undefined` = the host exposes none). */
 function rosterGateway(agents) {
-  return new PathfinderRecordsGateway({
+  return new SuperworkerRecordsGateway({
     workspaceFiles: {
       async list(scope, path) { return { path, entries: [], truncated: false } },
       async read() { throw new Error('nothing to read in this test') },
@@ -263,8 +263,8 @@ test('registry list() throws: alive answers null', async () => {
 
 test('An endpoint missing from the table errors at construction: a method on the class but not in the table is no longer silent', () => {
   /* The same rig measures the base class first: it constructs fine — the later error is about the unlisted method, not construction itself. */
-  assert.doesNotThrow(() => new PathfinderRecordsGateway({}))
-  class LeakyGateway extends PathfinderRecordsGateway {
+  assert.doesNotThrow(() => new SuperworkerRecordsGateway({}))
+  class LeakyGateway extends SuperworkerRecordsGateway {
     sneak() {
       return 'not an endpoint'
     }

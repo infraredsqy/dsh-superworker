@@ -1,5 +1,5 @@
 /**
- * The agent-facing `pathfinder` tool: its face (name, description, parameters, output) and the one
+ * The agent-facing `superworker` tool: its face (name, description, parameters, output) and the one
  * call path behind it.
  *
  * The words themselves live in the engine (`answer` / `describe`); this file is the registration
@@ -9,47 +9,47 @@
  * that builds the host hands the same seam the dispatch relay uses. Keeping it on the host face is
  * what lets this module stay out of the opener/relay/wake triangle entirely.
  *
- * Three names are pinned in one place ({@link PATHFINDER_TOOL_NAME},
+ * Three names are pinned in one place ({@link SUPERWORKER_TOOL_NAME},
  * {@link SKILL_TOOL_NAME}, {@link SKILL_NAME_PREFIX}); the registration, the skill-body
  * scan and the README all read them, and the lock test goes red when they disagree.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { answer, describe, longResultPointerOf, type Executor } from 'pf-core'
+import { answer, describe, longResultPointerOf, type Executor } from 'superworker-core'
 import { workspaceRootOf } from './seams.ts'
 import { answerHandleOf } from './write.ts'
 
 /** The agent-facing tool's name: the same spelling the skills and the README name. */
-export const PATHFINDER_TOOL_NAME = 'pathfinder'
+export const SUPERWORKER_TOOL_NAME = 'superworker'
 /** The tool whose call result means "a skill was loaded": DSH's own skill loader. */
 export const SKILL_TOOL_NAME = 'skill'
-/** The prefix the pipeline's skills are named with, in the catalog and as `/pf-*`. */
-export const SKILL_NAME_PREFIX = 'pf-'
+/** The prefix the pipeline's skills are named with, in the catalog and as `/superworker-*`. */
+export const SKILL_NAME_PREFIX = 'superworker-'
 /** The record's directory at a workspace root: the fact that says this workspace has a pipeline. */
-export const PIPELINE_DIR = '.pf'
+export const PIPELINE_DIR = '.superworker'
 
 /** The tool's parameters, as the model spells them (the words are never enumerated here). */
-export interface PathfinderToolArgs {
+export interface SuperworkerToolArgs {
   readonly word?: unknown
   readonly args?: unknown
   readonly help?: unknown
 }
 
 /** The caller identity one execution carries, as far as this layer reads it. */
-export interface PathfinderToolExecution {
+export interface SuperworkerToolExecution {
   readonly agent?: { readonly id?: unknown } | undefined
 }
 
 /** The definition as the registry accepts it; schemas stay structural here. */
-export interface PathfinderToolDefinition {
+export interface SuperworkerToolDefinition {
   readonly name: string
   readonly description: string
   readonly parameters: Record<string, unknown>
   readonly output: {
     readonly schema: Record<string, unknown>
-    render(args: PathfinderToolArgs, value: unknown): ReadonlyArray<{ readonly type: 'text'; readonly text: string }>
+    render(args: SuperworkerToolArgs, value: unknown): ReadonlyArray<{ readonly type: 'text'; readonly text: string }>
   }
-  execute(args: PathfinderToolArgs, exec: PathfinderToolExecution): Promise<unknown>
+  execute(args: SuperworkerToolArgs, exec: SuperworkerToolExecution): Promise<unknown>
 }
 
 /**
@@ -63,7 +63,7 @@ export interface PathfinderToolDefinition {
  */
 export function toolDescriptionOf(): string {
   const index = describe()
-  const what = index.shape.split('\n')[0] ?? 'pf — the pipeline words'
+  const what = index.shape.split('\n')[0] ?? 'superworker — the pipeline words'
   return (
     `${what}. The words answer from this session's workspace. ` +
     'help:true gives the word index; help:true plus a word gives that word\'s own page; ' +
@@ -81,7 +81,7 @@ export function toolDescriptionOf(): string {
  * word alike are asked for a call's page, so the composed call is a page; a caller who already
  * ended the line with `--help` keeps their own spelling rather than getting a second one.
  */
-export function argvOf(args: PathfinderToolArgs): string[] {
+export function argvOf(args: SuperworkerToolArgs): string[] {
   const word = typeof args.word === 'string' && args.word !== '' ? args.word : undefined
   const rest = Array.isArray(args.args) ? args.args.filter((item): item is string => typeof item === 'string') : []
   if (args.help === true) {
@@ -93,7 +93,7 @@ export function argvOf(args: PathfinderToolArgs): string[] {
 }
 
 /** One call's canonical value: the words layer's two streams and the exit code. */
-export interface PathfinderToolValue {
+export interface SuperworkerToolValue {
   readonly code: number
   readonly stdout: string
   readonly stderr: string
@@ -108,15 +108,15 @@ export interface PathfinderToolValue {
  * two callers that arm an agent (the plugin entry for the event triggers, the opener for a dispatched
  * session) each hand in the seam they already hold.
  */
-export interface PathfinderToolHost {
+export interface SuperworkerToolHost {
   readonly ctx: Context
   executorOf(sessionId: SessionId, workspaceRoot: string): Executor
 }
 
 /** The tool itself: every call goes through the words layer's one `answer()`. */
-export function definePathfinderTool(host: PathfinderToolHost): PathfinderToolDefinition {
+export function defineSuperworkerTool(host: SuperworkerToolHost): SuperworkerToolDefinition {
   return {
-    name: PATHFINDER_TOOL_NAME,
+    name: SUPERWORKER_TOOL_NAME,
     description: toolDescriptionOf(),
     parameters: {
       type: 'object',
@@ -141,7 +141,7 @@ export function definePathfinderTool(host: PathfinderToolHost): PathfinderToolDe
       render(_args, value) {
         // The streams pass verbatim (the CLI's bytes are the contract); the one thing this
         // projection adds is the exit code spelled out when it is not zero.
-        const answer = value as PathfinderToolValue
+        const answer = value as SuperworkerToolValue
         const text = `${answer.stdout}${answer.stderr}${answer.code === 0 ? '' : `\n(exit code ${answer.code})`}`
         return [{ type: 'text', text }]
       },

@@ -19,8 +19,8 @@
  * judgement: the diagnostic notes it, and stops there.
  */
 import { join, resolve, sep } from 'node:path'
-import { PLUGIN_SKILL_FILE } from 'pf-core'
-import type { PfSkillViewOutcome } from '../failure.ts'
+import { PLUGIN_SKILL_FILE } from 'superworker-core'
+import type { SkillViewOutcome } from '../failure.ts'
 import { logLineOf, messageOf, type SkillHostContext, type SkillSummaryReading } from '../seams.ts'
 import { dshHomeOf, skillRootOf } from '../skill-paths.ts'
 import { placedSkills, refused } from './manifest.ts'
@@ -32,7 +32,7 @@ export interface SkillView {
 }
 
 /** The one option the diagnostic takes: which DSH home's placement is read back. */
-export interface PfSkillsHomeOptions {
+export interface SkillsHomeOptions {
   readonly dshHome?: string
 }
 
@@ -52,8 +52,8 @@ function within(root: string, path: string | undefined): boolean {
 export async function confirmSkillsInView(
   host: SkillHostContext,
   view: SkillView = {},
-  options: PfSkillsHomeOptions = {},
-): Promise<PfSkillViewOutcome> {
+  options: SkillsHomeOptions = {},
+): Promise<SkillViewOutcome> {
   const dshHome = options.dshHome ?? dshHomeOf()
   const root = skillRootOf(dshHome)
   const held = placedSkills(dshHome)
@@ -100,7 +100,7 @@ export async function confirmSkillsForWorkspace(
   host: SkillHostContext,
   cwd: string,
   scope: unknown,
-): Promise<PfSkillViewOutcome> {
+): Promise<SkillViewOutcome> {
   try {
     return await confirmSkillsInView(host, { cwd, scope })
   } catch (error) {
@@ -118,7 +118,7 @@ export async function confirmSkillsForWorkspace(
  * same-name copy is DSH's own per-workspace override, outside this node's judgement. The line exists
  * so that a shadowed placement is not silent: whoever reads the host's log sees both places.
  */
-export function reportSkillView(host: SkillHostContext, outcome: PfSkillViewOutcome): void {
+export function reportSkillView(host: SkillHostContext, outcome: SkillViewOutcome): void {
   if (outcome.ok) {
     if (outcome.names.length === 0) return
     logLineOf(

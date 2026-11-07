@@ -63,10 +63,10 @@ export function clampSide(px: number): number {
 
 /** The panel's legacy keys: surviving browsers may still hold them; swept away the moment the settings form attaches. */
 export const LEGACY_PREF_KEYS: readonly string[] = [
-  'dsh-pathfinder.sideWidth',
-  'dsh-pathfinder.infoLevel',
-  'dsh-pathfinder.defaultTab',
-  'dsh-pathfinder.showOtherStates',
+  'dsh-superworker.sideWidth',
+  'dsh-superworker.infoLevel',
+  'dsh-superworker.defaultTab',
+  'dsh-superworker.showOtherStates',
 ]
 
 /** The local-storage handle: this layer only ever deletes; it uses neither read nor write. */

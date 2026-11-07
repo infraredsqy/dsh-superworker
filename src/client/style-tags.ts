@@ -8,10 +8,10 @@
  */
 
 /** Marker of the panel's stylesheets. */
-export const PANEL_STYLE_ID = 'dsh-pathfinder-panel-style'
+export const PANEL_STYLE_ID = 'dsh-superworker-panel-style'
 
 /** Marker of the settings section. */
-export const SETTINGS_STYLE_ID = 'dsh-pathfinder-settings-style'
+export const SETTINGS_STYLE_ID = 'dsh-superworker-settings-style'
 
 export function ensureStyleTag(id: string, css: string): void {
   try {

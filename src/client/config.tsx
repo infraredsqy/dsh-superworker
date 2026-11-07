@@ -15,7 +15,7 @@
  * refuses, the control returns to its place on its own.
  */
 import * as React from 'react'
-import type { ConfigEntry, PathfinderConfigReading } from '../host/project-config.ts'
+import type { ConfigEntry, SuperworkerConfigReading } from '../host/project-config.ts'
 import {
   configSectionsOf,
   GROUP_WORDS,
@@ -38,7 +38,7 @@ import { CommitNumberInput, PaneFrame } from './widgets.tsx'
 const SIDES: readonly (readonly [WordKey, boolean])[] = [['config.toggle.on', true], ['config.toggle.off', false]]
 
 /** How far this pane's own read has got; the shape is the client's one reading-of-a-read. */
-type Load = LoadOf<PathfinderConfigReading>
+type Load = LoadOf<SuperworkerConfigReading>
 
 /**
  * How tall the page's own content stands, the tail left out: the last section's bottom measured in
@@ -49,7 +49,7 @@ type Load = LoadOf<PathfinderConfigReading>
  * scrollport's own height, which is the very case the tail exists for.
  */
 function contentHeight(box: HTMLDivElement): number {
-  const standing = Array.from(box.children).filter((node) => !node.classList.contains('pf-cfgtail'))
+  const standing = Array.from(box.children).filter((node) => !node.classList.contains('superworker-cfgtail'))
   const last = standing[standing.length - 1]
   if (last === undefined) return 0
   const bottom = last.getBoundingClientRect().bottom - box.getBoundingClientRect().top + box.scrollTop
@@ -171,8 +171,8 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
      page already has; the scroll itself leaves from the effect below, on the layout that carries it. */
   const jump = React.useCallback((group: ConfigGroup): void => {
     const box = page.current
-    const head = box?.querySelector<HTMLElement>(`.pf-cfgsec[data-cat="${group}"]`) ?? null
-    const first = box?.querySelector<HTMLElement>('.pf-cfgsec') ?? null
+    const head = box?.querySelector<HTMLElement>(`.superworker-cfgsec[data-cat="${group}"]`) ?? null
+    const first = box?.querySelector<HTMLElement>('.superworker-cfgsec') ?? null
     if (box === null || head === null || first === null) return
     const to = Math.max(0, head.getBoundingClientRect().top - first.getBoundingClientRect().top)
     owed.current = to
@@ -204,7 +204,7 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
     if (box === null) return
     const edge = box.getBoundingClientRect().top + 4
     let seen: ConfigGroup | null = null
-    for (const head of box.querySelectorAll<HTMLElement>('.pf-cfgsec')) {
+    for (const head of box.querySelectorAll<HTMLElement>('.superworker-cfgsec')) {
       const group = head.getAttribute('data-cat') as ConfigGroup | null
       if (group === null) continue
       if (seen === null || head.getBoundingClientRect().top <= edge) seen = group
@@ -215,30 +215,30 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
   return (
     <PaneFrame id="config" active={active} noNodes={noNodes} fill ariaLabel={t('common.settings')}>
       {reading === null || sections.length === 0 ? null : (
-      <div className="pf-cfg">
-        <nav className="pf-cfgnav" aria-label={t('config.categories.aria')}>
-          <div className="pf-cfglist">
+      <div className="superworker-cfg">
+        <nav className="superworker-cfgnav" aria-label={t('config.categories.aria')}>
+          <div className="superworker-cfglist">
             {sections.map((section) => (
               <button
                 key={section.group}
                 type="button"
-                className="pf-cfgitem"
+                className="superworker-cfgitem"
                 data-cat={section.group}
                 aria-current={pointed === section.group}
                 onClick={() => { jump(section.group); setAt(section.group) }}
               >
-                <span className="pf-cfgitem-name">{t(GROUP_WORDS[section.group])}</span>
-                <span className="pf-cfgitem-count">{section.rows.length}</span>
+                <span className="superworker-cfgitem-name">{t(GROUP_WORDS[section.group])}</span>
+                <span className="superworker-cfgitem-count">{section.rows.length}</span>
               </button>
             ))}
           </div>
-          <div className="pf-cfgnavfoot">
-            <span className="pf-cfgnavfoot-term">{t('config.file.term')}</span>
-            <code className="pf-cfgnavfoot-path">.pf/config.json</code>
+          <div className="superworker-cfgnavfoot">
+            <span className="superworker-cfgnavfoot-term">{t('config.file.term')}</span>
+            <code className="superworker-cfgnavfoot-path">.superworker/config.json</code>
           </div>
         </nav>
         <div
-          className="pf-cfgpage"
+          className="superworker-cfgpage"
           ref={page}
           role="region"
           aria-label={t('common.settings')}
@@ -255,7 +255,7 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
             />
           ))}
           {tail > 0 ? (
-            <div className="pf-cfgtail" aria-hidden="true" style={{ ['--pf-cfgtail' as string]: `${String(tail)}px` }} />
+            <div className="superworker-cfgtail" aria-hidden="true" style={{ ['--superworker-cfgtail' as string]: `${String(tail)}px` }} />
           ) : null}
         </div>
       </div>
@@ -273,12 +273,12 @@ function Section(props: {
   const t = useT()
   const { section } = props
   return (
-    <section className="pf-cfgsec" data-cat={section.group}>
-      <header className="pf-cfgsechead">
-        <h2 className="pf-cfgsecname">{t(GROUP_WORDS[section.group])}</h2>
-        <span className="pf-cfgserule" aria-hidden="true" />
+    <section className="superworker-cfgsec" data-cat={section.group}>
+      <header className="superworker-cfgsechead">
+        <h2 className="superworker-cfgsecname">{t(GROUP_WORDS[section.group])}</h2>
+        <span className="superworker-cfgserule" aria-hidden="true" />
       </header>
-      <div className="pf-cfgrows">
+      <div className="superworker-cfgrows">
         {section.rows.map((row) => (
           <Row
             key={row.key}
@@ -304,11 +304,11 @@ function Row(props: {
   const noteId = `cfg-note-${row.key}`
   const words = rowWords(t, row)
   return (
-    <div className="pf-cfgrow" data-key={row.key}>
-      <div className="pf-cfgrowname">
+    <div className="superworker-cfgrow" data-key={row.key}>
+      <div className="superworker-cfgrowname">
         {/* The key itself rides along as the hint: the name is the reader's word, the record's word is what the tool takes. */}
-        <span className="pf-setlabel" title={row.name === null ? undefined : row.key}>{words.name}</span>
-        <span className="pf-setcaption" id={noteId}>{words.caption}</span>
+        <span className="superworker-setlabel" title={row.name === null ? undefined : row.key}>{words.name}</span>
+        <span className="superworker-setcaption" id={noteId}>{words.caption}</span>
       </div>
       {row.kind === 'pick'
         ? <Pick row={row} entry={entry} noteId={noteId} onWrite={props.onWrite} />
@@ -319,7 +319,7 @@ function Row(props: {
             : <TextBox row={row} entry={entry} noteId={noteId} revision={props.revision} onWrite={props.onWrite} />}
       {entry === undefined || entry.layer === null
         ? null
-        : <span className="pf-tag pf-vlayer" data-layer={entry.layer}>{t(LAYER_WORDS[entry.layer])}</span>}
+        : <span className="superworker-tag superworker-vlayer" data-layer={entry.layer}>{t(LAYER_WORDS[entry.layer])}</span>}
     </div>
   )
 }
@@ -333,7 +333,7 @@ function Pick(props: {
   const t = useT()
   const pick = pickState(props.entry, props.row.options ?? [])
   return (
-    <span className="pf-pick">
+    <span className="superworker-pick">
       <select
         aria-label={rowWords(t, props.row).name}
         aria-describedby={props.noteId}
@@ -428,12 +428,12 @@ function Toggle(props: {
   const t = useT()
   const on = props.entry === undefined ? null : props.entry.value === 'on'
   return (
-    <div className="pf-seg" role="group" aria-label={rowWords(t, props.row).name}>
+    <div className="superworker-seg" role="group" aria-label={rowWords(t, props.row).name}>
       {SIDES.map(([word, flag]) => (
         <button
           key={word}
           type="button"
-          className="pf-segbtn"
+          className="superworker-segbtn"
           aria-pressed={on === flag}
           aria-describedby={props.noteId}
           onClick={() => props.onWrite(flag ? 'on' : 'off')}

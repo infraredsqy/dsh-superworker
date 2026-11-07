@@ -1,24 +1,24 @@
-/* dsh-pathfinder · main panel (f-main) —— this page's skeleton: the header's two-row grid, the tab
+/* dsh-superworker · main panel (f-main) —— this page's skeleton: the header's two-row grid, the tab
  * row, the box shared by the six panes, and the modal ("delete one"). Each pane's own layout lives
  * in the module stylesheet beside it; the page never touches vh / vw (headless screenshots re-wrap
- * viewport-hooked sizes mid-shutter). */.pf-page{
-  --pf-row: 34px;        /* one row = one node; the title's line sits in it with a breath above and below */
-  --pf-mark: 14px;       /* the cell left of a line name: its state at this moment */
-  --pf-line-w: 176px;    /* the width both left columns list their lines in; the detail pane's own width rides --pf-side-w on top of it */
-  --pf-detail-top: 12px; /* the rail and the list start on one line, this far under the tab rail */
-  --pf-detail-foot: 20px;/* what the same list keeps under its last row, once it is scrolled to the end */
-}.pf-page{ overflow: hidden; }.pf-page{
+ * viewport-hooked sizes mid-shutter). */.superworker-page{
+  --superworker-row: 34px;        /* one row = one node; the title's line sits in it with a breath above and below */
+  --superworker-mark: 14px;       /* the cell left of a line name: its state at this moment */
+  --superworker-line-w: 176px;    /* the width both left columns list their lines in; the detail pane's own width rides --superworker-side-w on top of it */
+  --superworker-detail-top: 12px; /* the rail and the list start on one line, this far under the tab rail */
+  --superworker-detail-foot: 20px;/* what the same list keeps under its last row, once it is scrolled to the end */
+}.superworker-page{ overflow: hidden; }.superworker-page{
   /* The positioning base: the modal covers this footprint (not the whole window) and measures against it.
-   * Its height and its `--pf-pad` are the page's own common ground and stand in `tokens.css`: a second
+   * Its height and its `--superworker-pad` are the page's own common ground and stand in `tokens.css`: a second
    * page on this panel must not be able to state a different one. */
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 12px var(--pf-pad) 12px;
+  padding: 12px var(--superworker-pad) 12px;
 }/* ---- Stage: the footprint under the header --------------------------------
  * The header is pinned to both ends of this footprint and the frame fills the middle block. When
  * the footprint is too short for the whole panel, what gives way is the footprint itself: it
- * scrolls; the module does not shrink. */.pf-page .pf-stage{
+ * scrolls; the module does not shrink. */.superworker-page .superworker-stage{
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -29,11 +29,11 @@
 }/* The frame is the panes' shared box, and it always fills: every pane takes the footprint's full
    width and height — that is exactly the ground they asked for — and the overflow scrolls inside
    them. Once filling, each pane absorbs the extra height itself — every pane is a direct child of
-   the module, so `.pf-pane`'s own `flex` is enough. */.pf-page .pf-frame{
+   the module, so `.superworker-pane`'s own `flex` is enough. */.superworker-page .superworker-frame{
   position: relative;
   display: flex;
   flex-direction: column;
-}.pf-page .pf-frame.is-fill{
+}.superworker-page .superworker-frame.is-fill{
   width: 100%;
   height: 100%;
 }/* ---- Header: nameplate · workspace · three numbers · a row of tabs --------
@@ -43,7 +43,7 @@
  *
  * The header's 0.5px bottom edge is the tabs' rail: the `border-l3` tier, with the selected tab's
  * 2px bar pressed onto it (DSH does the same with its header line). With tabs present the header
- * adds no `padding-bottom` of its own; the 9px below is the tabs' own padding. */.pf-page .pf-head{
+ * adds no `padding-bottom` of its own; the 9px below is the tabs' own padding. */.superworker-page .superworker-head{
   flex: none;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -51,13 +51,13 @@
   row-gap: 10px;
   align-items: start;
   border-bottom: 0.5px solid var(--dsw-alias-border-l3);
-}.pf-page .pf-head-left{
+}.superworker-page .superworker-head-left{
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
 }/* The nameplate row starts at 26px and gives its height to what is inside: the workspace control
-   is a tier taller (H30), and a fixed row height would poke the control out at both ends. */.pf-page .pf-head-top{
+   is a tier taller (H30), and a fixed row height would poke the control out at both ends. */.superworker-page .superworker-head-top{
   display: flex;
   align-items: center;
   gap: 14px;
@@ -65,7 +65,7 @@
 }/* The nameplate's own voice (brand face, weight, tracking, size, ink) is stated once in
    `tokens.css`, where the nameplate is the same object on every view; this header adds nothing. *//* Top right: three numbers, each with a framed mark. The frame is the state's language
  * (ink / blue / hollow), one frame per state, and the number follows it. Three numbers side by
- * side, the proportions read themselves. Arithmetic nobody reads ("178 edges") does not enter here. */.pf-page .pf-count{
+ * side, the proportions read themselves. Arithmetic nobody reads ("178 edges") does not enter here. */.superworker-page .superworker-count{
   /* Header column two, against the right edge. `tokens.css` supplies this row's whole rhythm; this only says where it stands. */
   grid-column: 2;
   justify-self: end;
@@ -79,14 +79,14 @@
  *
  * It stands on the header's own left edge, on the same vertical as the nameplate: no left inset —
  * an inset would tie it to "how far the module is centered", and the reader would first see a row
- * of words on no edge of the page at all. */.pf-page .pf-tabs{
+ * of words on no edge of the page at all. */.superworker-page .superworker-tabs{
   position: relative;
   z-index: 1;
   grid-column: 1 / -1;
   display: flex;
   gap: 36px;
   margin-top: 10px;
-}.pf-page .pf-tab{
+}.superworker-page .superworker-tab{
   position: relative;
   padding: 0 0 9px;
   font-size: 13px;
@@ -96,7 +96,7 @@
   background: none;
   border: 0;
   cursor: pointer;
-}.pf-page .pf-tab::after{
+}.superworker-page .superworker-tab::after{
   content: '';
   position: absolute;
   left: 0;
@@ -105,18 +105,18 @@
   height: 2px;
   border-radius: 2px;
   background: none;
-}.pf-page .pf-tab[aria-selected='true']{ color: var(--dsw-alias-state-business-primary); }.pf-page .pf-tab[aria-selected='true']::after{
+}.superworker-page .superworker-tab[aria-selected='true']{ color: var(--dsw-alias-state-business-primary); }.superworker-page .superworker-tab[aria-selected='true']::after{
   background: var(--dsw-alias-state-business-primary);
 }/* The views share one footprint: only one pane is the body at a time (the `hidden` others join no
    layout), so the module's weight follows that pane — the board grows with its content and the
-   stage centers it; a pane that does not fit scrolls inside itself (`.pf-scroll`). */.pf-page .pf-pane{
+   stage centers it; a pane that does not fit scrolls inside itself (`.superworker-scroll`). */.superworker-page .superworker-pane{
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   padding-top: 8px;
-}.pf-page .pf-pane[hidden]{ display: none; }/* The issue pool is a whole-block thing that needs ground to spread on: it carries a min-height of
-   its own, the module fills the whole footprint, and the drawing grows with it. */.pf-page .pf-pane.is-frame{
+}.superworker-page .superworker-pane[hidden]{ display: none; }/* The issue pool is a whole-block thing that needs ground to spread on: it carries a min-height of
+   its own, the module fills the whole footprint, and the drawing grows with it. */.superworker-page .superworker-pane.is-frame{
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
@@ -125,14 +125,14 @@
  * the four files parses, all six panes have nothing to say: a row of empty tabs over an empty
  * board would read as a broken panel. This pane therefore collapses to one sentence, pinned to
  * the middle of the footprint; the nameplate stays in the header — the reader must be able to
- * confirm what they are looking at. */.pf-page .pf-none{
+ * confirm what they are looking at. */.superworker-page .superworker-none{
   flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
   text-align: center;
-}.pf-page .pf-none p{
+}.superworker-page .superworker-none p{
   margin: 0;
   font: var(--dsw-font-s-14);
   color: var(--dsw-alias-label-caption);
@@ -143,11 +143,11 @@
  * (`--dsw-alias-bg-mask-1`) rather than picking another black.
  *
  * The overlay covers only the panel's footprint: this page is one cell in DSH, and dimming the
- * neighbouring session rail would overstep. So it covers the `.pf-page` positioning base, and the
+ * neighbouring session rail would overstep. So it covers the `.superworker-page` positioning base, and the
  * ring outside is left to the host.
  *
  * The panel is itself that sheet, so the three numbers inside are not lifted a tier and need no
- * vertical rule for the start/stop key — the thing to separate from already stands in the head. */.pf-page .pf-modal{
+ * vertical rule for the start/stop key — the thing to separate from already stands in the head. */.superworker-page .superworker-modal{
   position: absolute;
   inset: 0;
   z-index: 3;
@@ -156,7 +156,7 @@
   justify-content: center;
   padding: 24px;
   background: var(--dsw-alias-bg-mask-1);
-}.pf-page .pf-modal[hidden]{ display: none; }.pf-page .pf-modal-panel{
+}.superworker-page .superworker-modal[hidden]{ display: none; }.superworker-page .superworker-modal-panel{
   width: 560px;
   max-width: 100%;
   max-height: 100%;
@@ -166,13 +166,13 @@
   border: 0;
   border-radius: var(--dsw-radius-panel);
   box-shadow: var(--dsw-elevation-prominent);
-}.pf-page .pf-modal-head{
+}.superworker-page .superworker-modal-head{
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 0 14px 10px;
 }/* Line name: the record's id. The detail pane's line column prints the same word, so this head wears
- * the same face, at this head's own tier. */.pf-page .pf-modal-name{
+ * the same face, at this head's own tier. */.superworker-page .superworker-modal-name{
   flex: 1 1 auto;
   min-width: 0;
   font: var(--dsw-font-s-14);
@@ -180,15 +180,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}/* -- The head's "Close" is `tokens.css`'s `.pf-mini`, the same object an instruction row's actions
-   are, so it has no rule of its own here. */.pf-page .pf-modal-acts{
+}/* -- The head's "Close" is `tokens.css`'s `.superworker-mini`, the same object an instruction row's actions
+   are, so it has no rule of its own here. */.superworker-page .superworker-modal-acts{
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 14px 4px;
 }/* A secondary action: 5px 16px, 13px, a border-l2, radius xs. The instruction row's "Add" and the
    modal's foot row are the same object — the moment two places each write their own copy, they
-   have already started drifting apart. */.pf-page .pf-btn{
+   have already started drifting apart. */.superworker-page .superworker-btn{
   flex: none;
   padding: 5px 16px;
   font: var(--dsw-font-xs-13);
@@ -197,9 +197,9 @@
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-xs);
   cursor: pointer;
-}.pf-page .pf-btn:hover{
+}.superworker-page .superworker-btn:hover{
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }/* ---- Selection and hover ---------------------------------------------------
  * Interface words are not selectable; content is: tabs, controls and readings are interface; a
- * title is content, and that rule follows the element that draws the title. */.pf-page{ user-select: none; }
+ * title is content, and that rule follows the element that draws the title. */.superworker-page{ user-select: none; }

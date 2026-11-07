@@ -1,7 +1,7 @@
 /**
  * The candidate list for the workspace selector at the top of the panel: DSH's own workspace list.
  *
- * Pathfinder Center does not care which session DSH currently shows in the center column — all
+ * Superworker Center does not care which session DSH currently shows in the center column — all
  * workspaces are openable to it. This layer only reads that list into a snapshot, works out which
  * workspace a session falls into, and hands back an empty list when there is no list. The list
  * itself belongs to DSH's `workspaces` service: no caching, no copying here.

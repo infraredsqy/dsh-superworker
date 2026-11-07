@@ -105,10 +105,10 @@ const ISSUES = {
 }
 
 const record = () => ({
-  '.pf/ideas.json': json({ nodes: NODES }),
-  '.pf/state.json': json({ cycles: CYCLES }),
-  '.pf/instructions.json': json({ instructions: INSTRUCTIONS }),
-  '.pf/issues/issues.json': json({ version: 1, issues: ISSUES }),
+  '.superworker/ideas.json': json({ nodes: NODES }),
+  '.superworker/state.json': json({ cycles: CYCLES }),
+  '.superworker/instructions.json': json({ instructions: INSTRUCTIONS }),
+  '.superworker/issues/issues.json': json({ version: 1, issues: ISSUES }),
 })
 
 test('Every source was read, and the entries are the record\'s own (weight / description / dsh_session as they are)', async () => {
@@ -116,7 +116,7 @@ test('Every source was read, and the entries are the record\'s own (weight / des
   const reading = await readReading(port, scope, signal)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'read' })
-  assert.equal(reading.recordPath, '.pf')
+  assert.equal(reading.recordPath, '.superworker')
   assert.equal(reading.workspaceRoot, scope.workspaceRoot)
   assert.deepEqual(reading.nodes, NODES)
   assert.deepEqual(reading.cycles, CYCLES)
@@ -130,7 +130,7 @@ test('A record spanning several pages still comes back whole', async () => {
     many[`n${i}`] = { ...NODES.n2, title: `node ${i}`, description: `description ${i}`, dependencies: [`n${i - 1}`] }
   }
   const files = record()
-  files['.pf/ideas.json'] = json({ nodes: many })
+  files['.superworker/ideas.json'] = json({ nodes: many })
   const { port, calls } = fakeWorkspace(files, { pageLines: 3 })
   const reading = await readReading(port, scope, signal)
 
@@ -151,7 +151,7 @@ test('No record in the workspace: an empty reading comes back without a sound', 
 
 test('Record present, one file short: only that one reports missing, the rest still read', async () => {
   const files = record()
-  delete files['.pf/state.json']
+  delete files['.superworker/state.json']
   const { port } = fakeWorkspace(files, { pageLines: 500 })
   const reading = await readReading(port, scope, signal)
 
@@ -162,8 +162,8 @@ test('Record present, one file short: only that one reports missing, the rest st
 
 test('The unreadable one reports unusable, the reading still comes back', async () => {
   const files = record()
-  files['.pf/state.json'] = '{ this line is not JSON\n'
-  files['.pf/instructions.json'] = json({ instructions: { not: 'a list' } })
+  files['.superworker/state.json'] = '{ this line is not JSON\n'
+  files['.superworker/instructions.json'] = json({ instructions: { not: 'a list' } })
   const { port } = fakeWorkspace(files, { pageLines: 500 })
   const reading = await readReading(port, scope, signal)
 
@@ -193,7 +193,7 @@ test('A page that will not move forward does not spin forever', async () => {
       return { text: '', lines: 0, eof: false }
     },
   }
-  assert.equal(await readWholeFile(port, scope, '.pf/anything.json', signal), '')
+  assert.equal(await readWholeFile(port, scope, '.superworker/anything.json', signal), '')
   assert.equal(reads, 1)
 })
 
@@ -203,7 +203,7 @@ test('When a page breaches the byte cap it shrinks and retries: the whole record
     many[`n${i}`] = { ...NODES.n2, title: `node ${i}`, description: 'd'.repeat(300) }
   }
   const files = record()
-  files['.pf/ideas.json'] = json({ nodes: many })
+  files['.superworker/ideas.json'] = json({ nodes: many })
   // The whole record fits within 500 lines, but a page's byte count breaches the cap: the byte side is what gets hit.
   const { port, calls, refusals } = fakeWorkspace(files, { pageLines: 500, maxBytes: 4096 })
   const reading = await readReading(port, scope, signal)
@@ -213,7 +213,7 @@ test('When a page breaches the byte cap it shrinks and retries: the whole record
 
   assert.ok(refusals.length > 0, 'this one must hit the port byte cap once first')
   assert.deepEqual([...new Set(refusals.map(({ code }) => code))], ['workspace-file/too-large'])
-  const limits = calls.filter(([kind, path]) => kind === 'read' && path === '.pf/ideas.json').map(([, , , limit]) => limit)
+  const limits = calls.filter(([kind, path]) => kind === 'read' && path === '.superworker/ideas.json').map(([, , , limit]) => limit)
   assert.equal(limits[0], undefined, 'the first page asks for the port default tier')
   assert.ok(limits.slice(1).every((limit) => typeof limit === 'number' && limit < 500), 'after a refusal every page carries the shrunk line count')
 })
@@ -224,7 +224,7 @@ test('A requested line count above the port tier shrinks and retries too: the wh
     many[`n${i}`] = { ...NODES.n2, title: `node ${i}`, description: 'd'.repeat(3000) }
   }
   const files = record()
-  files['.pf/ideas.json'] = json({ nodes: many })
+  files['.superworker/ideas.json'] = json({ nodes: many })
   // A page holds only 40 lines and the byte cap is 8192: after the cap is hit, the shrunk tier must first fit within 40 lines.
   const { port, refusals } = fakeWorkspace(files, { pageLines: 40, maxBytes: 8192 })
   const reading = await readReading(port, scope, signal)
@@ -239,7 +239,7 @@ test('A requested line count above the port tier shrinks and retries too: the wh
 
 test('When one line alone breaches the cap, that one really is unreadable', async () => {
   const files = record()
-  files['.pf/ideas.json'] = json({ nodes: { n1: { ...NODES.n2, description: 'd'.repeat(9000) } } })
+  files['.superworker/ideas.json'] = json({ nodes: { n1: { ...NODES.n2, description: 'd'.repeat(9000) } } })
   const { port } = fakeWorkspace(files, { pageLines: 500, maxBytes: 4096 })
   const reading = await readReading(port, scope, signal)
 

@@ -23,7 +23,7 @@ import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const engineDir = join(root, 'packages', 'pf-core')
+const engineDir = join(root, 'packages', 'superworker-core')
 const logDir = join(root, '.tmp', 'test-all')
 
 mkdirSync(logDir, { recursive: true })
@@ -70,7 +70,7 @@ function runChild(command, args, cwd, logPath, shell = false) {
 
 /**
  * How the engine package's suite starts, read off that package's own manifest: the `test` script it
- * declares, which is the same entry `pnpm --filter pf-core test` runs. Building a vitest argv here
+ * declares, which is the same entry `pnpm --filter superworker-core test` runs. Building a vitest argv here
  * instead would put a second copy of the start-up in this file — a different runner, a config flag
  * or a worker count changes in the package and this file would go on running the old shape.
  *
@@ -79,17 +79,17 @@ function runChild(command, args, cwd, logPath, shell = false) {
  */
 function engineTestScript() {
   const manifestPath = join(engineDir, 'package.json')
-  if (!existsSync(manifestPath)) return { reason: `packages/pf-core/package.json is missing: ${manifestPath}` }
+  if (!existsSync(manifestPath)) return { reason: `packages/superworker-core/package.json is missing: ${manifestPath}` }
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
   const script = manifest.scripts?.test
   if (typeof script !== 'string' || script.trim().length === 0) {
-    return { reason: 'packages/pf-core/package.json declares no test script: nothing to run' }
+    return { reason: 'packages/superworker-core/package.json declares no test script: nothing to run' }
   }
   const declared = typeof manifest.devDependencies?.vitest === 'string'
   const installed = existsSync(join(engineDir, 'node_modules', 'vitest'))
   if (!declared || !installed) {
     return {
-      reason: `packages/pf-core's vitest is devDependency declared=${String(declared)} installed=${String(installed)}: run pnpm install first.`,
+      reason: `packages/superworker-core's vitest is devDependency declared=${String(declared)} installed=${String(installed)}: run pnpm install first.`,
     }
   }
   return { script }
@@ -144,7 +144,7 @@ if (pluginRun.code !== 0) failures.push(['plugin suite', pluginLog])
 // the log echoed below, so a red engine suite names what broke here rather than only in the JSON
 // file. The JSON reporter resolves its output path against the package's own working directory
 // (pnpm runs a package's script from that package's directory), so the path is handed over relative
-// to `packages/pf-core`.
+// to `packages/superworker-core`.
 const engineLog = join(logDir, 'engine.log')
 const engineJson = join(logDir, 'engine.json')
 const engineJsonArg = relative(engineDir, engineJson).split(sep).join('/')
@@ -156,7 +156,7 @@ if (engineScript.reason !== undefined) {
 } else {
   const engineCommand = [
     process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-    '--filter', 'pf-core', 'test',
+    '--filter', 'superworker-core', 'test',
     // Two reporters: `default` for the failure detail, `json` for the counts; `.json=` scopes the
     // output file to the JSON one alone, so the default reporter keeps printing to stdout.
     '--reporter=default', '--reporter=json', `--outputFile.json=${engineJsonArg}`,
@@ -168,11 +168,11 @@ if (engineScript.reason !== undefined) {
     files: Array.isArray(json?.testResults) ? json.testResults.length : 0,
     cases: typeof json?.numTotalTests === 'number' ? json.numTotalTests : 0,
   }
-  report('engine suite', 'pnpm --filter pf-core test', { ...engineReadings, seconds: engineRun.seconds })
+  report('engine suite', 'pnpm --filter superworker-core test', { ...engineReadings, seconds: engineRun.seconds })
   if (engineRun.code !== 0) failures.push(['engine suite', engineLog])
 }
 if (engineScript.reason !== undefined) {
-  report('engine suite', 'pnpm --filter pf-core test', { ...engineReadings, seconds: 0 })
+  report('engine suite', 'pnpm --filter superworker-core test', { ...engineReadings, seconds: 0 })
   failures.push(['engine suite', engineLog])
 }
 

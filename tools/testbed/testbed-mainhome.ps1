@@ -212,7 +212,7 @@ function Test-StructuralExemption {
 # against relative paths with `-like "*signature*"` (see Get-MainHomeAreaVerdict), and relative
 # paths are assembled segment by segment — a single Windows directory segment contains neither ':'
 # nor '\', so a whole absolute path (like
-# %LOCALAPPDATA%\dsh-pathfinder-testbed\workspaces\workspace-alpha) is never contiguous
+# %LOCALAPPDATA%\dsh-superworker-testbed\workspaces\workspace-alpha) is never contiguous
 # inside a relative path, and such entries would never be recognized. Signatures are therefore
 # always fragments that can appear contiguously inside a relative path:
 #   * the synthetic session ids (each is itself a single path segment);

@@ -1,16 +1,17 @@
 .tmp/
 .work*/
-# The record ledger of a workspace, local to the machine that runs the pipeline
+# The record ledger of a workspace, local to the machine that runs the pipeline.
+# This checkout's own record is still `.pf` until `migrate 0.1.0` runs here; flip this line then.
 /.pf/
 # anchored: the build output is the root's own lib/, not any source directory named lib (tools/lib/)
 /lib/
-# The in-repo engine package (packages/pf-core) builds its own product into dist/ — its tsdown
+# The in-repo engine package (packages/superworker-core) builds its own product into dist/ — its tsdown
 # config names it — and vitest's coverage output lands beside it; the /lib/ anchor above covers the
-# host half only. `node_modules/` and `.tmp/` are already ignored at any depth, and `.pf/` is
-# anchored to the root on purpose: the engine's golden corpus lives under `.pf/` paths inside
-# `packages/pf-core/tests/fixtures/`, which a nested `.pf/` rule would swallow.
-/packages/pf-core/dist/
-/packages/pf-core/coverage/
+# host half only. `node_modules/` and `.tmp/` are already ignored at any depth, and `.superworker/` is
+# anchored to the root on purpose: the engine's golden corpus lives under `.superworker/` paths inside
+# `packages/superworker-core/tests/fixtures/`, which a nested `.superworker/` rule would swallow.
+/packages/superworker-core/dist/
+/packages/superworker-core/coverage/
 node_modules/
 # Design documents and design-side code; nothing in the project depends on this directory
 design/
