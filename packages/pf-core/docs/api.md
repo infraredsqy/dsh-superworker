@@ -16,13 +16,14 @@
 - `Pf { root: string; ledger; conductor; config; sessions; locations }` —— `root` 是打开时给的项目根，原样保存；
   `locations` 是这个根那份记录树的落点（`PfLocations { paths; signal; launchPrompt }`）：
   谁要把一个落点印出来就问它，`.pf` 的拼法只在 `paths.ts` 一处。
-- `pf.ledger.dag` 十六动词、`pf.ledger.cycles` 十四动词、`pf.ledger.instructions` 五动词、
-  `pf.config` 五动词、`ledger.init` / `ledger.register` / `ledger.cleanTemp`、`pf.sessions` 三动词与
+- `pf.ledger.dag`、`pf.ledger.cycles`、`pf.ledger.instructions`、`pf.config` 各自的动词、
+  `ledger.init` / `ledger.register` / `ledger.cleanTemp`、`pf.sessions` 与
   `conductor.next` / `conductor.close` / `conductor.advance` / `conductor.settle` / `conductor.settlePreview` /
   `conductor.dispatch` / `conductor.dispatchPreview` / `conductor.doctor` / `conductor.handoff` /
   `conductor.handoffForm` / `conductor.pluginCommand` / `conductor.pluginCommands` / `conductor.prepare` /
   `conductor.startedHolding`
-  都在句柄上，全是真实现；没有一个桩。
+  都在句柄上，全是真实现；没有一个桩。动词各有几张，看各节的表就知道——表由 `api-docs`
+  对拍钉着名字，表里数几行就是几个，这里不再另抄一份手维护的总数。
 - 动作路径即 API 路径：`ledger.dag.add` 这样的动作路径，同时就是将来 API 的命名空间路径——
   按这个拼写找方法，从句柄一路点下去就能到。
 
@@ -117,8 +118,10 @@ argv 与退出码的搬运，一条合并规则都不在它里面。
 
 **底线先落，附加件后做。** 四份布局文件（`.gitignore`、`.gitattributes`、`AGENTS.md`、
 `config.json`；`config.json` 只在缺席或 `force` 时写）在任何环境里都落——没有 git、不是
-checkout，都一样；字节不同就从常量重写，一样就一个字节不碰。自有仓库的读数、`info/exclude`
-那一行、合并驱动的两个键是三件附加件：做不成就往 `warnings` 里点名，不抛、不回滚。
+checkout，都一样；字节不同就从常量重写，一样就一个字节不碰。没有内容要写的那一次（字节都在、
+`config.json` 又在场，也没点名 `force`）既不落盘、也不取记录锁：锁只在真有 `config.json` 要落时
+才取，缺席与否进锁后再问一遍——隔一次的 `init` 不排在 `config set` 的写后面。自有仓库的读数、
+`info/exclude` 那一行、合并驱动的两个键是三件附加件：做不成就往 `warnings` 里点名，不抛、不回滚。
 
 **交回 `InitReport`**，字段与取值就是下面这些：
 
@@ -155,7 +158,7 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 
 ### pf.ledger.dag
 
-图：节点与边的读写，十六个动词。
+图：节点与边的读写，动词如下。
 
 | 动作 | 签名 | 一句话语义 |
 | --- | --- | --- |
@@ -234,7 +237,7 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 
 ### pf.ledger.instructions
 
-指令：用户指令通道，五个动词。
+指令：用户指令通道，动词如下。
 
 | 动作 | 签名 | 一句话语义 |
 | --- | --- | --- |
@@ -261,7 +264,7 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 
 ## pf.config
 
-设置：一条解析链上的读写，五个动词。链上窄的盖宽的：node（`<root>/.pf/nodes/<节点>/config.json`）
+设置：一条解析链上的读写，动词如下。链上窄的盖宽的：node（`<root>/.pf/nodes/<节点>/config.json`）
 → cycle（线记录的 `policies` 槽）→ project（`.pf/config.json`）→ global（`<home>/.pf/config.json`），
 最底下是旋钮声明里的出厂缺省。
 
@@ -298,7 +301,7 @@ pf 项目」，主树的设置一个字都漏不出来（in-repo 档记录随检
 两个词），读写两侧过同一道校验门。写侧不合种类当场拒绝（`invalid_value`），什么都没写；线层骑在线
 记录上，认不出的值当没说。
 
-旋钮名得在清单上，否则 `unknown_key`（拒绝里把可配的名全列出来）。核心内置三个：
+旋钮名得在清单上，否则 `unknown_key`（拒绝里把可配的名全列出来）。核心内置的旋钮：
 
 - `max_agents`（`integer`，缺省 3）：一个会话同时在飞的子代理上限。
 - `test_tier`（`word`，`full` / `minimal`，缺省 `full`）：验证档位——full 跑全套，minimal 只跑点名的检查。
@@ -329,7 +332,7 @@ pf 项目」，主树的设置一个字都漏不出来（in-repo 档记录随检
 
 ## pf.sessions
 
-会话档的入口，三个动词：两个读、一个写。
+会话档的入口，动词如下。
 
 | 动作 | 签名 | 一句话语义 |
 | --- | --- | --- |
@@ -458,7 +461,7 @@ stdout / stderr 是它在本进程里直接写的，调用方不必、也不能�
 `conductor.advance` 把认领、材料、会话按次序串成一步（宿主自己推线时用）。回答本身就是一份计划：
 挑中谁、为什么是它、被谁挡在外面、这一步之后停在哪儿。
 
-动作是六个词之一：`dispatch`（节点已被认领：交给执行者；它这一格的材料还没落时 `dispatch` 顺手
+动作是下面这几个词之一：`dispatch`（节点已被认领：交给执行者；它这一格的材料还没落时 `dispatch` 顺手
 补上）、`open_node`（线手上还没有节点、或收尾空出了槽，该把排序挑出来的那几个钉下来）、
 `stop_pipeline`（没得做了 / 有人叫停 / 这条线不在服务中）、`wait`（时候没到：交接单还没结果或
 还是 `pending`、会话已经开出去了）、`ask_user`（状态自己说不清）、`no_cycle`（一条线都还没有，
@@ -558,7 +561,7 @@ stdout / stderr 是它在本进程里直接写的，调用方不必、也不能�
 | 层 | 错误码 | 什么时候 |
 | --- | --- | --- |
 | 底座 | `invalid_utf8` | 读到的字节不是 UTF-8 |
-| 底座 | `parse_failure` | 字节是 UTF-8，但 JSON 解不动 |
+| 底座 | `parse_failure` | 字节是 UTF-8，但 JSON 解不动；顶层不是 JSON 对象的记录文档也答这个码（state.json 的那道形状门——把它读成空记录，会让读者把「什么都没握」当真） |
 | 底座 | `lock_timeout` | 等锁到上限都没拿到，什么都没改 |
 | 设置 | `unknown_key` | 旋钮名不在清单上（拒绝里把可配的名全列出来） |
 | 设置 | `invalid_value` | 值不合种类：写侧拒绝，什么都没写 |

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SCOPES } from '../src/instruct';
 import { COMMANDS, COMMAND_ROWS, GROUPS } from '../src/words/table';
 import {
   INSTRUCTION_SCOPES,
@@ -74,7 +75,9 @@ describe('one verb, one operation: the flow verbs carry shaping options only', (
  * table states it; a caller that keeps its own copy refuses what this table would have accepted the
  * day a fourth scope lands. These cases pin the two facts the boundary forwards:
  *
- * - the scopes the table offers are the exported `INSTRUCTION_SCOPES` list, every cell of it;
+ * - the scopes the table offers are the exported `INSTRUCTION_SCOPES` list, every cell of it — and
+ *   that list is one array with the instruction namespace's own `SCOPES` (same reference, not two
+ *   tables that happen to agree);
  * - a line built here is the line the words layer answers, and a refused scope / an empty sentence is
  *   this side's answer, not the boundary's guess.
  */
@@ -102,10 +105,15 @@ describe('the instruction scopes and the panel words: one home, on the engine si
     return found;
   };
 
-  it('every --scope cell offers exactly the engine list', () => {
+  it('every --scope cell offers exactly the engine list, and the list lives in one place', () => {
     const lists = scopeChoiceLists();
     expect(lists.length).toBeGreaterThan(0);
-    for (const list of lists) expect(list).toEqual([...INSTRUCTION_SCOPES]);
+    // The table holds the exported array itself, not a copy of it: same reference, so the day the
+    // engine's list changes the table's choices change with it by construction.
+    for (const list of lists) expect(list).toBe(INSTRUCTION_SCOPES);
+    // One home, not two tables that agree by coincidence: the words layer's list **is** the
+    // instruction namespace's `SCOPES` — the array the engine reads by and refuses by.
+    expect(INSTRUCTION_SCOPES).toBe(SCOPES);
   });
 
   it('an instruction add line puts the scope first and the verbatim sentence last, as the parser reads it', () => {

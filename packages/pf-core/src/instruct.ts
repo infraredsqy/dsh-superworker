@@ -59,7 +59,13 @@ import type {
  *   hand back the raw rows, also in account order. Visibility is the same decision either way.
  */
 
-const SCOPES: readonly InstructionScope[] = ['global', 'cycle', 'node'];
+/**
+ * The scopes an instruction can bind to, in the order the command table lists them — the one home of
+ * this vocabulary. The words layer hands the same array out as `INSTRUCTION_SCOPES`
+ * (`words/lines.ts` re-exports it), and the command table's `--scope` choices hold that reference,
+ * so a fourth scope lands here and nowhere else.
+ */
+export const SCOPES: readonly InstructionScope[] = ['global', 'cycle', 'node'];
 const TARGETS: readonly InstructionTarget[] = ['stage', 'boundary'];
 
 /** An old entry missing the state key reads as this word; `live` is the only state word that is read. */

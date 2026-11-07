@@ -14,9 +14,10 @@
  * A built line is handed to the words layer's own `answer()`, which is what writes the record.
  */
 import type { InstructionScope } from '../types';
+import { SCOPES } from '../instruct';
 
-/** The scopes an instruction can bind to, in the order the command table lists them. */
-export const INSTRUCTION_SCOPES: readonly InstructionScope[] = ['global', 'cycle', 'node'];
+/** The scopes an instruction can bind to, in the order the command table lists them. It **is** the engine's own `SCOPES` (`instruct.ts`) — one array, one home: the table and this line builder hold a reference, not a copy that could fall behind. */
+export const INSTRUCTION_SCOPES: readonly InstructionScope[] = SCOPES;
 
 /** Why one composed instruction line could not be built: the codes the words layer's own vocabulary uses. */
 export type InstructionLineRefusalCode = 'scope-unknown' | 'empty-text';

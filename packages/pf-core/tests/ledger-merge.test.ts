@@ -890,6 +890,26 @@ describe('the tables: one reading of a list-or-mapping shape', () => {
     expect(JSON.parse(run1.oursBytes.toString('utf8'))).toEqual({ nodes: {} });
   });
 
+  it('an empty identity newly added on one side only is left out too: no row keyed under nothing, and no decision line naming it', async () => {
+    // The variant the two cases above do not reach: the hand-written entry exists on one side only
+    // (ours added it; base and theirs never saw it). The old reading keyed it under `''` and then
+    // talked about it — the merge landed a row keyed by nothing and the dry-run's decision line
+    // said "Node : only ours has it -> take ours", naming a node that is no node. The writers never
+    // produce an empty identity, so this guards hand edits only.
+    const base = JSON.stringify({ nodes: [] }, null, 2);
+    const ours = JSON.stringify({ nodes: [idea('手写的一条', { id: '', uuid: '' })] }, null, 2);
+    const theirs = JSON.stringify({ nodes: [] }, null, 2);
+    const run1 = await run({ base, ours, theirs, path: '.pf/ideas.json' });
+    expect(run1.code).toBe(0);
+    expect(JSON.parse(run1.oursBytes.toString('utf8'))).toEqual({ nodes: {} });
+    // The decision lines must not name the empty identity either — the dry-run is where a person
+    // reads them, and a line addressed to no node is the bug this table exists to keep out.
+    const dry1 = await run({ base, ours, theirs, path: '.pf/ideas.json', dryRun: true });
+    expect(dry1.code).toBe(0);
+    expect(dry1.stdout).toContain('(nothing to adjudicate');
+    expect(dry1.stdout).not.toContain('Node :');
+  });
+
   it('a hand-written list entry with no identity is left out of the instruction table too, and the entry with an id merges beside it', async () => {
     /** One instruction with the writer's fields; `id` and the resolution act are what a case varies. */
     const instruction = (id: string, text: string, state: string, resolved: string | null) => ({

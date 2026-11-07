@@ -118,16 +118,19 @@ describe('the two copied formatters spell one number the same way', () => {
     }
   });
 
-  it('one cell is a recorded divergence, not a promise: a rounding carry past six digits takes the exponent form on the pool side', async () => {
-    // 999999.7 has seven significant digits; six of them round up to 1000000. The pool's copy notices
-    // that the carry pushed the exponent up a decade and spells `1e+06`; the test-audit copy keeps the
-    // fixed spelling of the carried number. Both spellings are recorded as they stand today — this is
-    // a debt, not a contract: the pool side's carry branch is what has to change once one spelling is
-    // chosen (see `plugins/issue/impl.mjs` header and review-1 m2), and then this cell is an equality
-    // like every other cell in the batch above.
+  it('the carry cell is a recorded divergence, not a pinned contract: both doors still name the same number', async () => {
+    // 999999.7 has seven significant digits; six of them round up to 1000000. The two copies spell
+    // that carried number differently today, and the difference is recorded here, not blessed: the
+    // pool side notices the carry pushing the exponent up a decade and spells `1e+06`; the
+    // test-audit side keeps the fixed spelling `1000000`. The debt sits on the pool side's carry
+    // branch (see `plugins/issue/impl.mjs` header and review-1 m2): once one spelling is chosen,
+    // this cell converges into the batch above, and this case must not stand in the way — so the
+    // assertion pins only what holds through that convergence: both spellings name the same number,
+    // the carried one.
     const one = await issue(999999.7, 0);
     const two = await audit(999999.7, 0);
-    expect([one.value, two.value], 'the two spellings today; a debt, not a contract').toEqual(['1e+06', '1000000']);
+    expect(Number(one.value), `pool side spells it \`${one.value}\``).toBe(1000000);
+    expect(Number(two.value), `test-audit side spells it \`${two.value}\``).toBe(1000000);
   });
 });
 

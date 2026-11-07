@@ -673,6 +673,15 @@ test('派发接缝的演练档：请求不带 dryRun 时照常开会话，回执
 
 /* ---- the session-side diagnostic of the placed skills (K4) ---- */
 
+/* The three diagnostic cases below (the two 会话侧诊断 ones, and the 目录诊断 one that holds the
+ * catalog open) require process isolation. They place a skill into the temp home this file pinned
+ * (`placeOneSkill`) and then rely on the opener reading `DSH_HOME` back out of the process
+ * environment (`skill-paths.ts` reads it at call time). Under `--test-isolation=none` every test
+ * file shares one process, and a later file's own home pin overwrites that environment before these
+ * cases run — the premise is gone, through no fault of the opener. So each of the three checks the
+ * premise first and skips itself with that reason when it does not hold; the default tier (one
+ * child process per file) never sees it trip. */
+
 /** One placement record plus the two files it names, in the temp home these cases read. */
 function placeOneSkill(name) {
   const root = join(pinned.home, 'skills')
@@ -719,7 +728,11 @@ function rigWithCatalog(rigging, view) {
   return { ctx, lines }
 }
 
-test('会话侧诊断：project 根同名副本压过插件这份时，开会话只留一行 skill-shadowed 读数并点名两处', async () => {
+test('会话侧诊断：project 根同名副本压过插件这份时，开会话只留一行 skill-shadowed 读数并点名两处', async (t) => {
+  if (process.env.DSH_HOME !== pinned.home) {
+    t.skip(`要求进程隔离：DSH_HOME 在共享进程里被别的测试文件的 pin 盖掉了（现在指向 ${process.env.DSH_HOME}，不是本文件的 ${pinned.home}）`)
+    return
+  }
   const name = 'pf-issue-repair'
   const ours = placeOneSkill(name)
   const rigging = rig()
@@ -748,7 +761,11 @@ test('会话侧诊断：project 根同名副本压过插件这份时，开会话
   }
 })
 
-test('会话侧诊断：这份在会话视角里赢了自己的名字时，只留一行诊断读数，不报影子', async () => {
+test('会话侧诊断：这份在会话视角里赢了自己的名字时，只留一行诊断读数，不报影子', async (t) => {
+  if (process.env.DSH_HOME !== pinned.home) {
+    t.skip(`要求进程隔离：DSH_HOME 在共享进程里被别的测试文件的 pin 盖掉了（现在指向 ${process.env.DSH_HOME}，不是本文件的 ${pinned.home}）`)
+    return
+  }
   const name = 'pf-issue-repair'
   const ours = placeOneSkill(name)
   const rigging = rig()
@@ -773,7 +790,14 @@ test('会话侧诊断：这份在会话视角里赢了自己的名字时，只�
 
 /* ---- the queue holds the workspace-touching stretch only (K: the diagnostic left it) ---- */
 
-test('目录诊断不在队列里：catalog 读不回来时，同一个根的下一次开照常进 create', async () => {
+test('目录诊断不在队列里：catalog 读不回来时，同一个根的下一次开照常进 create', async (t) => {
+  /* 与上面两条会话侧诊断同一个前提：这一格把技能放进本文件 pin 的 home，再靠开仓那一侧把
+   * DSH_HOME 从进程环境读回来——home 被同进程别的文件的 pin 盖掉时，开仓压根不会走到目录读，
+   * 断言的前提（第一开卡在目录读上）就不在了。要求进程隔离，见本段开头的说明。 */
+  if (process.env.DSH_HOME !== pinned.home) {
+    t.skip(`要求进程隔离：DSH_HOME 在共享进程里被别的测试文件的 pin 盖掉了（现在指向 ${process.env.DSH_HOME}，不是本文件的 ${pinned.home}）`)
+    return
+  }
   const name = 'pf-issue-repair'
   placeOneSkill(name)
   try {

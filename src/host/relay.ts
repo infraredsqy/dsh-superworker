@@ -158,7 +158,12 @@ async function runDispatch(
   node: string,
 ): Promise<DispatchOutcome> {
   /* The dispatch entry takes the canonical spelling once: the engine's handle, the opener's queue
-   * key and `cwd`, and the workspace this dispatch remembers are one string. */
+   * key and `cwd`, and the workspace this dispatch remembers are one string.
+   *
+   * Known untested on its own: the alias case's green does not ride on this line — the opener
+   * canonicalises a second time inside `openNodeSession`, so removing this call alone keeps every
+   * case green; the relay's and the opener's calls have to go together for the alias case to turn
+   * red. No reading pins this line by itself. */
   const root = await canonicalWorkspaceRoot(workspaceRoot)
   try {
     const receipt = await dispatchHandleOf(ctx, sessionId, root).conductor.dispatch({ cycle, node })
@@ -208,7 +213,8 @@ export function advanceLine(
 ): Promise<DispatchOutcome> {
   const step = async (): Promise<DispatchOutcome> => {
     /* Same entry discipline as `dispatchCell`: one canonical spelling for the handle, the opener and
-     * the workspace the relay remembers. */
+     * the workspace the relay remembers. Known untested on its own, like the dispatch entry's call —
+     * see the note there. */
     const root = await canonicalWorkspaceRoot(workspaceRoot)
     try {
       const receipt = await dispatchHandleOf(ctx, sessionId, root).conductor.advance({ cycle })
@@ -237,7 +243,8 @@ export function advanceLine(
 async function judge(ctx: Context, sessionId: SessionId, workspaceRoot: string): Promise<void> {
   if (!relayOn()) return
   /* The root already arrives canonical from the dispatch that tracked it, and the entry takes it
-   * once more so a plan read can never disagree with the root a dispatch would use. */
+   * once more so a plan read can never disagree with the root a dispatch would use. Known untested
+   * on its own, like the dispatch entry's call — see the note there. */
   const root = await canonicalWorkspaceRoot(workspaceRoot)
   const plan = await dispatchHandleOf(ctx, sessionId, root).conductor.next({})
   if (plan.action !== 'dispatch' && plan.action !== 'open_node' && plan.action !== 'stop_pipeline') return

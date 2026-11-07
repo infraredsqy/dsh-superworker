@@ -415,7 +415,11 @@ test('格子派发不成：拒绝带引擎的原话，认领不落盘，一个�
   }
 })
 
-test('派发拿别名开出去：照常开成，引擎读记录用的是那个根的实路径', async () => {
+/* 这条读数是两处规范化合在一起撑出来的：relay 的入口这一处，与开仓那一处（`openNodeSession`
+ * 里再取一次实路径）。只摘掉 relay 这一处，用例照绿——它对 relay 那一行没有独立读数
+ * （known untested）；两处一起摘掉才红。用例名只照实说盘上读到的：引擎按实路径读记录，
+ * 不是说 relay 那一行被单独钉住了。 */
+test('派发拿别名开出去：照常开成，引擎读记录用的是实路径（relay 与开仓两处规范化合撑，relay 这处无独立读数）', async () => {
   const root = rigRecordRoot(['n-1'])
   const alias = join(tmpdir(), `pf-relay-alias-${randomUUID()}`)
   symlinkSync(root, alias, 'junction')
