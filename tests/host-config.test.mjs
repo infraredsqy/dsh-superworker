@@ -34,7 +34,7 @@ const LISTED = [
 /** A throwaway project: `.pf` laid down by the engine itself, closed again when the case is done. */
 const project = () => throwaway('pf-host-config-')
 
-test('工具印的四行：值与它住哪一层都读出来', () => {
+test('The four lines printed by the tool: value and the layer it lives in both read out', () => {
   const entries = parseConfigList(LISTED)
 
   /* The keys are whatever the tool printed: no list is maintained here — what's printed is what's parsed. */
@@ -45,7 +45,7 @@ test('工具印的四行：值与它住哪一层都读出来', () => {
   assert.deepEqual(entries['issue_repair'], { value: 'on', layer: 'default' })
 })
 
-test('全局那一层：工具印的是家目录那份，读作 global', () => {
+test('The global layer: the tool prints the home copy, read as global', () => {
   const entries = parseConfigList('issue_repair  = off（全局 ~/.pf/config.json）')
 
   assert.deepEqual(entries['issue_repair'], { value: 'off', layer: 'global' })
@@ -58,7 +58,7 @@ test('全局那一层：工具印的是家目录那份，读作 global', () => {
  * happened to print when it was written. Getting this wrong is silent: the parse yields no entries,
  * the panel draws no settings rows, and nothing errors.
  */
-test('层签两种写法都认：全角括号中文层名，与半角括号英文层名', () => {
+test('Both layer-tag spellings read: Chinese names in full-width parentheses, English in half-width', () => {
   const chinese = parseConfigList([
     'max_agents    = 1（项目 .pf/config.json）',
     'issue_repair  = on（出厂默认）',
@@ -70,25 +70,25 @@ test('层签两种写法都认：全角括号中文层名，与半角括号英�
     'worktree_mode = off (global ~/.pf/config.json)',
   ].join('\n'))
 
-  assert.deepEqual(chinese, english, '两种写法读出来得是同一份表')
+  assert.deepEqual(chinese, english, 'both spellings must read into the same table')
   assert.deepEqual(english['max_agents'], { value: '1', layer: 'project' })
   assert.deepEqual(english['issue_repair'], { value: 'on', layer: 'default' })
   assert.deepEqual(english['worktree_mode'], { value: 'off', layer: 'global' })
 })
 
-test('半角括号下，不认得的层名照样留空——宽度变了不改变判据', () => {
+test('Under half-width parentheses an unknown layer name still reads empty — width changes no verdict', () => {
   const entries = parseConfigList('test_tier     = minimal (nobody knows this layer)')
 
   assert.deepEqual(entries['test_tier'], { value: 'minimal', layer: null })
 })
 
-test('不认得的层名：那一行留着，层签留空——不替工具编一个它没说的层', () => {
+test('An unknown layer name: the line stays, the layer tag stays empty — no layer invented for the tool', () => {
   const entries = parseConfigList('test_tier     = minimal（这一层谁都不认得）')
 
   assert.deepEqual(entries['test_tier'], { value: 'minimal', layer: null })
 })
 
-test('不是设置行的都不收：工具另印的提醒、空行、没有值的那一行', () => {
+test('Anything but a setting line is dropped: the extra warning, blank lines, the value-less line', () => {
   const entries = parseConfigList([
     "Warning: C:\\ws\\.pf\\config.json 里的 'spawner' 不是可配的键，已跳过（可配的：issue_repair, max_agents）",
     '',
@@ -99,24 +99,24 @@ test('不是设置行的都不收：工具另印的提醒、空行、没有值�
   assert.deepEqual(Object.keys(entries), ['max_agents'])
 })
 
-test('读一趟：答的就是 config list，答在这个工作区的根上，表就是它印的那几行', async () => {
+test('A read answers `config list` at this workspace root; the table is the lines it printed', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(fakeContext({ root: stage.root }).ctx)
     const reading = await gateway.readConfig('s1', '')
 
     assert.equal(reading.ok, true, reading.refusal?.detail)
-    assert.equal(reading.workspaceRoot, stage.root, '读的是这条会话自己那个根')
-    assert.equal(reading.refusal, null, '成功那一支不带拒绝理由')
-    assert.deepEqual(reading.entries, parseConfigList(reading.text), 'entries 就是 text 解析出来的那一份')
-    assert.deepEqual(reading.entries['worktree_mode'], { value: 'off', layer: 'default' }, '没写过就是出厂默认')
+    assert.equal(reading.workspaceRoot, stage.root, 'reads this session\'s own root')
+    assert.equal(reading.refusal, null, 'the success branch carries no refusal')
+    assert.deepEqual(reading.entries, parseConfigList(reading.text), 'entries is exactly what text parses into')
+    assert.deepEqual(reading.entries['worktree_mode'], { value: 'off', layer: 'default' }, 'unset means the factory default')
     assert.equal(reading.entries['max_agents']?.layer, 'default')
   } finally {
     stage.done()
   }
 })
 
-test('读那一趟没成：如实说它没成，一行都不编，理由还是引擎自己那一句', async () => {
+test('A failed read: it says so plainly, invents no line, and the reason is still the engine\'s own', async () => {
   const stage = await project()
   try {
     /* A project settings file that is not JSON: the engine refuses, and its sentence is the detail. */
@@ -127,16 +127,16 @@ test('读那一趟没成：如实说它没成，一行都不编，理由还是�
     /* The reason is a code, and the engine's own words ride along as the detail: those words are not
      * this plugin's to translate, and the panel prints them as they came. */
     assert.equal(reading.ok, false)
-    assert.equal(reading.text, '', '没成的时候不往 text 里塞话——那句话没有语言')
+    assert.equal(reading.text, '', 'on failure nothing goes into text — that sentence has no language')
     assert.equal(reading.refusal?.code, 'tool-refused')
-    assert.ok((reading.refusal?.detail ?? '').length > 0, '引擎说了原因，原因在 detail 里')
+    assert.ok((reading.refusal?.detail ?? '').length > 0, 'the engine said why; the reason is in detail')
     assert.deepEqual(reading.entries, {})
   } finally {
     stage.done()
   }
 })
 
-test('写一条：config set <键> <值>，落的是项目那一层（不带 --global）', async () => {
+test('A write: `config set <key> <value>` lands on the project layer (no --global)', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(fakeContext({ root: stage.root }).ctx)
@@ -144,13 +144,13 @@ test('写一条：config set <键> <值>，落的是项目那一层（不带 --g
 
     assert.equal(outcome.ok, true, outcome.detail)
     assert.match(outcome.text, /^CONFIG: worktree_mode = fork \(written to project \.pf\/config\.json\)$/mu)
-    assert.equal(configOnDisk(stage.root).worktree_mode, 'fork', '值落在项目那一层')
+    assert.equal(configOnDisk(stage.root).worktree_mode, 'fork', 'the value lands on the project layer')
   } finally {
     stage.done()
   }
 })
 
-test('没登记的键照递：这一手不立放行表，拒的是引擎自己', async () => {
+test('An unregistered key is still handed over: this side keeps no allow-list, the engine refuses', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(fakeContext({ root: stage.root }).ctx)
@@ -161,7 +161,7 @@ test('没登记的键照递：这一手不立放行表，拒的是引擎自己',
     assert.equal(outcome.ok, false)
     assert.equal(outcome.code, 'tool-refused')
     assert.match(outcome.detail ?? '', /spawner/u)
-    assert.equal(configOnDisk(stage.root).spawner, undefined, '不认识的键落不了盘')
+    assert.equal(configOnDisk(stage.root).spawner, undefined, 'an unknown key never lands on disk')
   } finally {
     stage.done()
   }

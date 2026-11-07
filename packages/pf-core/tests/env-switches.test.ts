@@ -57,7 +57,7 @@ async function station(): Promise<{ root: string; node: string }> {
   extraRoots.push(dir);
   const pf = open(dir);
   await pf.ledger.init();
-  const node = (await pf.ledger.dag.add({ title: '一个节点' })).id;
+  const node = (await pf.ledger.dag.add({ title: 'one node' })).id;
   await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
   await pf.ledger.cycles.hold('main', node);
   return { root: dir, node };
@@ -233,7 +233,7 @@ describe('DSH_SESSION_ID: the session this process runs in', () => {
     await pf.ledger.init();
 
     process.env.DSH_SESSION_ID = 'session-of-this-process';
-    const noted = (await pf.ledger.dag.add({ title: '有会话的' })).id;
+    const noted = (await pf.ledger.dag.add({ title: 'the one with a session' })).id;
     const page = await pf.sessions.show(noted);
     expect(page.discussion).toEqual([
       expect.objectContaining({ session: 'session-of-this-process', host: 'dsh' }),
@@ -241,7 +241,7 @@ describe('DSH_SESSION_ID: the session this process runs in', () => {
     expect(page.discussion[0]!.at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
 
     delete process.env.DSH_SESSION_ID;
-    const bare = (await pf.ledger.dag.add({ title: '没会话的' })).id;
+    const bare = (await pf.ledger.dag.add({ title: 'the one without a session' })).id;
     expect((await pf.sessions.show(bare)).discussion).toEqual([]);
   });
 });

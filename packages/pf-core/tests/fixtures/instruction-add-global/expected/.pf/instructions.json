@@ -2,7 +2,7 @@
   "instructions": [
     {
       "id": "i-0001",
-      "text": "先把该节点的 spec 读一遍再动手",
+      "text": "read the spec of this node first, then start",
       "scope": "global",
       "target": "stage",
       "state": "live",

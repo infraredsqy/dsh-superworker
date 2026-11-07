@@ -3,10 +3,10 @@
     "@node-a@": {
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "测试体检的对拍起点",
+      "description": "starting point of the test-audit parity case",
       "mode": "auto",
       "status": "todo",
-      "title": "被关掉的节点",
+      "title": "the node that got closed",
       "updated_at": "@t1@"
     }
   }

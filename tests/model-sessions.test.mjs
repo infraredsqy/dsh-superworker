@@ -10,7 +10,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { latestSessionOf, readSessions, strandedCycleOf } from '../src/model/index.ts'
 
-test('一份笔记里最近开过的那条会话：两类各按自己的时刻比', () => {
+test('the most recently opened session in a note: each kind compared by its own moment', () => {
   assert.equal(latestSessionOf({
     discussion: [{ session: 'session-talk', host: 'dsh', at: '2026-10-16T18:21:28Z' }],
     run: [{ session: 'session-run', host: 'dsh', at: '2026-10-18T17:59:44Z' }],
@@ -22,7 +22,7 @@ test('一份笔记里最近开过的那条会话：两类各按自己的时刻�
   }), 'session-talk')
 })
 
-test('时刻一样或两处都没写：跑这一格的那条压过讨论的那条', () => {
+test('same moment, or neither written: the run for this cell beats the discussion', () => {
   assert.equal(latestSessionOf({
     discussion: [{ session: 'session-talk', at: '2026-10-18T00:00:00Z' }],
     run: [{ session: 'session-run', at: '2026-10-18T00:00:00Z' }],
@@ -34,7 +34,7 @@ test('时刻一样或两处都没写：跑这一格的那条压过讨论的那�
   }), 'session-run')
 })
 
-test('同一类里开过好几条：取时刻最新的那一条', () => {
+test('several of one kind opened: the one with the latest moment wins', () => {
   assert.equal(latestSessionOf({
     run: [
       { session: 'session-first', at: '2026-10-17T00:00:00Z' },
@@ -43,28 +43,28 @@ test('同一类里开过好几条：取时刻最新的那一条', () => {
   }), 'session-again')
 })
 
-test('解不出来的那一份：什么也解不出，不抛', () => {
+test('an unreadable one resolves nothing and does not throw', () => {
   assert.equal(latestSessionOf({ run: [{ host: 'dsh' }] }), undefined)
   assert.equal(latestSessionOf({ run: [{ session: '' }] }), undefined)
-  assert.equal(latestSessionOf({ run: '一串东西' }), undefined)
-  assert.equal(latestSessionOf('一条笔记不是一份记录'), undefined)
+  assert.equal(latestSessionOf({ run: 'a string of stuff' }), undefined)
+  assert.equal(latestSessionOf('a note is not a record'), undefined)
   assert.equal(latestSessionOf(undefined), undefined)
 })
 
-test('一层笔记读成读数：文件名剥掉后缀是节点身份，后缀不对的不算笔记', () => {
+test('a layer of notes read into a reading: the file name minus its suffix is the node id, a wrong suffix is not a note', () => {
   const out = readSessions({
     'n-1.json': JSON.stringify({ run: [{ session: 'session-7' }] }),
     'n-2.json': JSON.stringify({ discussion: [{ session: 'session-talk' }] }),
-    '说明.md': JSON.stringify({ run: [{ session: 'session-md' }] }),
+    'readme.md': JSON.stringify({ run: [{ session: 'session-md' }] }),
     '.json': JSON.stringify({ run: [{ session: 'session-bare' }] }),
   })
 
   assert.deepEqual(out, { 'n-1': 'session-7', 'n-2': 'session-talk' })
 })
 
-test('解不动的那一份：跳过那一格，别的格照读', () => {
+test('an unparsable one: that cell is skipped, the rest read on', () => {
   const out = readSessions({
-    'n-1.json': '这不是可读的 JSON 文本',
+    'n-1.json': 'this is not readable JSON text',
     'n-2.json': JSON.stringify({ run: [{ host: 'dsh' }] }),
     'n-3.json': JSON.stringify({ run: [{ session: 'session-3' }] }),
   })
@@ -72,7 +72,7 @@ test('解不动的那一份：跳过那一格，别的格照读', () => {
   assert.deepEqual(out, { 'n-3': 'session-3' })
 })
 
-test('一层笔记一条都没有：交回空的一份', () => {
+test('a layer with no note at all: an empty one comes back', () => {
   assert.deepEqual(readSessions({}), {})
 })
 
@@ -80,7 +80,7 @@ test('一层笔记一条都没有：交回空的一份', () => {
 
 const heldNode = { id: 'n-1', running: true }
 
-test('认领在、会话不在：这一格 stranded，回的是认领所在的那条线', () => {
+test('claim on disk, session gone: this cell is stranded, and the cycle the claim names comes back', () => {
   const claims = { 'n-1': 'c-1' }
   const sessions = { 'n-1': 'session-7' }
   const alive = new Set(['session-other'])
@@ -88,27 +88,27 @@ test('认领在、会话不在：这一格 stranded，回的是认领所在的�
   assert.equal(strandedCycleOf(heldNode, claims, sessions, alive), 'c-1')
 })
 
-test('会话还活着：不是 stranded', () => {
+test('the session is alive: not stranded', () => {
   const alive = new Set(['session-7'])
 
   assert.equal(strandedCycleOf(heldNode, { 'n-1': 'c-1' }, { 'n-1': 'session-7' }, alive), null)
 })
 
-test('没有认领：不是 stranded——claims 是这条读数的门', () => {
+test('no claim: not stranded — claims are the gate of this reading', () => {
   const alive = new Set([])
 
   assert.equal(strandedCycleOf(heldNode, {}, { 'n-1': 'session-7' }, alive), null)
   assert.equal(strandedCycleOf(heldNode, { 'n-1': '' }, { 'n-1': 'session-7' }, alive), null)
 })
 
-test('笔记没有给出会话身份：判不了「不在」，不算 stranded', () => {
+test('the note gives no session identity: "gone" cannot be judged, so not stranded', () => {
   const alive = new Set([])
 
   assert.equal(strandedCycleOf(heldNode, { 'n-1': 'c-1' }, {}, alive), null)
   assert.equal(strandedCycleOf(heldNode, { 'n-1': 'c-1' }, { 'n-1': 'session-7' }, null), null)
 })
 
-test('格子不在任何线的手里：认领和笔记都还在也不算 stranded——settled 的格子永远带着这两样', () => {
+test('the cell is in no cycle\'s hands: even with claim and note present it is not stranded — a settled cell always carries both', () => {
   const done = { id: 'n-1', running: false }
   const alive = new Set([])
 

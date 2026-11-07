@@ -2,7 +2,7 @@
   "instructions": [
     {
       "id": "i-0001",
-      "text": "报告只写现值",
+      "text": "the report writes the present value only",
       "scope": "global",
       "target": "stage",
       "state": "withdrawn",
@@ -11,7 +11,7 @@
       "said_by": "user",
       "at": "@t1@",
       "resolved_at": "@t2@",
-      "note": "当时先搁下"
+      "note": "parked it at the time"
     }
   ]
 }

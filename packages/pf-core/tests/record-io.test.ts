@@ -41,7 +41,7 @@ describe('the three readings of a read', () => {
     const dag = {
       nodes: {
         'aaaaaaaa-0001': {
-          title: '底座',
+          title: 'base',
           status: 'todo',
           mode: 'auto',
           dependencies: [],

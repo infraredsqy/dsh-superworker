@@ -73,9 +73,9 @@ describe('start: make a cycle and pin the nodes it opens with', () => {
   });
 
   it('parallel cap: as many ready slots as parallel allows are pinned in one go by rank, and the node with more dependents ranks first', async () => {
-    const hub = await addNode('中枢', { tags: ['coding'] });
-    await addNode('叶子', { tags: ['coding'], dependsOn: hub.id });
-    const extra = await addNode('旁件', { tags: ['coding'] });
+    const hub = await addNode('hub', { tags: ['coding'] });
+    await addNode('leaf', { tags: ['coding'], dependsOn: hub.id });
+    const extra = await addNode('side item', { tags: ['coding'] });
     // What is ready is the hub and the spare (the leaf waits for the hub); the hub has dependents,
     // so its importance score is higher and it ranks first.
     const started = await pf.ledger.cycles.start({ id: 'main', tags: ['coding'], parallel: 2 });
@@ -85,15 +85,15 @@ describe('start: make a cycle and pin the nodes it opens with', () => {
   });
 
   it('parallel defaults to one; a non-positive integer is refused; the cap is a ceiling, not a quota, so as many as remain are pinned', async () => {
-    const first = await addNode('头一件', { tags: ['coding'] });
-    const secondNode = await addNode('第二件', { tags: ['coding'] });
+    const first = await addNode('first item', { tags: ['coding'] });
+    const secondNode = await addNode('second item', { tags: ['coding'] });
     const started = await pf.ledger.cycles.start({ id: 'main', tags: ['coding'] });
     // When two rows tie (same score) the rank falls to the on-disk key order; the cap defaults to
     // one, so either of them is the one pinned.
     expect(started.holding).toHaveLength(1);
     expect([first.id, secondNode.id]).toContain(started.holding[0]!.id);
     expect(started.policies).toBeUndefined();
-    const spare = await addNode('剩下的那件', { tags: ['coding'] });
+    const spare = await addNode('the leftover item', { tags: ['coding'] });
     const second = await pf.ledger.cycles.start({ id: 'next', tags: ['coding'], force: true, parallel: 5 });
     // What another cycle holds does not enter the ranking; everything else fills the slots (cap 5,
     // and with only two ready nodes two are pinned).
@@ -110,17 +110,17 @@ describe('start: make a cycle and pin the nodes it opens with', () => {
   });
 
   it('tags are the picking range: a ready node outside it stays out of the ranking, and when everything is kept out the tags are blamed', async () => {
-    await addNode('圈外件', { tags: ['art'] });
+    await addNode('outside ring item', { tags: ['art'] });
     await expect(pf.ledger.cycles.start({ id: 'main', tags: ['coding'] })).rejects.toThrow('kept out by tag');
-    await addNode('圈 内 件', { tags: ['coding'] });
+    await addNode('in ring item', { tags: ['coding'] });
     const started = await pf.ledger.cycles.start({ id: 'main', tags: ['coding'] });
     expect(started.holding).toHaveLength(1);
     const pinned = await pf.ledger.dag.get(started.holding[0]!.id);
-    expect(pinned!.title).toBe('圈 内 件');
+    expect(pinned!.title).toBe('in ring item');
   });
 
   it('a tag-based refusal does not count another cycle\'s hold: when the only ready node is both held elsewhere and outside the range, the refusal still blames the tags', async () => {
-    const held = await addNode('圈外又被占的', { tags: ['art'] });
+    const held = await addNode('outside the ring and claimed too', { tags: ['art'] });
     await pf.ledger.cycles.create({ id: 'holder', tags: ['art'] });
     await pf.ledger.cycles.hold('holder', held.id);
     const before = readFileSync(join(root, '.pf', 'state.json'), 'utf8');
@@ -132,18 +132,18 @@ describe('start: make a cycle and pin the nodes it opens with', () => {
   });
 
   it('a node another cycle is holding stays out of the ranking: a cycle that left service still holds the node it never delivered', async () => {
-    const held = await addNode('被占的', { tags: ['coding'] });
+    const held = await addNode('the claimed one', { tags: ['coding'] });
     const first = await pf.ledger.cycles.start({ id: 'first', tags: ['coding'] });
     expect(first.holding.map((item) => item.id)).toEqual([held.id]);
     await pf.ledger.cycles.setStatus('first', 'inactive');
-    const free = await addNode('空着的', { tags: ['coding'] });
+    const free = await addNode('the empty one', { tags: ['coding'] });
     const second = await pf.ledger.cycles.create({ id: 'second', tags: ['coding'] });
     expect(second.status).toBe('active');
     const claimed = await pf.ledger.cycles.hold('second', free.id);
     expect(claimed.holding.map((item) => item.id)).toEqual([free.id]);
     // The held node is not under the third cycle's name — and it does not come back into the
     // selectable set just because the first cycle left service.
-    const spare = await addNode('再一件', { tags: ['coding'] });
+    const spare = await addNode('one more item', { tags: ['coding'] });
     const startedThird = await pf.ledger.cycles.start({ id: 'third', tags: ['coding'], force: true });
     expect(startedThird.holding.map((item) => item.id)).toEqual([spare.id]);
     await pf.ledger.cycles.setStatus('third', 'inactive');
@@ -175,7 +175,7 @@ describe('status: active and inactive', () => {
   });
 
   it('pulling back into service is the continue that stands before the checkpoint gate: the approval is written onto the node', async () => {
-    const gate = await addNode('过门的', { mode: 'checkpoint', tags: ['coding'] });
+    const gate = await addNode('the gated one', { mode: 'checkpoint', tags: ['coding'] });
     const line = await pf.ledger.cycles.start({ id: 'main', tags: ['coding'] });
     await pf.ledger.dag.setStatus(gate.id, 'completed');
     await pf.ledger.cycles.close('main', { node: gate.id, result: 'completed' });
@@ -189,7 +189,7 @@ describe('status: active and inactive', () => {
   });
 
   it('a landing spot that is not a checkpoint, or one already approved: activation writes nothing (the approval stamp does not move)', async () => {
-    const plain = await addNode('普通件', { tags: ['coding'] });
+    const plain = await addNode('plain item', { tags: ['coding'] });
     await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     await pf.ledger.dag.setStatus(plain.id, 'completed');
     await pf.ledger.cycles.hold('main', plain.id);
@@ -198,7 +198,7 @@ describe('status: active and inactive', () => {
     await pf.ledger.cycles.setStatus('main', 'active');
     expect((await pf.ledger.dag.get(plain.id))!.approved_at).toBeUndefined();
 
-    const gate = await addNode('过门的', { mode: 'checkpoint', tags: ['coding'] });
+    const gate = await addNode('the gated one', { mode: 'checkpoint', tags: ['coding'] });
     await pf.ledger.dag.setStatus(gate.id, 'completed');
     await pf.ledger.cycles.hold('main', gate.id);
     await pf.ledger.cycles.close('main', { node: gate.id, result: 'completed' });
@@ -211,7 +211,7 @@ describe('status: active and inactive', () => {
 
 describe('hold: claiming', () => {
   it('a claim lands in the registered list and since records the moment; re-claiming it yourself does not duplicate (restart semantics)', async () => {
-    const node = await addNode('要做的', { tags: ['coding'] });
+    const node = await addNode('to do', { tags: ['coding'] });
     await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     const first = await pf.ledger.cycles.hold('main', node.id);
     expect(first.holding).toEqual([{ id: node.id, since: expect.stringMatching(SECONDS_SHAPE) }]);
@@ -221,7 +221,7 @@ describe('hold: claiming', () => {
   });
 
   it('claim exclusion holds across cycles: a node in someone else\'s hands cannot be taken, whether that cycle is active or not', async () => {
-    const node = await addNode('独一件', { tags: ['coding'] });
+    const node = await addNode('the only one', { tags: ['coding'] });
     await pf.ledger.cycles.create({ id: 'a', tags: ['coding'] });
     await pf.ledger.cycles.hold('a', node.id);
     await pf.ledger.cycles.setStatus('a', 'inactive');
@@ -230,14 +230,14 @@ describe('hold: claiming', () => {
   });
 
   it('a cycle not on the books: the claim is refused', async () => {
-    const node = await addNode('无主的', { tags: ['coding'] });
+    const node = await addNode('unowned', { tags: ['coding'] });
     await expect(pf.ledger.cycles.hold('ghost', node.id)).rejects.toThrow('not found in state.json');
   });
 });
 
 describe('close: closing and the path', () => {
   it('the verdict enters path (who, from when to when, and the result), and the claim drops with it', async () => {
-    const node = await addNode('走一步', { tags: ['coding'] });
+    const node = await addNode('one step', { tags: ['coding'] });
     await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     const held = await pf.ledger.cycles.hold('main', node.id);
     const closed = await pf.ledger.cycles.close('main', { node: node.id, result: 'completed' });
@@ -253,7 +253,7 @@ describe('close: closing and the path', () => {
   });
 
   it('a node not in hand cannot be closed; a verdict outside the result vocabulary is refused; the cycle records do not move', async () => {
-    const node = await addNode('别家的', { tags: ['coding'] });
+    const node = await addNode('another project', { tags: ['coding'] });
     await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     await expect(pf.ledger.cycles.close('main', { node: node.id, result: 'completed' }))
       .rejects.toThrow('is not holding');
@@ -264,7 +264,7 @@ describe('close: closing and the path', () => {
   });
 
   it('a retry is legal: the same node enters path again and again, one step per run', async () => {
-    const node = await addNode('返工的', { tags: ['coding'] });
+    const node = await addNode('rework', { tags: ['coding'] });
     await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     await pf.ledger.cycles.hold('main', node.id);
     await pf.ledger.cycles.close('main', { node: node.id, result: 'failed' });
@@ -278,13 +278,13 @@ describe('close: closing and the path', () => {
 
 describe('retry: a retry only clears the ticket', () => {
   it('the old ticket is taken down and rewritten as a six-key pending ticket; the cycle record is not changed by a character', async () => {
-    const node = await addNode('要重跑的', { tags: ['coding'] });
+    const node = await addNode('to rerun', { tags: ['coding'] });
     await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     await pf.ledger.cycles.hold('main', node.id);
     const signalPath = join(root, '.pf', 'signals', 'main', `${node.id}.json`);
     mkdirSync(dirname(signalPath), { recursive: true });
     writeFileSync(signalPath, JSON.stringify({
-      cycle: 'main', node: node.id, status: 'failed', summary: '上回没成', outputs: {}, timestamp: '2026-01-01T00:00:00Z',
+      cycle: 'main', node: node.id, status: 'failed', summary: 'last time failed', outputs: {}, timestamp: '2026-01-01T00:00:00Z',
     }), 'utf8');
     const before = await pf.ledger.cycles.show('main');
     const after = await pf.ledger.cycles.retry('main', node.id);
@@ -298,7 +298,7 @@ describe('retry: a retry only clears the ticket', () => {
   });
 
   it('the retry ticket carries the sentence the caller gave; without one the fixed note stays', async () => {
-    const node = await addNode('重票据', { tags: ['coding'] });
+    const node = await addNode('reissued ticket', { tags: ['coding'] });
     await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     await pf.ledger.cycles.hold('main', node.id);
     const signalPath = join(root, '.pf', 'signals', 'main', `${node.id}.json`);
@@ -317,7 +317,7 @@ describe('retry: a retry only clears the ticket', () => {
   });
 
   it('node defaults to the one in hand; empty-handed and with nothing walked, there is nothing to retry', async () => {
-    const node = await addNode('在手件', { tags: ['coding'] });
+    const node = await addNode('in-hand item', { tags: ['coding'] });
     await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     await pf.ledger.cycles.hold('main', node.id);
     const retried = await pf.ledger.cycles.retry('main');
@@ -434,10 +434,10 @@ describe('list / show / current: the read side', () => {
   });
 
   it('a record written on a cycle comes back whole: rename / show round-trip', async () => {
-    await pf.ledger.cycles.create({ id: 'main', title: '旧名', tags: ['coding'] });
-    const renamed = await pf.ledger.cycles.rename('main', '新名');
-    expect(renamed.title).toBe('新名');
-    expect((await pf.ledger.cycles.show('main')).title).toBe('新名');
+    await pf.ledger.cycles.create({ id: 'main', title: 'old name', tags: ['coding'] });
+    const renamed = await pf.ledger.cycles.rename('main', 'new name');
+    expect(renamed.title).toBe('new name');
+    expect((await pf.ledger.cycles.show('main')).title).toBe('new name');
     const raw = JSON.parse(readFileSync(join(root, '.pf', 'state.json'), 'utf8')) as {
       cycles: Array<Record<string, unknown>>;
     };

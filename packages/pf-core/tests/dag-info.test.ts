@@ -35,12 +35,12 @@ const BASE_KEYS = [
 
 /** A small graph: b is completed and approved, a waits on b, c waits on a, d is shelved on its own. */
 async function plantGraph(): Promise<Record<'a' | 'b' | 'c' | 'd', string>> {
-  const b = (await pf.ledger.dag.add({ title: '乙' })).id;
+  const b = (await pf.ledger.dag.add({ title: 'B' })).id;
   await pf.ledger.dag.setStatus(b, 'completed');
   await pf.ledger.dag.approve(b, '2021-01-01T00:00:00.000000Z');
-  const a = (await pf.ledger.dag.add({ title: '甲', description: '甲的说明', depends_on: [b] })).id;
-  const c = (await pf.ledger.dag.add({ title: '丙', depends_on: [a] })).id;
-  const d = (await pf.ledger.dag.add({ title: '丁' })).id;
+  const a = (await pf.ledger.dag.add({ title: 'A', description: 'the note on A', depends_on: [b] })).id;
+  const c = (await pf.ledger.dag.add({ title: 'C', depends_on: [a] })).id;
+  const d = (await pf.ledger.dag.add({ title: 'D' })).id;
   await pf.ledger.dag.setStatus(d, 'shelved');
   return { a, b, c, d };
 }
@@ -50,18 +50,18 @@ describe('the detail: the record plus both edge directions', () => {
     const { a } = await plantGraph();
     const info = await pf.ledger.dag.info(a);
     expect(Object.keys(info)).toEqual(BASE_KEYS);
-    expect(info).toMatchObject({ id: a, title: '甲', status: 'todo', mode: 'auto', description: '甲的说明' });
+    expect(info).toMatchObject({ id: a, title: 'A', status: 'todo', mode: 'auto', description: 'the note on A' });
   });
 
   it('both directions come back in their own orders: dependencies as the record has them, dependents as the table has them', async () => {
     const { a, b, c } = await plantGraph();
     const info = await pf.ledger.dag.info(a);
-    expect(info.depends_on).toEqual([{ id: b, title: '乙' }]);
-    expect(info.depended_by).toEqual([{ id: c, title: '丙' }]);
+    expect(info.depends_on).toEqual([{ id: b, title: 'B' }]);
+    expect(info.depended_by).toEqual([{ id: c, title: 'C' }]);
   });
 
   it('a dependency the graph no longer holds reads `(unknown)`, and it still counts as delivered for ready', async () => {
-    const a = (await pf.ledger.dag.add({ title: '无依赖' })).id;
+    const a = (await pf.ledger.dag.add({ title: 'no dependencies' })).id;
     // Write the dangling edge straight into the record: the read side of the graph tolerates it.
     const file = join(root, '.pf', 'ideas.json');
     const data = JSON.parse(readFileSync(file, 'utf8')) as {
@@ -77,10 +77,10 @@ describe('the detail: the record plus both edge directions', () => {
   });
 
   it('weight lands only for light; readiness is the same word list gives', async () => {
-    const light = (await pf.ledger.dag.add({ title: '轻的', weight: 'light' })).id;
+    const light = (await pf.ledger.dag.add({ title: 'the light one', weight: 'light' })).id;
     const info = await pf.ledger.dag.info(light);
     expect(info.weight).toBe('light');
-    const standard = (await pf.ledger.dag.add({ title: '标准的' })).id;
+    const standard = (await pf.ledger.dag.add({ title: 'the standard one' })).id;
     expect('weight' in (await pf.ledger.dag.info(standard))).toBe(false);
     const rows = await pf.ledger.dag.list();
     for (const row of rows) {
@@ -116,8 +116,8 @@ describe('the detail: the record plus both edge directions', () => {
     expect(Object.keys(verbose)).toEqual([...BASE_KEYS, 'created_at', 'updated_at']);
     expect(verbose.created_at).toBe((await pf.ledger.dag.get(a))!.created_at);
     expect(verbose.updated_at).toBe((await pf.ledger.dag.get(a))!.updated_at);
-    expect(verbose.depends_on).toEqual([{ id: b, title: '乙', status: 'completed' }]);
-    expect(verbose.depended_by).toEqual([{ id: c, title: '丙', status: 'todo' }]);
+    expect(verbose.depends_on).toEqual([{ id: b, title: 'B', status: 'completed' }]);
+    expect(verbose.depended_by).toEqual([{ id: c, title: 'C', status: 'todo' }]);
   });
 
   it('the completion and approval moments land only when they were written', async () => {

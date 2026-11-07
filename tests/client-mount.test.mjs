@@ -77,7 +77,7 @@ function fakePanel({ locale = createLocalePort() } = {}) {
   }
 }
 
-test('两处注册：槽位、id / key、order、侧栏那一行的名字逐条对上', () => {
+test('the two registrations: slot, id / key, order, and the sidebar row name line up item by item', () => {
   const { ledger, ctx } = harness()
   const port = createLocalePort()
   const panel = fakePanel({ locale: port })
@@ -101,9 +101,9 @@ test('两处注册：槽位、id / key、order、侧栏那一行的名字逐条�
   assert.equal(SEAT_WORD, 'seat.label')
   assert.equal(side.locale, LOCALE_NS)
   const t = localeOf(port).t
-  assert.equal(t(SEAT_WORD), '寻路中心', '随包的中文词典里那一行就是这个字')
-  assert.equal(side.label(), t(SEAT_WORD), '那一行画出来的应当是词典里的字')
-  assert.notEqual(side.label(), SEAT_WORD, '那一行不能把键本身画出来')
+  assert.equal(t(SEAT_WORD), '寻路中心', 'the bundled Chinese dictionary has exactly that word for the row')
+  assert.equal(side.label(), t(SEAT_WORD), 'what the row draws should be the word from the dictionary')
+  assert.notEqual(side.label(), SEAT_WORD, 'the row must not draw the key itself')
 
   /* A language switch changes what the row says with no re-registration: the label is a function
    * reading the active language, not a word captured at registration time. */
@@ -122,7 +122,7 @@ test('两处注册：槽位、id / key、order、侧栏那一行的名字逐条�
   for (const [, entry] of ledger) assert.equal(typeof entry.component, 'function')
 })
 
-test('中央栏那一格交的是这次 apply 装的那块面板，口子、偏好与卡上那一下的去处都是它的', () => {
+test('the center-column seat hands the panel this apply installed; the port, prefs and where a card press goes are all its', () => {
   const opened = []
   const { ledger, ctx } = harness({ services: { uiWorkspace: { openSession: (target) => opened.push(target) } } })
   const panel = fakePanel()
@@ -142,7 +142,7 @@ test('中央栏那一格交的是这次 apply 装的那块面板，口子、偏�
   assert.deepEqual(opened, ['session-7'])
 })
 
-test('那条导航口子还没到场：卡上那一下点下去什么也不发生，这一层不抛', () => {
+test('the navigation seam has not arrived: pressing a card does nothing and this layer does not throw', () => {
   const { ledger, ctx } = harness()
   registerSeats(ctx, fakePanel(), () => undefined)
 
@@ -151,8 +151,8 @@ test('那条导航口子还没到场：卡上那一下点下去什么也不发�
   assert.doesNotThrow(() => { given.openSession('session-7') })
 })
 
-test('中央栏那一格另交出那份工作区清单：顶上那枚选择器读的就是它', () => {
-  const items = [{ workspaceId: 'w-1', path: 'C:\\ws', title: '一个工作区', sessionIds: ['s-1'] }]
+test('the center-column seat also hands out the workspace list: the selector on top reads it', () => {
+  const items = [{ workspaceId: 'w-1', path: 'C:\\ws', title: 'a workspace', sessionIds: ['s-1'] }]
   const snapshot = { items }
   const { ledger, ctx } = harness({
     services: { workspaces: { list: { getSnapshot: () => snapshot, subscribe: () => () => undefined } } },
@@ -165,9 +165,9 @@ test('中央栏那一格另交出那份工作区清单：顶上那枚选择器�
   assert.deepEqual(given.workspaces.getSnapshot().items, items)
 })
 
-test('工作区清单那份服务还没到场：交出去的是一份空名单，它一到场就叫一声', () => {
+test('the workspace-list service has not arrived: the empty list is handed out, and subscribers are told once it shows up', () => {
   const listeners = []
-  const items = [{ workspaceId: 'w-1', path: 'C:\\ws', title: '一个工作区', sessionIds: ['s-1'] }]
+  const items = [{ workspaceId: 'w-1', path: 'C:\\ws', title: 'a workspace', sessionIds: ['s-1'] }]
   let registered
   const { ledger, ctx } = harness()
   /* Measures the "service arrives late" route: hand out the empty list first, notify subscribers once it shows up. */
@@ -188,7 +188,7 @@ test('工作区清单那份服务还没到场：交出去的是一份空名单�
   assert.deepEqual(listeners, ['changed'])
 })
 
-test('同一份空名单：没有工作区清单时每次给出的都是同一个对象', () => {
+test('the same empty list: with no workspace list, every hand-out is the same object', () => {
   const { ledger, ctx } = harness()
   registerSeats(ctx, fakePanel(), () => undefined)
 
@@ -196,7 +196,7 @@ test('同一份空名单：没有工作区清单时每次给出的都是同一�
   assert.equal(source.getSnapshot(), source.getSnapshot())
 })
 
-test('收掉那条 effect：两条从名册上撤下来，两张样式标签跟着摘掉', () => {
+test('disposing the effect: both seats come off the ledger and both style tags are dropped', () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>')
   globalThis.document = dom.window.document
 
@@ -226,7 +226,7 @@ test('收掉那条 effect：两条从名册上撤下来，两张样式标签跟�
   assert.equal(ledger.size, 2)
 })
 
-test('没有 effect 的上下文：两条照样挂上，这一层不往调用点交回清理函数', () => {
+test('a context without effect: both seats still register, and this layer hands no clean-up function back', () => {
   const { ledger, effects, ctx } = harness({ withEffect: false })
   const panel = fakePanel()
   let stylesDropped = 0
@@ -240,7 +240,7 @@ test('没有 effect 的上下文：两条照样挂上，这一层不往调用点
   assert.equal(stylesDropped, 0)
 })
 
-test('同一本名册上再起一条插件：重复登记那一下停在这一层里，名册还是那两条', () => {
+test('a second plugin on the same ledger: the duplicate registration stops at this layer, the ledger still holds those two', () => {
   const { ledger, calls, effects, ctx } = harness()
   const panel = fakePanel()
 
@@ -265,7 +265,7 @@ test('同一本名册上再起一条插件：重复登记那一下停在这一�
   assert.equal(ledger.size, 2)
 })
 
-test('座席标准 props 里的 useSessions 是一条带投影的 hook，整份快照要靠恒等投影取回来', () => {
+test('the seat props\' useSessions is a hook with a projection, the whole snapshot comes back through an identity projection', () => {
   /* Real shape: `ids` is the host's list order, the current session in `byId` carries
    * `retainedBy.mainView`, and the first row of the list is a different session (secondary
    * sessions also enter `byId`; they just do not carry mainView). */
@@ -304,7 +304,7 @@ test('座席标准 props 里的 useSessions 是一条带投影的 hook，整份�
   assert.equal(currentSessionOf(undefined), undefined)
 })
 
-test('会话名册：宿主清单与本地清单行两处都算数，其余的不许进册', () => {
+test('the session roster: both the host list and local list rows count, nothing else gets in', () => {
   const snapshot = {
     ids: ['s1', '', 's2'],
     byId: {
@@ -323,7 +323,7 @@ test('会话名册：宿主清单与本地清单行两处都算数，其余的�
   assert.deepEqual([...knownSessionsOf({ ids: 's1', byId: null })], [])
 })
 
-test('切会话那一手：接上导航口子就把身份递过去，没接上就安安静静', () => {
+test('the session switch: with the navigation seam attached the identity is passed on, without it nothing happens', () => {
   const opened = []
   const nav = createSessionNav({
     get: (name) => (name === 'uiWorkspace' ? { openSession: (target) => opened.push(target) } : undefined),
@@ -349,34 +349,34 @@ test('切会话那一手：接上导航口子就把身份递过去，没接上�
   const realWarn = console.warn
   console.warn = (...args) => { warned.push(args.map(String).join(' ')) }
   try {
-    const noisy = createSessionNav({ get: (name) => (name === 'uiWorkspace' ? { openSession: () => { throw new Error('切不动') } } : undefined) })
+    const noisy = createSessionNav({ get: (name) => (name === 'uiWorkspace' ? { openSession: () => { throw new Error('cannot switch') } } : undefined) })
     assert.doesNotThrow(() => { noisy.open('session-7') })
   } finally {
     console.warn = realWarn
   }
-  assert.match(warned.join('\n'), /切不动/u)
+  assert.match(warned.join('\n'), /cannot switch/u)
 })
 
-test('随包的词典键集逐个对得上：少一个键，屏幕上就有一处没换过去', () => {
+test('the bundled dictionary key sets line up: one key missing leaves one spot on screen untranslated', () => {
   const keys = Object.keys(WORD_TABLES.zh).sort()
 
   assert.deepEqual(
     Object.keys(WORD_TABLES.en).sort(),
     keys,
-    '英文词典与中文词典的键必须逐个对得上：多一个、少一个都是一个屏幕上没人填的空',
+    'the English and Chinese dictionaries must line up key by key: one more or one less leaves an empty spot on screen',
   )
-  assert.deepEqual(Object.keys(WORD_TABLES).sort(), ['en', 'zh'], '随包的语言就是这两份')
+  assert.deepEqual(Object.keys(WORD_TABLES).sort(), ['en', 'zh'], 'the bundled languages are exactly these two')
 
   /* Every language carries every key, and carries a word rather than an empty spot. */
   for (const [locale, dict] of Object.entries(WORD_TABLES)) {
-    for (const key of keys) assert.equal(typeof dict[key], 'string', `${locale} 词典里缺了 ${key}`)
+    for (const key of keys) assert.equal(typeof dict[key], 'string', `${locale} dictionary is missing ${key}`)
   }
 
   /* One key set, two languages: the same key reads differently in the two lookup tables. */
   assert.notEqual(WORD_TABLES.en[SEAT_WORD], WORD_TABLES.zh[SEAT_WORD])
 })
 
-test('切换语言：那一行换成另一种语言，订阅者当场收到新读数', () => {
+test('switching language: the row changes to the other language and subscribers get the new reading at once', () => {
   const port = createLocalePort()
   const service = fakeLocaleService()
   port.attach(service)
@@ -392,24 +392,24 @@ test('切换语言：那一行换成另一种语言，订阅者当场收到新�
   service.switchTo('en')
 
   /* A language switch must wake subscribers, or the panel keeps drawing the old language. */
-  assert.equal(seen.length, 1, '换语言要叫醒订阅者')
+  assert.equal(seen.length, 1, 'a language switch must wake subscribers')
   const after = port.getSnapshot()
   assert.equal(seen[0], after)
-  assert.notEqual(after, before, '换语言后读数必须是一份新的：useSyncExternalStore 靠这个身份判断要不要重画')
+  assert.notEqual(after, before, 'a language switch must yield a new reading: useSyncExternalStore uses that identity to decide whether to redraw')
   assert.equal(after.revision, before.revision + 1)
   assert.equal(after.active, 'en')
   assert.equal(after.t(SEAT_WORD), 'Pathfinder Center')
-  assert.equal(after.t(SEAT_WORD), WORD_TABLES.en[SEAT_WORD], '画出来的那个字要出自词典')
+  assert.equal(after.t(SEAT_WORD), WORD_TABLES.en[SEAT_WORD], 'the word drawn must come from the dictionary')
   /* Every key moves with the language, not just the one the row asks for. */
   assert.equal(after.t('view.notes'), 'Instructions')
 })
 
-test('没有语言服务在场：这一层说中文，取的是随包那份词典', () => {
+test('with no locale service present: this layer speaks Chinese from the bundled dictionary', () => {
   /* The fallback is not a stub: a deployment with no locale service keeps the words the panel had
    * before it could be translated — the mechanism must not change the copy. */
   assert.equal(FALLBACK_LOCALE, 'zh')
   const bare = createLocalePort()
-  assert.equal(bare.getSnapshot().active, 'zh', '没接上服务时说的是中文')
+  assert.equal(bare.getSnapshot().active, 'zh', 'with no service attached it speaks Chinese')
   assert.equal(bare.getSnapshot().t(SEAT_WORD), WORD_TABLES.zh[SEAT_WORD])
   assert.equal(bare.getSnapshot().t('view.notes'), '指令')
 

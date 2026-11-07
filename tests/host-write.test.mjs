@@ -62,138 +62,138 @@ const context = (workspaceRoot) => fakeContext({
   absent: { subprocess: 'this host exposes no process gateway, and the write path must not ask for one' },
 }).ctx
 
-test('记下一条：原话整句落进记录，回来的就是引擎那一句', async () => {
+test('Recording one: the whole sentence lands in the record, and the engine\'s own line comes back', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(context(stage.root))
-    const said = '先看一眼记录再动手 & 别猜 "引号" 也在'
+    const said = 'look at the record before acting & do not guess "quotes" in here'
     const outcome = await gateway.addInstruction('s1', '', said, 'global', '', '')
 
-    assert.equal(outcome.ok, true, '记一条这次要成')
-    assert.match(outcome.text, /^INSTRUCTION \S+: \[global\/stage\] 先看一眼记录再动手 & 别猜 "引号" 也在$/u, '回来的是引擎自己那一行')
+    assert.equal(outcome.ok, true, 'this one must succeed')
+    assert.match(outcome.text, /^INSTRUCTION \S+: \[global\/stage\] look at the record before acting & do not guess "quotes" in here$/u, 'the engine\'s own line comes back')
     const landed = instructionSaying(stage.root, said)
-    assert.ok(landed !== undefined, '原话整句必须原样落在记录里')
+    assert.ok(landed !== undefined, 'the whole sentence must land in the record as it was')
     assert.equal(landed.scope, 'global')
-    assert.equal(landed.state, 'live', '新记下的是在用的那一条')
+    assert.equal(landed.state, 'live', 'the newly recorded one is the live one')
   } finally {
     stage.done()
   }
 })
 
-test('点名一个工作区：这一笔落在那个根上，不看这条会话自己落在哪儿', async () => {
+test('Naming a workspace: the write lands on that root, wherever this session itself sits', async () => {
   const mine = await project()
   const other = await project()
   try {
     const gateway = new PathfinderRecordsGateway(context(mine.root))
-    const outcome = await gateway.addInstruction('s1', other.root, '这一句写给别人', 'global', '', '')
+    const outcome = await gateway.addInstruction('s1', other.root, 'this one is for somebody else', 'global', '', '')
 
     assert.equal(outcome.ok, true, outcome.detail)
-    assert.ok(instructionSaying(other.root, '这一句写给别人') !== undefined, '点名的那个根上要有这一条')
-    assert.deepEqual(instructionsOnDisk(mine.root), [], '这条会话自己那个根上一个字都不该多')
+    assert.ok(instructionSaying(other.root, 'this one is for somebody else') !== undefined, 'the named root must hold this entry')
+    assert.deepEqual(instructionsOnDisk(mine.root), [], 'not one character more under this session\'s own root')
   } finally {
     mine.done()
     other.done()
   }
 })
 
-test('绑一格：点名的那个节点落进记录，句子里的位置也指着它', async () => {
+test('Binding a cell: the named node lands in the record, and the sentence\'s target points at it', async () => {
   const stage = await project()
   try {
     const io = ioOf(stage.root)
-    const added = await answer(['dag', 'add', '这一格先停下'], io)
+    const added = await answer(['dag', 'add', 'this cell stops here'], io)
     assert.equal(added.code, 0, added.stderr)
     const nodes = JSON.parse(readFileSync(join(stage.root, '.pf', 'ideas.json'), 'utf8')).nodes
-    const node = Object.keys(nodes).find((id) => nodes[id].title === '这一格先停下')
-    assert.ok(node !== undefined, '种子节点没落进图里')
+    const node = Object.keys(nodes).find((id) => nodes[id].title === 'this cell stops here')
+    assert.ok(node !== undefined, 'the seed node did not land in the graph')
 
     const gateway = new PathfinderRecordsGateway(context(stage.root))
-    const outcome = await gateway.addInstruction('s1', '', '这一格先停下', 'node', '', node)
+    const outcome = await gateway.addInstruction('s1', '', 'this cell stops here', 'node', '', node)
 
     assert.equal(outcome.ok, true, outcome.detail)
-    const landed = instructionSaying(stage.root, '这一格先停下')
+    const landed = instructionSaying(stage.root, 'this cell stops here')
     assert.equal(landed.scope, 'node')
-    assert.equal(landed.node, node, '绑的是点名那一格')
+    assert.equal(landed.node, node, 'it binds the named cell')
     assert.equal(
       outcome.text,
-      `INSTRUCTION ${landed.id}: [node/stage] 这一格先停下   @ ${node.slice(0, 8)}`,
-      '回来的那一行是引擎自己那一句，绑的那一格在句尾',
+      `INSTRUCTION ${landed.id}: [node/stage] this cell stops here   @ ${node.slice(0, 8)}`,
+      'the line back is the engine\'s own, with the bound cell at its tail',
     )
   } finally {
     stage.done()
   }
 })
 
-test('归档一条：记录留在盘上，状态换成 withdrawn', async () => {
+test('Archiving one: the record stays on disk, the state becomes withdrawn', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(context(stage.root))
-    await gateway.addInstruction('s1', '', '归档我', 'global', '', '')
-    const id = instructionSaying(stage.root, '归档我').id
+    await gateway.addInstruction('s1', '', 'archive me', 'global', '', '')
+    const id = instructionSaying(stage.root, 'archive me').id
 
     const outcome = await gateway.archiveInstruction('s1', '', id)
 
     assert.equal(outcome.ok, true, outcome.detail)
     assert.equal(outcome.text, `INSTRUCTION ${id} → withdrawn`)
-    const archived = instructionSaying(stage.root, '归档我')
-    assert.equal(archived.state, 'withdrawn', '归档只改状态：记录与句子都还在')
+    const archived = instructionSaying(stage.root, 'archive me')
+    assert.equal(archived.state, 'withdrawn', 'archiving changes state only: record and sentence both stay')
     assert.equal(archived.id, id)
   } finally {
     stage.done()
   }
 })
 
-test('复原一条：归档那条回到在用', async () => {
+test('Reviving one: the archived entry goes back to live', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(context(stage.root))
-    await gateway.addInstruction('s1', '', '放回去', 'global', '', '')
-    const id = instructionSaying(stage.root, '放回去').id
+    await gateway.addInstruction('s1', '', 'put it back', 'global', '', '')
+    const id = instructionSaying(stage.root, 'put it back').id
     await gateway.archiveInstruction('s1', '', id)
 
     const outcome = await gateway.reviveInstruction('s1', '', id)
 
     assert.equal(outcome.ok, true, outcome.detail)
     assert.equal(outcome.text, `INSTRUCTION ${id} → live`)
-    assert.equal(instructionSaying(stage.root, '放回去').state, 'live')
+    assert.equal(instructionSaying(stage.root, 'put it back').state, 'live')
   } finally {
     stage.done()
   }
 })
 
-test('删一条：句子与记录一起走，回来的尾巴是 REMOVED', async () => {
+test('Removing one: the sentence goes with the record, and the tail back is REMOVED', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(context(stage.root))
-    await gateway.addInstruction('s1', '', '这条我要删', 'global', '', '')
-    const id = instructionSaying(stage.root, '这条我要删').id
+    await gateway.addInstruction('s1', '', 'delete this one', 'global', '', '')
+    const id = instructionSaying(stage.root, 'delete this one').id
 
     const outcome = await gateway.removeInstruction('s1', '', id)
 
     assert.equal(outcome.ok, true, outcome.detail)
     assert.match(outcome.text, new RegExp(`REMOVED ${id}$`, 'u'))
-    assert.equal(instructionSaying(stage.root, '这条我要删'), undefined, '删一条不留句子')
-    assert.deepEqual(instructionsOnDisk(stage.root), [], '记录里一条都不剩')
+    assert.equal(instructionSaying(stage.root, 'delete this one'), undefined, 'removing leaves no sentence')
+    assert.deepEqual(instructionsOnDisk(stage.root), [], 'not one entry is left in the record')
   } finally {
     stage.done()
   }
 })
 
-test('写一个设置：项目那一层落盘，回来的是引擎印的那两行', async () => {
+test('Writing a setting: it lands on the project layer, and the engine\'s two printed lines come back', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(context(stage.root))
     const outcome = await gateway.setConfig('s1', '', 'worktree_mode', 'reuse')
 
     assert.equal(outcome.ok, true, outcome.detail)
-    assert.match(outcome.text, /^CONFIG: worktree_mode = reuse \(written to project \.pf\/config\.json\)$/mu, '写进去的那一行')
-    assert.match(outcome.text, /^CONFIG: effective worktree_mode = reuse \(from project \.pf\/config\.json\)$/mu, '第二行是生效值')
-    assert.equal(configOnDisk(stage.root).worktree_mode, 'reuse', '落的是项目那一层')
+    assert.match(outcome.text, /^CONFIG: worktree_mode = reuse \(written to project \.pf\/config\.json\)$/mu, 'the line that was written')
+    assert.match(outcome.text, /^CONFIG: effective worktree_mode = reuse \(from project \.pf\/config\.json\)$/mu, 'the second line is the effective value')
+    assert.equal(configOnDisk(stage.root).worktree_mode, 'reuse', 'it lands on the project layer')
   } finally {
     stage.done()
   }
 })
 
-test('读设置：引擎印的每一行解析成表，成功那一支不塞拒绝理由', async () => {
+test('Reading settings: every line the engine printed parses into the table, and the success branch carries no refusal', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(context(stage.root))
@@ -202,17 +202,17 @@ test('读设置：引擎印的每一行解析成表，成功那一支不塞拒�
     const reading = await gateway.readConfig('s1', '')
 
     assert.equal(reading.ok, true, reading.refusal?.detail)
-    assert.equal(reading.workspaceRoot, stage.root, '读的是这个工作区的根')
+    assert.equal(reading.workspaceRoot, stage.root, 'reads this workspace root')
     assert.equal(reading.refusal, null)
-    assert.ok(reading.text.length > 0, '成功那一支带着引擎印的那几行')
-    assert.deepEqual(reading.entries['worktree_mode'], { value: 'fork', layer: 'project' }, '项目那一层写的值在这儿')
-    assert.equal(reading.entries['max_agents']?.layer, 'default', '没写过的键读作出厂默认')
+    assert.ok(reading.text.length > 0, 'the success branch carries the lines the engine printed')
+    assert.deepEqual(reading.entries['worktree_mode'], { value: 'fork', layer: 'project' }, 'the value written to the project layer is here')
+    assert.equal(reading.entries['max_agents']?.layer, 'default', 'an unwritten key reads as the factory default')
   } finally {
     stage.done()
   }
 })
 
-test('全局那一层：家目录那份写下的值读成 global，这一手不认错层', async () => {
+test('The global layer: a value written into the home copy reads as global, and this hand misreads no layer', async () => {
   const stage = await project()
   try {
     /* The machine layer, written the way a person would: the engine reads `<PF_HOME_DIR>/.pf/config.json`,
@@ -224,29 +224,29 @@ test('全局那一层：家目录那份写下的值读成 global，这一手不�
     const reading = await gateway.readConfig('s1', '')
 
     assert.equal(reading.ok, true, reading.refusal?.detail)
-    assert.deepEqual(reading.entries['max_agents'], { value: '3', layer: 'global' }, '家目录那份压过出厂默认，层签读作 global')
+    assert.deepEqual(reading.entries['max_agents'], { value: '3', layer: 'global' }, 'the home copy outranks the factory default, the layer tag reads global')
   } finally {
     rmSync(join(pinned.home, '.pf'), { recursive: true, force: true })
     stage.done()
   }
 })
 
-test('空话与不认识的范围当场说清，记录一个字都不动', async () => {
+test('An empty sentence and an unknown scope are settled on the spot, and the record moves not one character', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(context(stage.root))
     const blank = await gateway.addInstruction('s1', '', '   ', 'global', '', '')
-    const odd = await gateway.addInstruction('s1', '', '一句话', 'everywhere', '', '')
+    const odd = await gateway.addInstruction('s1', '', 'one sentence', 'everywhere', '', '')
 
-    assert.deepEqual(blank, { ok: false, code: 'empty-text' }, '空话没有可记的东西')
-    assert.deepEqual(odd, { ok: false, code: 'scope-unknown', detail: 'everywhere' }, '不认识的范围把它本身放进 detail')
-    assert.deepEqual(instructionsOnDisk(stage.root), [], '两条都没落到盘上')
+    assert.deepEqual(blank, { ok: false, code: 'empty-text' }, 'an empty sentence has nothing to record')
+    assert.deepEqual(odd, { ok: false, code: 'scope-unknown', detail: 'everywhere' }, 'an unknown scope puts itself into detail')
+    assert.deepEqual(instructionsOnDisk(stage.root), [], 'neither landed on disk')
   } finally {
     stage.done()
   }
 })
 
-test('引擎非零作答：ok 是假，detail 是它自己那一句，记录不改', async () => {
+test('A non-zero engine answer: ok is false, detail is its own sentence, the record unchanged', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(context(stage.root))
@@ -254,13 +254,13 @@ test('引擎非零作答：ok 是假，detail 是它自己那一句，记录不�
 
     assert.equal(outcome.ok, false)
     assert.equal(outcome.code, 'tool-refused')
-    assert.match(outcome.detail, /i-nope/u, '引擎自己说了是哪个 id：那句原样回来，不替它翻译')
+    assert.match(outcome.detail, /i-nope/u, 'the engine itself said which id: that sentence comes back as it was, no translation on its behalf')
   } finally {
     stage.done()
   }
 })
 
-test('值合不合法由引擎判：它拒绝的那一句原样回来，盘上什么都不留', async () => {
+test('Whether a value is legal is the engine\'s call: the sentence it refuses comes back as it was, nothing stays on disk', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(context(stage.root))
@@ -269,14 +269,14 @@ test('值合不合法由引擎判：它拒绝的那一句原样回来，盘上�
     assert.equal(outcome.ok, false)
     assert.equal(outcome.code, 'tool-refused')
     assert.match(outcome.detail, /max_agents/u)
-    assert.match(outcome.detail, /positive integer/u, '引擎自己的判据原样在 detail 里')
-    assert.equal(configOnDisk(stage.root).max_agents, undefined, '被拒的那一笔一个字都没写下去')
+    assert.match(outcome.detail, /positive integer/u, 'the engine\'s own verdict stays in detail as it was')
+    assert.equal(configOnDisk(stage.root).max_agents, undefined, 'not one character of the refused write went down')
   } finally {
     stage.done()
   }
 })
 
-test('没登记的键照递：这一手不立放行表，拒的是引擎', async () => {
+test('An unregistered key is still handed over: this side keeps no allow-list, the engine refuses', async () => {
   const stage = await project()
   try {
     const gateway = new PathfinderRecordsGateway(context(stage.root))
@@ -284,8 +284,8 @@ test('没登记的键照递：这一手不立放行表，拒的是引擎', async
 
     assert.equal(outcome.ok, false)
     assert.equal(outcome.code, 'tool-refused')
-    assert.match(outcome.detail, /spawner/u, '键名在这句话里')
-    assert.equal(configOnDisk(stage.root).spawner, undefined, '不认识的键落不了盘')
+    assert.match(outcome.detail, /spawner/u, 'the key name is in that sentence')
+    assert.equal(configOnDisk(stage.root).spawner, undefined, 'an unknown key never lands on disk')
   } finally {
     stage.done()
   }

@@ -24,7 +24,7 @@ const record = () => ({
   '.pf/ideas.json': json({
     nodes: {
       n1: {
-        title: '起头那一格',
+        title: 'the starting cell',
         mode: 'auto',
         status: 'completed',
         created_at: '2026-01-01T00:00:00.000Z',
@@ -32,7 +32,7 @@ const record = () => ({
         dependencies: [],
       },
       n2: {
-        title: '等它那一格',
+        title: 'the cell waiting on it',
         mode: 'auto',
         status: 'todo',
         created_at: '2026-01-04T00:00:00.000Z',
@@ -67,17 +67,17 @@ function touchAt(window, type, fingers) {
 async function fieldAndCanvas(mounted) {
   const { window, act, container, settle } = mounted
   const mapTab = mounted.tabs().find((tab) => tab.getAttribute('aria-controls') === 'pane-map')
-  assert.notEqual(mapTab, undefined, '地图那一格不在标签栏上')
+  assert.notEqual(mapTab, undefined, 'the map tab is not in the tab strip')
   await act(async () => { mapTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
   await settle()
   const field = container.querySelector('.pf-field')
   const canvas = container.querySelector('.pf-canvas')
-  assert.notEqual(field, null, '地图的画布区不在')
-  assert.notEqual(canvas, null, '地图的画布不在')
+  assert.notEqual(field, null, 'the map field is missing')
+  assert.notEqual(canvas, null, 'the map canvas is missing')
   return { field, canvas }
 }
 
-test('触摸拖一下：画布跟着走，这一下也被拦下', { skip: bundleSkip }, async () => {
+test('a one-finger drag: the drawing follows and the move is prevented', { skip: bundleSkip }, async () => {
   const mounted = await mountBuiltPanel({ record: record() })
   try {
     const { field, canvas } = await fieldAndCanvas(mounted)
@@ -92,14 +92,14 @@ test('触摸拖一下：画布跟着走，这一下也被拦下', { skip: bundle
       gestureHeld = field.dispatchEvent(touchAt(mounted.window, 'touchmove', [[7, [160, 40]]]))
       field.dispatchEvent(touchAt(mounted.window, 'touchend', [[7, [160, 40]]]))
     })
-    assert.equal(gestureHeld, false, 'touchmove 没被拦下（preventDefault 没调）：浏览器的手势会半路夺走这根手指')
-    assert.notEqual(canvas.style.transform, cameraBefore, '触摸拖了一下，画布没动')
+    assert.equal(gestureHeld, false, 'touchmove was not prevented (preventDefault not called): the browser gesture takes the finger mid-drag')
+    assert.notEqual(canvas.style.transform, cameraBefore, 'a touch drag happened but the canvas did not move')
   } finally {
     await mounted.unmount()
   }
 })
 
-test('双指张开：镜头缩放且跟着两指中点走，这一下也被拦下', { skip: bundleSkip }, async () => {
+test('a two-finger spread: the camera scales around the midpoint and the move is prevented', { skip: bundleSkip }, async () => {
   const mounted = await mountBuiltPanel({ record: record() })
   try {
     const { field, canvas } = await fieldAndCanvas(mounted)
@@ -111,8 +111,8 @@ test('双指张开：镜头缩放且跟着两指中点走，这一下也被拦�
       spreadHeld = field.dispatchEvent(touchAt(mounted.window, 'touchmove', [[3, [160, 200]], [4, [320, 200]]]))
       field.dispatchEvent(touchAt(mounted.window, 'touchend', [[3, [160, 200]], [4, [320, 200]]]))
     })
-    assert.equal(spreadHeld, false, '捏合的 touchmove 没被拦下：浏览器的页面缩放会把它抢走')
-    assert.notEqual(canvas.style.transform, cameraBefore, '双指张开，镜头没有缩放')
+    assert.equal(spreadHeld, false, 'the pinch touchmove was not prevented: the browser page zoom would take it')
+    assert.notEqual(canvas.style.transform, cameraBefore, 'a two-finger spread happened but the camera did not scale')
   } finally {
     await mounted.unmount()
   }

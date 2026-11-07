@@ -178,8 +178,8 @@ describe('ledger.init: the bottom line holds in an environment without git', () 
     const pf = open(root);
     await pf.ledger.init();
     const pfDir = join(root, '.pf');
-    writeFileSync(join(pfDir, '.gitignore'), '被人改坏了\n', 'utf8');
-    writeFileSync(join(pfDir, 'AGENTS.md'), '被人改坏了\n', 'utf8');
+    writeFileSync(join(pfDir, '.gitignore'), 'someone broke it\n', 'utf8');
+    writeFileSync(join(pfDir, 'AGENTS.md'), 'someone broke it\n', 'utf8');
     const repaired = await pf.ledger.init();
     expect(repaired.written.sort()).toEqual(['.gitignore', 'AGENTS.md'].sort());
     expect(readFileSync(join(pfDir, '.gitignore'), 'utf8')).toBe(GITIGNORE);

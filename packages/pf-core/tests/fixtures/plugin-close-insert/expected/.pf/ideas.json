@@ -4,10 +4,10 @@
       "completed_at": "@t4@",
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "收尾缝的对拍起点",
+      "description": "starting point of the closing-seam parity case",
       "mode": "auto",
       "status": "completed",
-      "title": "被关掉的节点",
+      "title": "the node that got closed",
       "updated_at": "@t4@"
     },
     "@node-b@": {

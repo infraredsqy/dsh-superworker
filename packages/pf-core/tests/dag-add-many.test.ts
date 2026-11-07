@@ -42,10 +42,10 @@ function nodeDirs(): string[] {
 
 describe('addMany: one batch, one graph write', () => {
   it('a row may name a batch ref and a node already on the graph: three nodes, the declared edges, the refs handed back', async () => {
-    const existing = await pf.ledger.dag.add({ title: '在图上的' });
+    const existing = await pf.ledger.dag.add({ title: 'already on the graph' });
     const added = await pf.ledger.dag.addMany([
-      { ref: 'base', title: '第一批', tags: ['coding'], weight: 'light' },
-      { ref: 'top', title: '第二批', depends_on: ['base', existing.id] },
+      { ref: 'base', title: 'first batch', tags: ['coding'], weight: 'light' },
+      { ref: 'top', title: 'second batch', depends_on: ['base', existing.id] },
     ]);
 
     expect(added).toHaveLength(2);
@@ -53,7 +53,7 @@ describe('addMany: one batch, one graph write', () => {
     expect(base!.ref).toBe('base');
     expect(top!.ref).toBe('top');
     // The registry shape is add's own: todo / auto, an empty dependency list, tags and weight only when given.
-    expect(base).toMatchObject({ title: '第一批', description: '', status: 'todo', mode: 'auto', dependencies: [] });
+    expect(base).toMatchObject({ title: 'first batch', description: '', status: 'todo', mode: 'auto', dependencies: [] });
     expect(base!.tags).toEqual(['coding']);
     expect(base!.weight).toBe('light');
     expect(top!.weight).toBeUndefined();
@@ -69,14 +69,14 @@ describe('addMany: one batch, one graph write', () => {
   });
 
   it('one row with a dependency the graph does not hold refuses the whole batch: the document and the node directories stay as they were', async () => {
-    const existing = await pf.ledger.dag.add({ title: '原来就有的' });
+    const existing = await pf.ledger.dag.add({ title: 'already there' });
     const before = ideasBytes();
     const dirsBefore = nodeDirs();
 
     await expect(
       pf.ledger.dag.addMany([
-        { ref: 'good', title: '好行' },
-        { title: '坏行', depends_on: ['no-such-node'] },
+        { ref: 'good', title: 'good row' },
+        { title: 'bad row', depends_on: ['no-such-node'] },
       ]),
     ).rejects.toThrow('node no-such-node not found');
 
@@ -86,14 +86,14 @@ describe('addMany: one batch, one graph write', () => {
   });
 
   it('a batch cycle (a depends on b, b depends on a) is refused and the graph keeps no trace of it', async () => {
-    await pf.ledger.dag.add({ title: '圈外的' });
+    await pf.ledger.dag.add({ title: 'outside the ring' });
     const before = ideasBytes();
     const dirsBefore = nodeDirs();
 
     await expect(
       pf.ledger.dag.addMany([
-        { ref: 'a', title: '甲', depends_on: ['b'] },
-        { ref: 'b', title: '乙', depends_on: ['a'] },
+        { ref: 'a', title: 'A', depends_on: ['b'] },
+        { ref: 'b', title: 'B', depends_on: ['a'] },
       ]),
     ).rejects.toThrow(/cycle detected: .* → .*/);
 
@@ -102,18 +102,18 @@ describe('addMany: one batch, one graph write', () => {
   });
 
   it('a duplicate ref and an unknown row field are both refused with the row named', async () => {
-    await pf.ledger.dag.add({ title: '原来就有的' });
+    await pf.ledger.dag.add({ title: 'already there' });
     const before = ideasBytes();
     const dirsBefore = nodeDirs();
 
     await expect(
       pf.ledger.dag.addMany([
-        { ref: 'same', title: '一' },
-        { ref: 'same', title: '二' },
+        { ref: 'same', title: 'one' },
+        { ref: 'same', title: 'two' },
       ]),
     ).rejects.toThrow(/row 2: ref "same"/);
 
-    const withUnknown = { title: '一', priority: 'high' } as unknown as DagAddManyRow;
+    const withUnknown = { title: 'one', priority: 'high' } as unknown as DagAddManyRow;
     await expect(pf.ledger.dag.addMany([withUnknown])).rejects.toThrow(
       /row 1: unknown field "priority"/,
     );
@@ -125,13 +125,13 @@ describe('addMany: one batch, one graph write', () => {
   it('a bad title, mode, weight, tags or dependency cell refuses the batch too', async () => {
     await expect(pf.ledger.dag.addMany([{ title: '' }])).rejects.toThrow('row 1: title cannot be empty');
     await expect(
-      pf.ledger.dag.addMany([{ title: '模式', mode: 'always' } as unknown as DagAddManyRow]),
+      pf.ledger.dag.addMany([{ title: 'mode', mode: 'always' } as unknown as DagAddManyRow]),
     ).rejects.toThrow(/row 1: mode must be one of/);
     await expect(
-      pf.ledger.dag.addMany([{ title: '重量', weight: 'heavy' } as unknown as DagAddManyRow]),
+      pf.ledger.dag.addMany([{ title: 'weight', weight: 'heavy' } as unknown as DagAddManyRow]),
     ).rejects.toThrow(/row 1: weight must be one of/);
     await expect(
-      pf.ledger.dag.addMany([{ title: '标签', tags: 'coding' } as unknown as DagAddManyRow]),
+      pf.ledger.dag.addMany([{ title: 'tags', tags: 'coding' } as unknown as DagAddManyRow]),
     ).rejects.toThrow('row 1: tags must be an array of strings');
     await expect(pf.ledger.dag.addMany([])).rejects.toThrow('non-empty array of rows');
   });

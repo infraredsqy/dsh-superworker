@@ -2,12 +2,12 @@
   "path": "ledger.instructions.add",
   "args": [
     {
-      "text": "收线前把未决问题清一遍",
+      "text": "clear the open questions before wrapping up",
       "scope": "node",
       "node": "@node-b@",
       "target": "boundary",
       "said_by": "owner",
-      "note": "每一轮收线都要念一遍",
+      "note": "read it aloud at every wrap-up",
       "stop_after_nodes": 2
     }
   ]

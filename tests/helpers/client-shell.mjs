@@ -24,7 +24,7 @@ const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 export const BUNDLE = join(repoRoot, 'lib', 'client.js')
 
 /** Why a case has to skip, or `false` when the bundle is there. */
-export const bundleSkip = existsSync(BUNDLE) ? false : `${BUNDLE} 不在：先跑 npm run bundle:client（npm test 会自己先跑一遍）`
+export const bundleSkip = existsSync(BUNDLE) ? false : `${BUNDLE} is not there: run npm run bundle:client first (npm test runs it first)`
 
 /**
  * The spec the bundle hands the shell. A module is loaded once per process, so a second mount in the
@@ -75,7 +75,7 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
   const loaded = await specOf(window)
   const client = loaded.factory((name) => {
     if (name === 'react') return React
-    throw new Error(`这个模块表上没有 ${name}`)
+    throw new Error(`this module table has no ${name}`)
   })
 
   /* ---- the host half behind it, read through the in-memory port ---- */

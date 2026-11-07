@@ -3,7 +3,7 @@
   "args": [
     "@node-b@",
     {
-      "title": "复核校样·二校",
+      "title": "review proof · second pass",
       "mode": "manual"
     }
   ]

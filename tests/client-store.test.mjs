@@ -9,13 +9,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '../src/client/store.ts'
 
-test('换快照：一样的读数不换 identity，也不吵醒订阅者', () => {
+test('a snapshot swap: an identical reading keeps its identity and wakes no subscriber', () => {
   const store = createStore({ n: 1 }, (left, right) => left.n === right.n)
   let woken = 0
   store.subscribe(() => { woken += 1 })
 
   store.put({ n: 1 })
-  assert.equal(woken, 0, '同一个数：不换对象、不发通知')
+  assert.equal(woken, 0, 'the same number: no new object, no notification')
   assert.deepEqual(store.getSnapshot(), { n: 1 })
 
   store.put({ n: 2 })
@@ -23,36 +23,36 @@ test('换快照：一样的读数不换 identity，也不吵醒订阅者', () =>
   assert.deepEqual(store.getSnapshot(), { n: 2 })
 })
 
-test('换快照：不说怎么比的时候就按同一个对象算', () => {
+test('a snapshot swap: with no comparison given, the same object counts as unchanged', () => {
   const store = createStore({ n: 1 })
   let woken = 0
   store.subscribe(() => { woken += 1 })
 
   store.put(store.getSnapshot())
-  assert.equal(woken, 0, '同一个引用：什么都没变')
+  assert.equal(woken, 0, 'the same reference: nothing changed')
   store.put({ n: 1 })
-  assert.equal(woken, 1, '另一个对象：算变了')
+  assert.equal(woken, 1, 'another object: counts as changed')
 })
 
-test('一个订阅者抛了，后面的照旧收到通知，错误不外泄', () => {
+test('one subscriber throws, the rest still hear it, the error does not leak', () => {
   const store = createStore(0)
   const heard = []
   store.subscribe(() => { heard.push('first') })
-  store.subscribe(() => { throw new Error('这一位坏了') })
+  store.subscribe(() => { throw new Error('this one is broken') })
   store.subscribe(() => { heard.push('last') })
 
   assert.doesNotThrow(() => { store.put(1) })
-  assert.deepEqual(heard, ['first', 'last'], '坏的那一位没有把队列截断')
+  assert.deepEqual(heard, ['first', 'last'], 'the broken one did not cut the queue short')
 })
 
-test('看着的人数：订阅进、退都算在这个数上，退掉的重订阅不重复计', () => {
+test('the watch count: subscribes and unsubscribes both count, a double unsubscribe counts once', () => {
   const store = createStore(0)
   const offA = store.subscribe(() => undefined)
   const offB = store.subscribe(() => undefined)
   assert.equal(store.watching, 2)
   offA()
   offA()
-  assert.equal(store.watching, 1, '退两次只算退一次')
+  assert.equal(store.watching, 1, 'unsubscribing twice counts once')
   offB()
   assert.equal(store.watching, 0)
 })

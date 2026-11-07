@@ -17,8 +17,8 @@ import type {
  */
 
 const node: NodeRecord = {
-  title: '脚手架',
-  description: '把接口面立起来',
+  title: 'scaffold',
+  description: 'stand the interface surface up',
   status: 'completed',
   mode: 'auto',
   dependencies: ['aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'],
@@ -51,7 +51,7 @@ const cycle: CycleRecord = {
 
 const instruction: InstructionRecord = {
   id: 'i-0001',
-  text: '审计的临时产物只写进 .tmp/',
+  text: 'audit temp products only go into .tmp/',
   scope: 'global',
   target: 'stage',
   state: 'live',
@@ -73,7 +73,7 @@ const issue: IssueRecord = {
   id: 'demo-untitled',
   severity: 'P2',
   module: 'demo',
-  title: '示例问题',
+  title: 'sample issue',
   decision: 'autofix',
   source: 'scan',
   status: 'open',
@@ -94,7 +94,7 @@ const handoff: HandoffRecord = {
   cycle: 'main',
   node: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
   status: 'completed',
-  summary: '干完了',
+  summary: 'finished',
   outputs: { deliverable: 'x' },
   timestamp: '2026-01-01T01:00:00Z',
 };

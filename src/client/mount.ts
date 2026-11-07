@@ -64,14 +64,14 @@ export function createSessionNav(ctx: unknown): SessionNav {
     if (found !== undefined && typeof found.openSession === 'function') face = found as NavigationFace
   }
   take(ctx)
-  if (face === undefined) injectAt(ctx, ['uiWorkspace'], '那条导航口子没接上', take)
+  if (face === undefined) injectAt(ctx, ['uiWorkspace'], 'the navigation seam did not attach', take)
   return {
     open(target) {
       if (face === undefined) return
       try {
         face.openSession?.(target)
       } catch (error) {
-        report('切会话没切过去', error)
+        report('switching session did not go through', error)
       }
     },
   }
@@ -110,7 +110,7 @@ export function createWorkspaceNav(ctx: unknown): WorkspaceSource {
   }
   adopt(workspacesAt(ctx))
   if (face === undefined) {
-    injectAt(ctx, ['workspaces'], '那份工作区清单没接上', (owner) => { adopt(workspacesAt(owner)) })
+    injectAt(ctx, ['workspaces'], 'the workspace list did not attach', (owner) => { adopt(workspacesAt(owner)) })
   }
   return {
     getSnapshot: store.getSnapshot,
@@ -184,7 +184,7 @@ export function registerSeats(
   api: PathfinderPanelApi,
   dropStyles: () => void,
 ): void {
-  injectAt(ctx, ['slots'], '寻路中心那两处没挂上', (owner) => {
+  injectAt(ctx, ['slots'], 'the two Pathfinder Center seats did not mount', (owner) => {
     const slots = serviceAt(owner, 'slots') as SlotsService | undefined
     if (slots === undefined || typeof slots.inject !== 'function' || typeof slots.register !== 'function') return
     const nav = createSessionNav(ctx)
@@ -219,10 +219,10 @@ function contribute(
       const dispose = run()
       if (typeof dispose === 'function') disposers.push(dispose as () => void)
     } catch (error) {
-      report(`${what}没注册上`, error)
+      report(`${what} did not register`, error)
     }
   }
-  put('侧栏那一项', () => slots.inject?.('sidebar.panellist', () => slots.register?.({
+  put('the sidebar seat', () => slots.inject?.('sidebar.panellist', () => slots.register?.({
     name: 'sidebar.panellist',
     id: api.id,
     order: PANEL_ORDER,
@@ -231,7 +231,7 @@ function contribute(
     locale: LOCALE_NS,
     label: () => localeOf(api.locale).t(SEAT_WORD),
   }, PanelIcon)))
-  put('中央栏那一格', () => slots.inject?.('main', () => slots.register?.({
+  put('the main-column seat', () => slots.inject?.('main', () => slots.register?.({
     name: 'main',
     key: api.id,
     locale: LOCALE_NS,

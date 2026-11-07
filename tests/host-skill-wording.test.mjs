@@ -3,9 +3,9 @@
  * command lines a body may hand over to be guessed at, and the `shared/` page a folder
  * already carries beside the skill it would otherwise restate.
  *
- * - **描述装得进目录**: every `SKILL.md` frontmatter `description:` is at most 120 code
+ * - **description fits the catalog**: every `SKILL.md` frontmatter `description:` is at most 120 code
  *   points; the YAML quotes are parsed off and not counted.
- * - **没有围栏里的命令菜单**: a fenced block that lists three or more distinct sub-words
+ * - **no command menu in a fence**: a fenced block that lists three or more distinct sub-words
  *   of one group is a menu — something the model has to guess at — unless every one of
  *   those lines is a placeholder template (`pf issue resolve <id> --reason "<…>"`), which
  *   is a working trio, not a menu. This pins that fenced `pf <group> <verb>` shape only:
@@ -14,12 +14,12 @@
  *   on (`pool.md` before phase 5) is kept as a frozen literal and asserted red here, so
  *   the rule provably catches the shape it pins even after the live corpus has stopped
  *   carrying one.
- * - **不复述 shared/**: a `SKILL.md` and the markdown pages in the `shared/` tree beside
+ * - **no restating shared/**: a `SKILL.md` and the markdown pages in the `shared/` tree beside
  *   it share no run of one or more consecutive prose sentences (fences, tables and
  *   headings dropped, whitespace collapsed). The same comparison runs on a page against
  *   itself first and must find a hit — a detector that can no longer see anything would
  *   otherwise read exactly like a clean corpus.
- * - **表面句三个参数**: the paragraph of a `SKILL.md` that names `pathfinder` also carries
+ * - **surface sentence carries three parameters**: the paragraph of a `SKILL.md` that names `pathfinder` also carries
  *   `` `word` ``, `` `args` `` and `` `help` `` — structural, so a skill may reword the
  *   sentence but not drop a parameter.
  *
@@ -93,13 +93,13 @@ function descriptionOf(file) {
   return { value: '', line: 0 }
 }
 
-test('描述装得进目录：每条 SKILL.md 的 frontmatter description 不超过 120 码点', () => {
-  assert.ok(skillFiles.length >= 14, `随包技能都走到（走到 ${skillFiles.length} 篇，至少 14）`)
+test('Description fits the catalog: every SKILL.md frontmatter description is at most 120 code points', () => {
+  assert.ok(skillFiles.length >= 14, `every shipped skill is walked (walked ${skillFiles.length} files, at least 14)`)
   for (const file of skillFiles) {
     const { value, line } = descriptionOf(file)
-    assert.notEqual(value, '', `${relative(repo, file)}:${line} 没有读到 description，这条腿就空转了`)
+    assert.notEqual(value, '', `${relative(repo, file)}:${line} read no description, so this leg spins on nothing`)
     const length = [...value].length
-    assert.ok(length <= 120, `${relative(repo, file)}:${line}: ${length} 码点，上限 120`)
+    assert.ok(length <= 120, `${relative(repo, file)}:${line}: ${length} code points, cap 120`)
   }
 })
 
@@ -161,15 +161,15 @@ function menuFindingsIn(text, file) {
   return findings
 }
 
-test('围栏里的命令菜单：同组三行子词的 `pf <group> <verb>` 围栏是菜单，除非每一行都是占位模板', () => {
-  assert.ok(skillMarkdown.length >= 60, `随包技能正文都在（走到 ${skillMarkdown.length} 篇，至少 60）`)
+test('The command menu in a fence: a `pf <group> <verb>` fence with three sub-words of one group is a menu, unless every line is a placeholder template', () => {
+  assert.ok(skillMarkdown.length >= 60, `every shipped skill body is walked (walked ${skillMarkdown.length} files, at least 60)`)
   const findings = skillMarkdown.flatMap((file) =>
     menuFindingsIn(readFileSync(file, 'utf8'), relative(repo, file)),
   )
   const report = findings
     .map((hit) => `${hit.file}:${hit.line} pf ${hit.group} [${hit.subs.join(' ')}]`)
     .join('\n')
-  assert.ok(findings.length === 0, `这些围栏在发命令菜单：\n${report}`)
+  assert.ok(findings.length === 0, `these fences hand over a command menu:\n${report}`)
 
   // The old bytes of `pool.md`, frozen: the five command lines with their glosses, as
   // `5bdfdfb` had them. A frozen sample, not live corpus — the live tree is green
@@ -184,8 +184,8 @@ test('围栏里的命令菜单：同组三行子词的 `pf <group> <verb>` 围�
     '```',
   ].join('\n')
   const frozen = menuFindingsIn(oldPoolMenu, '<frozen: pool.md @ 5bdfdfb>')
-  assert.equal(frozen.length, 1, `旧 pool.md 的菜单必须被这条规则抓住：${JSON.stringify(frozen)}`)
-  assert.equal(frozen[0].line, 1, '报的是围栏自己那一行')
+  assert.equal(frozen.length, 1, `the old pool.md menu must be caught by this rule: ${JSON.stringify(frozen)}`)
+  assert.equal(frozen[0].line, 1, 'it reports the fence\'s own line')
   assert.deepEqual(frozen[0].subs, ['status', 'top', 'search', 'weight'])
 })
 
@@ -282,32 +282,32 @@ const sharedFolders = skillFiles
     readdirSync(dir, { withFileTypes: true }).some((entry) => entry.isDirectory() && entry.name === 'shared'),
   )
 
-test('不复述 shared/ 的自检：同一篇对自己必须找出复述，否则那条绿得没有意义', () => {
-  assert.ok(sharedFolders.length >= 4, `4 个带 shared/ 的技能目录都走到（走到 ${sharedFolders.length} 个）`)
+test('No restating shared/, self-check: a page against itself must find a restatement, or the green means nothing', () => {
+  assert.ok(sharedFolders.length >= 4, `all four skill folders with a shared/ are walked (walked ${sharedFolders.length})`)
   for (const folder of sharedFolders) {
     const skillFile = join(folder, 'SKILL.md')
     const control = restatementsBetween(skillFile, [skillFile])
     assert.ok(
       control.length >= 1,
-      `${relative(repo, skillFile)} 对自己也没找到一句复述——规则瞎了，下面的 live 断言就空转了`,
+      `${relative(repo, skillFile)} finds no restatement against itself — the rule is blind, and the live assertion below spins on nothing`,
     )
   }
 })
 
-test('不复述 shared/：SKILL.md 与同目录 shared/ 之间没有连续一句相同的散文', () => {
-  assert.ok(sharedFolders.length >= 4, `4 个带 shared/ 的技能目录都走到（走到 ${sharedFolders.length} 个）`)
+test('No restating shared/: a SKILL.md and the shared/ beside it share no run of consecutive prose sentences', () => {
+  assert.ok(sharedFolders.length >= 4, `all four skill folders with a shared/ are walked (walked ${sharedFolders.length})`)
   for (const folder of sharedFolders) {
     const skillFile = join(folder, 'SKILL.md')
     const sharedFiles = filesUnder(join(folder, 'shared'), (name) => name.endsWith('.md'))
-    assert.ok(sharedFiles.length >= 1, `${relative(repo, join(folder, 'shared'))} 里没有页面`)
+    assert.ok(sharedFiles.length >= 1, `${relative(repo, join(folder, 'shared'))} holds no pages`)
     const found = restatementsBetween(skillFile, sharedFiles)
     const report = found
       .map(
         (hit) =>
-          `${relative(repo, skillFile)}:${hit.from}-${hit.to} 复述 ${relative(repo, hit.sharedFile)}:${hit.sharedLine}（${hit.length} 句）"${hit.head}"`,
+          `${relative(repo, skillFile)}:${hit.from}-${hit.to} restates ${relative(repo, hit.sharedFile)}:${hit.sharedLine} (${hit.length} sentences) "${hit.head}"`,
       )
       .join('\n')
-    assert.ok(found.length === 0, `这些段落是 shared/ 的原文复述：\n${report}`)
+    assert.ok(found.length === 0, `these paragraphs restate the shared/ text:\n${report}`)
   }
 })
 
@@ -316,8 +316,8 @@ const TOOL_MENTION = /(?<![/\\])pathfinder[A-Za-z]*(?!\/)/u
 /** The three parameter tokens the surface sentence carries, the same in either language. */
 const PARAMETER_TOKENS = ['`word`', '`args`', '`help`']
 
-test('表面句三个参数：点到 pathfinder 的段落都带 `word` / `args` / `help`', () => {
-  assert.ok(skillFiles.length >= 14, `随包技能都走到（走到 ${skillFiles.length} 篇，至少 14）`)
+test('Surface sentence carries three parameters: every paragraph naming pathfinder carries `word` / `args` / `help`', () => {
+  assert.ok(skillFiles.length >= 14, `every shipped skill is walked (walked ${skillFiles.length} files, at least 14)`)
   let pages = 0
   for (const file of skillFiles) {
     // Paragraphs are the contiguous non-blank blocks: frontmatter is its own block, and a
@@ -344,9 +344,9 @@ test('表面句三个参数：点到 pathfinder 的段落都带 `word` / `args` 
       assert.deepEqual(
         missing,
         [],
-        `${relative(repo, file)}:${paragraph.line} 这一段点到 pathfinder，却缺 ${missing.join(' / ')}`,
+        `${relative(repo, file)}:${paragraph.line} this paragraph names pathfinder but is missing ${missing.join(' / ')}`,
       )
     }
   }
-  assert.ok(pages >= 14, `至少 14 段表面句在这条规则下（走到 ${pages} 段）`)
+  assert.ok(pages >= 14, `at least 14 surface sentences under this rule (walked ${pages})`)
 })

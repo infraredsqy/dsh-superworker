@@ -128,7 +128,7 @@ const MAINTENANCE_TITLE = "Maintenance: the issue pool's weighted sum = 6, over 
 
 describe("the issue pool's close-time insert", () => {
   it('weight past the line: close inserts one maintenance node, hung after the node that was closed, and its spec lands on disk', async () => {
-    const closed = await addHeldNode('被关的节点');
+    const closed = await addHeldNode('the closed node');
     stageCycle('c1', [closed], ['coding']);
     putSignal('c1', closed);
     seedPool({ p1: row('p1', { severity: 'P1' }), p2: row('p2', { severity: 'P2' }) });
@@ -155,7 +155,7 @@ describe("the issue pool's close-time insert", () => {
   });
 
   it('exactly on the line still inserts: the comparison is >=, so the line is the last number still accepted', async () => {
-    const closed = await addHeldNode('被关的节点');
+    const closed = await addHeldNode('the closed node');
     stageCycle('c1', [closed], ['coding']);
     putSignal('c1', closed);
     seedPool({ a: row('a', { severity: 'P2' }), b: row('b', { severity: 'P2' }) });
@@ -167,7 +167,7 @@ describe("the issue pool's close-time insert", () => {
 
   it('below the line nothing is inserted; with no line configured nothing is inserted and the pool is never asked; a line not about code stays just as quiet', async () => {
     // Below the line: weight 2 < 4.
-    const below = await addHeldNode('线下');
+    const below = await addHeldNode('below the line');
     stageCycle('c1', [below], ['coding']);
     putSignal('c1', below);
     seedPool({ p2: row('p2', { severity: 'P2' }) });
@@ -177,7 +177,7 @@ describe("the issue pool's close-time insert", () => {
     expect(warningsOf(returnedBelow as object)).toEqual([]);
 
     // No line configured: not even one pool command starts — and with the pool left as unreadable bytes it says nothing either.
-    const unlined = await addHeldNode('没配线');
+    const unlined = await addHeldNode('no line configured');
     stageCycle('c2', [unlined], ['coding']);
     putSignal('c2', unlined);
     breakPool();
@@ -187,7 +187,7 @@ describe("the issue pool's close-time insert", () => {
     expect((await graph()).some((rowNode) => String(rowNode.title).startsWith('Maintenance:'))).toBe(false);
 
     // The line is not about code: just as quiet, and the pool is never asked.
-    const docs = await addHeldNode('文档线');
+    const docs = await addHeldNode('docs line');
     stageCycle('c3', [docs], ['docs']);
     putSignal('c3', docs);
     const returnedDocs = await pf.conductor.close({ cycle: 'c3', node: docs });
@@ -196,8 +196,8 @@ describe("the issue pool's close-time insert", () => {
   });
 
   it('one live node per metric: with the tagged todo still there, the next crossing waits', async () => {
-    const first = await addHeldNode('第一个');
-    const second = await addHeldNode('第二个');
+    const first = await addHeldNode('first');
+    const second = await addHeldNode('second');
     stageCycle('c1', [first], ['coding']);
     stageCycle('c2', [second], ['coding']);
     putSignal('c1', first);
@@ -213,7 +213,7 @@ describe("the issue pool's close-time insert", () => {
   });
 
   it("with the switch turned off the whole round gives way and the pool's tool never starts; an unreadable pool leaves no warning either", async () => {
-    const closed = await addHeldNode('被关的节点');
+    const closed = await addHeldNode('the closed node');
     stageCycle('c1', [closed], ['coding']);
     putSignal('c1', closed);
     breakPool();
@@ -228,7 +228,7 @@ describe("the issue pool's close-time insert", () => {
   });
 
   it('an unreadable pool: this round does not know and never reads it as 0 — one WARNING, no insert, and close returns as usual', async () => {
-    const closed = await addHeldNode('被关的节点');
+    const closed = await addHeldNode('the closed node');
     stageCycle('c1', [closed], ['coding']);
     putSignal('c1', closed);
     breakPool();
@@ -249,7 +249,7 @@ describe("the issue pool's close-time insert", () => {
   });
 
   it('an absent pool reads as an empty pool: weight 0 sits below the line, so nothing is inserted and no warning comes', async () => {
-    const closed = await addHeldNode('被关的节点');
+    const closed = await addHeldNode('the closed node');
     stageCycle('c1', [closed], ['coding']);
     putSignal('c1', closed);
     setConfig({ issue_pool_weight_limit: 4 });
@@ -266,7 +266,7 @@ describe("the issue pool's close-time insert", () => {
         name: entry,
         bytes: readFileSync(new URL(`../plugins/issue/${entry}`, import.meta.url)),
       }));
-    const closed = await addHeldNode('被关的节点');
+    const closed = await addHeldNode('the closed node');
     stageCycle('c1', [closed], ['coding']);
     putSignal('c1', closed);
     seedPool({ p1: row('p1', { severity: 'P1' }), p2: row('p2', { severity: 'P2' }) });

@@ -33,19 +33,19 @@ function entry(value, layer = 'project') {
   return { value, layer }
 }
 
-test('登记过的键都有说法：中文名、那一句话、分组，一件不缺', () => {
+test('every registered key is described: name, caption, group, none missing', () => {
   assert.deepEqual(
     [...Object.keys(KNOWN_CONFIG_ROWS)].sort(),
     ['issue_pool', 'issue_pool_weight_limit', 'issue_repair', 'max_agents', 'test_audit', 'test_seconds_limit', 'test_tier', 'worktree_mode'],
   )
   for (const row of Object.values(KNOWN_CONFIG_ROWS)) {
     const words = rowWords(t, row)
-    assert.ok(words.name.length > 0 && words.caption.length > 0, `${row.key} 缺名字或缺那一句话`)
-    assert.ok(CONFIG_GROUPS.includes(row.group), `${row.key} 落在了三个分组之外`)
+    assert.ok(words.name.length > 0 && words.caption.length > 0, `${row.key} has no name or no caption`)
+    assert.ok(CONFIG_GROUPS.includes(row.group), `${row.key} falls outside the three groups`)
   }
 })
 
-test('行从读数长出来：读数里有的键才有行；已知的照表序摆，不跟着工具印的次序晃', () => {
+test('rows grow out of the reading: only keys the reading has get a row; known keys follow the table order, not the tool\'s print order', () => {
   /* The reading is deliberately given in the tool's print order: the rendered order is still the table's own. */
   const rows = configRowsOf({
     max_agents: entry('1'),
@@ -59,7 +59,7 @@ test('行从读数长出来：读数里有的键才有行；已知的照表序�
   assert.deepEqual(configRowsOf({ max_agents: entry('1') }).map((row) => row.key), ['max_agents'])
 })
 
-test('没登记的键：照键名直显 + 文本框，跟在已知的行后面，一行都不丢', () => {
+test('unregistered keys: raw key name + text input, after the known rows, none dropped', () => {
   const rows = configRowsOf({
     max_agents: entry('1'),
     spawner: entry('dsh'),
@@ -70,37 +70,37 @@ test('没登记的键：照键名直显 + 文本框，跟在已知的行后面�
 
   assert.deepEqual(rows.map((row) => row.key), ['worktree_mode', 'test_tier', 'max_agents', 'issue_repair', 'spawner'])
   const stranger = rows[4]
-  assert.equal(stranger.name, null, '没登记的键没有可翻的名字，表里留空')
-  assert.equal(rowWords(t, stranger).name, 'spawner', '没登记的键照键名直显，不编名字')
-  assert.equal(stranger.kind, 'text', '没登记的键给文本框，不猜控件形态')
+  assert.equal(stranger.name, null, 'an unregistered key has no name to look up, the table leaves it empty')
+  assert.equal(rowWords(t, stranger).name, 'spawner', 'an unregistered key shows its raw name, no invented name')
+  assert.equal(stranger.kind, 'text', 'an unregistered key gets a text input, no guessed control shape')
   assert.equal(stranger.options, undefined)
-  assert.ok(rowWords(t, stranger).caption.length > 0, '没登记的键也有一句话说值由谁判')
+  assert.ok(rowWords(t, stranger).caption.length > 0, 'an unregistered key still has a caption saying who judges the value')
 })
 
-test('登记过的键照表描：读数里的键落在表里就用表里那一行', () => {
+test('registered keys render per the table: a key in the reading that is in the table uses the table\'s row', () => {
   const rows = configRowsOf({ worktree_mode: entry('fork') })
 
   assert.deepEqual(rows[0], KNOWN_CONFIG_ROWS['worktree_mode'])
 })
 
-test('一行一个控件：下拉那一档带候选值，另外三档不带', () => {
+test('one control per row: the dropdown kind carries candidates, the other three do not', () => {
   for (const row of Object.values(KNOWN_CONFIG_ROWS)) {
     if (row.kind === 'pick') {
-      assert.ok((row.options ?? []).length > 1, `${row.key} 是下拉，候选值却没摆出来`)
-      assert.equal(new Set(row.options).size, row.options?.length, `${row.key} 的候选值里有重样的`)
+      assert.ok((row.options ?? []).length > 1, `${row.key} is a dropdown but has no candidates`)
+      assert.equal(new Set(row.options).size, row.options?.length, `${row.key} has duplicate candidates`)
     } else {
-      assert.equal(row.options, undefined, `${row.key} 不是下拉，却带着候选值`)
+      assert.equal(row.options, undefined, `${row.key} is not a dropdown but carries candidates`)
     }
   }
 })
 
-test('下拉的候选值抄本就是工具在 config --help 里说的那几个词', () => {
+test('the dropdown candidates copy the words the tool prints in config --help', () => {
   assert.deepEqual(KNOWN_CONFIG_ROWS['worktree_mode'].options, ['off', 'fork', 'reuse'])
   assert.deepEqual(KNOWN_CONFIG_ROWS['test_tier'].options, ['full', 'minimal'])
 })
 
-test('层签那三个词：默认 / 本项目 / 全局', () => {
-  /* 表里存的是字典键：同一份记录在哪种语言下都读得出来。 */
+test('the three layer words: 默认 / 本项目 / 全局', () => {
+  /* The table stores dictionary keys: the same record reads the same under any language. */
   assert.deepEqual(LAYER_WORDS, {
     default: 'config.layer.default',
     project: 'config.layer.project',
@@ -113,22 +113,22 @@ test('层签那三个词：默认 / 本项目 / 全局', () => {
       global: t(LAYER_WORDS.global),
     },
     { default: '默认', project: '本项目', global: '全局' },
-    '中文下这三个键印出来仍是那三个词',
+    'under Chinese these three keys still print those three words',
   )
 })
 
-test('读数里没有这个键的值时，两枚下拉一档都不落（留空），不摆第一档', () => {
+test('when the reading has no value for the key, neither dropdown settles on an option (left empty), not the first one', () => {
   const picks = Object.values(KNOWN_CONFIG_ROWS).filter((row) => row.kind === 'pick')
   assert.deepEqual(picks.map((row) => row.key), ['worktree_mode', 'test_tier'])
   for (const row of picks) {
     const options = row.options ?? []
-    assert.deepEqual(pickState(undefined, options), { value: '', extra: null }, `${row.key} 没有值时落了一档`)
+    assert.deepEqual(pickState(undefined, options), { value: '', extra: null }, `${row.key} settled on an option with no value`)
     /* Leaving empty is not done by stuffing an empty word into the candidates: the table keeps only the words the tool recognizes. */
-    assert.ok(!options.includes(''), `${row.key} 的候选表里被塞了空词`)
+    assert.ok(!options.includes(''), `${row.key} had an empty word stuffed into its candidates`)
   }
 })
 
-test('读数里有值：在表里就摆它自己，不在表里就把它自己补成一档，都不去摆第一档', () => {
+test('a value in the reading: show it if it is in the table, add it as its own option if not, never fall back to the first option', () => {
   for (const row of Object.values(KNOWN_CONFIG_ROWS).filter((one) => one.kind === 'pick')) {
     const options = row.options ?? []
     assert.deepEqual(pickState({ value: options[1], layer: 'project' }, options), { value: options[1], extra: null })
@@ -136,7 +136,7 @@ test('读数里有值：在表里就摆它自己，不在表里就把它自己�
   }
 })
 
-test('三个分组各有各的名字，按索引里的次序摆着', () => {
+test('the three groups each have a name, in index order', () => {
   assert.deepEqual(CONFIG_GROUPS, ['general', 'issue', 'test'])
   assert.deepEqual(
     CONFIG_GROUPS.map((group) => t(GROUP_WORDS[group])),
@@ -144,7 +144,7 @@ test('三个分组各有各的名字，按索引里的次序摆着', () => {
   )
 })
 
-test('页子从行分成段：常规 / 问题 / 测试，段内照表序，空的分组连段带索引项都不出现', () => {
+test('sections split from rows: 常规 / 问题 / 测试; table order within a section; an empty group loses both its section and its index entry', () => {
   const sections = configSectionsOf({
     max_agents: entry('1'),
     test_seconds_limit: entry('-', 'default'),
@@ -169,7 +169,7 @@ test('页子从行分成段：常规 / 问题 / 测试，段内照表序，空�
   assert.deepEqual(configSectionsOf({}), [])
 })
 
-test('没登记的键照前缀归堆：issue_ 进问题、test_ 进测试、其余进常规', () => {
+test('unregistered keys group by prefix: issue_ into issue, test_ into test, the rest into general', () => {
   assert.equal(groupOfUnregistered('issue_pool'), 'issue')
   assert.equal(groupOfUnregistered('test_audit'), 'test')
   assert.equal(groupOfUnregistered('spawner'), 'general')

@@ -30,18 +30,18 @@ function context({ live = {}, stored = {}, sandboxRoot = 'C:\\fallback-root' } =
   return standIn({ live, stored, sandboxRoot, files: {}, provide: true })
 }
 
-test('插件名与依赖声明就是宿主那四样', () => {
+test('The plugin name and dependency declaration are the host\'s four', () => {
   assert.equal(name, 'pathfinder-records')
   assert.deepEqual(inject, ['workspaceFiles', 'sessions', 'sandboxPolicy', 'tools'])
 })
 
-test('出口面收在插件协议要的那五样上：内部件不再从入口过一遍', async () => {
+test('The export surface is the five things the plugin contract wants: internals no longer pass through the entry', async () => {
   const entry = await import('../src/host/index.ts')
 
   assert.equal(entry.name, 'pathfinder-records')
   assert.deepEqual(entry.inject, ['workspaceFiles', 'sessions', 'sandboxPolicy', 'tools'])
   assert.equal(typeof entry.apply, 'function')
-  assert.ok('Config' in entry, 'Config 要在出口面上：DSH 拿它建那一节的设置命名空间')
+  assert.ok('Config' in entry, 'Config must be on the export surface: DSH builds that section\'s settings namespace from it')
 
   for (const internal of [
     'rootFor',
@@ -52,13 +52,13 @@ test('出口面收在插件协议要的那五样上：内部件不再从入口�
     'CONFIG_KEYS',
     'parseConfigList',
   ]) {
-    assert.equal(entry[internal], undefined, `${internal} 没有外部消费者，不该再从入口出口`)
+    assert.equal(entry[internal], undefined, `${internal} has no outside consumer and must not come through the entry again`)
   }
   /* The gateway class stays on the export surface: `tests/client-render` builds a fresh gateway from the entry. */
   assert.equal(typeof entry.PathfinderRecordsGateway, 'function')
 })
 
-test('活着的会话头说话：它写的 cwd 就是取数的那个根', async () => {
+test('The live session header speaks: the cwd it wrote is the root readings are taken at', async () => {
   const { ctx, provided, asked } = context({
     live: { s1: { header: { cwd: 'C:\\from-the-live-session' } } },
     stored: { s1: { header: { cwd: 'C:\\from-the-stored-header' } } },
@@ -74,7 +74,7 @@ test('活着的会话头说话：它写的 cwd 就是取数的那个根', async 
   }
 })
 
-test('没有活着的会话时，落盘的会话头说话', async () => {
+test('With no live session, the stored session header speaks', async () => {
   const { ctx, provided, asked } = context({ stored: { s2: { header: { cwd: 'C:\\from-the-stored-header' } } } })
   apply(ctx)
   const reading = await provided.pathfinder.read('s2', { signal })
@@ -83,7 +83,7 @@ test('没有活着的会话时，落盘的会话头说话', async () => {
   assert.equal(asked[0].scope.workspaceRoot, 'C:\\from-the-stored-header')
 })
 
-test('有活着的会话头就不再问落盘的头：它没写 cwd 时落到沙箱策略那个根', async () => {
+test('A live header ends the stored one\'s say: with no cwd in it, the sandbox policy root takes over', async () => {
   const { ctx, provided, asked, statCalls } = context({
     live: { s4: { header: {} } },
     stored: { s4: { header: { cwd: 'C:\\from-the-stored-header' } } },
@@ -94,10 +94,10 @@ test('有活着的会话头就不再问落盘的头：它没写 cwd 时落到沙
 
   assert.equal(reading.workspaceRoot, 'C:\\sandbox-root-for-tests')
   assert.equal(asked[0].scope.workspaceRoot, 'C:\\sandbox-root-for-tests')
-  assert.deepEqual(statCalls, [], '活着的会话头在，落盘的头那一路问都不问')
+  assert.deepEqual(statCalls, [], 'the live header is there, so the stored one is never even asked')
 })
 
-test('两个会话头都没写 cwd 时，落到沙箱策略那个根', async () => {
+test('With cwd in neither session header, it falls to the sandbox policy root', async () => {
   const { ctx, provided, asked } = context({
     live: { s3: { header: {} } },
     stored: { s3: { header: {} } },
@@ -110,7 +110,7 @@ test('两个会话头都没写 cwd 时，落到沙箱策略那个根', async () 
   assert.equal(asked[0].scope.workspaceRoot, 'C:\\sandbox-root-for-tests')
 })
 
-test('整条会话都没人认得时，走的还是沙箱策略那个根，取数不抛', async () => {
+test('A session nobody knows still goes to the sandbox policy root, and the read does not throw', async () => {
   const { ctx, provided } = context({ sandboxRoot: 'C:\\sandbox-root-for-tests' })
   apply(ctx)
   const reading = await provided.pathfinder.read('nobody-knows-me', { signal })
@@ -120,15 +120,15 @@ test('整条会话都没人认得时，走的还是沙箱策略那个根，取�
   assert.deepEqual(reading.nodes, {})
 })
 
-test('服务装在 ctx 上，由调用方给的取消信号转手递给口子', async () => {
+test('The service is installed on ctx, and the caller\'s abort signal is handed on to the port', async () => {
   const { ctx, provided, asked } = context({ sandboxRoot: 'C:\\sandbox-root-for-tests' })
   apply(ctx)
   assert.equal(typeof provided.pathfinder.read, 'function')
 
   const controlled = new AbortController()
   await provided.pathfinder.read('s9', '', { signal: controlled.signal })
-  assert.ok(asked.length > 0, '这一趟要真走到口子上，才谈得上信号到没到')
+  assert.ok(asked.length > 0, 'the trip must really reach the port before the signal can arrive')
   for (const call of asked) {
-    assert.equal(call.signal, controlled.signal, '口子收到的信号得是调用方递的那一条，不是端点自己新造的')
+    assert.equal(call.signal, controlled.signal, 'the signal the port sees must be the caller\'s, not one the endpoint minted')
   }
 })

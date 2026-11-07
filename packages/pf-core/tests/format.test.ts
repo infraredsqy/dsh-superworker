@@ -53,22 +53,22 @@ describe('the bytes of one record on disk', () => {
     const ideas = {
       nodes: {
         'bbbbbbbb-0002': {
-          title: '线',
+          title: 'line',
           updated_at: '2026-11-02T05:13:15.136229Z',
           status: 'todo',
           mode: 'auto',
           created_at: '2026-11-02T05:05:43.523342Z',
           dependencies: ['cccccccc-0003'],
-          description: '一条线',
+          description: 'one line',
         },
         'aaaaaaaa-0001': {
           weight: 'light',
-          title: '对拍语料',
+          title: 'parity corpus',
           status: 'todo',
           mode: 'auto',
           created_at: '2026-11-02T05:05:37.109922Z',
           dependencies: [],
-          description: '一份语料',
+          description: 'one corpus',
         },
       },
     };
@@ -78,10 +78,10 @@ describe('the bytes of one record on disk', () => {
       '    "aaaaaaaa-0001": {',
       '      "created_at": "2026-11-02T05:05:37.109922Z",',
       '      "dependencies": [],',
-      '      "description": "一份语料",',
+      '      "description": "one corpus",',
       '      "mode": "auto",',
       '      "status": "todo",',
-      '      "title": "对拍语料",',
+      '      "title": "parity corpus",',
       '      "weight": "light"',
       '    },',
       '    "bbbbbbbb-0002": {',
@@ -89,10 +89,10 @@ describe('the bytes of one record on disk', () => {
       '      "dependencies": [',
       '        "cccccccc-0003"',
       '      ],',
-      '      "description": "一条线",',
+      '      "description": "one line",',
       '      "mode": "auto",',
       '      "status": "todo",',
-      '      "title": "线",',
+      '      "title": "line",',
       '      "updated_at": "2026-11-02T05:13:15.136229Z"',
       '    }',
       '  }',
@@ -108,7 +108,7 @@ describe('the bytes of one record on disk', () => {
   });
 
   it('empty arrays and objects collapse onto one line; a newline inside an escape stays as it is, not rewritten to the platform EOL', () => {
-    const value = { empty_list: [], empty_map: {}, nested: [[]], text: '第一行\n第二行\t缩进' };
+    const value = { empty_list: [], empty_map: {}, nested: [[]], text: 'first line\nsecond line\tindent' };
     const lines = [
       '{',
       '  "empty_list": [],',
@@ -116,7 +116,7 @@ describe('the bytes of one record on disk', () => {
       '  "nested": [',
       '    []',
       '  ],',
-      `  "text": "第一行\\n第二行\\t缩进"`,
+      `  "text": "first line\\nsecond line\\tindent"`,
       '}',
     ];
     expect(asText(jsonBytes(value))).toBe(lines.join(eol));

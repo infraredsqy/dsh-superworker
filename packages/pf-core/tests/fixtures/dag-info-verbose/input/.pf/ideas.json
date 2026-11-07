@@ -1,8 +1,8 @@
 {
   "nodes": {
     "@node-a@": {
-      "title": "甲",
-      "description": "甲的说明",
+      "title": "A",
+      "description": "the note on A",
       "status": "todo",
       "mode": "checkpoint",
       "dependencies": [
@@ -16,7 +16,7 @@
       "weight": "light"
     },
     "@node-b@": {
-      "title": "乙",
+      "title": "B",
       "description": "",
       "status": "completed",
       "mode": "auto",
@@ -27,7 +27,7 @@
       "approved_at": "@t4@"
     },
     "@node-c@": {
-      "title": "丙",
+      "title": "C",
       "description": "",
       "status": "todo",
       "mode": "auto",
@@ -38,7 +38,7 @@
       "updated_at": "@t2@"
     },
     "@node-d@": {
-      "title": "丁",
+      "title": "D",
       "description": "",
       "status": "shelved",
       "mode": "auto",

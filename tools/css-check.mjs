@@ -538,34 +538,34 @@ const FLOOR = { A: floorOf('--pf-mark-floor', 3), B: floorOf('--pf-mark-floor-de
  * `--dsw-alias-bg-base`) — so one row per place.
  */
 const MARKS = [
-  { what: '登记簿记号 · 已解决', where: '.pf-cell', property: 'background', ink: 'var(--pf-ink-2)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: '卡片状态标 · 即将进线', where: '.pf-card .pf-state.is-next', decl: '.pf-state.is-next', property: 'border', ink: 'var(--pf-ink-3)', ground: '--dsw-alias-bg-layer-1', tier: 'A' },
-  { what: '明细行记号 · 即将进线', where: '.pf-row .pf-state.is-next', decl: '.pf-state.is-next', property: 'border', ink: 'var(--pf-ink-3)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: '问题池记号 · 已承认', where: '.pf-cell.is-acknowledged', property: 'box-shadow', ink: 'var(--pf-ink-2)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: '问题池记号 · 已否决', where: '.pf-cell.is-rejected', property: 'box-shadow', ink: 'var(--pf-ink-3)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: '重量档 · 最重一档（P0）', where: '.is-P0', property: '--sev', ink: 'var(--pf-ink-1)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: '重量档 · 第二档（P1）', where: '.is-P1', property: '--sev', ink: 'var(--pf-ink-2)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: '重量档 · 第三档（P2）', where: '.is-P2', property: '--sev', ink: 'var(--pf-ink-3)', ground: '--dsw-alias-bg-base', tier: 'A' },
-  { what: '重量档 · 最轻一档（P3，密排那一档）', where: '.is-P3', property: '--sev', ink: 'var(--pf-ink-4)', ground: '--dsw-alias-bg-base', tier: 'B' },
-  { what: '重量条的格 · 空位', where: '.pf-block', property: 'box-shadow', ink: 'var(--pf-ink-4)', ground: '--dsw-alias-bg-base', tier: 'B' },
+  { what: 'register mark · resolved', where: '.pf-cell', property: 'background', ink: 'var(--pf-ink-2)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'card state mark · entering next', where: '.pf-card .pf-state.is-next', decl: '.pf-state.is-next', property: 'border', ink: 'var(--pf-ink-3)', ground: '--dsw-alias-bg-layer-1', tier: 'A' },
+  { what: 'detail row mark · entering next', where: '.pf-row .pf-state.is-next', decl: '.pf-state.is-next', property: 'border', ink: 'var(--pf-ink-3)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'issue pool mark · acknowledged', where: '.pf-cell.is-acknowledged', property: 'box-shadow', ink: 'var(--pf-ink-2)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'issue pool mark · rejected', where: '.pf-cell.is-rejected', property: 'box-shadow', ink: 'var(--pf-ink-3)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'severity tier · heaviest (P0)', where: '.is-P0', property: '--sev', ink: 'var(--pf-ink-1)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'severity tier · second (P1)', where: '.is-P1', property: '--sev', ink: 'var(--pf-ink-2)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'severity tier · third (P2)', where: '.is-P2', property: '--sev', ink: 'var(--pf-ink-3)', ground: '--dsw-alias-bg-base', tier: 'A' },
+  { what: 'severity tier · lightest (P3, the dense row)', where: '.is-P3', property: '--sev', ink: 'var(--pf-ink-4)', ground: '--dsw-alias-bg-base', tier: 'B' },
+  { what: 'weight bar cell · empty slot', where: '.pf-block', property: 'box-shadow', ink: 'var(--pf-ink-4)', ground: '--dsw-alias-bg-base', tier: 'B' },
   /* The amber ring is an inset shadow on the card's own face, so the card's fill is
    * its ground — not the layer the card itself sits on. */
-  { what: '卡片上的闸 · 琥珀环', where: '.pf-card.is-gate', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
-  { what: '卡片状态标 · 已交付', where: '.pf-card .pf-state.is-done', decl: '.pf-state.is-done', property: 'color', ink: 'var(--dsw-alias-state-success-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
-  { what: '明细行记号 · 已交付', where: '.pf-row .pf-state.is-done', decl: '.pf-state.is-done', property: 'color', ink: 'var(--dsw-alias-state-success-primary)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'card gate · amber ring', where: '.pf-card.is-gate', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'card state mark · delivered', where: '.pf-card .pf-state.is-done', decl: '.pf-state.is-done', property: 'color', ink: 'var(--dsw-alias-state-success-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'detail row mark · delivered', where: '.pf-row .pf-state.is-done', decl: '.pf-state.is-done', property: 'color', ink: 'var(--dsw-alias-state-success-primary)', ground: '--dsw-alias-bg-base', tier: null },
   /* The same rule paints this ring on three grounds: a board card, a detail row, and the map's own
    * face, where it leads the foot row of the card in hand. The first of the three has no instance on
    * the page right now, so its row is read where it would stand. */
-  { what: '卡片状态标 · 进行中', where: '.pf-card .pf-state.is-run', decl: '.pf-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-1', tier: null },
-  { what: '明细行记号 · 进行中', where: '.pf-row .pf-state.is-run', decl: '.pf-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-base', tier: null },
-  { what: '地图卡片 · 进行中', where: '.pf-mnode .pf-state.is-run', decl: '.pf-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-2', tier: null },
-  { what: '问题池记号 · 未解决', where: '.pf-cell.is-open', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-base', tier: null },
-  { what: '线路记号 · 阻塞的点', where: '.pf-linemark.is-blocked::before', property: 'background', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'card state mark · running', where: '.pf-card .pf-state.is-run', decl: '.pf-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'detail row mark · running', where: '.pf-row .pf-state.is-run', decl: '.pf-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'map card · running', where: '.pf-mnode .pf-state.is-run', decl: '.pf-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-2', tier: null },
+  { what: 'issue pool mark · open', where: '.pf-cell.is-open', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'line mark · blocked node', where: '.pf-linemark.is-blocked::before', property: 'background', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-base', tier: null },
   /* The delete dialog's alert zone: the bar is the mark, and the layer the dialog
    * itself stands on is its ground — the amber tint under the sentence is 8%, so the
    * bar reads against that layer and the check can keep saying so. */
-  { what: '删除这一条 · 警报区的左缘', where: '.pf-del-warn', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-2', tier: null },
-  { what: '主题自己的空闲点（1.5 那一档的依据）', where: null, property: null, ink: 'var(--dsw-alias-state-idle-primary)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'delete-this row · alert zone left edge', where: '.pf-del-warn', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-2', tier: null },
+  { what: 'the theme\'s own idle point (the basis of the 1.5 floor)', where: null, property: null, ink: 'var(--dsw-alias-state-idle-primary)', ground: '--dsw-alias-bg-base', tier: null },
 ]
 
 const findDeclaration = (selector, property) => {

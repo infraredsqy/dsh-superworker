@@ -50,14 +50,14 @@ function syntheticWorkspace({ note = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'pf-gateway-'))
   mkdirSync(join(root, '.pf', 'issues'), { recursive: true })
   writeFileSync(join(root, '.pf', 'ideas.json'), JSON.stringify({
-    nodes: { 'n-1': { id: 'n-1', title: '一格', status: 'todo', created_at: '2026-10-01T00:00:00Z' } },
+    nodes: { 'n-1': { id: 'n-1', title: 'one cell', status: 'todo', created_at: '2026-10-01T00:00:00Z' } },
     edges: [],
   }))
   writeFileSync(join(root, '.pf', 'state.json'), JSON.stringify({
     cycles: [{ id: 'line-1', status: 'active', created_at: '2026-10-01T00:00:00Z', path: [], holding: [] }],
   }))
   writeFileSync(join(root, '.pf', 'instructions.json'), JSON.stringify({
-    instructions: [{ id: 'i-1', text: '一句话', scope: 'global', state: 'live', at: '2026-10-01T00:00:00Z' }],
+    instructions: [{ id: 'i-1', text: 'one sentence', scope: 'global', state: 'live', at: '2026-10-01T00:00:00Z' }],
   }))
   writeFileSync(join(root, '.pf', 'issues', 'issues.json'), JSON.stringify({ issues: {} }))
   if (note) {
@@ -121,21 +121,21 @@ async function liveGateway(root) {
   }
 }
 
-test('九个端点在源码模式下逐个叫得动：签名这一关先过，别的错另算', { skip: !wired }, async () => {
+test('The nine endpoints all answer in source mode: the signature gate first, other errors aside', { skip: !wired }, async () => {
   const root = syntheticWorkspace()
   const { ctx, call } = await liveGateway(root)
   try {
     for (const method of ENDPOINTS) {
       const answer = await call(method, {})
-      assert.notEqual(answer.code, 'gateway/signature-invalid', `${method} 的签名被网关判成说不清：${String(answer.message)}`)
-      assert.notEqual(answer.code, 'gateway/invocation-unavailable', `${method} 没被网关认出来：${String(answer.message)}`)
+      assert.notEqual(answer.code, 'gateway/signature-invalid', `${method}: the gateway judged the signature unreadable: ${String(answer.message)}`)
+      assert.notEqual(answer.code, 'gateway/invocation-unavailable', `${method} was not recognized by the gateway: ${String(answer.message)}`)
     }
   } finally {
     await ctx.stop?.()
   }
 })
 
-test('取数那一条：网关把点名那个工作区读成一份真读数', { skip: !wired }, async () => {
+test('The read endpoint: the gateway reads the named workspace into a real reading', { skip: !wired }, async () => {
   const root = syntheticWorkspace()
   const { ctx, call } = await liveGateway(root)
   try {
@@ -150,7 +150,7 @@ test('取数那一条：网关把点名那个工作区读成一份真读数', { 
   }
 })
 
-test('取数那一条：点名的那个根说了算，与这条会话自己落在哪儿无关', { skip: !wired }, async () => {
+test('The read endpoint: the named root wins, wherever this session itself sits', { skip: !wired }, async () => {
   const mine = syntheticWorkspace()
   const other = syntheticWorkspace()
   const { ctx, call } = await liveGateway(mine)
@@ -164,7 +164,7 @@ test('取数那一条：点名的那个根说了算，与这条会话自己落�
   }
 })
 
-test('会话笔记那一条：网关把那一层按节点分的小份笔记原样搬回来', { skip: !wired }, async () => {
+test('The session-notes endpoint: the gateway carries the per-node notes under that layer back as they are', { skip: !wired }, async () => {
   const root = syntheticWorkspace()
   const { ctx, call } = await liveGateway(root)
   try {
@@ -184,7 +184,7 @@ test('会话笔记那一条：网关把那一层按节点分的小份笔记原�
   }
 })
 
-test('会话笔记那一条：这一层目录不在时交回空的一份，不抛', { skip: !wired }, async () => {
+test('The session-notes endpoint: with that directory absent it answers empty, no throw', { skip: !wired }, async () => {
   const root = syntheticWorkspace({ note: false })
   const { ctx, call } = await liveGateway(root)
   try {
@@ -197,7 +197,7 @@ test('会话笔记那一条：这一层目录不在时交回空的一份，不�
   }
 })
 
-test('readSessions 认 options 上的取消信号：调用方递的那一条原样到口子', async () => {
+test('readSessions honors the abort signal on options: the caller\'s own reaches the port unchanged', async () => {
   /* options is a wire-level parameter, so the signal cannot pass the gateway's boundary validation;
    * options.signal, like read's, is reachable only in-process. So this case measures it the in-process
    * way read does: call the method directly and see whose signal reaches the port. */
@@ -218,9 +218,9 @@ test('readSessions 认 options 上的取消信号：调用方递的那一条原�
   const mine = new AbortController()
   await gateway.readSessions('s1', '', { signal: mine.signal })
 
-  assert.ok(seen.length > 0, '这一趟要真走到口子上，才谈得上信号到没到')
+  assert.ok(seen.length > 0, 'the trip must really reach the port before the signal can arrive')
   for (const one of seen) {
-    assert.equal(one, mine.signal, '口子收到的信号得是调用方递的那一条，不是端点自己新造的')
+    assert.equal(one, mine.signal, 'the signal the port sees must be the caller\'s, not one the endpoint minted')
   }
 })
 
@@ -239,7 +239,7 @@ function rosterGateway(agents) {
   })
 }
 
-test('alive 读的是 agent 自己的身份：registry 上两个活 agent，roster 深等两个会话 id', async () => {
+test('alive reads the agent\'s own id: two live agents on the registry, the roster deep-equals two session ids', async () => {
   /* The DSH agent contract puts the session identity on `id`; a roster that
    * reads any other field filters every live agent out and answers "no live
    * sessions" while the registry is up — the reading the stranded judgment
@@ -249,19 +249,19 @@ test('alive 读的是 agent 自己的身份：registry 上两个活 agent，rost
   assert.deepEqual(reading.alive, ['session-a', 'session-b'])
 })
 
-test('registry 缺席：alive 交回 null（答不出不作「都不在」答）', async () => {
+test('No registry: alive answers null (no answer is not "none alive")', async () => {
   const gateway = rosterGateway(undefined)
   const reading = await gateway.readSessions('s1', 'C:\\ws')
   assert.equal(reading.alive, null)
 })
 
-test('registry 的 list() 抛了：alive 交回 null', async () => {
+test('registry list() throws: alive answers null', async () => {
   const gateway = rosterGateway({ list() { throw new Error('registry blew up') } })
   const reading = await gateway.readSessions('s1', 'C:\\ws')
   assert.equal(reading.alive, null)
 })
 
-test('端点表漏登记在构造时当场报错：类上有而表里没有的方法不再静默', () => {
+test('An endpoint missing from the table errors at construction: a method on the class but not in the table is no longer silent', () => {
   /* The same rig measures the base class first: it constructs fine — the later error is about the unlisted method, not construction itself. */
   assert.doesNotThrow(() => new PathfinderRecordsGateway({}))
   class LeakyGateway extends PathfinderRecordsGateway {
@@ -269,17 +269,17 @@ test('端点表漏登记在构造时当场报错：类上有而表里没有的�
       return 'not an endpoint'
     }
   }
-  assert.throws(() => new LeakyGateway({}), /漏登记/u)
+  assert.throws(() => new LeakyGateway({}), /missing an entry/u)
 })
 
-test('记下一条那条端点：原话过网关这一关，落成工具那一句', { skip: !wired }, async () => {
+test('The record-an-instruction endpoint: the words pass the gateway and land as the tool\'s line', { skip: !wired }, async () => {
   const root = syntheticWorkspace()
   const { ctx, call } = await liveGateway(root)
   try {
     const answer = await call('addInstruction', {
       sessionId: 's1',
       workspaceRoot: '',
-      text: '先看一眼记录再动手 & 别猜',
+      text: 'look at the record before acting & do not guess',
       scope: 'global',
       cycle: '',
       node: '',
@@ -290,7 +290,7 @@ test('记下一条那条端点：原话过网关这一关，落成工具那一�
   }
 })
 
-test('三个写端点与设置那两条：网关也都叫得动', { skip: !wired }, async () => {
+test('The three write endpoints and the two settings ones also answer through the gateway', { skip: !wired }, async () => {
   const root = syntheticWorkspace()
   const { ctx, call } = await liveGateway(root)
   try {
@@ -303,10 +303,10 @@ test('三个写端点与设置那两条：网关也都叫得动', { skip: !wired
     const listed = await call('readConfig', { sessionId: 's1', workspaceRoot: '' })
     assert.equal(listed.ok, true, String(listed.message))
     assert.equal(listed.value.workspaceRoot, root)
-    assert.equal(listed.value.ok, true, '词面答成了，读数落在成功那一支')
-    assert.equal(listed.value.refusal, null, '成功那一支不带拒绝理由')
-    assert.ok(listed.value.text.length > 0, '成功的读数带着引擎印的那几行')
-    assert.ok(Object.keys(listed.value.entries).length > 0, '那几行解析得出设置项')
+    assert.equal(listed.value.ok, true, 'the words answered, the reading lands on the success branch')
+    assert.equal(listed.value.refusal, null, 'the success branch carries no refusal')
+    assert.ok(listed.value.text.length > 0, 'a successful reading carries the lines the engine printed')
+    assert.ok(Object.keys(listed.value.entries).length > 0, 'those lines parse into settings entries')
     const written = await call('setConfig', { sessionId: 's1', workspaceRoot: '', key: 'test_tier', value: 'minimal' })
     assert.equal(written.ok, true, String(written.message))
   } finally {

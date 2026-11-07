@@ -18,19 +18,19 @@ function readingWithSources(sources) {
   return { sources: Object.fromEntries(['nodes', 'cycles', 'instructions', 'issues'].map((key) => [key, sources[key] ?? sources.all])) }
 }
 
-test('四份来源都落在同一个结局上才算；一份都没有的时候不算「全都在」', () => {
+test('all four sources must land on the same outcome; with none at all it does not count as "all present"', () => {
   assert.equal(everySourceIs(readingWithSources({ all: 'missing' }), 'missing'), true)
   assert.equal(everySourceIs(readingWithSources({ all: 'unusable' }), 'unusable'), true)
   assert.equal(everySourceIs(readingWithSources({ all: 'read' }), 'read'), true)
 
-  assert.equal(everySourceIs(readingWithSources({ nodes: 'missing', cycles: 'unusable' }), 'missing'), false, '混着的不是「全都在」')
-  assert.equal(everySourceIs(readingWithSources({ nodes: 'read', cycles: 'missing' }), 'missing'), false, '有一份读到了就不是「都没有」')
+  assert.equal(everySourceIs(readingWithSources({ nodes: 'missing', cycles: 'unusable' }), 'missing'), false, 'mixed outcomes are not "all present"')
+  assert.equal(everySourceIs(readingWithSources({ nodes: 'read', cycles: 'missing' }), 'missing'), false, 'one source read is not "none"')
 
-  assert.equal(everySourceIs({ sources: {} }, 'missing'), false, '一份来源都没列到：还没读，不是「全都在」')
-  assert.equal(everySourceIs(readingWithSources({ all: 'missing' }), 'unusable'), false, '问的结局对不上就是不对上')
+  assert.equal(everySourceIs({ sources: {} }, 'missing'), false, 'no source listed at all: not read yet, not "all present"')
+  assert.equal(everySourceIs(readingWithSources({ all: 'missing' }), 'unusable'), false, 'an outcome that does not match does not match')
 })
 
-test('明细收格：走过它的算，它此刻正握着的也算', () => {
+test('the detail collects cells: ones it walked count, and the one it holds right now counts too', () => {
   const reading = readProject(record({
     nodes: {
       walked: node({ status: 'completed', completed_at: '2026-03-10T09:00:00.000Z' }),
@@ -48,14 +48,14 @@ test('明细收格：走过它的算，它此刻正握着的也算', () => {
   const c1 = reading.cycleById.c1
   const idsOf = (key) => nodesOf(key, c1, reading).map((one) => one.id)
 
-  assert.deepEqual(idsOf('done'), ['walked'], '走过它的算它名下的，哪怕此刻被别的线握着')
-  assert.deepEqual(idsOf('run'), ['held'], '它此刻握着的那一格算进行中那段')
+  assert.deepEqual(idsOf('done'), ['walked'], 'a cell it walked counts as its own, even while another cycle holds it')
+  assert.deepEqual(idsOf('run'), ['held'], 'the cell it holds right now counts in the running section')
   assert.deepEqual(idsOf('shelved'), [])
   assert.deepEqual(idsOf('ready'), [])
   assert.deepEqual(idsOf('wait'), [])
 })
 
-test('明细收格：已交付那段按交付时刻新的在前', () => {
+test('the detail collects cells: the delivered section puts the newest completion first', () => {
   const reading = readProject(record({
     nodes: {
       early: node({ status: 'completed', completed_at: '2026-03-10T07:00:00.000Z' }),
@@ -77,7 +77,7 @@ test('明细收格：已交付那段按交付时刻新的在前', () => {
   )
 })
 
-test('桶读数：要人的那一格先落闸，哪怕线正握着它', () => {
+test('the bucket reading: a cell that needs a person gates first, even while a cycle holds it', () => {
   const reading = readProject(record({
     nodes: {
       gated: node({ mode: 'manual' }),
@@ -87,12 +87,12 @@ test('桶读数：要人的那一格先落闸，哪怕线正握着它', () => {
     cycles: [cycle({ holding: [{ id: 'busyGate', since: '2026-03-10T11:00:00.000Z' }] })],
   }))
 
-  assert.equal(bucketOf(reading.nodeById.gated), 'gate', '手动闸的未开始一格落人闸')
-  assert.equal(bucketOf(reading.nodeById.busyGate), 'gate', '人闸压过进行中：握着它的线改不了这一桶')
-  assert.equal(bucketOf(reading.nodeById.checkpoint), 'gate', '交付了还没批过的检查点落人闸')
+  assert.equal(bucketOf(reading.nodeById.gated), 'gate', 'a not-started cell with a manual gate falls in the gate bucket')
+  assert.equal(bucketOf(reading.nodeById.busyGate), 'gate', 'the gate beats running: the cycle holding it cannot change that bucket')
+  assert.equal(bucketOf(reading.nodeById.checkpoint), 'gate', 'a delivered checkpoint not yet approved falls in the gate bucket')
 })
 
-test('桶读数：出局的判决自己一桶，余下按在手与格子自己的状态', () => {
+test('the bucket reading: a parked verdict gets its own bucket, the rest follow what is in hand and the cell\'s own state', () => {
   const reading = readProject(record({
     nodes: {
       parked: node({ status: undefined }),
@@ -108,13 +108,13 @@ test('桶读数：出局的判决自己一桶，余下按在手与格子自己�
     ],
   }))
 
-  assert.equal(bucketOf(reading.nodeById.parked), 'shelved', '判决失败的出局等人，落等待那一桶')
+  assert.equal(bucketOf(reading.nodeById.parked), 'shelved', 'a verdict of failed parks it waiting for a person, in the shelved bucket')
   assert.equal(bucketOf(reading.nodeById.busy), 'run')
   assert.equal(bucketOf(reading.nodeById.idle), 'todo')
   assert.equal(bucketOf(reading.nodeById.done), 'done')
 })
 
-test('分诊档次：桶自己的次序，只把未开始那半分成可开工与还在等', () => {
+test('the triage rank: the buckets\' own order, splitting the not-started half into ready and still waiting', () => {
   const reading = readProject(record({
     nodes: {
       gated: node({ mode: 'manual' }),
@@ -132,15 +132,15 @@ test('分诊档次：桶自己的次序，只把未开始那半分成可开工�
     ],
   }))
 
-  assert.equal(rankOf(reading.nodeById.gated), 0, '要人的那一格排在最前')
-  assert.equal(rankOf(reading.nodeById.parked), 0, '出局等人也排在等人那一档，不看它此刻有没有交付')
-  assert.equal(rankOf(reading.nodeById.busy), 1, '在别人手里的其次')
-  assert.equal(rankOf(reading.nodeById.ready), 2, '可以开工的第三')
-  assert.equal(rankOf(reading.nodeById.waiting), 3, '还欠前置的第四')
-  assert.equal(rankOf(reading.nodeById.done), 4, '落定的最后')
+  assert.equal(rankOf(reading.nodeById.gated), 0, 'a cell that needs a person ranks first')
+  assert.equal(rankOf(reading.nodeById.parked), 0, 'a parked cell ranks in the waiting tier too, whatever its delivery is right now')
+  assert.equal(rankOf(reading.nodeById.busy), 1, 'in someone else\'s hands ranks next')
+  assert.equal(rankOf(reading.nodeById.ready), 2, 'ready ranks third')
+  assert.equal(rankOf(reading.nodeById.waiting), 3, 'still owing a prerequisite ranks fourth')
+  assert.equal(rankOf(reading.nodeById.done), 4, 'settled ranks last')
 })
 
-test('卡上那一刻：闸的一刻先于握住的，握住的先于步子收尾，收尾先于交付，交付先于创建', () => {
+test('a card\'s moment: the gate\'s before the hold\'s, the hold\'s before the step\'s end, the end before delivery, delivery before creation', () => {
   const reading = readProject(record({
     nodes: {
       gated: node({ mode: 'manual', created_at: '2026-03-10T06:00:00.000Z' }),
@@ -168,14 +168,14 @@ test('卡上那一刻：闸的一刻先于握住的，握住的先于步子收�
     ],
   }))
 
-  assert.equal(reading.nodeById.gated.stampAt?.toISOString(), '2026-03-10T08:00:00.000Z', '人闸那一刻先于握住：08:00 在前，07:00 的握住不顶上来')
-  assert.equal(reading.nodeById.held.stampAt?.toISOString(), '2026-03-10T07:00:00.000Z', '握住的一刻先于步子收尾')
-  assert.equal(reading.nodeById.stepped.stampAt?.toISOString(), '2026-03-10T09:00:00.000Z', '步子收尾先于交付那一刻')
-  assert.equal(reading.nodeById.created.stampAt?.toISOString(), '2026-03-10T06:00:00.000Z', '什么都没有的格轮到创建那一刻')
-  assert.equal(reading.nodeById.bare.stampAt, null, '一刻都没有就是没有，不拿别的顶上')
+  assert.equal(reading.nodeById.gated.stampAt?.toISOString(), '2026-03-10T08:00:00.000Z', 'the gate moment comes before the hold: 08:00 wins, the 07:00 hold does not step up')
+  assert.equal(reading.nodeById.held.stampAt?.toISOString(), '2026-03-10T07:00:00.000Z', 'the hold moment comes before the step ends')
+  assert.equal(reading.nodeById.stepped.stampAt?.toISOString(), '2026-03-10T09:00:00.000Z', 'the step ending comes before the delivery moment')
+  assert.equal(reading.nodeById.created.stampAt?.toISOString(), '2026-03-10T06:00:00.000Z', 'a cell with nothing else falls to its creation moment')
+  assert.equal(reading.nodeById.bare.stampAt, null, 'no moment at all is none, nothing else stands in')
 })
 
-test('一格归哪条线：走过它的每条线加此刻握着它的线，明细、阻塞计数与上墨都读这一份', () => {
+test('which cycles a cell belongs to: every cycle that walked it plus the one holding it now; detail, blocked count and inking all read this one', () => {
   const reading = readProject(record({
     nodes: {
       carried: node({ status: undefined }),
@@ -188,15 +188,15 @@ test('一格归哪条线：走过它的每条线加此刻握着它的线，明�
     ],
   }))
 
-  assert.deepEqual([...ownersOf(reading.nodeById.carried)], ['c2', 'c1'], '第一条走过的线在前，握着它的线也占一份')
-  assert.deepEqual([...ownersOf(reading.nodeById.plain)], [], '哪条线都没碰过：不归任何线')
-  assert.deepEqual(reading.cycleById.c1.parked, ['carried'], '握着它又判决出局的线，阻塞计数里也有它')
+  assert.deepEqual([...ownersOf(reading.nodeById.carried)], ['c2', 'c1'], 'the cycle that walked it first comes first, the holding cycle takes a share too')
+  assert.deepEqual([...ownersOf(reading.nodeById.plain)], [], 'no cycle has touched it: it belongs to none')
+  assert.deepEqual(reading.cycleById.c1.parked, ['carried'], 'a cycle holding it and with a parked verdict counts it in the blocked count')
   assert.deepEqual(nodesOf('shelved', reading.cycleById.c1, reading).map((one) => one.id), ['carried'],
-    '同一份判据：明细的等待处理分组与阻塞计数说的是同一格')
-  assert.deepEqual(reading.cycleById.c2.parked, ['carried'], '第一条走过它的线同样记着这次出局')
+    'the same criterion: the detail\'s shelved group and the blocked count name the same cell')
+  assert.deepEqual(reading.cycleById.c2.parked, ['carried'], 'the cycle that walked it first records the same parking')
 })
 
-test('一格被两条线走过：两条线都算碰过它，重跑的那条不算「没碰过」', () => {
+test('a cell two cycles walked: both count as having touched it, the re-run one is not "untouched"', () => {
   const reading = readProject(record({
     nodes: { rerun: node() },
     cycles: [
@@ -207,16 +207,16 @@ test('一格被两条线走过：两条线都算碰过它，重跑的那条不�
   }))
   const one = reading.nodeById.rerun
 
-  assert.deepEqual([...one.cycleIds], ['c1', 'c2'], '两条线都走过这一格：记录里两条都算碰过')
-  assert.deepEqual([...ownersOf(one)], ['c1', 'c2'], '走过它的每条线各占一份，按记录次序')
+  assert.deepEqual([...one.cycleIds], ['c1', 'c2'], 'both cycles walked this cell: the record counts both as having touched it')
+  assert.deepEqual([...ownersOf(one)], ['c1', 'c2'], 'each walking cycle takes a share, in record order')
   assert.equal(belongsTo(one, 'c1'), true)
-  assert.equal(belongsTo(one, 'c2'), true, '重跑的那条线也碰过这一格，不是「没碰过」')
+  assert.equal(belongsTo(one, 'c2'), true, 'the re-run cycle touched this cell too, it is not "untouched"')
   assert.deepEqual(nodesOf('ready', reading.cycleById.c1, reading).map((each) => each.id), ['rerun'])
   assert.deepEqual(nodesOf('ready', reading.cycleById.c2, reading).map((each) => each.id), ['rerun'],
-    '明细分组与上墨读同一份判据：重跑的线也收得到这一格')
+    'the detail groups and the inking read the same criterion: the re-run cycle gets this cell too')
 })
 
-test('线的三态只判一次：欠人一格的算阻塞，还在服务里的算进行中，其余算停下', () => {
+test('a cycle\'s three states are judged once: a cell owed to a person is blocked, still in service is running, the rest are stopped', () => {
   const reading = readProject(record({
     nodes: { parked: node({ status: undefined }), busy: node() },
     cycles: [
@@ -229,8 +229,8 @@ test('线的三态只判一次：欠人一格的算阻塞，还在服务里的�
     ],
   }))
 
-  assert.equal(lineStateOf(reading.cycleById.c1), 'blocked', '名下有一格等人：先看这次出局')
-  assert.equal(lineStateOf(reading.cycleById.c2), 'run', '还没写状态但手里有活：在服务里')
+  assert.equal(lineStateOf(reading.cycleById.c1), 'blocked', 'one cell waiting on a person: the parking wins')
+  assert.equal(lineStateOf(reading.cycleById.c2), 'run', 'no status written but work in hand: in service')
   assert.equal(lineStateOf(reading.cycleById.c3), 'stopped')
-  assert.equal(lineStateOf(reading.cycleById.c4), 'stopped', '没写状态又什么都没握着：不读成进行中')
+  assert.equal(lineStateOf(reading.cycleById.c4), 'stopped', 'no status and nothing in hand: not read as running')
 })

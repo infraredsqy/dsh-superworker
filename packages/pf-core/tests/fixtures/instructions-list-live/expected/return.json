@@ -1,7 +1,7 @@
 [
   {
     "id": "i-0001",
-    "text": "全局的约束",
+    "text": "global constraint",
     "scope": "global",
     "target": "stage",
     "state": "live",
@@ -14,7 +14,7 @@
   },
   {
     "id": "i-0002",
-    "text": "线上的约束",
+    "text": "line constraint",
     "scope": "cycle",
     "target": "boundary",
     "state": "live",
@@ -27,7 +27,7 @@
   },
   {
     "id": "i-0003",
-    "text": "节点上的约束",
+    "text": "node constraint",
     "scope": "node",
     "target": "stage",
     "state": "live",

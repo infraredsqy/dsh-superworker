@@ -2,7 +2,7 @@
   "instructions": [
     {
       "id": "i-0001",
-      "text": "先跑 typecheck 再交",
+      "text": "run the typecheck before handing it in",
       "scope": "cycle",
       "target": "stage",
       "state": "withdrawn",

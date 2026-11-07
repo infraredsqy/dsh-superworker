@@ -58,32 +58,32 @@ function outsideSpecifiers(code) {
   return [...out]
 }
 
-test('包面：扫描不放过紧贴散文的 specifier——散文里的 `from"` 不能把下一条外置吞掉', () => {
+test('package face: the scan does not miss a specifier hugging prose — a `from"` in prose must not swallow the next externals entry', () => {
   // The accident this whole file exists for, placed where the bundle's own prose makes it easiest to
   // lose: a sentence ending in `from"`, then an import spelled with the same quote style right behind
   // it. A scan that matches loosely and then filters its findings answers `[]` here.
   assert.deepEqual(outsideSpecifiers('nothing to pick from" from "pf-core"'), ['pf-core'])
 })
 
-test('包面：引擎是本仓的 workspace 包，宿主半身按名字就能到它', () => {
+test('package face: the engine is this repo\'s workspace package, the host half reaches it by name', () => {
   const link = join(root, 'node_modules', 'pf-core')
-  assert.ok(existsSync(link), 'node_modules/pf-core 不在：pnpm install 没有把 workspace 包链上')
-  assert.equal(realpathSync(link), realpathSync(engineDir), 'node_modules/pf-core 指向的不是本仓那个引擎包')
+  assert.ok(existsSync(link), 'node_modules/pf-core is missing: pnpm install did not link the workspace package')
+  assert.equal(realpathSync(link), realpathSync(engineDir), 'node_modules/pf-core does not point at this repo\'s engine package')
   const manifest = JSON.parse(readFileSync(join(engineDir, 'package.json'), 'utf8'))
   assert.equal(manifest.name, 'pf-core')
-  assert.equal(manifest.private, true, '引擎包是私有包：它不发版，只随宿主这一份产物出去')
+  assert.equal(manifest.private, true, 'the engine package is private: it is not released on its own, it ships inside the host build')
 })
 
-test('包面：外置面里没有引擎——构建没有哪条指令把它留在包外', () => {
+test('package face: the engine is not among the externals — no build directive leaves it outside the bundle', () => {
   const offenders = neverBundle.filter((spec) => spec === 'pf-core' || spec.startsWith('pf-core/'))
   assert.deepEqual(
     offenders,
     [],
-    `tsdown.config.ts 的 deps.neverBundle 把引擎外置了：${JSON.stringify(neverBundle)}`,
+    `tsdown.config.ts deps.neverBundle externalized the engine: ${JSON.stringify(neverBundle)}`,
   )
 })
 
-test('包面：宿主半身按名字取到的是引擎自己的产物', { skip: built ? false : notBuilt }, () => {
+test('package face: what the host half gets by name is the engine\'s own product', { skip: built ? false : notBuilt }, () => {
   const resolved = import.meta.resolve('pf-core')
   assert.equal(
     fileURLToPath(resolved),
@@ -92,7 +92,7 @@ test('包面：宿主半身按名字取到的是引擎自己的产物', { skip: 
   )
 })
 
-test('包面：一条 import 引擎的入口打成自足的一份：引擎代码在里面，外头不指回包', { skip: built ? false : notBuilt }, async () => {
+test('package face: an entry importing the engine bundles into a self-contained chunk: the engine code is inside, nothing points back out to the package', { skip: built ? false : notBuilt }, async () => {
   mkdirSync(join(root, '.tmp'), { recursive: true })
   const probeDir = mkdtempSync(join(root, '.tmp', 'engine-inline-'))
   try {
@@ -103,9 +103,9 @@ test('包面：一条 import 引擎的入口打成自足的一份：引擎代码
     await bundle.close()
     const chunk = pieces.find((piece) => piece.type === 'chunk')
     assert.ok(chunk !== undefined, 'the bundle produced no code')
-    assert.ok(chunk.code.includes('SimulatedExecutor'), '产物里没有引擎的代码：引擎没被打进这一份')
+    assert.ok(chunk.code.includes('SimulatedExecutor'), 'the engine code is not in the product: the engine was not bundled into this one')
     const outside = outsideSpecifiers(chunk.code).filter((spec) => !spec.startsWith('node:'))
-    assert.deepEqual(outside, [], `产物还在指往外头的东西：${JSON.stringify(outside)}`)
+    assert.deepEqual(outside, [], `the product still points at something outside: ${JSON.stringify(outside)}`)
   } finally {
     rmSync(probeDir, { recursive: true, force: true })
   }

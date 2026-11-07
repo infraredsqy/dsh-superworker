@@ -3,10 +3,10 @@
  * by the `skill` tool's call result or by a user `/pf-*` invocation — never for anyone
  * else, and only once per agent.
  *
- * - **零常驻**: an unrelated agent's scope stays without the tool; a settled call of a
+ * - **never resident**: an unrelated agent's scope stays without the tool; a settled call of a
  *   tool that is not `skill`, a failed skill load, a `/some-skill` invocation, and a
  *   workspace with no `.pf/` all leave the scope unarmed.
- * - **唤醒一次**: every trigger hits the same wake; a second skill load, and a second
+ * - **wakes once**: every trigger hits the same wake; a second skill load, and a second
  *   step in a record's workspace, register nothing more.
  * - the description the tool registers with stays at or under 400 bytes;
  * - the name lock: the registered name, the README and every markdown page the skills
@@ -101,7 +101,7 @@ async function firePreStep(events, payload, messages) {
   }
 }
 
-test('零常驻：无关工具的调用、失败的技能装载、别的技能名，都不唤醒', async () => {
+test('Never resident: a call to an unrelated tool, a failed skill load, another skill name, none wakes', async () => {
   const { ctx, events } = context()
   apply(ctx)
   const { agent, registered } = fakeAgent()
@@ -113,24 +113,24 @@ test('零常驻：无关工具的调用、失败的技能装载、别的技能�
     { agent },
     [{ source: { kind: 'skill-invocation', name: 'some-skill' } }],
   )
-  assert.equal(registered.length, 0, '没有任何一条触发线点亮这个 agent')
+  assert.equal(registered.length, 0, 'no trigger line armed this agent')
 })
 
-test('唤醒一次：skill 工具装了技能，下一轮这个 agent 的作用域里就有 pathfinder，且只有一份', async () => {
+test('Wakes once: the skill tool loads a skill, and the next round this agent\'s scope has one pathfinder, no more', async () => {
   const { ctx, events } = context()
   apply(ctx)
   const { agent, registered } = fakeAgent()
 
   await firePostExecute(events, { name: 'skill', agent }, { isError: false })
-  assert.equal(registered.length, 1, '装一次')
+  assert.equal(registered.length, 1, 'registered once')
   assert.equal(registered[0].name, PATHFINDER_TOOL_NAME)
 
   await firePostExecute(events, { name: 'skill', agent }, { isError: false })
   await firePreStep(events, { agent }, [{ source: { kind: 'skill-invocation', name: 'pf-route' } }])
-  assert.equal(registered.length, 1, '同一个 agent 只有一份')
+  assert.equal(registered.length, 1, 'one copy per agent')
 })
 
-test('唤醒一次：用户敲 /pf-route 也走同一个唤醒，两条线不各注册各的', async () => {
+test('Wakes once: a user typing /pf-route goes through the same wake, the two lines do not register each their own', async () => {
   const { ctx, events } = context()
   apply(ctx)
   const { agent, registered } = fakeAgent()
@@ -143,7 +143,7 @@ test('唤醒一次：用户敲 /pf-route 也走同一个唤醒，两条线不各
   assert.equal(registered[0].name, PATHFINDER_TOOL_NAME)
 })
 
-test('事实唤醒：工作区有 .pf，第一步的请求里就有工具，不需要任何技能', async () => {
+test('Fact wake: the workspace has .pf, so the first step request carries the tool, no skill needed', async () => {
   const root = mkdtempSync(join(tmpdir(), 'pf-workspace-'))
   mkdirSync(join(root, '.pf'), { recursive: true })
   try {
@@ -152,17 +152,17 @@ test('事实唤醒：工作区有 .pf，第一步的请求里就有工具，不�
     const { agent, registered } = fakeAgent()
 
     await firePreStep(events, { agent }, [])
-    assert.equal(registered.length, 1, '工作区有记录，第一步就上膛')
+    assert.equal(registered.length, 1, 'the workspace has a record, armed on the first step')
     assert.equal(registered[0].name, PATHFINDER_TOOL_NAME)
 
     await firePreStep(events, { agent }, [])
-    assert.equal(registered.length, 1, '同一个 agent 只有一份')
+    assert.equal(registered.length, 1, 'one copy per agent')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('事实唤醒：工作区没有 .pf 就不点亮；记录出现之后，下一步才上膛', async () => {
+test('Fact wake: no .pf in the workspace, no arming; once the record appears, the next step arms', async () => {
   const root = mkdtempSync(join(tmpdir(), 'pf-workspace-'))
   try {
     const { ctx, events } = context({ cwd: root })
@@ -171,45 +171,46 @@ test('事实唤醒：工作区没有 .pf 就不点亮；记录出现之后，下
 
     assert.equal(hasPipelineRecord(root), false)
     await firePreStep(events, { agent }, [])
-    assert.equal(registered.length, 0, '无关工作区一个字节都不多')
+    assert.equal(registered.length, 0, 'an unrelated workspace gets not one byte more')
 
     mkdirSync(join(root, '.pf'), { recursive: true })
     assert.equal(hasPipelineRecord(root), true)
     await firePreStep(events, { agent }, [])
-    assert.equal(registered.length, 1, '记录出现之后，下一步就上膛')
+    assert.equal(registered.length, 1, 'once the record appears, the next step arms')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('工具的形状：名字、描述字节数、参数与输出都是声明的面', () => {
+test('The tool\'s shape: name, description bytes, parameters and output are all the declared surface', () => {
   const { ctx } = context()
   const { agent, registered } = fakeAgent()
   wakeAgent(agent, toolHost(ctx))
 
   const tool = registered[0]
   assert.equal(tool.name, PATHFINDER_TOOL_NAME)
-  assert.ok(Buffer.byteLength(tool.description, 'utf8') <= 400, `描述 ${Buffer.byteLength(tool.description, 'utf8')} 字节，上限 400`)
+  assert.ok(Buffer.byteLength(tool.description, 'utf8') <= 400, `description is ${Buffer.byteLength(tool.description, 'utf8')} bytes, cap 400`)
   assert.deepEqual(Object.keys(tool.parameters.properties ?? {}), ['word', 'args', 'help'])
-  assert.deepEqual(tool.parameters.required, undefined, '没有必填参数：不枚举词名')
+  assert.deepEqual(tool.parameters.required, undefined, 'no required parameters: word names are not enumerated')
   assert.deepEqual(Object.keys(tool.output.schema.properties ?? {}), ['code', 'stdout', 'stderr'])
 })
 
-test('工具的四层帮助：argv 由 word / args / help 拼出，help 与 args 相加，词面自己应答', async () => {
-  // 空手问，答的是整张索引；help 与没有词落在同一个词上。
+test('The tool\'s four layers of help: argv is composed from word / args / help, help adds to args, the words layer answers itself', async () => {
+  // Asked empty-handed, it answers the whole index; help lands on the same word as no word at all.
   assert.deepEqual(argvOf({}), ['help'])
   assert.deepEqual(argvOf({ help: true }), ['help'])
-  // 光有词、不要帮助：就是运行它。
+  // A word without help: run it.
   assert.deepEqual(argvOf({ word: 'next' }), ['next'])
-  // 词 + help：这个词自己的那一页。
+  // Word + help: that word's own page.
   assert.deepEqual(argvOf({ help: true, word: 'next' }), ['next', '--help'])
-  // 词 + args + help：这一次调用的那一页 —— args 被带上，不是被丢掉。
+  // Word + args + help: this call's own page — args ride along, not dropped.
   assert.deepEqual(argvOf({ help: true, word: 'dag', args: ['list'] }), ['dag', 'list', '--help'])
-  // args 已经以 --help 收尾：沿用调用者的拼法，不追加第二个。
+  // args already end with --help: keep the caller's spelling, append no second one.
   assert.deepEqual(argvOf({ help: true, word: 'issue', args: ['status', '--help'] }), ['issue', 'status', '--help'])
-  // --help 不在末尾：原位不动，末尾再补一个 —— 词层只把末尾那个读作求助，组词找动词时中间那个不算。
+  // --help not at the end: leave it in place and add one at the end — the words layer reads only the trailing
+  // one as a help ask, and the middle one does not count when finding the group's verb.
   assert.deepEqual(argvOf({ help: true, word: 'dag', args: ['--help', 'list'] }), ['dag', '--help', 'list', '--help'])
-  // 没有 help：词 + args 就是运行这一次调用。
+  // No help: word + args is running this call.
   assert.deepEqual(argvOf({ word: 'dag', args: ['list'] }), ['dag', 'list'])
 
   const { ctx } = context()
@@ -217,15 +218,15 @@ test('工具的四层帮助：argv 由 word / args / help 拼出，help 与 args
   wakeAgent(agent, toolHost(ctx))
   const answer = await registered[0].execute({ help: true }, { agent })
   assert.equal(answer.code, 0, answer.stderr)
-  assert.match(answer.stdout, /pathfinder -- the agent pipeline/u, '空手问它，答的是整张索引')
+  assert.match(answer.stdout, /pathfinder -- the agent pipeline/u, 'asked empty-handed, it answers the whole index')
 })
 
-test('名字锁：注册名、README 的拼法来自同一个常量；技能正文的拼法与它一致，且每个 SKILL.md 都点到它', () => {
+test('Name lock: the registered name and the README spelling come from one constant; the skill bodies spell it the same, and every SKILL.md names it', () => {
   assert.equal(PATHFINDER_TOOL_NAME, 'pathfinder')
   assert.equal(SKILL_NAME_PREFIX, 'pf-')
   for (const file of ['README.md', 'README.zh.md']) {
     const text = readFileSync(join(repo, file), 'utf8')
-    assert.match(text, /`pathfinder`/u, `${file} 提到这个工具时用注册处的拼写`)
+    assert.match(text, /`pathfinder`/u, `${file} spells the tool the way the registry does`)
   }
   // The skills live under the shipped plugins. Walk *every* markdown page in their
   // `skills/` trees — the pools and the reference pages quote command lines too — and
@@ -250,7 +251,7 @@ test('名字锁：注册名、README 的拼法来自同一个常量；技能正�
     }
   }
   walkSkills(pluginsRoot)
-  assert.ok(files.length >= 60, `随包技能正文都在（走到 ${files.length} 篇，至少 60）`)
+  assert.ok(files.length >= 60, `every shipped skill body is walked (walked ${files.length} files, at least 60)`)
   // The tool is a word, not a directory: `MANIFEST_DIR` in `src/host/skill-paths.ts` happens
   // to spell `pathfinder` too, and a tool rename must not force the doc path to move. Keep
   // only path-free tokens — not preceded by a slash or a backslash, not followed by a
@@ -260,16 +261,16 @@ test('名字锁：注册名、README 的拼法来自同一个常量；技能正�
     const text = readFileSync(file, 'utf8')
     const mentions = text.match(TOOL_MENTION) ?? []
     for (const spelling of mentions) {
-      assert.equal(spelling, PATHFINDER_TOOL_NAME, `${file}: ${spelling} 不是注册处的拼写`)
+      assert.equal(spelling, PATHFINDER_TOOL_NAME, `${file}: ${spelling} is not the registered spelling`)
     }
     if (file.endsWith('SKILL.md')) {
       const named = mentions.filter((spelling) => spelling === PATHFINDER_TOOL_NAME)
-      assert.ok(named.length >= 1, `${file}: 没提到 ${PATHFINDER_TOOL_NAME}，名字锁就空转了`)
+      assert.ok(named.length >= 1, `${file}: names no ${PATHFINDER_TOOL_NAME}, so the name lock spins on nothing`)
     }
   }
 })
 
-test('卸下：线的 effect 把两条触发线一起收走；agent 的 effect 把工具收走', async () => {
+test('Unloading: the line\'s effect takes both trigger lines back; the agent\'s effect takes the tool back', async () => {
   const { ctx, events, effects } = context()
   apply(ctx)
   assert.equal(events.listenersOf('tools/post-execute').length, 1)
@@ -283,8 +284,8 @@ test('卸下：线的 effect 把两条触发线一起收走；agent 的 effect �
   // takes both triggers back. (The skills placement's effect settles later and is not
   // this test's business.)
   for (const dispose of effects) if (typeof dispose === 'function') dispose()
-  assert.equal(events.listenersOf('tools/post-execute').length, 0, 'post-execute 上的线收走了')
-  assert.equal(events.listenersOf('agent/pre-step').length, 0, 'pre-step 上的线收走了')
+  assert.equal(events.listenersOf('tools/post-execute').length, 0, 'the post-execute line is gone')
+  assert.equal(events.listenersOf('agent/pre-step').length, 0, 'the pre-step line is gone')
 
   // The agent's own effect: the registration disposer is collected there.
   const { ctx: ctx2, events: events2 } = context()
@@ -310,6 +311,6 @@ test('卸下：线的 effect 把两条触发线一起收走；agent 的 effect �
   await firePostExecute(events2, { name: 'skill', agent: agent2 }, { isError: false })
   assert.equal(holder.length, 1)
   agent2.dispose()
-  assert.equal(holder.length, 0, 'agent 走了，工具跟着走')
+  assert.equal(holder.length, 0, 'the agent is gone, the tool goes with it')
 })
 

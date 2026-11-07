@@ -22,13 +22,13 @@ import { covered, filesUnder } from './helpers/npm-files.mjs'
 const manifestPath = fileURLToPath(new URL('../package.json', import.meta.url))
 const manifest = JSON.parse(await (await import('node:fs/promises')).readFile(manifestPath, 'utf8'))
 
-test('包面：这是一个可发布的包，版本号是一个真号', () => {
-  assert.notEqual(manifest.private, true, 'private 拦着 publish')
+test('package face: this is a publishable package, and the version is a real number', () => {
+  assert.notEqual(manifest.private, true, 'private blocks publish')
   assert.match(manifest.version, /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)/u, `version=${manifest.version}`)
-  assert.notEqual(manifest.version, '0.0.0', '占位版本号发不出去')
+  assert.notEqual(manifest.version, '0.0.0', 'a placeholder version cannot be published')
 })
 
-test('包面：宿主入口与浏览器半身都指在 lib/ 下，且两份都被 files 盖住', () => {
+test('package face: the host entry and the browser half both point under lib/, and files covers both', () => {
   assert.equal(manifest.exports['.'].default, './lib/host/index.js')
   assert.equal(manifest.exports['./client'].default, './lib/client.js')
   const files = manifest.files ?? []
@@ -36,37 +36,37 @@ test('包面：宿主入口与浏览器半身都指在 lib/ 下，且两份都�
     const rel = entry.replace(/^\.\//u, '')
     assert.ok(
       files.some((pattern) => covered(pattern, rel)),
-      `${rel} 没有被 files 里任何一条盖住：files=${JSON.stringify(files)}`,
+      `${rel} is not covered by any files pattern: files=${JSON.stringify(files)}`,
     )
   }
 })
 
-test('包面：类型那一层只发 .d.ts——files 里没有哪条能把 lib/types 的 .js 一起装进包', () => {
+test('package face: the types layer ships only .d.ts — no files pattern can pack the .js under lib/types', () => {
   const files = manifest.files ?? []
   for (const pattern of files) {
     assert.ok(
       !covered(pattern, 'lib/types/host/index.js'),
-      `${pattern} 会把 lib/types 下那份 .js 一起装进包——那是打包的输入，包里没有任何东西加载它：files=${JSON.stringify(files)}`,
+      `${pattern} would pack the .js under lib/types too — that is a bundling input, nothing in the package loads it: files=${JSON.stringify(files)}`,
     )
   }
 })
 
-test('包面：profile 里的挂载点与浏览器那一侧的 platform 都还在，patch 文件在盘上', () => {
+test('package face: the profile\'s mount point and the browser side\'s platform are still there, and the patch file is on disk', () => {
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
   assert.equal(manifest.dsh.client.platform, 'web')
   assert.ok(existsSync(fileURLToPath(new URL('../cordis.patch.yml', import.meta.url))))
 })
 
-test('包面：浏览器那一侧声明了它等的加载依赖，`connection` 那一条排在前头', () => {
+test('package face: the browser side declares the load dependency it waits on, with `connection` first', () => {
   const inject = manifest.dsh?.client?.inject
   assert.ok(Array.isArray(inject) && inject.length > 0, `dsh.client.inject=${JSON.stringify(inject)}`)
   assert.ok(
     inject.includes('@deepseek-ai/dsh-client-connection'),
-    '没声明这条依赖，外壳就不知道要先把 connection 送达，面板应用得早、取数口子接不上',
+    'without this dependency declared, the shell does not know to deliver connection first: the panel applies too early and the data seam never connects',
   )
 })
 
-test('包面：engines.dsh 写着一段非空的范围', () => {
+test('package face: engines.dsh states a non-empty range', () => {
   assert.equal(typeof manifest.engines?.dsh, 'string')
   assert.ok(manifest.engines.dsh.trim().length > 0)
 })
@@ -78,28 +78,28 @@ test('包面：engines.dsh 写着一段非空的范围', () => {
  * git's merge driver. Nothing in this artifact is meant to be typed at a shell, so the manifest names
  * no command and the artifact carries no `bin/`.
  */
-test('包面：这份包不交任何命令，`bin` 字段与 `files` 里都没有 `bin/`', () => {
-  assert.equal(manifest.bin, undefined, `清单还在交命令：${JSON.stringify(manifest.bin)}`)
+test('package face: this package ships no command: no `bin` field, no `bin/` under `files`', () => {
+  assert.equal(manifest.bin, undefined, `the manifest still ships a command: ${JSON.stringify(manifest.bin)}`)
   const files = manifest.files ?? []
   for (const pattern of files) {
-    assert.ok(!pattern.startsWith('bin/'), `files 还在收 bin/：${pattern}`)
+    assert.ok(!pattern.startsWith('bin/'), `files still packs bin/: ${pattern}`)
   }
-  assert.equal(existsSync(fileURLToPath(new URL('../bin', import.meta.url))), false, 'bin/ 还在盘上')
-  assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml', 'profile 里那一行的挂载点动了')
+  assert.equal(existsSync(fileURLToPath(new URL('../bin', import.meta.url))), false, 'bin/ is still on disk')
+  assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml', 'the profile\'s mount point moved')
 })
 
-test('包面：引擎的构建产物随包走，构建链先把它构建出来', () => {
+test('package face: the engine build ships with the package, and the build chain builds it first', () => {
   const files = manifest.files ?? []
   for (const rel of ['packages/pf-core/dist/index.mjs', 'packages/pf-core/dist/merge-ledger.mjs']) {
     assert.ok(
       files.some((pattern) => covered(pattern, rel)),
-      `${rel} 没进包：装出去的运行时身上没有引擎：files=${JSON.stringify(files)}`,
+      `${rel} is not in the package: the shipped runtime carries no engine: files=${JSON.stringify(files)}`,
     )
   }
   assert.match(
     manifest.scripts?.['build:products'] ?? '',
     /pnpm --filter pf-core build/u,
-    `构建链不构建引擎，包里那份 dist 就是旧的或者根本没有：build:products=${JSON.stringify(manifest.scripts?.['build:products'])}`,
+    `the build chain does not build the engine, so the dist in the package is stale or missing outright: build:products=${JSON.stringify(manifest.scripts?.['build:products'])}`,
   )
 })
 
@@ -110,24 +110,24 @@ test('包面：引擎的构建产物随包走，构建链先把它构建出来',
  * `docs/publish.md` and `tools/test-all.mjs` point back at this name instead of repeating the steps;
  * prose cannot be asserted, so this case is what holds the name in place.
  */
-test('包面：构建链只有一处正本，prepack 与 test 都调它，四步各在链里', () => {
+test('package face: the build chain has one home, prepack and test both call it, and each of the four steps is in the chain', () => {
   const scripts = manifest.scripts ?? {}
   for (const caller of ['prepack', 'test']) {
     assert.match(
       scripts[caller] ?? '',
       /npm run build:products/u,
-      `${caller} 没走同一条构建链：${caller}=${JSON.stringify(scripts[caller])}`,
+      `${caller} does not walk the same build chain: ${caller}=${JSON.stringify(scripts[caller])}`,
     )
   }
   const chain = scripts['build:products'] ?? ''
   const steps = [
-    ['引擎构建', /pnpm --filter pf-core build/u],
-    ['类型', /npm run types(?![\w:])/u],
-    ['宿主半身', /npm run bundle(?![\w:])/u],
-    ['浏览器半身', /npm run bundle:client/u],
+    ['engine build', /pnpm --filter pf-core build/u],
+    ['types', /npm run types(?![\w:])/u],
+    ['host half', /npm run bundle(?![\w:])/u],
+    ['browser half', /npm run bundle:client/u],
   ]
   for (const [label, pattern] of steps) {
-    assert.match(chain, pattern, `build:products 里少了${label}这一步：build:products=${JSON.stringify(chain)}`)
+    assert.match(chain, pattern, `build:products is missing the ${label} step: build:products=${JSON.stringify(chain)}`)
   }
 })
 
@@ -136,14 +136,14 @@ test('包面：构建链只有一处正本，prepack 与 test 都调它，四步
  * inside `files`. They are read by different tooling (a path reader and an exports resolver), so one
  * of them dropping out of the package loses types for half the callers with nothing failing.
  */
-test('包面：类型入口的两处写法都落在 files 里', () => {
+test('package face: both spellings of the types entry land in files', () => {
   const files = manifest.files ?? []
   for (const target of [manifest.types, manifest.exports?.['.']?.types]) {
-    assert.equal(typeof target, 'string', `清单没有写类型入口：${JSON.stringify(target)}`)
+    assert.equal(typeof target, 'string', `the manifest does not write a types entry: ${JSON.stringify(target)}`)
     const rel = target.replace(/^\.\//u, '')
     assert.ok(
       files.some((pattern) => covered(pattern, rel)),
-      `${rel} 没有被 files 里任何一条盖住：files=${JSON.stringify(files)}`,
+      `${rel} is not covered by any files pattern: files=${JSON.stringify(files)}`,
     )
   }
 })
@@ -154,7 +154,7 @@ test('包面：类型入口的两处写法都落在 files 里', () => {
  * a profile layer and the manifest itself can be read out of the installed tree. A key appearing or
  * vanishing here changes what an installer can reach, and no build step would notice.
  */
-test('包面：exports 的键集是那三个运行时口子加 cordis.patch.yml 与 package.json', () => {
+test('package face: the exports key set is the three runtime mouths plus cordis.patch.yml and package.json', () => {
   assert.deepEqual(
     Object.keys(manifest.exports ?? {}).sort(),
     ['.', './client', './cordis.patch.yml', './locale/*.json', './package.json'].sort(),
@@ -172,24 +172,24 @@ test('包面：exports 的键集是那三个运行时口子加 cordis.patch.yml 
  * (`anti-patterns.md`, `pool.md`), so a half-shipped folder installs a body that references files that
  * are not there.
  */
-test('包面：随包走的插件目录整个进包，插件技能的文件一个都不少', () => {
+test('package face: the shipped plugin directories go in whole, and no plugin skill file is missing', () => {
   const pluginsDir = fileURLToPath(new URL('../packages/pf-core/plugins', import.meta.url))
-  assert.ok(existsSync(pluginsDir), 'packages/pf-core/plugins 不在盘上：技能就没有来源了')
+  assert.ok(existsSync(pluginsDir), 'packages/pf-core/plugins is not on disk: the skills have no source')
   const files = manifest.files ?? []
   const shipped = filesUnder(pluginsDir).map((relative) => `packages/pf-core/plugins/${relative}`)
-  assert.ok(shipped.length > 0, 'packages/pf-core/plugins 是空的')
+  assert.ok(shipped.length > 0, 'packages/pf-core/plugins is empty')
   const uncovered = shipped.filter((relative) => !files.some((pattern) => covered(pattern, relative)))
-  assert.deepEqual(uncovered, [], '这些插件文件没被 files 里任何一条盖住，装成品里就没有它们')
+  assert.deepEqual(uncovered, [], 'these plugin files are not covered by any files pattern, so the installed product lacks them')
 })
 
-test('包面：插件交出的每一个 SKILL.md 都在盘上，且包里有它的位置', () => {
+test('package face: every SKILL.md a plugin hands out is on disk and has a place in the package', () => {
   const pluginsDir = fileURLToPath(new URL('../packages/pf-core/plugins', import.meta.url))
   const files = manifest.files ?? []
   const skills = filesUnder(pluginsDir).filter((relative) => relative.endsWith('/SKILL.md'))
-  assert.ok(skills.length > 0, '包里的插件一个技能都不带')
+  assert.ok(skills.length > 0, 'no plugin in the package carries a skill')
   for (const relative of skills) {
     const full = `packages/pf-core/plugins/${relative}`
-    assert.ok(files.some((pattern) => covered(pattern, full)), `${full} 没进包`)
+    assert.ok(files.some((pattern) => covered(pattern, full)), `${full} is not in the package`)
   }
 })
 
@@ -200,24 +200,24 @@ test('包面：插件交出的每一个 SKILL.md 都在盘上，且包里有它�
  * file that exists on disk but is not exported, or not covered by `files`, is simply absent from the
  * published package, and the inventory line falls back to the raw package name with nothing failing.
  */
-test('包面：语言元数据两份都在盘上，各自的标题非空', async () => {
+test('package face: both locale metadata files are on disk, each with a non-empty title', async () => {
   for (const locale of ['zh', 'en']) {
     const path = fileURLToPath(new URL(`../locale/${locale}.json`, import.meta.url))
-    assert.ok(existsSync(path), `locale/${locale}.json 不在盘上`)
+    assert.ok(existsSync(path), `locale/${locale}.json is not on disk`)
     const held = JSON.parse(await (await import('node:fs/promises')).readFile(path, 'utf8'))
     assert.equal(typeof held.meta?.title, 'string')
-    assert.ok(held.meta.title.trim().length > 0, `locale/${locale}.json 的 meta.title 是空的`)
-    assert.ok(held.meta.title !== locale, `locale/${locale}.json 的 meta.title 还是语言名本身`)
+    assert.ok(held.meta.title.trim().length > 0, `locale/${locale}.json has an empty meta.title`)
+    assert.ok(held.meta.title !== locale, `locale/${locale}.json meta.title is still the language name itself`)
   }
 })
 
-test('包面：语言元数据既经 exports 放行，也被 files 收进包', () => {
-  assert.equal(manifest.exports['./locale/*.json'], './locale/*.json', '没有这条 exports，外壳取不到元数据')
+test('package face: locale metadata is both exported and packed by files', () => {
+  assert.equal(manifest.exports['./locale/*.json'], './locale/*.json', 'without this exports entry the shell cannot reach the metadata')
   const files = manifest.files ?? []
   for (const locale of ['zh', 'en']) {
     assert.ok(
       files.some((pattern) => covered(pattern, `locale/${locale}.json`)),
-      `locale/${locale}.json 没有被 files 里任何一条盖住：files=${JSON.stringify(files)}`,
+      `locale/${locale}.json is not covered by any files pattern: files=${JSON.stringify(files)}`,
     )
   }
 })

@@ -1,7 +1,7 @@
-# 准备：把一轮的运行稿、提示词与交接单模板落成引擎行为
+# prepare: turn one round's run doc, prompt and handoff sheet into engine behaviour
 
 method: pf-execute
 
-## 完成判定
+## Done when
 
-- `pnpm test` 全绿；语料逐字节对拍；重复准备幂等；节点目录之外不落文件。
+- `pnpm test` all green; the corpus compares byte for byte; repeated preparation is idempotent; nothing lands outside the node directory.

@@ -30,9 +30,9 @@ afterEach(() => {
 
 describe('add: registering a node', () => {
   it('the default shape: todo, auto, no dependencies, and tags and weight only get a key when really given', async () => {
-    const plain = await pf.ledger.dag.add({ title: '普通节点' });
+    const plain = await pf.ledger.dag.add({ title: 'plain node' });
     expect(plain).toMatchObject({
-      title: '普通节点',
+      title: 'plain node',
       description: '',
       status: 'todo',
       mode: 'auto',
@@ -44,8 +44,8 @@ describe('add: registering a node', () => {
     expect(plain.created_at).toMatch(MICRO_SHAPE);
 
     const dressed = await pf.ledger.dag.add({
-      title: '打扮过的',
-      description: '有说明',
+      title: 'dressed up',
+      description: 'has a note',
       tags: ['coding'],
       weight: 'light',
       mode: 'checkpoint',
@@ -60,7 +60,7 @@ describe('add: registering a node', () => {
   });
 
   it('the node directory is created and holds nothing yet; specPath hands out the location before the file exists', async () => {
-    const node = await pf.ledger.dag.add({ title: '有目录的' });
+    const node = await pf.ledger.dag.add({ title: 'the one with a directory' });
     const dir = join(root, '.pf', 'nodes', node.id);
     expect(existsSync(dir)).toBe(true);
     // The absence of the file is how "no requirements written yet" is expressed: add pre-creates no spec.md.
@@ -72,7 +72,7 @@ describe('add: registering a node', () => {
 
   it('depends_on pointing at a node that does not exist: the node is taken back, the graph keeps no trace, the directory is cleared away', async () => {
     await expect(
-      pf.ledger.dag.add({ title: '悬空的', depends_on: ['not-a-node'] }),
+      pf.ledger.dag.add({ title: 'dangling', depends_on: ['not-a-node'] }),
     ).rejects.toThrow('dependency not-a-node not found');
     const graph = await pf.ledger.dag.list();
     expect(graph).toEqual([]);
@@ -80,23 +80,23 @@ describe('add: registering a node', () => {
   });
 
   it('tags are trimmed, deduplicated and kept in order', async () => {
-    const node = await pf.ledger.dag.add({ title: '带标签', tags: [' coding ', 'art', 'coding'] });
+    const node = await pf.ledger.dag.add({ title: 'with tags', tags: [' coding ', 'art', 'coding'] });
     expect(node.tags).toEqual(['coding', 'art']);
   });
 });
 
 describe('update: changing a node', () => {
   it('changing title, description or mode all touch updated_at', async () => {
-    const node = await pf.ledger.dag.add({ title: '旧题' });
-    const updated = await pf.ledger.dag.update(node.id, { title: '新题', description: '新说明', mode: 'manual' });
-    expect(updated.title).toBe('新题');
-    expect(updated.description).toBe('新说明');
+    const node = await pf.ledger.dag.add({ title: 'old title' });
+    const updated = await pf.ledger.dag.update(node.id, { title: 'new title', description: 'new note', mode: 'manual' });
+    expect(updated.title).toBe('new title');
+    expect(updated.description).toBe('new note');
     expect(updated.mode).toBe('manual');
     expect(updated.updated_at > node.updated_at).toBe(true);
   });
 
   it('tags swap groups, null removes them all, and an empty array changes nothing', async () => {
-    const node = await pf.ledger.dag.add({ title: '标签的', tags: ['coding'] });
+    const node = await pf.ledger.dag.add({ title: 'the tagged one', tags: ['coding'] });
     const swapped = await pf.ledger.dag.update(node.id, { tags: ['art', 'writing'] });
     expect(swapped.tags).toEqual(['art', 'writing']);
     const cleared = await pf.ledger.dag.update(node.id, { tags: null });
@@ -108,14 +108,14 @@ describe('update: changing a node', () => {
   });
 
   it('writing weight back to standard drops the key', async () => {
-    const node = await pf.ledger.dag.add({ title: '轻重', weight: 'light' });
+    const node = await pf.ledger.dag.add({ title: 'light and heavy', weight: 'light' });
     expect(node.weight).toBe('light');
     const standard = await pf.ledger.dag.update(node.id, { weight: 'standard' });
     expect(standard.weight).toBeUndefined();
   });
 
   it('nothing changed means no record is written: updated_at does not move', async () => {
-    const node = await pf.ledger.dag.add({ title: '不动的' });
+    const node = await pf.ledger.dag.add({ title: 'the one that does not move' });
     const same = await pf.ledger.dag.update(node.id, {});
     expect(same.updated_at).toBe(node.updated_at);
   });
@@ -123,13 +123,13 @@ describe('update: changing a node', () => {
 
 describe('link / unlink: dependency edges', () => {
   it('a self edge is rejected', async () => {
-    const node = await pf.ledger.dag.add({ title: '自己' });
+    const node = await pf.ledger.dag.add({ title: 'itself' });
     await expect(pf.ledger.dag.link(node.id, node.id)).rejects.toThrow('self-dependency');
   });
 
   it('a cycle is rejected: the edge is not added and no timestamp is touched', async () => {
-    const a = await pf.ledger.dag.add({ title: '甲' });
-    const b = await pf.ledger.dag.add({ title: '乙', depends_on: [a.id] });
+    const a = await pf.ledger.dag.add({ title: 'A' });
+    const b = await pf.ledger.dag.add({ title: 'B', depends_on: [a.id] });
     await expect(pf.ledger.dag.link(a.id, b.id)).rejects.toThrow(/cycle detected: .* → .*/);
     const after = await pf.ledger.dag.get(a.id);
     expect(after!.dependencies).toEqual([]);
@@ -137,8 +137,8 @@ describe('link / unlink: dependency edges', () => {
   });
 
   it('adding a duplicate edge is a no-op, but the timestamp still moves and the record is still written', async () => {
-    const a = await pf.ledger.dag.add({ title: '甲' });
-    const b = await pf.ledger.dag.add({ title: '乙', depends_on: [a.id] });
+    const a = await pf.ledger.dag.add({ title: 'A' });
+    const b = await pf.ledger.dag.add({ title: 'B', depends_on: [a.id] });
     await pf.ledger.dag.link(b.id, a.id);
     const after = await pf.ledger.dag.get(b.id);
     expect(after!.dependencies).toEqual([a.id]);
@@ -146,9 +146,9 @@ describe('link / unlink: dependency edges', () => {
   });
 
   it('link takes a list as one batch: every edge lands, and one missing dependency refuses all of them', async () => {
-    const first = await pf.ledger.dag.add({ title: '第一个' });
-    const second = await pf.ledger.dag.add({ title: '第二个' });
-    const node = await pf.ledger.dag.add({ title: '批量依赖的' });
+    const first = await pf.ledger.dag.add({ title: 'first' });
+    const second = await pf.ledger.dag.add({ title: 'second' });
+    const node = await pf.ledger.dag.add({ title: 'batch dependent' });
 
     await pf.ledger.dag.link(node.id, [first.id, second.id]);
     const wired = await pf.ledger.dag.get(node.id);
@@ -165,13 +165,13 @@ describe('link / unlink: dependency edges', () => {
   });
 
   it('a dependency that does not exist is rejected', async () => {
-    const node = await pf.ledger.dag.add({ title: '甲' });
+    const node = await pf.ledger.dag.add({ title: 'A' });
     await expect(pf.ledger.dag.link(node.id, 'missing')).rejects.toThrow('node missing not found');
   });
 
   it('removing an edge touches the timestamp; an edge already gone, with the node still on the graph, is nothing to do and writes nothing', async () => {
-    const a = await pf.ledger.dag.add({ title: '甲' });
-    const b = await pf.ledger.dag.add({ title: '乙', depends_on: [a.id] });
+    const a = await pf.ledger.dag.add({ title: 'A' });
+    const b = await pf.ledger.dag.add({ title: 'B', depends_on: [a.id] });
     await pf.ledger.dag.unlink(b.id, a.id);
     const after = await pf.ledger.dag.get(b.id);
     expect(after!.dependencies).toEqual([]);
@@ -184,13 +184,13 @@ describe('link / unlink: dependency edges', () => {
   });
 
   it('a mistyped dependency (no such node on the graph) stops on the spot', async () => {
-    const a = await pf.ledger.dag.add({ title: '甲' });
+    const a = await pf.ledger.dag.add({ title: 'A' });
     await expect(pf.ledger.dag.unlink(a.id, 'typo')).rejects.toThrow('node typo not found');
   });
 
   it('removing an edge takes a unique prefix', async () => {
-    const a = await pf.ledger.dag.add({ title: '甲' });
-    const b = await pf.ledger.dag.add({ title: '乙', depends_on: [a.id] });
+    const a = await pf.ledger.dag.add({ title: 'A' });
+    const b = await pf.ledger.dag.add({ title: 'B', depends_on: [a.id] });
     await pf.ledger.dag.unlink(b.id, a.id.slice(0, 8));
     const after = await pf.ledger.dag.get(b.id);
     expect(after!.dependencies).toEqual([]);
@@ -199,7 +199,7 @@ describe('link / unlink: dependency edges', () => {
 
 describe('setStatus / approve / revive: the three states and delivery', () => {
   it('landing on completed writes the completion timestamp; leaving drops it', async () => {
-    const node = await pf.ledger.dag.add({ title: '交付的' });
+    const node = await pf.ledger.dag.add({ title: 'the delivered one' });
     const done = await pf.ledger.dag.setStatus(node.id, 'completed');
     expect(done.status).toBe('completed');
     expect(done.completed_at).toBe(done.updated_at);
@@ -213,19 +213,19 @@ describe('setStatus / approve / revive: the three states and delivery', () => {
   });
 
   it('a status outside the vocabulary is rejected', async () => {
-    const node = await pf.ledger.dag.add({ title: '守规矩' });
+    const node = await pf.ledger.dag.add({ title: 'well behaved' });
     await expect(pf.ledger.dag.setStatus(node.id, 'done' as never)).rejects.toThrow('invalid status');
   });
 
   it('an undelivered node is refused approval, and the refusal names which node it is', async () => {
-    const node = await pf.ledger.dag.add({ title: '还没做' });
+    const node = await pf.ledger.dag.add({ title: 'not done yet' });
     await expect(pf.ledger.dag.approve(node.id)).rejects.toThrow(
       new RegExp(`^node ${node.id}.*has not been delivered yet`),
     );
   });
 
   it('approval writes the timestamp it is given and moves updated_at with it', async () => {
-    const node = await pf.ledger.dag.add({ title: '交付的' });
+    const node = await pf.ledger.dag.add({ title: 'the delivered one' });
     await pf.ledger.dag.setStatus(node.id, 'completed');
     const at = '2026-01-02T03:04:05.000006Z';
     const approved = await pf.ledger.dag.approve(node.id, at);
@@ -234,14 +234,14 @@ describe('setStatus / approve / revive: the three states and delivery', () => {
   });
 
   it('a default approval timestamp takes now (microsecond shape)', async () => {
-    const node = await pf.ledger.dag.add({ title: '交付的' });
+    const node = await pf.ledger.dag.add({ title: 'the delivered one' });
     await pf.ledger.dag.setStatus(node.id, 'completed');
     const approved = await pf.ledger.dag.approve(node.id);
     expect(approved.approved_at).toMatch(MICRO_SHAPE);
   });
 
   it('revive works only on shelved; any other state points at status', async () => {
-    const node = await pf.ledger.dag.add({ title: '搁置的' });
+    const node = await pf.ledger.dag.add({ title: 'the shelved one' });
     await expect(pf.ledger.dag.revive(node.id)).rejects.toThrow('node is not shelved');
     await pf.ledger.dag.setStatus(node.id, 'shelved');
     const revived = await pf.ledger.dag.revive(node.id);
@@ -254,10 +254,10 @@ describe('setStatus / approve / revive: the three states and delivery', () => {
 
 describe('remove: taking a node away', () => {
   it('with dependents it is refused and they are listed; only force removes it and tears the edges apart', async () => {
-    const a = await pf.ledger.dag.add({ title: '被依赖的' });
-    const b = await pf.ledger.dag.add({ title: '依赖者', depends_on: [a.id] });
+    const a = await pf.ledger.dag.add({ title: 'the depended-on one' });
+    const b = await pf.ledger.dag.add({ title: 'dependent', depends_on: [a.id] });
     await expect(pf.ledger.dag.remove(a.id)).rejects.toThrow(
-      new RegExp(`the following nodes depend on this node:\\s*${b.id}\\s+依赖者`),
+      new RegExp(`the following nodes depend on this node:\\s*${b.id}\\s+dependent`),
     );
     // The graph as it was: both nodes are there, and so is the edge.
     expect(await pf.ledger.dag.get(a.id)).not.toBeNull();
@@ -270,7 +270,7 @@ describe('remove: taking a node away', () => {
   });
 
   it('a node with no dependents is removed straight away and its directory goes with it', async () => {
-    const node = await pf.ledger.dag.add({ title: '孤身' });
+    const node = await pf.ledger.dag.add({ title: 'alone' });
     await pf.ledger.dag.remove(node.id);
     expect(await pf.ledger.dag.get(node.id)).toBeNull();
     expect(existsSync(join(root, '.pf', 'nodes', node.id))).toBe(false);
@@ -287,19 +287,19 @@ describe('get / specPath: single-node reads', () => {
   });
 
   it('a unique prefix matches, and an ambiguous prefix is rejected', async () => {
-    const node = await pf.ledger.dag.add({ title: '查得到的' });
-    expect((await pf.ledger.dag.get(node.id.slice(0, 8)))!.title).toBe('查得到的');
-    const other = await pf.ledger.dag.add({ title: '另一个' });
+    const node = await pf.ledger.dag.add({ title: 'findable' });
+    expect((await pf.ledger.dag.get(node.id.slice(0, 8)))!.title).toBe('findable');
+    const other = await pf.ledger.dag.add({ title: 'another' });
     // Two ids sharing a prefix is very unlikely; if it really happens this case turns red by itself, and then the case gets another node.
     const prefix = commonPrefix(node.id, other.id);
     if (prefix.length > 0) {
       await expect(pf.ledger.dag.get(prefix)).rejects.toThrow('matches multiple nodes');
     }
-    expect((await pf.ledger.dag.get(node.id))!.title).toBe('查得到的');
+    expect((await pf.ledger.dag.get(node.id))!.title).toBe('findable');
   });
 
   it('specPath is the forward-slash path of spec.md under the node directory; a node that does not exist is rejected', async () => {
-    const node = await pf.ledger.dag.add({ title: '有 spec 的' });
+    const node = await pf.ledger.dag.add({ title: 'the one with a spec' });
     const specPath = await pf.ledger.dag.specPath(node.id);
     expect(specPath).toContain(`/nodes/${node.id}/spec.md`);
     expect(specPath).not.toContain('\\');
@@ -312,7 +312,7 @@ describe('the init gate: a `.pf` that was never init-ed gets not one byte', () =
     const bare = mkdtempSync(join(tmpdir(), 'pf-dag-gate-'));
     try {
       const naked = open(bare);
-      await expect(naked.ledger.dag.add({ title: '进不来的' })).rejects.toThrow(
+      await expect(naked.ledger.dag.add({ title: 'the one that cannot get in' })).rejects.toThrow(
         /was never init-ed .*Ask `init` first/,
       );
       expect(existsSync(join(bare, '.pf'))).toBe(false);
@@ -337,16 +337,16 @@ describe('whole-file read-modify-write of ideas.json: other top-level keys stay 
   }
 
   it('after update writes back the outside top-level key is still there and the nodes table changes as usual', async () => {
-    const node = await pf.ledger.dag.add({ title: '甲' });
+    const node = await pf.ledger.dag.add({ title: 'A' });
     await plantForeignKey();
-    await pf.ledger.dag.update(node.id, { title: '甲改' });
+    await pf.ledger.dag.update(node.id, { title: 'A changed' });
     const data = readIdeasFile();
     expect(data.hand_merged).toEqual({ keep: 'me', nested: { v: 1 } });
-    expect(data.nodes[node.id]!.title).toBe('甲改');
+    expect(data.nodes[node.id]!.title).toBe('A changed');
   });
 
   it('after remove writes back the outside key is still there; when the nodes table was taken away whole, the write puts it back', async () => {
-    const node = await pf.ledger.dag.add({ title: '乙' });
+    const node = await pf.ledger.dag.add({ title: 'B' });
     await plantForeignKey();
     await pf.ledger.dag.remove(node.id);
     expect(readIdeasFile().hand_merged).toEqual({ keep: 'me', nested: { v: 1 } });
@@ -357,7 +357,7 @@ describe('whole-file read-modify-write of ideas.json: other top-level keys stay 
     delete data.nodes;
     const { atomicWriteJson, jsonOptionsForRecord } = await import('../src/jsonio');
     await atomicWriteJson(ideasJson, data, jsonOptionsForRecord('ideas'));
-    await pf.ledger.dag.add({ title: '丙' });
+    await pf.ledger.dag.add({ title: 'C' });
     const after = readIdeasFile();
     expect(after.hand_merged).toEqual({ keep: 'me', nested: { v: 1 } });
     expect(Object.keys(after.nodes)).toHaveLength(1);

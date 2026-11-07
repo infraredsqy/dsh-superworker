@@ -74,7 +74,7 @@ const css = SHEETS
   .join('\n')
 const leaked = assertScopedProduct(css, LAYER_CLASSES)
 if (leaked.length > 0) {
-  throw new Error(`build-client: 产物里有选择器没落在面板那一层上（逃到宿主页面去了）：\n  ${leaked.join('\n  ')}`)
+  throw new Error(`build-client: a selector in the product is not on the panel's layer (it escaped into the host page):\n  ${leaked.join('\n  ')}`)
 }
 
 const bundle = await rolldown({

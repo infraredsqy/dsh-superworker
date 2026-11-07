@@ -186,7 +186,7 @@ describe.skipIf(!workerLoadsTs)('cross-process lock behaviour', () => {
     const paths = tempPaths();
     const lock = ledgerLockPath(paths);
     const holder = runWorker(['hold', paths.root, paths.stateJson, '700']);
-    await waitFor(() => existsSync(lock), '持锁者拿到锁');
+    await waitFor(() => existsSync(lock), 'the lock holder has the lock');
 
     const startedAt = Date.now();
     const contender = runWorker(['contend', paths.root, paths.stateJson, 'contender', '10000']);
@@ -201,14 +201,14 @@ describe.skipIf(!workerLoadsTs)('cross-process lock behaviour', () => {
 
     await holder;
     // Releasing the lock means deleting the file; on Windows a deleted directory entry may stay visible for a moment, so wait for it to go before asserting.
-    await waitFor(() => !existsSync(lock), '持锁者放锁');
+    await waitFor(() => !existsSync(lock), 'the lock holder lets go');
   }, 15000);
 
   it('waiting past the timeout: a judgeable lock_timeout, nothing written, no quiet carry-on', async () => {
     const paths = tempPaths();
     const lock = ledgerLockPath(paths);
     const holder = runWorker(['hold', paths.root, paths.stateJson, '1200']);
-    await waitFor(() => existsSync(lock), '持锁者拿到锁');
+    await waitFor(() => existsSync(lock), 'the lock holder has the lock');
 
     const startedAt = Date.now();
     const contender = runWorker(['contend', paths.root, paths.stateJson, 'contender', '300']);
@@ -223,6 +223,6 @@ describe.skipIf(!workerLoadsTs)('cross-process lock behaviour', () => {
     expect(waitedMs).toBeLessThan(1100);
     // The side that timed out wrote nothing: the record holds only the one the holder wrote at the start.
     expect(JSON.parse(readFileSync(paths.stateJson, 'utf8'))).toEqual({ payload: 'holder' });
-    await waitFor(() => !existsSync(lock), '持锁者放锁');
+    await waitFor(() => !existsSync(lock), 'the lock holder lets go');
   }, 15000);
 });

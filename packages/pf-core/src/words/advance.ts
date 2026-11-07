@@ -92,7 +92,7 @@ function noOpenerSentence(pf: Pf, cycleId: unknown, nodeIds: readonly string[]):
   const prompts = nodeIds.map((nodeId) => pf.locations.launchPrompt(String(cycleId), nodeId));
   const where = prompts.length === 0 ? 'the plan names no cell' : `the material goes to ${prompts.join(', ')}`;
   return (
-    'no session can be opened from this process: the opener is the panel (寻路中心), and a command ' +
+    'no session can be opened from this process: the opener is the panel (Pathfinder Center), and a command ' +
     `line carries none. ${where}; the panel lands it and opens the session when it dispatches that ` +
     'cell, or start a new session and paste its prompt line in.'
   );

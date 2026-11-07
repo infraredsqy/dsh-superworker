@@ -4,10 +4,10 @@
       "completed_at": "@t2@",
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "过门的那件",
+      "description": "the one that passes the gate",
       "mode": "checkpoint",
       "status": "completed",
-      "title": "复核校样",
+      "title": "review proof",
       "updated_at": "@t2@"
     }
   }

@@ -223,7 +223,7 @@ function SettingsPage(props: SettingsSectionProps): React.ReactElement {
  * @param locale - The same language port the panel speaks through, handed to the page so the two do not drift.
  */
 export function registerSettingsSection(ctx: unknown, store: PrefsStore, locale: LocaleSource): void {
-  injectAt(ctx, ['slots', 'configForms'], '设置那一页没接上', (owner) => {
+  injectAt(ctx, ['slots', 'configForms'], 'the settings page did not attach', (owner) => {
     /* The returned withdrawer hangs on its own `effect`: the settings form belongs to ui-settings'
      * service, which outlives this plugin — every attached subscriber must be given back, or each
      * reload leaves one more behind on it. */
@@ -234,7 +234,7 @@ export function registerSettingsSection(ctx: unknown, store: PrefsStore, locale:
       try {
         return store.attach((getForm as (namespace: string) => PrefsForm).call(forms, SETTINGS_NAMESPACE))
       } catch (error) {
-        report('设置表单没接上，面板按出厂那几条画', error)
+        report('the settings form did not attach; the panel draws the factory rows', error)
         return () => undefined
       }
     }
@@ -260,7 +260,7 @@ export function registerSettingsSection(ctx: unknown, store: PrefsStore, locale:
         }, SettingsSection))
       } catch (error) {
         registration = null
-        report('设置那一页没注册上', error)
+        report('the settings page did not register', error)
       }
     }
     const withdraw = (): void => {
@@ -270,7 +270,7 @@ export function registerSettingsSection(ctx: unknown, store: PrefsStore, locale:
       try {
         if (typeof dispose === 'function') dispose()
       } catch (error) {
-        report('设置那一页没撤下来', error)
+        report('the settings page did not withdraw', error)
       }
     }
     serveOn(owner, () => {

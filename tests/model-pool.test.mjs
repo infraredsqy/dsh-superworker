@@ -10,20 +10,20 @@ import { readLine, readPool, readProject, readWeights } from '../src/model/index
 import { AT, cycle, issue, record } from './helpers/record-fixtures.mjs'
 
 /** The maintenance chore that carries the weight table. */
-const CARRIER = { title: '清理问题池', description: '各等级按 P3/P2/P1/P0 = 1/2/4/8 折算成重量。' }
+const CARRIER = { title: 'tidy the issue pool', description: 'each tier counts by P3/P2/P1/P0 = 1/2/4/8.' }
 
-test('重量表：从记录里那条维护活儿自己的说明里取', () => {
+test('the weight table: taken from the maintenance chore\'s own description in the record', () => {
   assert.deepEqual(readWeights({ n1: CARRIER }), { P3: 1, P2: 2, P1: 4, P0: 8 })
-  assert.equal(readWeights({ n1: { title: '别的活' } }), null, '记录里没写就没有表')
+  assert.equal(readWeights({ n1: { title: 'other work' } }), null, 'no table in the record means none')
   assert.equal(readWeights({}), null)
 })
 
-test('策略线：哪条线自己立了那个数', () => {
-  assert.equal(readLine([cycle({ policies: { parallel: 1 } })]), null, '没有一条线立过就没有线')
+test('the policy line: which cycle set that number itself', () => {
+  assert.equal(readLine([cycle({ policies: { parallel: 1 } })]), null, 'no cycle set one means no line')
   assert.equal(readLine([cycle({ policies: { parallel: 1 } }), cycle({ id: 'c2', policies: { issue_pool_weight_limit: 40 } })]), 40)
 })
 
-test('池子的重量：按重量表把还欠着的那几条加起来，判成 external 的掉出这个和', () => {
+test('the pool weight: the still-owed issues summed by the weight table, those judged external drop out of the sum', () => {
   const reading = readPool(
     { n1: CARRIER },
     [cycle({ policies: { issue_pool_weight_limit: 40 } })],
@@ -41,28 +41,28 @@ test('池子的重量：按重量表把还欠着的那几条加起来，判成 e
   assert.deepEqual(reading.weights, { P3: 1, P2: 2, P1: 4, P0: 8 })
   /* `a` is undecided (counts as unknown) and `d` is autofix: both still enter the sum; `b` is
    * external and `c` is settled: neither enters. */
-  assert.equal(reading.weight, 10, '8 + 1 + 1：判成 external 的与放下的那两条不进这个和')
-  assert.equal(reading.rows.find((row) => row.id === 'b')?.payable, false, '判成 external 的那一条：读数自己就说不压线')
-  assert.equal(reading.rows.find((row) => row.id === 'a')?.payable, true, '没判的那一条照旧压线')
+  assert.equal(reading.weight, 10, '8 + 1 + 1: the external one and the two settled ones do not enter the sum')
+  assert.equal(reading.rows.find((row) => row.id === 'b')?.payable, false, 'the one judged external: the reading itself says it does not weigh on the line')
+  assert.equal(reading.rows.find((row) => row.id === 'a')?.payable, true, 'the undecided one still weighs on the line')
   assert.equal(
     reading.groups.find((group) => group.key === 'acknowledged')?.weight,
     0,
-    '已承认那一堆只有一条、判成 external：它不进这一堆的加权和',
+    'the acknowledged pile holds one issue judged external: it stays out of that pile\'s weighted sum',
   )
-  assert.deepEqual(reading.standing.map((row) => row.id), ['a', 'd', 'e', 'b'], '判成 external 的那一条还在还欠着的这几条里：条数照旧算它')
+  assert.deepEqual(reading.standing.map((row) => row.id), ['a', 'd', 'e', 'b'], 'the external one is still among the still-owed: the count still takes it in')
   assert.deepEqual(reading.census, { total: 5, standing: 4, open: 3, acknowledged: 1, rejected: 0, resolved: 1 })
 })
 
-test('池子的重量：重量表取不到就不读数，也不拿 0 顶上', () => {
+test('the pool weight: with no weight table there is no reading, and 0 does not stand in', () => {
   const reading = readPool({}, [], { a: issue({ severity: 'P0' }) }, AT)
 
   assert.equal(reading.weights, null)
   assert.equal(reading.line, null)
-  assert.equal(reading.weight, null, '记录里没有那份表，这个数就不存在')
-  assert.equal(reading.census.open, 1, '登记的条数照旧数得出来')
+  assert.equal(reading.weight, null, 'the record has no such table, so the number does not exist')
+  assert.equal(reading.census.open, 1, 'the registered count still comes out')
 })
 
-test('一条问题在哪一刻算在册：还没发现的不在册', () => {
+test('when an issue counts as on the books: one not yet discovered is not', () => {
   const reading = readPool({}, [], {
     early: issue({ id: 'early', discovered: '2026-03-01T00:00:00.000Z' }),
     late: issue({ id: 'late', discovered: '2026-03-20T00:00:00.000Z' }),
@@ -72,7 +72,7 @@ test('一条问题在哪一刻算在册：还没发现的不在册', () => {
   assert.deepEqual(reading.rows.map((row) => row.id), ['early'])
 })
 
-test('记录自己那个词属于写它的那一刻：那一刻还没到就按还没结掉读', () => {
+test('the word the record wrote belongs to the moment it was written: before that moment it reads as not yet settled', () => {
   const reading = readPool({}, [], {
     settled: issue({ id: 'settled', status: 'resolved', updated_at: '2026-03-05T00:00:00.000Z' }),
     settledLater: issue({ id: 'settledLater', status: 'resolved', updated_at: '2026-03-20T00:00:00.000Z' }),
@@ -81,32 +81,32 @@ test('记录自己那个词属于写它的那一刻：那一刻还没到就按�
   }, AT)
 
   assert.equal(reading.rows.find((row) => row.id === 'settled').status, 'resolved')
-  assert.equal(reading.rows.find((row) => row.id === 'settledLater').status, 'open', '那一刻那个词还没写下来')
-  assert.equal(reading.rows.find((row) => row.id === 'neverTouched').status, 'rejected', '没记最后改动，那个词就算数')
-  assert.equal(reading.rows.find((row) => row.id === 'strange').status, 'open', '不认得的词按没人结掉读')
+  assert.equal(reading.rows.find((row) => row.id === 'settledLater').status, 'open', 'the word is not yet written at that moment')
+  assert.equal(reading.rows.find((row) => row.id === 'neverTouched').status, 'rejected', 'no last change recorded, so the word counts')
+  assert.equal(reading.rows.find((row) => row.id === 'strange').status, 'open', 'an unknown word reads as nobody settled it')
 })
 
-test('四个状态的词面只在模型层一份：空堆不进组，词照旧问得到', () => {
+test('the four state words live once, in the model layer: empty piles form no group, the words are still asked for', () => {
   /* The pool holds one still-outstanding issue: the settled piles are empty piles and form no
    * groups, yet which pile each of the four is still comes from this one reading. */
   const reading = readPool({}, [], { a: issue() }, AT)
 
   assert.deepEqual(reading.groups.map((group) => group.key), ['open'])
-  assert.equal(reading.groups[0]?.standing, true, '还欠着的那一堆算站着')
+  assert.equal(reading.groups[0]?.standing, true, 'the still-owed pile counts as standing')
   assert.equal(reading.groups[0]?.count, 1)
-  assert.equal(Object.hasOwn(reading.groups[0], 'label'), false, '堆头不再由模型给词：是哪一堆看 key')
+  assert.equal(Object.hasOwn(reading.groups[0], 'label'), false, 'pile heads no longer get words from the model: the key says which pile')
 })
 
-test('读数上的可选字段：记录里写了才出场，没写的不拿空串顶位', () => {
+test('optional fields on the reading: only written ones show, unwritten ones get no empty string in their place', () => {
   const reading = readPool({}, [], {
     full: issue({
       id: 'full',
       module: 'src/model',
       source: 'scan',
       decision: 'autofix',
-      description: '现象',
-      suggestion: '修法',
-      reason: '理由',
+      description: 'symptom',
+      suggestion: 'fix',
+      reason: 'reason',
       plan_path: '.tmp/plan.md',
     }),
     bare: issue({ id: 'bare', title: '', severity: null, module: null, status: null }),
@@ -114,13 +114,13 @@ test('读数上的可选字段：记录里写了才出场，没写的不拿空�
   const optional = ['title', 'severity', 'recordStatus', 'module', 'source', 'decision', 'description', 'suggestion', 'reason', 'planPath']
 
   const full = reading.rows.find((row) => row.id === 'full')
-  for (const key of optional) assert.equal(key in full, true, `${key} 写了就该出场`)
+  for (const key of optional) assert.equal(key in full, true, `${key} is written so it must show`)
 
   const bare = reading.rows.find((row) => row.id === 'bare')
-  for (const key of optional) assert.equal(key in bare, false, `${key} 没写就不出场`)
+  for (const key of optional) assert.equal(key in bare, false, `${key} is not written so it must not show`)
 })
 
-test('四堆：空的不收，还欠着的重的在前、搁得久的在前，放下的新的在前', () => {
+test('the four piles: empty ones dropped, still-owed heaviest first and longest parked first, settled newest first', () => {
   const reading = readPool({ n1: CARRIER }, [], {
     light: issue({ id: 'light', severity: 'P3', discovered: '2026-03-01T00:00:00.000Z' }),
     heavyOld: issue({ id: 'heavyOld', severity: 'P0', discovered: '2026-03-02T00:00:00.000Z' }),
@@ -130,9 +130,9 @@ test('四堆：空的不收，还欠着的重的在前、搁得久的在前，�
     closedNew: issue({ id: 'closedNew', severity: 'P1', status: 'resolved', updated_at: '2026-03-08T00:00:00.000Z' }),
   }, AT)
 
-  assert.deepEqual(reading.groups.map((group) => group.key), ['open', 'acknowledged', 'resolved'], '已驳回那一堆一条都没有，不收')
-  assert.deepEqual(reading.groups.map((group) => group.standing), [true, true, false], '还欠着的两堆算站着，放下的那堆不算')
-  assert.equal(reading.groups.every((group) => !Object.hasOwn(group, 'label')), true, '堆头不再由模型给词：是哪一堆看 key')
+  assert.deepEqual(reading.groups.map((group) => group.key), ['open', 'acknowledged', 'resolved'], 'the rejected pile holds nothing, so it is dropped')
+  assert.deepEqual(reading.groups.map((group) => group.standing), [true, true, false], 'the two still-owed piles count as standing, the settled one does not')
+  assert.equal(reading.groups.every((group) => !Object.hasOwn(group, 'label')), true, 'pile heads no longer get words from the model: the key says which pile')
   assert.deepEqual(reading.groups[0].entries.map((row) => row.id), ['heavyOld', 'heavyNew', 'light'])
   assert.deepEqual(reading.groups[1].entries.map((row) => row.id), ['carried'])
   assert.deepEqual(reading.groups[2].entries.map((row) => row.id), ['closedNew', 'closedOld'])
@@ -140,7 +140,7 @@ test('四堆：空的不收，还欠着的重的在前、搁得久的在前，�
   assert.equal(reading.groups[2].standing, false)
 })
 
-test('项目读数把依赖场与问题池一并读出来', () => {
+test('the project reading brings the dependency field and the issue pool together', () => {
   const reading = readProject(record({
     nodes: { n1: { ...CARRIER, dependencies: [] }, n2: { mode: 'auto', status: 'todo', dependencies: ['n1'] } },
     cycles: [cycle({ policies: { issue_pool_weight_limit: 7 } })],
@@ -152,7 +152,7 @@ test('项目读数把依赖场与问题池一并读出来', () => {
   assert.equal(reading.pool.weight, 4)
 })
 
-test('读一遍问题池不改递给它的那份记录', () => {
+test('reading the issue pool does not change the record handed to it', () => {
   const input = record({
     nodes: { n1: CARRIER },
     cycles: [cycle({ policies: { issue_pool_weight_limit: 40 } })],

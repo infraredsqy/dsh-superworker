@@ -48,7 +48,7 @@ afterEach(() => {
 async function plant(): Promise<string> {
   const pf = open(root);
   await pf.ledger.init();
-  const node = (await pf.ledger.dag.add({ title: '甲' })).id;
+  const node = (await pf.ledger.dag.add({ title: 'A' })).id;
   mkdirSync(join(root, '.pf', 'meta', 'sessions'), { recursive: true });
   writeFileSync(sessionNotePath(pfPaths(root), node), JSON.stringify({
     v: 1,

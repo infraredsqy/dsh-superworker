@@ -251,9 +251,9 @@ describe('the verdict reaches stderr whole: the real product on real pipes', () 
       const base = join(root, 'base.json');
       const ours = join(root, 'ours.json');
       const theirs = join(root, 'theirs.json');
-      writeFileSync(base, conflictSide((index) => `原始标题 ${index}`), 'utf8');
-      writeFileSync(ours, conflictSide((index) => `甲侧标题 ${index}`), 'utf8');
-      writeFileSync(theirs, conflictSide((index) => `乙侧标题 ${index}`), 'utf8');
+      writeFileSync(base, conflictSide((index) => `original title ${index}`), 'utf8');
+      writeFileSync(ours, conflictSide((index) => `A-side title ${index}`), 'utf8');
+      writeFileSync(theirs, conflictSide((index) => `B-side title ${index}`), 'utf8');
       // The child runs in the temporary root: even a scene that turned out clean has no record
       // tree to find there, so nothing outside the temp dir can be locked or written.
       const run = await runProduct([base, ours, theirs, '.pf/ideas.json'], root);
@@ -266,7 +266,7 @@ describe('the verdict reaches stderr whole: the real product on real pipes', () 
       expect(verdict).toHaveLength(CONFLICT_NODES + 1);
       for (const line of verdict.slice(0, -1)) {
         expect(line).toMatch(
-          /^merge-ledger: conflict \[\.pf\/ideas\.json\] Node \d{8} field title: ours="甲侧标题 \d+" theirs="乙侧标题 \d+"( \([^)]+\))?$/,
+          /^merge-ledger: conflict \[\.pf\/ideas\.json\] Node \d{8} field title: ours="A-side title \d+" theirs="B-side title \d+"( \([^)]+\))?$/,
         );
       }
       const closing = verdict[verdict.length - 1]!;

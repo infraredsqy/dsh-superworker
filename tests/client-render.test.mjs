@@ -26,8 +26,8 @@ const record = () => ({
   '.pf/ideas.json': json({
     nodes: {
       n1: {
-        title: '第一个节点',
-        description: '一件做完的事',
+        title: 'the first node',
+        description: 'a finished piece of work',
         tags: ['t0'],
         mode: 'auto',
         status: 'completed',
@@ -36,7 +36,7 @@ const record = () => ({
         dependencies: [],
       },
       n2: {
-        title: '第二个节点',
+        title: 'the second node',
         tags: [],
         mode: 'manual',
         status: 'todo',
@@ -44,7 +44,7 @@ const record = () => ({
         dependencies: ['n1'],
       },
       n3: {
-        title: '搁置的一个',
+        title: 'a shelved one',
         tags: ['t0'],
         mode: 'auto',
         status: 'shelved',
@@ -57,7 +57,7 @@ const record = () => ({
     cycles: [
       {
         id: 'c1',
-        title: '一条线',
+        title: 'a cycle',
         status: 'active',
         tags: ['main'],
         created_at: '2026-01-01T00:00:00.000Z',
@@ -71,7 +71,7 @@ const record = () => ({
       {
         /* A re-run of the same cell: two lines have walked n1, and a card's foot owes both of them. */
         id: 'c2',
-        title: '重跑的一条',
+        title: 'a rerun cycle',
         status: 'active',
         tags: [],
         created_at: '2026-01-01T00:00:00.000Z',
@@ -86,8 +86,8 @@ const record = () => ({
   }),
   '.pf/instructions.json': json({
     instructions: [
-      { id: 'i1', text: '用户说过的一句话', scope: 'global', target: 'stage', state: 'live', cycle: null, node: null, at: '2026-01-07T00:00:00.000Z', resolved_at: null, note: '一条备注' },
-      { id: 'i2', text: '收回去了的一句', scope: 'cycle', target: 'stage', state: 'archived', cycle: 'c1', node: null, at: '2026-01-03T00:00:00.000Z', resolved_at: '2026-01-08T00:00:00.000Z', note: null },
+      { id: 'i1', text: 'something the user said', scope: 'global', target: 'stage', state: 'live', cycle: null, node: null, at: '2026-01-07T00:00:00.000Z', resolved_at: null, note: 'a note' },
+      { id: 'i2', text: 'a line taken back', scope: 'cycle', target: 'stage', state: 'archived', cycle: 'c1', node: null, at: '2026-01-03T00:00:00.000Z', resolved_at: '2026-01-08T00:00:00.000Z', note: null },
     ],
   }),
   '.pf/issues/issues.json': json({
@@ -95,7 +95,7 @@ const record = () => ({
     issues: {
       p1: {
         id: 'p1',
-        title: '一处毛病',
+        title: 'a defect',
         severity: 'P1',
         status: 'open',
         module: 'mod-a',
@@ -105,41 +105,41 @@ const record = () => ({
         updated_at: '2026-01-09T00:00:00.000Z',
         check_count: 2,
         files: ['a.ts'],
-        description: '哪里不对',
-        suggestion: '该怎么办',
+        description: 'what is wrong',
+        suggestion: 'what to do',
       },
     },
   }),
 })
 
-test('这一份产物：外壳装得上、画得出来、每一格都走得通、线名念得全，控制台一路干净', { skip: bundleSkip }, async () => {
+test('this build: the shell loads, the panel draws, every tab opens, cycle names read in full, the console stays clean', { skip: bundleSkip }, async () => {
   const mounted = await mountBuiltPanel({ record: record() })
   const { window, act, container, ledger, loaded, panel, asked, consoleErrors, settle } = mounted
 
   /* ---- what the shell got: one spec under this id, and a factory that exports apply ---- */
-  assert.equal(loaded?.id, 'dsh-pathfinder', '外壳按 id 认这一份')
-  assert.equal(typeof mounted.client.apply, 'function', '这一份导出了 apply')
+  assert.equal(loaded?.id, 'dsh-pathfinder', 'the shell knows this build by its id')
+  assert.equal(typeof mounted.client.apply, 'function', 'this build exports apply')
 
   /* ---- what it installed: one service, three rows on the roster ---- */
-  assert.equal(panel?.id, 'pathfinder', '面板装成了一条服务')
-  assert.equal(ledger.size, 3, `这一层登记三条：${[...ledger.keys()].join(', ')}`)
+  assert.equal(panel?.id, 'pathfinder', 'the panel registered as a service')
+  assert.equal(ledger.size, 3, `this layer registers three: ${[...ledger.keys()].join(', ')}`)
 
   /* ---- what it drew ---- */
-  assert.notEqual(container.querySelector('.pf-page'), null, '画出了面板那一页')
-  assert.ok((container.textContent ?? '').length > 0, '面板上有字')
-  assert.ok(asked.length > 0, '它向宿主半身要了记录')
+  assert.notEqual(container.querySelector('.pf-page'), null, 'the panel page is drawn')
+  assert.ok((container.textContent ?? '').length > 0, 'there are words on the panel')
+  assert.ok(asked.length > 0, 'it asked the host half for the record')
 
   /* Every pane its tabs point at: press each one, and the thing it says it controls has to be there
    * and to be the shown one. The tab set is read off the panel, so a pane added or dropped later
    * moves both sides together. */
   const tabs = mounted.tabs()
-  assert.ok(tabs.length > 0, '标签栏画出来了')
+  assert.ok(tabs.length > 0, 'the tab strip is drawn')
   for (const tab of tabs) {
     await act(async () => { tab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
     await settle()
     const pane = container.querySelector(`#${String(tab.getAttribute('aria-controls'))}`)
-    assert.notEqual(pane, null, `「${tab.textContent}」那一格不在`)
-    assert.equal(tab.getAttribute('aria-selected'), 'true', `「${tab.textContent}」按下去没选中`)
+    assert.notEqual(pane, null, `the "${tab.textContent}" tab is missing`)
+    assert.equal(tab.getAttribute('aria-selected'), 'true', `pressing "${tab.textContent}" did not select it`)
   }
 
   /* Which line the detail is showing follows the pick, and it is not always the record's first line:
@@ -147,23 +147,23 @@ test('这一份产物：外壳装得上、画得出来、每一格都走得通�
    * `aria-current` and the list of cells under it together. A detail that always resolves the
    * record's first line leaves every assertion above green, so this one is what holds it. */
   const detailTab = tabs.find((tab) => tab.getAttribute('aria-controls') === 'pane-detail')
-  assert.notEqual(detailTab, undefined, '明细那一格不在标签栏上')
+  assert.notEqual(detailTab, undefined, 'the detail tab is not in the tab strip')
   await act(async () => { detailTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
   await settle()
   const picks = [...container.querySelectorAll('#pane-detail .pf-linepick')]
-  assert.deepEqual(picks.map((one) => one.querySelector('.pf-cycle')?.textContent), ['c1', 'c2'], '侧栏一行一条线')
+  assert.deepEqual(picks.map((one) => one.querySelector('.pf-cycle')?.textContent), ['c1', 'c2'], 'one row per cycle in the sidebar')
   const second = picks[1]
   await act(async () => { second.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
   await settle()
-  assert.equal(second.getAttribute('aria-current'), 'true', '点了第二条线：侧栏认的是它')
-  assert.equal(picks[0].getAttribute('aria-current'), 'false', '第一条线不再是被选中的那条')
+  assert.equal(second.getAttribute('aria-current'), 'true', 'the second cycle was clicked: the sidebar marks it')
+  assert.equal(picks[0].getAttribute('aria-current'), 'false', 'the first cycle is no longer the selected one')
   const rows = [...container.querySelectorAll('#pane-detail .pf-row')].map((row) => row.getAttribute('data-id'))
-  assert.deepEqual(rows, ['n1'], '明细列的是这条线走过的格子：c2 只走过 n1')
+  assert.deepEqual(rows, ['n1'], 'the detail lists the cells this cycle walked: c2 walked only n1')
 
   /* The drawing is read where the reader sees it: open the map, then read its cards. The map's touch
    * road belongs to `client-map-gesture`; here the drawing is only read, never dragged. */
   const mapTab = tabs.find((tab) => tab.getAttribute('aria-controls') === 'pane-map')
-  assert.notEqual(mapTab, undefined, '地图那一格不在标签栏上')
+  assert.notEqual(mapTab, undefined, 'the map tab is not in the tab strip')
   await act(async () => { mapTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
   await settle()
   /* A card's foot names every line the model says this cell belongs to, in the model's own order —
@@ -172,13 +172,13 @@ test('这一份产物：外壳装得上、画得出来、每一格都走得通�
    * no name on it, so the three cells below are the whole of this reading. */
   const tagsOf = (id) => {
     const card = container.querySelector(`.pf-mnode[data-id="${id}"]`)
-    assert.notEqual(card, null, `卡片 ${id} 不在图上`)
+    assert.notEqual(card, null, `card ${id} is not on the map`)
     return [...card.querySelectorAll('.pf-mtag')].map((tag) => tag.textContent)
   }
-  assert.deepEqual(tagsOf('n1'), ['c1·c2'], '一块被两条线走过：两条都印，按记录次序')
-  assert.deepEqual(tagsOf('n2'), ['c1'], '一条线只握着它、还没走过：也印得出这条线')
-  assert.deepEqual(tagsOf('n3'), [], '哪条线都没碰过：一个标签都不印')
+  assert.deepEqual(tagsOf('n1'), ['c1·c2'], 'a cell walked by two cycles: both are printed, in record order')
+  assert.deepEqual(tagsOf('n2'), ['c1'], 'a cycle only holds it, has not walked it: that cycle still prints')
+  assert.deepEqual(tagsOf('n3'), [], 'no cycle has touched it: no tag printed')
   await mounted.unmount()
 
-  assert.deepEqual(consoleErrors, [], '控制台里有 error')
+  assert.deepEqual(consoleErrors, [], 'there is an error in the console')
 })

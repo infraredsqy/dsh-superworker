@@ -16,7 +16,7 @@ function step(id, started, ended, result) {
 const ids = (list) => list.map((item) => item.id)
 const nodesOf = (list) => list.map((item) => item.node)
 
-test('空记录：四个读数都空着，一声不响', () => {
+test('an empty record: all four readings are empty, and it says nothing', () => {
   const reading = readProject(record())
 
   assert.deepEqual(reading.nodes, [])
@@ -25,28 +25,28 @@ test('空记录：四个读数都空着，一声不响', () => {
   assert.deepEqual(reading.columns, { completed: [], running: [], shelved: [], todo: [], ready: [], blocked: [] })
 })
 
-test('进来的不是一个时刻：当场报出来', () => {
-  assert.throws(() => readProject(record({ at: new Date('不是一刻') })), TypeError)
+test('what comes in is not a moment: it is reported on the spot', () => {
+  assert.throws(() => readProject(record({ at: new Date('not a moment') })), TypeError)
 })
 
-test('进行中以线路记录里的持有关系为准：卡片自己的词仍然是未开始', () => {
+test('running follows the cycle record\'s holding relation: the card\'s own word stays not started', () => {
   const reading = readProject(record({
     nodes: { n1: node() },
     cycles: [cycle({ holding: [{ id: 'n1', since: '2026-03-10T11:00:00.000Z' }] })],
   }))
   const n1 = reading.nodeById.n1
 
-  assert.equal(n1.state, 'todo', '被某条线做着的卡，状态仍然是未开始')
+  assert.equal(n1.state, 'todo', 'a card a cycle is working on still reads not started')
   assert.equal(n1.running, true)
   assert.deepEqual(n1.heldBy, ['c1'])
   assert.deepEqual(ids(reading.columns.running), ['n1'])
-  assert.deepEqual(reading.columns.todo, [], '进行中的不在未开始那一栏里')
+  assert.deepEqual(reading.columns.todo, [], 'a running cell is not in the not-started column')
   assert.equal(n1.heldSince.getTime(), Date.parse('2026-03-10T11:00:00.000Z'))
-  assert.equal(n1.startedAt, null, '它那一步还没迈出：记录里没有那一刻')
-  assert.equal(n1.elapsedSeconds, null, '没有那一刻就没有时长，不写 0')
+  assert.equal(n1.startedAt, null, 'the step has not started: the record has no such moment')
+  assert.equal(n1.elapsedSeconds, null, 'no moment means no duration, never 0')
 })
 
-test('可开工三条判据缺一不可', () => {
+test('ready needs all three criteria', () => {
   const reading = readProject(record({
     nodes: {
       done: node({ status: 'completed', completed_at: '2026-03-10T09:00:00.000Z' }),
@@ -58,14 +58,14 @@ test('可开工三条判据缺一不可', () => {
     cycles: [cycle({ holding: [{ id: 'h1', since: '2026-03-10T11:00:00.000Z' }] })],
   }))
 
-  assert.deepEqual(ids(reading.columns.ready), ['r1'], '依赖都交付、没人握着，这才可开工')
-  assert.equal(reading.nodeById.s1.ready, false, '少了第一条：出局等人的不会装成可开工')
-  assert.equal(reading.nodeById.h1.ready, false, '少了第三条：别人手里正做的不会装成可开工')
-  assert.equal(reading.nodeById.w1.ready, false, '少了第二条：依赖没交付的不可开工')
-  assert.deepEqual(reading.nodeById.w1.openDependencies, ['nope'], '记录里没有的那条依赖算没交付')
+  assert.deepEqual(ids(reading.columns.ready), ['r1'], 'prerequisites delivered and no one holding it: only then is it ready')
+  assert.equal(reading.nodeById.s1.ready, false, 'without the first: a parked cell waiting on a person is not dressed up as ready')
+  assert.equal(reading.nodeById.h1.ready, false, 'without the third: one in someone else\'s hand is not dressed up as ready')
+  assert.equal(reading.nodeById.w1.ready, false, 'without the second: undelivered prerequisites mean not ready')
+  assert.deepEqual(reading.nodeById.w1.openDependencies, ['nope'], 'a dependency the record lacks counts as undelivered')
 })
 
-test('只有一个出局等人的节点：等待处理那一栏正好一条，别处都空着', () => {
+test('a single parked node waiting on a person: the shelved column holds exactly one, everything else is empty', () => {
   const reading = readProject(record({
     nodes: { only: node({ status: 'shelved', updated_at: '2026-03-09T00:00:00.000Z' }) },
   }))
@@ -76,11 +76,11 @@ test('只有一个出局等人的节点：等待处理那一栏正好一条，�
   assert.deepEqual(reading.columns.running, [])
   assert.deepEqual(reading.columns.todo, [])
   assert.equal(only.state, 'shelved')
-  assert.equal(only.gate.kind, 'shelved', '闸只说是哪一种，叫什么由客户端说')
-  assert.equal(only.parkedSince, null, '没有判决那一步，就没有那一刻')
+  assert.equal(only.gate.kind, 'shelved', 'the gate says only which kind, its name is the client\'s word')
+  assert.equal(only.parkedSince, null, 'no verdict step means no such moment')
 })
 
-test('同一节点先失败后成功：读成已交付，不读出局等人', () => {
+test('one node failed then delivered: it reads delivered, not parked waiting on a person', () => {
   const reading = readProject(record({
     nodes: { n: node({ status: 'completed', completed_at: '2026-03-10T10:00:00.000Z' }) },
     cycles: [cycle({
@@ -93,14 +93,14 @@ test('同一节点先失败后成功：读成已交付，不读出局等人', ()
   const n = reading.nodeById.n
 
   assert.equal(n.state, 'completed')
-  assert.equal(n.gate, null, '交付了的自动格不要人')
+  assert.equal(n.gate, null, 'a delivered auto cell needs no person')
   assert.deepEqual(ids(reading.columns.completed), ['n'])
-  assert.deepEqual(reading.columns.shelved, [], '后面成功过的那一步把它从出局里带回来了')
+  assert.deepEqual(reading.columns.shelved, [], 'the later successful step brought it back out of the parked state')
   assert.equal(n.steps.length, 2)
-  assert.equal(n.seconds, 3600, '它自己那一步是记录里最先走的那一步')
+  assert.equal(n.seconds, 3600, 'its own step is the first the record walked')
 })
 
-test('同一节点先失败、重跑那一步以 completed 落停、这一格还没有交付时刻：读作未开始', () => {
+test('one node failed, the rerun settled on completed, and the cell has no delivery moment: it reads not started', () => {
   /* `updated_at` is later than the moment of reading, so this word was not written yet at that
    * time: status can only be judged from the steps walked, and the last step to settle brought
    * back completed. */
@@ -115,23 +115,23 @@ test('同一节点先失败、重跑那一步以 completed 落停、这一格还
   }))
   const n = reading.nodeById.n
 
-  assert.equal(n.state, 'todo', '最后落停的那一步带回 completed，这一格就回到了局中')
-  assert.equal(n.ready, true, '依赖都交付、没人握着，它可开工')
-  assert.equal(n.gate, null, '回到局中的格不要人')
-  assert.equal(n.parkedSince, null, '没有搁置这回事，就没有那一刻')
+  assert.equal(n.state, 'todo', 'the last step to settle brought back completed, so the cell is back in play')
+  assert.equal(n.ready, true, 'prerequisites delivered, nobody holding it, so it is ready')
+  assert.equal(n.gate, null, 'a cell back in play needs no person')
+  assert.equal(n.parkedSince, null, 'no parking here means no such moment')
   assert.deepEqual(ids(reading.columns.todo), ['n'])
-  assert.deepEqual(reading.columns.shelved, [], '先头那一趟的判决已经被重跑那一趟盖过去')
+  assert.deepEqual(reading.columns.shelved, [], 'the earlier run\'s verdict is overwritten by the rerun')
   assert.deepEqual(ids(reading.columns.ready), ['n'])
 })
 
-test('老一版的持有关系写法：线路上那个单值 current_node / current_started_at 也读', () => {
+test('the older holding spelling: the single-valued current_node / current_started_at on the cycle is read too', () => {
   const old = readProject(record({
     nodes: { n1: node() },
     cycles: [cycle({ current_node: 'n1', current_started_at: '2026-03-10T11:00:00.000Z' })],
   }))
   const n1 = old.nodeById.n1
 
-  assert.equal(n1.state, 'todo', '卡片自己的词仍然是未开始')
+  assert.equal(n1.state, 'todo', 'the card\'s own word still reads not started')
   assert.equal(n1.running, true)
   assert.deepEqual(n1.heldBy, ['c1'])
   assert.equal(n1.heldSince.getTime(), Date.parse('2026-03-10T11:00:00.000Z'))
@@ -146,23 +146,23 @@ test('老一版的持有关系写法：线路上那个单值 current_node / curr
 
   assert.equal(later.nodeById.n1.running, false)
   assert.deepEqual(later.nodeById.n1.heldBy, [])
-  assert.equal(later.nodeById.n1.heldSince, null, '记录里没有那一刻：空着，不编一个')
+  assert.equal(later.nodeById.n1.heldSince, null, 'the record has no such moment: empty, nothing made up')
   assert.deepEqual(later.cycleById.c1.holding, [])
 })
 
-test('时刻切法：记录自己的词在那一刻写下来了才算数', () => {
+test('moment cutting: the record\'s own word counts only once written by that moment', () => {
   const nodes = { n: node({ status: 'todo', updated_at: '2026-03-10T11:30:00.000Z' }) }
   const cycles = [cycle({ path: [step('n', '2026-03-10T09:00:00.000Z', '2026-03-10T10:00:00.000Z', 'failed')] })]
 
   const early = readProject(record({ nodes, cycles, at: new Date('2026-03-10T11:00:00.000Z') }))
   const late = readProject(record({ nodes, cycles }))
 
-  assert.equal(early.nodeById.n.state, 'shelved', '那一刻「未开始」这个词还没写下来，按判决那一步读')
+  assert.equal(early.nodeById.n.state, 'shelved', 'the word "not started" is not yet written at that moment, so it reads from the verdict step')
   assert.equal(early.nodeById.n.parkedSince.getTime(), Date.parse('2026-03-10T10:00:00.000Z'))
-  assert.equal(late.nodeById.n.state, 'todo', '词写下来了：记录说它已经回到局中')
+  assert.equal(late.nodeById.n.state, 'todo', 'the word is written: the record says it is back in play')
 })
 
-test('交付看它自己的那一刻：那一刻还没到就是还没交付', () => {
+test('delivery reads its own moment: not yet reached means not yet delivered', () => {
   const early = readProject(record({
     nodes: { n: node({ status: 'completed', completed_at: '2026-03-10T13:00:00.000Z' }) },
     at: new Date('2026-03-10T12:00:00.000Z'),
@@ -170,11 +170,11 @@ test('交付看它自己的那一刻：那一刻还没到就是还没交付', ()
   const word = readProject(record({ nodes: { n: node({ status: 'completed' }) } }))
 
   assert.equal(early.nodeById.n.state, 'todo')
-  assert.equal(early.nodeById.n.completedAt, null, '那一刻还没到，读数里就没有那一刻')
-  assert.equal(word.nodeById.n.state, 'completed', '记录里根本没有交付时刻时，它自己那个词才算数')
+  assert.equal(early.nodeById.n.completedAt, null, 'that moment has not arrived, so the reading has no such moment')
+  assert.equal(word.nodeById.n.state, 'completed', 'with no delivery moment in the record at all, its own word is what counts')
 })
 
-test('人闸：一个词 + 那一刻，不要人的格没有这个词', () => {
+test('the human gate: one word + that moment, and a cell needing nobody has no such word', () => {
   const shelved = readProject(record({
     nodes: { s: node({ status: 'shelved', updated_at: '2026-03-10T11:00:00.000Z' }) },
     cycles: [cycle({ path: [step('s', '2026-03-10T09:00:00.000Z', '2026-03-10T10:00:00.000Z', 'stopped')] })],
@@ -198,12 +198,12 @@ test('人闸：一个词 + 那一刻，不要人的格没有这个词', () => {
     cycles: [cycle({ path: [step('m', '2026-03-10T09:00:00.000Z', null, null)] })],
   }))
   assert.equal(manual.nodeById.m.gate.kind, 'manual')
-  assert.equal(Object.hasOwn(manual.nodeById.m.gate, 'word'), false, '闸不再带词：是哪一种只看 kind')
+  assert.equal(Object.hasOwn(manual.nodeById.m.gate, 'word'), false, 'the gate no longer carries a word: the kind alone says which')
   assert.equal(manual.nodeById.m.gate.since.getTime(), Date.parse('2026-03-10T09:00:00.000Z'))
 
   const hand = readProject(record({ nodes: { m: node({ mode: 'manual' }) } }))
   assert.equal(hand.nodeById.m.gate.kind, 'manual')
-  assert.equal(hand.nodeById.m.gate.since, null, '记录里没有那一刻：空着，不编一个')
+  assert.equal(hand.nodeById.m.gate.since, null, 'the record has no such moment: empty, nothing made up')
 
   /* A checkpoint's gate reads this node's own record alone: delivered, and this delivery not approved
    * by a person. Where the line has walked since says nothing about that delivery. */
@@ -211,23 +211,23 @@ test('人闸：一个词 + 那一刻，不要人的格没有这个词', () => {
     nodes: { cp: node({ mode: 'checkpoint', status: 'completed', completed_at: '2026-03-10T09:20:00.000Z' }) },
     cycles: [cycle({ path: [step('cp', '2026-03-10T08:00:00.000Z', '2026-03-10T09:00:00.000Z', 'completed')] })],
   }))
-  assert.equal(checkpoint.nodeById.cp.gate.kind, 'checkpoint', '交付了、没人批过：闸就亮着')
-  assert.equal(Object.hasOwn(checkpoint.nodeById.cp.gate, 'word'), false, '闸不再带词：是哪一种只看 kind')
+  assert.equal(checkpoint.nodeById.cp.gate.kind, 'checkpoint', 'delivered and nobody approved it: the gate stays lit')
+  assert.equal(Object.hasOwn(checkpoint.nodeById.cp.gate, 'word'), false, 'the gate no longer carries a word: the kind alone says which')
   assert.equal(
     checkpoint.nodeById.cp.gate.since.getTime(),
     Date.parse('2026-03-10T09:20:00.000Z'),
-    '那一刻＝交付那一刻；那一步何时落停与它无关',
+    'that moment is the delivery moment; when the step settled is irrelevant',
   )
 
   const approved = readProject(record({
     nodes: { cp: node({ mode: 'checkpoint', status: 'completed', completed_at: '2026-03-10T09:00:00.000Z', approved_at: '2026-03-10T10:00:00.000Z' }) },
   }))
-  assert.equal(approved.nodeById.cp.gate, null, '批在交付之后：这次交付有人批过，闸消失')
+  assert.equal(approved.nodeById.cp.gate, null, 'approved after delivery: this delivery was approved, so the gate is gone')
 
   const approvedEarly = readProject(record({
     nodes: { cp: node({ mode: 'checkpoint', status: 'completed', completed_at: '2026-03-10T10:00:00.000Z', approved_at: '2026-03-10T09:00:00.000Z' }) },
   }))
-  assert.equal(approvedEarly.nodeById.cp.gate.kind, 'checkpoint', '重交付把交付时刻推到那次批之后：旧批不算数，闸又回来')
+  assert.equal(approvedEarly.nodeById.cp.gate.kind, 'checkpoint', 'a redelivery moves the delivery moment past that approval: the old approval does not count, the gate is back')
   assert.equal(approvedEarly.nodeById.cp.gate.since.getTime(), Date.parse('2026-03-10T10:00:00.000Z'))
 
   const moved = readProject(record({
@@ -242,8 +242,8 @@ test('人闸：一个词 + 那一刻，不要人的格没有这个词', () => {
       ],
     })],
   }))
-  assert.equal(moved.nodeById.cp.gate.kind, 'checkpoint', '这条线又往前走了也不清闸：没有批过就还是闸')
-  assert.equal(moved.nodeById.after.gate, null, '自动格不要人')
+  assert.equal(moved.nodeById.cp.gate.kind, 'checkpoint', 'the cycle moving on does not clear the gate: unapproved means still gated')
+  assert.equal(moved.nodeById.after.gate, null, 'an auto cell needs no person')
 
   const shapes = readProject(record({
     nodes: {
@@ -257,22 +257,22 @@ test('人闸：一个词 + 那一刻，不要人的格没有这个词', () => {
       }),
     },
   }))
-  assert.equal(shapes.nodeById.late.gate, null, '两种时刻形状混用：半秒之后的那次批按时刻比算批过')
-  assert.equal(shapes.nodeById.early.gate.kind, 'checkpoint', '半秒之前的那次批按字符串比会读反，按时刻比才是没批过')
+  assert.equal(shapes.nodeById.late.gate, null, 'two moment shapes mixed: an approval half a second later counts as approved by moment comparison')
+  assert.equal(shapes.nodeById.early.gate.kind, 'checkpoint', 'an approval half a second earlier would read backwards under string comparison; by moment it is unapproved')
 
   const undated = readProject(record({
     nodes: { cp: node({ mode: 'checkpoint', status: 'completed' }) },
   }))
-  assert.equal(undated.nodeById.cp.gate.kind, 'checkpoint', '只说交付、没写交付那一刻：没有交付可批，闸仍然亮着')
-  assert.equal(undated.nodeById.cp.gate.since, null, '记录里没有那一刻：空着，不编一个')
+  assert.equal(undated.nodeById.cp.gate.kind, 'checkpoint', 'delivery said but no delivery moment: there is no delivery to approve, so the gate stays lit')
+  assert.equal(undated.nodeById.cp.gate.since, null, 'the record has no such moment: empty, nothing made up')
 
   const running = readProject(record({
     nodes: { cp: node({ mode: 'checkpoint' }) },
   }))
-  assert.equal(running.nodeById.cp.gate, null, '还没交付的检查点，闸不在它这儿')
+  assert.equal(running.nodeById.cp.gate, null, 'a checkpoint not yet delivered: the gate is not on it')
 })
 
-test('线路：握着谁、走过哪几步、名下谁在等人', () => {
+test('the cycle: what it holds, what steps it walked, who under it waits on a person', () => {
   const reading = readProject(record({
     nodes: {
       held: node(),
@@ -293,12 +293,12 @@ test('线路：握着谁、走过哪几步、名下谁在等人', () => {
 
   assert.equal(c1.inService, true)
   assert.deepEqual(c1.holding, [{ nodeId: 'held', since: new Date('2026-03-10T11:00:00.000Z') }])
-  assert.deepEqual(nodesOf(c1.path), ['walked'], '那一刻还没落停的那一步不算走过')
+  assert.deepEqual(nodesOf(c1.path), ['walked'], 'a step not yet settled at that moment does not count as walked')
   assert.equal(c1.lastStep.node, 'walked')
-  assert.deepEqual(c1.parked, [], '那一刻还没有谁出局')
+  assert.deepEqual(c1.parked, [], 'no one is parked at that moment')
 })
 
-test('数据桥递进来的那份载荷能直接当输入', () => {
+test('the payload the data bridge hands in works as input directly', () => {
   const payload = {
     workspaceRoot: 'C:\\workspace-for-tests',
     recordPath: '.pf',
@@ -314,7 +314,7 @@ test('数据桥递进来的那份载荷能直接当输入', () => {
   assert.deepEqual(reading.cycles.map((item) => item.id), ['c1'])
 })
 
-test('记录本体上写着会话的那一版：会话原样带出来，没写的格没有这个字段', () => {
+test('the version that writes the session on the record itself: the session comes out as is, and unwritten cells have no such field', () => {
   const reading = readProject(record({
     nodes: {
       n1: node({ dsh_session: 'session-7' }),
@@ -328,7 +328,7 @@ test('记录本体上写着会话的那一版：会话原样带出来，没写�
   assert.equal(reading.nodeById.n3.session, undefined)
 })
 
-test('读一遍不改递给它的那份记录', () => {
+test('reading does not change the record handed to it', () => {
   const input = record({
     nodes: { n1: node({ dependencies: ['n2'] }), n2: node({ status: 'completed', completed_at: '2026-03-10T09:00:00.000Z' }) },
     cycles: [cycle({ holding: [{ id: 'n1', since: '2026-03-10T11:00:00.000Z' }], path: [step('n2', '2026-03-10T08:00:00.000Z', '2026-03-10T09:00:00.000Z', 'completed')] })],
@@ -337,5 +337,5 @@ test('读一遍不改递给它的那份记录', () => {
 
   readProject(input)
 
-  assert.deepEqual(input, snapshot, '四份记录与那一刻都不能被改动')
+  assert.deepEqual(input, snapshot, 'none of the four records nor the moment may be changed')
 })

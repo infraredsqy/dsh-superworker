@@ -1,14 +1,17 @@
-// 机器层设置跨进程并发用例的工作进程（普通 JS，node 直接跑；src 是纯类型标注的 TS：
-// Node 24+ 原生加载，22.6–23.x 由测试补 --experimental-strip-types，22.0–22.5 不跑这条用例）。
+// A worker for the machine-layer settings cross-process case (plain JS, node runs it directly; src
+// is type-annotated TS only: Node 24+ loads it natively, 22.6–23.x is given
+// --experimental-strip-types by the test, 22.0–22.5 does not run this case).
 //
 //   node config-global-worker.mjs slow <home>
-//     走机器层那把锁（`<home>/.pf/meta/ledger.lock`，即 `<home>/.pf` 这棵记录目录的 ledger 锁）：
-//     先把整份 `<home>/.pf/config.json` 读成快照、打印 HELD（锁已在手上、快照已取），然后**等**调用方
-//     在 stdin 上发一行 `WROTE`（那意味着调用方那条写命令已经发出去、正被这把锁挡在门外，或者早在
-//     拿锁之前就已经落盘——两者的区别由调用方自己判），收到后把快照加上 max_agents 写回去、放锁，
-//     最后打印 RELEASED。放锁不靠等够久：没有 WROTE 就一直握着。
+//     take the machine-layer lock (`<home>/.pf/meta/ledger.lock`, the ledger lock of the record
+//     directory `<home>/.pf`): read the whole `<home>/.pf/config.json` into a snapshot, print HELD
+//     (the lock is in hand, the snapshot taken), then **wait** for the caller's line `WROTE` on
+//     stdin (which means the caller's write command is already out and this lock is holding it
+//     outside, or it landed before the lock was taken — the caller tells those two apart), then
+//     write the snapshot back with max_agents added and let go, printing RELEASED last. Letting go
+//     does not wait long enough: without WROTE it keeps holding.
 //
-// 只碰调用方给的临时 home，不读真机的 `~/.pf`。
+// It only touches the temporary home the caller hands in, never the real machine's `~/.pf`.
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

@@ -31,7 +31,7 @@ export async function until(check, what, notes = []) {
   for (;;) {
     if (check()) return
     if (Date.now() - started > WAIT_MS) {
-      throw new Error(`等不到：${what}${notes.length > 0 ? `；读数：${JSON.stringify(notes)}` : ''}`)
+      throw new Error(`did not arrive: ${what}${notes.length > 0 ? `; reading: ${JSON.stringify(notes)}` : ''}`)
     }
     await turn()
   }

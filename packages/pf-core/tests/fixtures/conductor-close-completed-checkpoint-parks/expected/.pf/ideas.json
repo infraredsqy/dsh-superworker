@@ -4,10 +4,10 @@
       "completed_at": "@t3@",
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "收线对拍的起点",
+      "description": "starting point of the wrap-up parity case",
       "mode": "checkpoint",
       "status": "completed",
-      "title": "checkpoint 上的一格",
+      "title": "the cell at a checkpoint",
       "updated_at": "@t3@"
     }
   }

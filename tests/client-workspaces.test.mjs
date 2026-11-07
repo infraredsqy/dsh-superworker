@@ -30,20 +30,20 @@ function source(items) {
   }
 }
 
-test('清单从上下文上取：getSnapshot 与 subscribe 两手都在才算数', () => {
+test('the list comes off the context: only with both getSnapshot and subscribe does it count', () => {
   const { face } = source([choice('w-1')])
   const owner = { get: (name) => (name === 'workspaces' ? { list: face } : undefined) }
 
   assert.equal(workspacesAt(owner), face)
 })
 
-test('清单挂在属性上（没有 get 的上下文）也认', () => {
+test('a list hanging off a property (a context with no get) is recognized too', () => {
   const { face } = source([choice('w-1')])
 
   assert.equal(workspacesAt({ workspaces: { list: face } }), face)
 })
 
-test('形状不对：少一手、或者不是一条清单，一律当没有', () => {
+test('a malformed shape: one hand missing, or not a list at all, counts as absent', () => {
   assert.equal(workspacesAt({ get: () => ({ list: { getSnapshot: () => ({ items: [] }) } }) }), undefined)
   assert.equal(workspacesAt({ get: () => ({ list: { subscribe: () => () => undefined } }) }), undefined)
   assert.equal(workspacesAt({ get: () => ({ list: null }) }), undefined)
@@ -51,20 +51,20 @@ test('形状不对：少一手、或者不是一条清单，一律当没有', ()
   assert.equal(workspacesAt(undefined), undefined)
 })
 
-test('没有清单时那份空名单：永远是同一个对象，订阅它什么也不发生', () => {
+test('the empty list when there is none: always the same object, subscribing to it does nothing', () => {
   assert.equal(NO_WORKSPACES.getSnapshot(), NO_WORKSPACES.getSnapshot())
   assert.deepEqual(NO_WORKSPACES.getSnapshot().items, [])
   assert.equal(typeof NO_WORKSPACES.subscribe(() => undefined), 'function')
 })
 
-test('这条会话落在哪个工作区里：身份在哪个工作区的名下就算它', () => {
+test('which workspace this session falls in: it belongs to whichever workspace lists its identity', () => {
   const items = [choice('w-1', ['s-9']), choice('w-2', ['s-7', 's-8'])]
 
   assert.equal(workspaceOf(items, 's-7')?.workspaceId, 'w-2')
   assert.equal(workspaceOf(items, 's-9')?.workspaceId, 'w-1')
 })
 
-test('一个都不出现、或压根没有会话：未分组', () => {
+test('listed nowhere, or no session at all: ungrouped', () => {
   const items = [choice('w-1', ['s-9'])]
 
   assert.equal(workspaceOf(items, 's-404'), undefined)

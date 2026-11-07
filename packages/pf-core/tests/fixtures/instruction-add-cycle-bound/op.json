@@ -2,7 +2,7 @@
   "path": "ledger.instructions.add",
   "args": [
     {
-      "text": "这条线只走 coding 的节点",
+      "text": "this line only runs coding nodes",
       "scope": "cycle"
     }
   ]

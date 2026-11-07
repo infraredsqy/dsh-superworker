@@ -1,15 +1,17 @@
 name: Publish Package
 
-# 只有两种情况跑：推 v* 标签（正常发版），或人工/agent 手动触发（首次验证、补发）。
-# 普通推送不动它——这个 workflow 有发布会，越少跑越好。
+# Runs in exactly two cases: a v* tag is pushed (a normal release), or a person/agent triggers it by hand
+# (first-time verification, a re-release). An ordinary push does not touch it — this workflow publishes,
+# so the less it runs the better.
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
 
-# Trusted publishing (OIDC) 只要这两条：签发 OIDC 令牌的权力，和读仓的权力。
-# 这里不给任何 token —— 这条路的全部意义就是没有长期秘密。
+# Trusted publishing (OIDC) needs just these two: the power to issue an OIDC token, and the power to read
+# the repository. No token is handed over here — the whole point of this route is that no long-lived secret
+# exists.
 permissions:
   id-token: write
   contents: read
@@ -30,9 +32,9 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '26' # 与本机一致，装出去的产物才是本机验过的那一份
+          node-version: '26' # the same as this machine, so the published product is the one verified here
           registry-url: 'https://registry.npmjs.org'
-          package-manager-cache: false # 发布构建不用缓存：官方口径
+          package-manager-cache: false # a release build uses no cache: the official line
 
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -43,6 +45,7 @@ jobs:
       - name: Style check
         run: node tools/css-check.mjs
 
-      # 构建链的正本在 package.json 的 prepack；这里只调 npm publish，装出去的就是预构建产物
+      # The build chain's one true copy is the prepack in package.json; this step only calls npm publish,
+      # so what gets installed is the prebuilt product
       - name: Publish
         run: npm publish

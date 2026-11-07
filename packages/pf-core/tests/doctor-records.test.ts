@@ -69,7 +69,7 @@ describe('references do not dangle, nothing forms a cycle', () => {
 
   it('a dangling dependency turns the graph check red and names that node', async () => {
     await pf.ledger.init();
-    const node = await pf.ledger.dag.add({ title: '甲' });
+    const node = await pf.ledger.dag.add({ title: 'A' });
     const ideas = JSON.parse(
       readFileSync(join(root, '.pf', 'ideas.json'), 'utf8'),
     ) as { nodes: Record<string, { dependencies: string[]; updated_at: string }> };
@@ -82,8 +82,8 @@ describe('references do not dangle, nothing forms a cycle', () => {
 
   it('a cycle turns the graph check red and the cycle path is in the detail', async () => {
     await pf.ledger.init();
-    const a = await pf.ledger.dag.add({ title: '甲' });
-    const b = await pf.ledger.dag.add({ title: '乙' });
+    const a = await pf.ledger.dag.add({ title: 'A' });
+    const b = await pf.ledger.dag.add({ title: 'B' });
     await pf.ledger.dag.link(b.id, a.id);
     const ideas = JSON.parse(
       readFileSync(join(root, '.pf', 'ideas.json'), 'utf8'),
@@ -101,7 +101,7 @@ describe('references do not dangle, nothing forms a cycle', () => {
       cycles: [
         {
           id: 'main',
-          title: '一条线',
+          title: 'one line',
           status: 'active',
           holding: [{ id: '88888888-8888-4888-8888-888888888888', since: '2026-01-01T00:00:00Z' }],
           path: [],

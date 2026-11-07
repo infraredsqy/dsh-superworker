@@ -49,10 +49,10 @@ const ins = (text: string, input: Partial<InstructionAddInput> = {}) =>
 
 describe('add: registering one instruction', () => {
   it('default shape: stage / live / said_by user, optional keys not given stay off disk, the stamp is in seconds shape', async () => {
-    const added = await ins('先把该节点的 spec 读一遍再动手');
+    const added = await ins('read the spec of this node first, then start');
     expect(added).toMatchObject({
       id: 'i-0001',
-      text: '先把该节点的 spec 读一遍再动手',
+      text: 'read the spec of this node first, then start',
       scope: 'global',
       target: 'stage',
       state: 'live',
@@ -77,12 +77,12 @@ describe('add: registering one instruction', () => {
   it('every optional key given: target / said_by / note / stop_after_nodes, and the binding follows the named cycle', async () => {
     await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     const added = await pf.ledger.instructions.add({
-      text: '收线前把未决问题清一遍',
+      text: 'clear the open questions before wrapping up',
       scope: 'cycle',
       cycle: 'main',
       target: 'boundary',
       said_by: 'owner',
-      note: '每一轮收线都要念一遍',
+      note: 'read it aloud at every wrap-up',
       stop_after_nodes: 2,
     });
     expect(added).toMatchObject({
@@ -90,7 +90,7 @@ describe('add: registering one instruction', () => {
       target: 'boundary',
       cycle: 'main',
       said_by: 'owner',
-      note: '每一轮收线都要念一遍',
+      note: 'read it aloud at every wrap-up',
       stop_after_nodes: 2,
     });
     // stop_after_nodes is an optional key added later; it lands at the end of the record (the
@@ -100,11 +100,11 @@ describe('add: registering one instruction', () => {
   });
 
   it('the binding follows the spot: with a single line in service, cycle / node are remembered without being named (the node is the one the line holds)', async () => {
-    const node = await pf.ledger.dag.add({ title: '甲' });
+    const node = await pf.ledger.dag.add({ title: 'A' });
     await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     await pf.ledger.cycles.hold('main', node.id);
-    const byCycle = await pf.ledger.instructions.add({ text: '线上的约束', scope: 'cycle' });
-    const byNode = await pf.ledger.instructions.add({ text: '节点上的约束', scope: 'node' });
+    const byCycle = await pf.ledger.instructions.add({ text: 'line constraint', scope: 'cycle' });
+    const byNode = await pf.ledger.instructions.add({ text: 'node constraint', scope: 'node' });
     expect(byCycle.cycle).toBe('main');
     expect(byCycle.node).toBe(node.id);
     expect(byNode.node).toBe(node.id);
@@ -113,7 +113,7 @@ describe('add: registering one instruction', () => {
 
   it('a named cycle that is not in the book, a node that is not on the graph: refused on the spot', async () => {
     await pf.ledger.cycles.create({ id: 'main', tags: ['coding'] });
-    await pf.ledger.dag.add({ title: '甲' }); // Lay one node down: with a non-empty graph, node validation has a graph to check against.
+    await pf.ledger.dag.add({ title: 'A' }); // Lay one node down: with a non-empty graph, node validation has a graph to check against.
     await expect(
       pf.ledger.instructions.add({ text: 'x', scope: 'cycle', cycle: 'ghost' }),
     ).rejects.toThrow(/cycle "ghost" is not in state\.json/);
@@ -132,7 +132,7 @@ describe('add: registering one instruction', () => {
       pf.ledger.instructions.add({ text: 'x', scope: 'cycle', cycle: 'ghost' }),
     ).rejects.toThrow(/cycle "ghost" is not in state\.json/);
     const added = await pf.ledger.instructions.add({
-      text: '图起来之前的登记',
+      text: 'registration before the graph exists',
       scope: 'node',
       node: 'not-in-dag',
     });
@@ -173,10 +173,10 @@ describe('add: registering one instruction', () => {
   });
 
   it('an id once issued is never issued again: a tombstone left by a removal counts too', async () => {
-    const a = await ins('第一条');
-    const b = await ins('第二条');
+    const a = await ins('first entry');
+    const b = await ins('second entry');
     await pf.ledger.instructions.remove(b.id);
-    const c = await ins('第三条');
+    const c = await ins('third entry');
     expect(a.id).toBe('i-0001');
     expect(c.id).toBe('i-0003');
   });
@@ -194,10 +194,10 @@ describe('the visibility matrix: scope x binding state x target', () => {
     nodeA: string;
     nodeB: string;
   }> {
-    const nodeA = (await pf.ledger.dag.add({ title: '甲' })).id;
-    const nodeB = (await pf.ledger.dag.add({ title: '乙' })).id;
+    const nodeA = (await pf.ledger.dag.add({ title: 'A' })).id;
+    const nodeB = (await pf.ledger.dag.add({ title: 'B' })).id;
     await pf.ledger.dag.setStatus(nodeB, 'completed');
-    const nodeC = (await pf.ledger.dag.add({ title: '丙' })).id;
+    const nodeC = (await pf.ledger.dag.add({ title: 'C' })).id;
     await pf.ledger.cycles.create({ id: 'one', tags: ['coding'] });
     await pf.ledger.cycles.hold('one', nodeA);
     await pf.ledger.cycles.hold('one', nodeB);
@@ -206,16 +206,16 @@ describe('the visibility matrix: scope x binding state x target', () => {
     await pf.ledger.cycles.setStatus('two', 'inactive');
 
     const ids: Record<string, string> = {};
-    ids.g = (await ins('全局的约束')).id;
-    ids.bt = (await ins('收线边上的全局约束', { target: 'boundary' })).id;
-    ids.k1 = (await pf.ledger.instructions.add({ text: '本线的约束', scope: 'cycle', cycle: 'one' })).id;
-    ids.k2 = (await pf.ledger.instructions.add({ text: '离服务那条线的约束', scope: 'cycle', cycle: 'two' })).id;
-    ids.na = (await pf.ledger.instructions.add({ text: '甲节点的约束', scope: 'node', node: nodeA })).id;
-    ids.nb = (await pf.ledger.instructions.add({ text: '乙节点的约束', scope: 'node', node: nodeB })).id;
-    ids.nc = (await pf.ledger.instructions.add({ text: '丙节点的约束', scope: 'node', node: nodeC })).id;
-    ids.nw = (await ins('已归档的约束')).id;
+    ids.g = (await ins('global constraint')).id;
+    ids.bt = (await ins('global constraint on the wrap-up edge', { target: 'boundary' })).id;
+    ids.k1 = (await pf.ledger.instructions.add({ text: 'constraint of this line', scope: 'cycle', cycle: 'one' })).id;
+    ids.k2 = (await pf.ledger.instructions.add({ text: 'constraint of the out-of-service line', scope: 'cycle', cycle: 'two' })).id;
+    ids.na = (await pf.ledger.instructions.add({ text: 'constraint on node A', scope: 'node', node: nodeA })).id;
+    ids.nb = (await pf.ledger.instructions.add({ text: 'constraint on node B', scope: 'node', node: nodeB })).id;
+    ids.nc = (await pf.ledger.instructions.add({ text: 'constraint on node C', scope: 'node', node: nodeC })).id;
+    ids.nw = (await ins('archived constraint')).id;
     await pf.ledger.instructions.resolve(ids.nw!);
-    ids.g2 = (await ins('已摘走的约束')).id;
+    ids.g2 = (await ins('constraint taken away')).id;
     await pf.ledger.instructions.remove(ids.g2!);
     return { ids, nodeA, nodeB };
   }
@@ -272,7 +272,7 @@ describe('the visibility matrix: scope x binding state x target', () => {
   it('a tombstone is hidden but kept: the body is gone from disk while removed keeps the id and the stamp', async () => {
     const { ids } = await plantScenario();
     const raw = readFileSync(join(root, '.pf', 'instructions.json'), 'utf8');
-    expect(raw).not.toContain('已摘走的约束');
+    expect(raw).not.toContain('constraint taken away');
     const traces = readInstructionFile().removed as Array<{ id: string; at: string }>;
     expect(traces.map((trace) => trace.id)).toEqual([ids.g2]);
     expect(traces[0]!.at).toMatch(SECONDS_SHAPE);
@@ -283,20 +283,20 @@ describe('the visibility matrix: scope x binding state x target', () => {
 
 describe('resolve / revive: the settle and revive round trip', () => {
   it('resolve lands the state and the settling stamp: it leaves the default view while the full book still has it', async () => {
-    const added = await ins('先跑 typecheck 再交');
+    const added = await ins('run the typecheck before handing it in');
     const resolved = await pf.ledger.instructions.resolve(added.id);
     expect(resolved.state).toBe('withdrawn');
     expect(resolved.resolved_at).toMatch(SECONDS_SHAPE);
-    expect(resolved.text).toBe('先跑 typecheck 再交');
+    expect(resolved.text).toBe('run the typecheck before handing it in');
 
     expect(await pf.ledger.instructions.list()).toEqual([]);
     const account = await pf.ledger.instructions.list({ all: true });
     expect(account.map((row) => row.id)).toEqual([added.id]);
-    expect(account[0]!.text).toBe('先跑 typecheck 再交');
+    expect(account[0]!.text).toBe('run the typecheck before handing it in');
   });
 
   it('the resolve-then-revive round trip: back to live, the settling stamp cleared, the default view back', async () => {
-    const added = await ins('报告只写现值');
+    const added = await ins('the report writes the present value only');
     await pf.ledger.instructions.resolve(added.id);
     const revived = await pf.ledger.instructions.revive(added.id);
     expect(revived.state).toBe('live');
@@ -311,14 +311,14 @@ describe('resolve / revive: the settle and revive round trip', () => {
   });
 
   it('an entry already in force refuses to revive; on the refusal not one byte on disk moves', async () => {
-    const added = await ins('还活着的');
+    const added = await ins('still live');
     const before = readFileSync(join(root, '.pf', 'instructions.json'), 'utf8');
     await expect(pf.ledger.instructions.revive(added.id)).rejects.toThrow(/already live/);
     expect(readFileSync(join(root, '.pf', 'instructions.json'), 'utf8')).toBe(before);
   });
 
   it('a taken-away id refuses to revive and names the stamp of the removal; an id the book never had refuses too', async () => {
-    const added = await ins('要摘走的');
+    const added = await ins('the one to take away');
     await pf.ledger.instructions.remove(added.id);
     await expect(pf.ledger.instructions.revive(added.id)).rejects.toThrow(
       new RegExp(`was removed at .+; its text went with it`),
@@ -327,7 +327,7 @@ describe('resolve / revive: the settle and revive round trip', () => {
   });
 
   it('resolve with a note: the sentence lands on the record beside the settling stamp, and a later resolve without one leaves it', async () => {
-    const added = await ins('带注释归档');
+    const added = await ins('archived with a note');
     const resolved = await pf.ledger.instructions.resolve(added.id, { note: 'owner said so' });
     expect(resolved.note).toBe('owner said so');
     expect((readInstructionFile().instructions as InstructionRecord[])[0]!.note).toBe('owner said so');
@@ -339,7 +339,7 @@ describe('resolve / revive: the settle and revive round trip', () => {
 
   it('resolve refuses an id the book does not have; settling an archived entry again still moves its stamp forward', async () => {
     await expect(pf.ledger.instructions.resolve('i-9999')).rejects.toThrow(/no instruction/);
-    const added = await ins('归档两次');
+    const added = await ins('archived twice');
     const first = await pf.ledger.instructions.resolve(added.id);
     const second = await pf.ledger.instructions.resolve(added.id);
     expect(second.state).toBe('withdrawn');
@@ -349,14 +349,14 @@ describe('resolve / revive: the settle and revive round trip', () => {
 
 describe('remove: taking away and tombstones', () => {
   it('a taken-away entry disappears from every reading and its body leaves the disk; the tombstone keeps the id and the stamp', async () => {
-    const a = await ins('要摘走的第一条');
-    const b = await ins('留下的第二条');
+    const a = await ins('the first one to take away');
+    const b = await ins('the second one left behind');
     await pf.ledger.instructions.remove(a.id);
 
     expect((await pf.ledger.instructions.list()).map((row) => row.id)).toEqual([b.id]);
     expect((await pf.ledger.instructions.list({ all: true })).map((row) => row.id)).toEqual([b.id]);
     const raw = readFileSync(join(root, '.pf', 'instructions.json'), 'utf8');
-    expect(raw).not.toContain('要摘走的第一条');
+    expect(raw).not.toContain('the first one to take away');
     const file = readInstructionFile();
     expect(Object.keys(file)).toEqual(['instructions', 'removed']);
     const traces = file.removed as Array<{ id: string; at: string }>;
@@ -365,7 +365,7 @@ describe('remove: taking away and tombstones', () => {
   });
 
   it('removing a second time names the tombstone; an id the book never had is refused', async () => {
-    const a = await ins('只摘一次');
+    const a = await ins('take away once');
     await pf.ledger.instructions.remove(a.id);
     const before = readFileSync(join(root, '.pf', 'instructions.json'), 'utf8');
     await expect(pf.ledger.instructions.remove(a.id)).rejects.toThrow(/was removed at .+; its text is already/);
@@ -379,21 +379,21 @@ describe('list: position and account order', () => {
     await pf.ledger.cycles.create({ id: 'c1', tags: ['coding'] });
     await pf.ledger.cycles.hold('c1', 'node-a');
     await plantInstructions([
-      { id: 'i-0001', text: '旧的全局', scope: 'global', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null },
-      { id: 'i-0002', text: '线上的', scope: 'cycle', target: 'stage', state: 'live', cycle: 'c1', node: 'node-a', said_by: 'user', at: '2026-01-02T00:00:00Z', resolved_at: null, note: null },
-      { id: 'i-0003', text: '节点上的', scope: 'node', target: 'stage', state: 'live', cycle: null, node: 'node-b', said_by: 'user', at: '2026-01-03T00:00:00Z', resolved_at: null, note: null },
-      { id: 'i-0004', text: '新的全局', scope: 'global', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-04T00:00:00Z', resolved_at: null, note: null },
-      { id: 'i-0005', text: '归档的全局', scope: 'global', target: 'stage', state: 'withdrawn', cycle: null, node: null, said_by: 'user', at: '2026-01-05T00:00:00Z', resolved_at: '2026-01-05T01:00:00Z', note: null },
+      { id: 'i-0001', text: 'old global', scope: 'global', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null },
+      { id: 'i-0002', text: 'on the line', scope: 'cycle', target: 'stage', state: 'live', cycle: 'c1', node: 'node-a', said_by: 'user', at: '2026-01-02T00:00:00Z', resolved_at: null, note: null },
+      { id: 'i-0003', text: 'on the node', scope: 'node', target: 'stage', state: 'live', cycle: null, node: 'node-b', said_by: 'user', at: '2026-01-03T00:00:00Z', resolved_at: null, note: null },
+      { id: 'i-0004', text: 'new global', scope: 'global', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-04T00:00:00Z', resolved_at: null, note: null },
+      { id: 'i-0005', text: 'archived global', scope: 'global', target: 'stage', state: 'withdrawn', cycle: null, node: null, said_by: 'user', at: '2026-01-05T00:00:00Z', resolved_at: '2026-01-05T01:00:00Z', note: null },
     ]);
     const account = await pf.ledger.instructions.list({ all: true });
     expect(account.map((row) => row.id)).toEqual(['i-0001', 'i-0002', 'i-0003', 'i-0004', 'i-0005']);
   });
 
   it('the default view is folded to the reader rows: id, text, the scope as read, the target as written and the reach word', async () => {
-    const added = await pf.ledger.instructions.add({ text: '收线才念的', scope: 'global', target: 'boundary' });
+    const added = await pf.ledger.instructions.add({ text: 'only read at wrap-up', scope: 'global', target: 'boundary' });
     expect(await pf.ledger.instructions.list()).toEqual([{
       id: added.id,
-      text: '收线才念的',
+      text: 'only read at wrap-up',
       scope: 'global',
       target: 'boundary',
       reach: 'boundary',
@@ -401,28 +401,28 @@ describe('list: position and account order', () => {
     // A record that states no target folds to null, and its reach reads the stage default; a word
     // outside the two-word vocabulary reads the same way — reach is never a third word.
     await plantInstructions([
-      { id: 'i-0009', text: '没写投递通道的', scope: 'global', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null },
+      { id: 'i-0009', text: 'no delivery channel written', scope: 'global', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null },
     ]);
     expect(await pf.ledger.instructions.list()).toEqual([{
-      id: 'i-0009', text: '没写投递通道的', scope: 'global', target: null, reach: 'stage',
+      id: 'i-0009', text: 'no delivery channel written', scope: 'global', target: null, reach: 'stage',
     }]);
     await plantInstructions([
-      { id: 'i-0010', text: '外来投递词的', scope: 'global', target: 'round', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null },
+      { id: 'i-0010', text: 'foreign delivery word', scope: 'global', target: 'round', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null },
     ]);
     expect(await pf.ledger.instructions.list()).toEqual([{
-      id: 'i-0010', text: '外来投递词的', scope: 'global', target: 'round', reach: 'stage',
+      id: 'i-0010', text: 'foreign delivery word', scope: 'global', target: 'round', reach: 'stage',
     }]);
   });
 
   it("the default view follows the reader's spot: a named node pins it; with two lines side by side and no name it falls back to the wide read", async () => {
-    const nodeA = (await pf.ledger.dag.add({ title: '甲' })).id;
-    const nodeB = (await pf.ledger.dag.add({ title: '乙' })).id;
+    const nodeA = (await pf.ledger.dag.add({ title: 'A' })).id;
+    const nodeB = (await pf.ledger.dag.add({ title: 'B' })).id;
     await pf.ledger.cycles.create({ id: 'one', tags: ['coding'] });
     await pf.ledger.cycles.hold('one', nodeA);
     await pf.ledger.cycles.create({ id: 'two', tags: ['writing'], force: true });
     await pf.ledger.cycles.hold('two', nodeB);
-    const lineOne = await pf.ledger.instructions.add({ text: '线一的约束', scope: 'cycle', cycle: 'one' });
-    const lineTwo = await pf.ledger.instructions.add({ text: '线二的约束', scope: 'cycle', cycle: 'two' });
+    const lineOne = await pf.ledger.instructions.add({ text: 'constraint of line one', scope: 'cycle', cycle: 'one' });
+    const lineTwo = await pf.ledger.instructions.add({ text: 'constraint of line two', scope: 'cycle', cycle: 'two' });
 
     // Naming a node pins the line: the first node is in the first line's hand, so only that line
     // is read; the second is in the second's, so only the second is read.
@@ -438,9 +438,9 @@ describe('list: position and account order', () => {
     await pf.ledger.cycles.create({ id: 'c1', tags: ['coding'] });
     await pf.ledger.cycles.hold('c1', 'node-a');
     await plantInstructions([
-      { id: 'i-0001', text: '没绑定的线范围', scope: 'cycle', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null },
-      { id: 'i-0002', text: '没绑定的节点范围', scope: 'node', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-02T00:00:00Z', resolved_at: null, note: null },
-      { id: 'i-0003', text: '旧词范围的', scope: 'once', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-03T00:00:00Z', resolved_at: null, note: null },
+      { id: 'i-0001', text: 'cycle scope with nothing bound', scope: 'cycle', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null },
+      { id: 'i-0002', text: 'node scope with nothing bound', scope: 'node', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-02T00:00:00Z', resolved_at: null, note: null },
+      { id: 'i-0003', text: 'old-word scope', scope: 'once', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-03T00:00:00Z', resolved_at: null, note: null },
     ]);
     // node-a is in hand and c1 is in service: all three are readable (an empty binding measures
     // nothing; once reads as global), and they come back in the order the file holds them.
@@ -461,13 +461,13 @@ describe('list: position and account order', () => {
   });
 
   it('scope is never written down: the instruction book keeps every byte across three kinds of list', async () => {
-    const nodeA = (await pf.ledger.dag.add({ title: '甲' })).id;
-    const nodeB = (await pf.ledger.dag.add({ title: '乙' })).id;
+    const nodeA = (await pf.ledger.dag.add({ title: 'A' })).id;
+    const nodeB = (await pf.ledger.dag.add({ title: 'B' })).id;
     await pf.ledger.cycles.create({ id: 'one', tags: ['coding'] });
     await pf.ledger.cycles.hold('one', nodeA);
-    const g = await ins('全局的约束');
-    const k = await pf.ledger.instructions.add({ text: '线上的约束', scope: 'cycle', cycle: 'one' });
-    const n = await pf.ledger.instructions.add({ text: '甲的约束', scope: 'node', node: nodeA });
+    const g = await ins('global constraint');
+    const k = await pf.ledger.instructions.add({ text: 'line constraint', scope: 'cycle', cycle: 'one' });
+    const n = await pf.ledger.instructions.add({ text: 'constraint on A', scope: 'node', node: nodeA });
     await pf.ledger.instructions.resolve(g.id);
 
     const file = join(root, '.pf', 'instructions.json');
@@ -488,25 +488,25 @@ describe('list: position and account order', () => {
 
   it('a foreign state word reads as archived: absent from the default view, still in the full book, and never written back', async () => {
     await plantInstructions([
-      { id: 'i-0001', text: '外来状态词的', scope: 'global', target: 'stage', state: '别的词', cycle: null, node: null, said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null },
+      { id: 'i-0001', text: 'foreign state word', scope: 'global', target: 'stage', state: 'some other word', cycle: null, node: null, said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null },
     ]);
     expect(await pf.ledger.instructions.list()).toEqual([]);
     expect((await pf.ledger.instructions.list({ all: true })).map((row) => row.id)).toEqual(['i-0001']);
     // Archiving is decided on the read side only: the word stays on disk as it is, with no write
     // that flips the state afterwards.
-    expect(readFileSync(join(root, '.pf', 'instructions.json'), 'utf8')).toContain('别的词');
+    expect(readFileSync(join(root, '.pf', 'instructions.json'), 'utf8')).toContain('some other word');
   });
 
   it('naming a node nobody holds: the spot cannot be pinned, so the read goes wide -- both lines in service are read', async () => {
-    const nodeA = (await pf.ledger.dag.add({ title: '甲' })).id;
-    const nodeB = (await pf.ledger.dag.add({ title: '乙' })).id;
-    const nodeC = (await pf.ledger.dag.add({ title: '丙' })).id;
+    const nodeA = (await pf.ledger.dag.add({ title: 'A' })).id;
+    const nodeB = (await pf.ledger.dag.add({ title: 'B' })).id;
+    const nodeC = (await pf.ledger.dag.add({ title: 'C' })).id;
     await pf.ledger.cycles.create({ id: 'one', tags: ['coding'] });
     await pf.ledger.cycles.hold('one', nodeA);
     await pf.ledger.cycles.create({ id: 'two', tags: ['writing'], force: true });
     await pf.ledger.cycles.hold('two', nodeB);
-    const lineOne = await pf.ledger.instructions.add({ text: '线一的约束', scope: 'cycle', cycle: 'one' });
-    const lineTwo = await pf.ledger.instructions.add({ text: '线二的约束', scope: 'cycle', cycle: 'two' });
+    const lineOne = await pf.ledger.instructions.add({ text: 'constraint of line one', scope: 'cycle', cycle: 'one' });
+    const lineTwo = await pf.ledger.instructions.add({ text: 'constraint of line two', scope: 'cycle', cycle: 'two' });
 
     // The third node is on the graph but nobody holds it: the only way to pin a spot (the single
     // line in service and in hand) fails, so no spot is given and the read goes wide.
@@ -521,7 +521,7 @@ describe('the init gate: a `.pf` that was never init-ed keeps every byte', () =>
     try {
       const naked = open(bare);
       await expect(
-        naked.ledger.instructions.add({ text: '进不来的', scope: 'global' }),
+        naked.ledger.instructions.add({ text: 'the one that cannot get in', scope: 'global' }),
       ).rejects.toThrow(/was never init-ed .*Ask `init` first/);
       expect(existsSync(join(bare, '.pf'))).toBe(false);
     } finally {
@@ -532,7 +532,7 @@ describe('the init gate: a `.pf` that was never init-ed keeps every byte', () =>
 
 describe('whole-file read-modify-write of instructions.json: every other top-level key is kept as it is', () => {
   it('a foreign top-level key is still there after add / resolve / remove write back', async () => {
-    const added = await ins('外来键的见证');
+    const added = await ins('witness to a foreign key');
     const file = join(root, '.pf', 'instructions.json');
     const data = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
     data.hand_merged = { keep: 'me', nested: { v: 1 } };

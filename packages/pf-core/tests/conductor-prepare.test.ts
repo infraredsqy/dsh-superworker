@@ -210,9 +210,9 @@ describe('dispatch preparation: landing spots and idempotence', () => {
     const { node } = await stageDispatchable(root);
     await prepareDispatch(root, { cycle: 'c1' }, { homeDir: join(root, '_home') });
     const runDoc = join(root, '.pf', 'nodes', node.id, 'run.md');
-    writeFileSync(runDoc, '## 做了什么\n\n写了东西。\n', 'utf8');
+    writeFileSync(runDoc, '## What I did\n\nwrote something.\n', 'utf8');
     await prepareDispatch(root, { cycle: 'c1' }, { homeDir: join(root, '_home') });
-    expect(readFileSync(runDoc, 'utf8')).toContain('写了东西。');
+    expect(readFileSync(runDoc, 'utf8')).toContain('wrote something.');
     // The prompt is different: it is the "waiting to be picked up" marker, and every preparation
     // replaces the whole file with the same bytes.
     const prompt = join(root, '.pf', 'meta', 'launch', 'c1', node.id, 'prompt.txt');
@@ -225,7 +225,7 @@ describe('dispatch preparation: landing spots and idempotence', () => {
     const runDoc = join(root, '.pf', 'nodes', node.id, 'run.md');
     await prepareDispatch(root, { cycle: 'c1' }, { homeDir: join(root, '_home') });
     const first = readFileSync(runDoc, 'utf8');
-    expect(first).toContain('# run.md — 节点');
+    expect(first).toContain('# run.md — node');
     // The record moves on between the two preparations, so the second build really differs: if
     // the second preparation wrote, its bytes would show the new title.
     await pf.ledger.dag.update(node.id, { title: 'renamed while the session works' });
@@ -244,7 +244,7 @@ describe('dispatch preparation: landing spots and idempotence', () => {
     await pf.ledger.cycles.setPolicy('c1', 'parallel', 2);
     const prepared = await prepareDispatch(root, { cycle: 'c1' }, { homeDir: join(root, '_home') });
     const doc = readFileSync(prepared.nodes[0]!.run_doc, 'utf8');
-    expect(doc).toContain('# run.md — 节点');
+    expect(doc).toContain('# run.md — node');
     expect(doc).toContain(`mode=checkpoint`);
     expect(doc).toContain('Policy: when_shelved=stop, parallel=2');
     expect(doc).toContain('- test_tier=full');

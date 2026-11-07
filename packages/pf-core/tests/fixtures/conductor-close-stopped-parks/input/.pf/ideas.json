@@ -3,10 +3,10 @@
     "@node-a@": {
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "收线对拍的起点",
+      "description": "starting point of the wrap-up parity case",
       "mode": "auto",
       "status": "todo",
-      "title": "主动停手的一格",
+      "title": "the one that stops on its own",
       "updated_at": "@t1@"
     }
   }

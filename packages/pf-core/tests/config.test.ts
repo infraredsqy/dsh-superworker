@@ -356,7 +356,7 @@ describe('the resolution chain: the narrower wins, layer by layer', () => {
   it('a node read takes the line holding the node as its line layer: no holder skips it, one holder is read through, two holders are refused', async () => {
     const { root, config } = await makeProject(DECLARED);
     try {
-      const node = (await open(root).ledger.dag.add({ title: '丙' })).id;
+      const node = (await open(root).ledger.dag.add({ title: 'C' })).id;
       await config.set('proj_depth', 4, { project: true });
       // No line holds the node: there is no line-layer value for it, so the project layer answers.
       expect(await config.get('proj_depth', { node })).toEqual({ value: 4, source: 'project' });
@@ -385,7 +385,7 @@ describe('the resolution chain: the narrower wins, layer by layer', () => {
   it('a line holding the node as a bare id string is a holder too: the old on-disk shape reaches the line layer', async () => {
     const { root, config } = await makeProject(DECLARED);
     try {
-      const node = (await open(root).ledger.dag.add({ title: '戊' })).id;
+      const node = (await open(root).ledger.dag.add({ title: 'E' })).id;
       await config.set('proj_depth', 4, { project: true });
       // `holding: ["<node id>"]` is the old spelling of the claim list; it counts as a claim, so the
       // line layer is read instead of being silently skipped.
@@ -409,7 +409,7 @@ describe('the resolution chain: the narrower wins, layer by layer', () => {
   it('the two narrow layers enter a reading only when they are named: the wide reading does not see them', async () => {
     const { root, config } = await makeProject(DECLARED);
     try {
-      const node = (await open(root).ledger.dag.add({ title: '丁' })).id;
+      const node = (await open(root).ledger.dag.add({ title: 'D' })).id;
       seedCycle(root, 'c1');
       seedNodeLayer(root, node, { proj_depth: 7 });
       await config.set('proj_depth', 2, { cycle: 'c1' });
@@ -665,7 +665,7 @@ describe('where a write lands: one layer at a time', () => {
   it('the node layer lands in nodes/<id>/config.json; a read resolves its id exactly like a write, while a known id with no file falls through', async () => {
     const { root, config } = await makeProject(DECLARED);
     try {
-      const node = (await open(root).ledger.dag.add({ title: '甲' })).id;
+      const node = (await open(root).ledger.dag.add({ title: 'A' })).id;
       await config.set('proj_depth', 8, { node });
       const written = readFileSync(join(root, '.pf', 'nodes', node, 'config.json'), 'utf8');
       expect(written).toContain('"proj_depth": 8');
@@ -673,7 +673,7 @@ describe('where a write lands: one layer at a time', () => {
 
       // A node on the graph without a file of its own is the ordinary no-file state: that layer states
       // nothing, it is not an error, and the reading goes on to the layer below.
-      const bare = (await open(root).ledger.dag.add({ title: '乙' })).id;
+      const bare = (await open(root).ledger.dag.add({ title: 'B' })).id;
       await config.set('proj_depth', 4, { project: true });
       expect(await config.get('proj_depth', { node: bare })).toEqual({ value: 4, source: 'project' });
 
@@ -691,7 +691,7 @@ describe('where a write lands: one layer at a time', () => {
   it('unset at the node layer takes the value off that file alone: the reading falls to the layer below, and no wider layer changes', async () => {
     const { root, config } = await makeProject(DECLARED);
     try {
-      const node = (await open(root).ledger.dag.add({ title: '甲' })).id;
+      const node = (await open(root).ledger.dag.add({ title: 'A' })).id;
       await config.set('proj_depth', 4, { project: true });
       await config.set('proj_depth', 8, { node });
       expect(await config.get('proj_depth', { node })).toEqual({ value: 8, source: 'node' });
@@ -805,7 +805,7 @@ describe('where a write lands: one layer at a time', () => {
     const { root, config } = await makeProject(DECLARED);
     try {
       const pf = open(root);
-      const node = (await pf.ledger.dag.add({ title: '乙' })).id;
+      const node = (await pf.ledger.dag.add({ title: 'B' })).id;
       const dir = join(root, '.pf', 'nodes', node);
       // The racing writer: it runs after the write's existence check and before its write lands.
       beforeLockBody = async () => {
@@ -1061,7 +1061,7 @@ describe('the directory a verb works in', () => {
     const here = await makeProject(DECLARED);
     const other = await makeProject(DECLARED);
     try {
-      const node = (await open(here.root).ledger.dag.add({ title: '甲' })).id;
+      const node = (await open(here.root).ledger.dag.add({ title: 'A' })).id;
       // The line holds the node, so a node read has a line layer underneath it.
       seedHoldingCycles(here.root, [{ id: 'c1', holding: [node] }]);
 
@@ -1092,7 +1092,7 @@ describe('the directory a verb works in', () => {
       expect(await other.config.get('proj_depth', { node }, here.root)).toEqual({ value: 2, source: 'cycle' });
 
       // The narrow pointers are resolved against the named project's own records, not the handle's.
-      const elsewhere = (await open(other.root).ledger.dag.add({ title: '乙' })).id;
+      const elsewhere = (await open(other.root).ledger.dag.add({ title: 'B' })).id;
       expect((await refusalOf(() => other.config.get('proj_depth', { node: elsewhere }, here.root))).code)
         .toBe('node_not_found');
       expect((await refusalOf(() => other.config.set('proj_depth', 1, { cycle: 'c9' }, here.root))).code)

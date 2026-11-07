@@ -10,7 +10,7 @@ import { node, record } from './helpers/record-fixtures.mjs'
 
 const layerIds = (reading) => reading.graph.layers.map((layer) => layer.map((item) => item.id))
 
-test('依赖场：一格的层是它最深的前置再加一层', () => {
+test('the dependency field: a cell\'s layer is its deepest prerequisite plus one', () => {
   const reading = readProject(record({
     nodes: {
       root: node(),
@@ -28,7 +28,7 @@ test('依赖场：一格的层是它最深的前置再加一层', () => {
   )
 })
 
-test('依赖场：同一层里保持记录给的次序', () => {
+test('the dependency field: within a layer the record order is kept', () => {
   const reading = readProject(record({
     nodes: {
       b: node({ dependencies: ['a'] }),
@@ -38,46 +38,46 @@ test('依赖场：同一层里保持记录给的次序', () => {
     },
   }))
 
-  assert.deepEqual(layerIds(reading), [['a'], ['b', 'c', 'd']], '先记的在前，不按身份排')
+  assert.deepEqual(layerIds(reading), [['a'], ['b', 'c', 'd']], 'recorded first comes first, not sorted by id')
 })
 
-test('依赖场：记录里没有那个前置，它就挡不住人', () => {
+test('the dependency field: a prerequisite the record lacks does not block', () => {
   const reading = readProject(record({
     nodes: { n1: node({ dependencies: ['gone', 'here'] }), here: node() },
   }))
 
-  assert.equal(reading.nodeById.n1.dependencies.length, 2, '记录里写的依赖一个都不丢')
-  assert.deepEqual(reading.graph.edges.map((edge) => edge.from), ['here'], '摆不出来的前置不画成边')
+  assert.equal(reading.nodeById.n1.dependencies.length, 2, 'no dependency written in the record is dropped')
+  assert.deepEqual(reading.graph.edges.map((edge) => edge.from), ['here'], 'a prerequisite that cannot be resolved draws no edge')
   assert.equal(reading.graph.maxDepth, 1)
 })
 
-test('依赖场：数据里绕成一个环，读数照样回得来', () => {
+test('the dependency field: data looping into a cycle still yields a reading', () => {
   const reading = readProject(record({
     nodes: { a: node({ dependencies: ['b'] }), b: node({ dependencies: ['a'] }) },
   }))
 
   assert.equal(reading.graph.layers.length, reading.graph.maxDepth + 1)
-  assert.equal(reading.graph.edges.length, 2, '两条边都在，环不吞掉它们')
+  assert.equal(reading.graph.edges.length, 2, 'both edges are there, the loop does not swallow them')
 })
 
-test('依赖场：一个节点都没有的时候，那一份是空的', () => {
+test('the dependency field: with no node at all, it is empty', () => {
   const reading = readProject(record())
 
-  assert.deepEqual(reading.graph.layers, [], '没有的东西不画，也不留一层空壳')
+  assert.deepEqual(reading.graph.layers, [], 'what is not there is not drawn, and no empty layer is left behind')
   assert.equal(reading.graph.maxDepth, -1)
   assert.deepEqual(reading.graph.edges, [])
 })
 
-test('节点读数带着记录里那个标题', () => {
+test('a node reading carries the title from the record', () => {
   const reading = readProject(record({
-    nodes: { n1: node({ title: '写静态检查器' }), n2: node() },
+    nodes: { n1: node({ title: 'write the static checker' }), n2: node() },
   }))
 
-  assert.equal(reading.nodeById.n1.title, '写静态检查器')
-  assert.equal(reading.nodeById.n2.title, undefined, '记录没写就没有，不拿身份顶上')
+  assert.equal(reading.nodeById.n1.title, 'write the static checker')
+  assert.equal(reading.nodeById.n2.title, undefined, 'no title in the record means none, the id does not stand in')
 })
 
-test('读一遍依赖场不改递给它的那份记录', () => {
+test('reading the dependency field does not change the record handed to it', () => {
   const input = record({
     nodes: { n1: node({ dependencies: ['n2'] }), n2: node() },
   })
@@ -87,7 +87,7 @@ test('读一遍依赖场不改递给它的那份记录', () => {
 
   assert.deepEqual(input, snapshot)
 })
-test('依赖那一句话：可开工只认读数自己那一个值，别的不欠这个问题', () => {
+test('the dependency sentence: ready counts only the reading\'s own value, others owe nothing of the kind', () => {
   const reading = readProject(record({
     nodes: {
       plain: node(),
@@ -102,9 +102,9 @@ test('依赖那一句话：可开工只认读数自己那一个值，别的不�
     ],
   }))
 
-  assert.deepEqual(readDeps(reading.nodeById.plain), { ready: true, count: null }, '可开工那一臂只说可开工，不带一个数')
-  assert.deepEqual(readDeps(reading.nodeById.owed), { ready: false, count: 2 }, '欠着的那一臂带上前置的条数')
-  assert.equal(readDeps(reading.nodeById.held), null, '别人手里正做的：欠的前置一件不剩也不算可开工')
-  assert.equal(readDeps(reading.nodeById.shelved), null, '出局等人的不欠这个问题')
-  assert.equal(readDeps(reading.nodeById.done), null, '落定的不欠谁的前置')
+  assert.deepEqual(readDeps(reading.nodeById.plain), { ready: true, count: null }, 'the ready arm only says ready, with no count')
+  assert.deepEqual(readDeps(reading.nodeById.owed), { ready: false, count: 2 }, 'the owing arm carries the number of prerequisites')
+  assert.equal(readDeps(reading.nodeById.held), null, 'in someone else\'s hands right now: even with no prerequisite left, it does not count as ready')
+  assert.equal(readDeps(reading.nodeById.shelved), null, 'a shelved one waiting on someone owes nothing of the kind')
+  assert.equal(readDeps(reading.nodeById.done), null, 'a settled one owes no one\'s prerequisite')
 })

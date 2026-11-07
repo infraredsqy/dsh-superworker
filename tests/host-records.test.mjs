@@ -111,7 +111,7 @@ const record = () => ({
   '.pf/issues/issues.json': json({ version: 1, issues: ISSUES }),
 })
 
-test('每一份来源都读到了，条目就是记录里那一份（含 weight / description / dsh_session 原样）', async () => {
+test('Every source was read, and the entries are the record\'s own (weight / description / dsh_session as they are)', async () => {
   const { port } = fakeWorkspace(record(), { pageLines: 500 })
   const reading = await readReading(port, scope, signal)
 
@@ -132,7 +132,7 @@ test('每一份来源都读到了，条目就是记录里那一份（含 weight 
   assert.equal(reading.cycles[0].path[0].result, 'delivered')
 })
 
-test('一份记录跨好几页也拼得回来', async () => {
+test('A record spanning several pages still comes back whole', async () => {
   const many = {}
   for (let i = 1; i <= 20; i++) {
     many[`n${i}`] = { ...NODES.n2, title: `node ${i}`, description: `description ${i}`, dependencies: [`n${i - 1}`] }
@@ -143,10 +143,10 @@ test('一份记录跨好几页也拼得回来', async () => {
   const reading = await readReading(port, scope, signal)
 
   assert.deepEqual(reading.nodes, many)
-  assert.ok(calls.filter(([kind]) => kind === 'read').length > 3, '这一份要跨好几页才读得完')
+  assert.ok(calls.filter(([kind]) => kind === 'read').length > 3, 'this one takes several pages to read')
 })
 
-test('工作区里没有那份记录：返回空读数，一声不响', async () => {
+test('No record in the workspace: an empty reading comes back without a sound', async () => {
   const { port } = fakeWorkspace({})
   const reading = await readReading(port, scope, signal)
 
@@ -157,7 +157,7 @@ test('工作区里没有那份记录：返回空读数，一声不响', async ()
   assert.deepEqual(reading.issues, {})
 })
 
-test('记录在、少一份文件：只有那一份报 missing，其余照读', async () => {
+test('Record present, one file short: only that one reports missing, the rest still read', async () => {
   const files = record()
   delete files['.pf/state.json']
   const { port } = fakeWorkspace(files, { pageLines: 500 })
@@ -168,7 +168,7 @@ test('记录在、少一份文件：只有那一份报 missing，其余照读', 
   assert.deepEqual(reading.nodes, NODES)
 })
 
-test('读不动的那一份报 unusable，读数照常回来', async () => {
+test('The unreadable one reports unusable, the reading still comes back', async () => {
   const files = record()
   files['.pf/state.json'] = '{ this line is not JSON\n'
   files['.pf/instructions.json'] = json({ instructions: { not: 'a list' } })
@@ -181,7 +181,7 @@ test('读不动的那一份报 unusable，读数照常回来', async () => {
   assert.deepEqual(reading.nodes, NODES)
 })
 
-test('取数只走 list 与 read 两个动作，也不改动递进来的那份文件表', async () => {
+test('A read uses only list and read, and leaves the file table it was handed untouched', async () => {
   const files = record()
   const snapshot = structuredClone(files)
   const { port, calls } = fakeWorkspace(files, { pageLines: 500 })
@@ -193,7 +193,7 @@ test('取数只走 list 与 read 两个动作，也不改动递进来的那份�
   assert.deepEqual(files, snapshot)
 })
 
-test('一页不肯往前走的回复不会转不出来', async () => {
+test('A page that will not move forward does not spin forever', async () => {
   let reads = 0
   const port = {
     async read() {
@@ -205,7 +205,7 @@ test('一页不肯往前走的回复不会转不出来', async () => {
   assert.equal(reads, 1)
 })
 
-test('一页的字节数超上限时把这一页收小重取：整份照样读全', async () => {
+test('When a page breaches the byte cap it shrinks and retries: the whole record still reads in full', async () => {
   const many = {}
   for (let i = 1; i <= 400; i++) {
     many[`n${i}`] = { ...NODES.n2, title: `node ${i}`, description: 'd'.repeat(300) }
@@ -219,14 +219,14 @@ test('一页的字节数超上限时把这一页收小重取：整份照样读�
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'read' })
   assert.deepEqual(reading.nodes, many)
 
-  assert.ok(refusals.length > 0, '这一份要先把口子的字节上限撞一次')
+  assert.ok(refusals.length > 0, 'this one must hit the port byte cap once first')
   assert.deepEqual([...new Set(refusals.map(({ code }) => code))], ['workspace-file/too-large'])
   const limits = calls.filter(([kind, path]) => kind === 'read' && path === '.pf/ideas.json').map(([, , , limit]) => limit)
-  assert.equal(limits[0], undefined, '第一页问的是口子默认档')
-  assert.ok(limits.slice(1).every((limit) => typeof limit === 'number' && limit < 500), '被拒之后每一页都带着收小过的行数')
+  assert.equal(limits[0], undefined, 'the first page asks for the port default tier')
+  assert.ok(limits.slice(1).every((limit) => typeof limit === 'number' && limit < 500), 'after a refusal every page carries the shrunk line count')
 })
 
-test('请求的行数超过口子那一档时也照样收小重取：整份照样读全', async () => {
+test('A requested line count above the port tier shrinks and retries too: the whole record still reads in full', async () => {
   const many = {}
   for (let i = 1; i <= 40; i++) {
     many[`n${i}`] = { ...NODES.n2, title: `node ${i}`, description: 'd'.repeat(3000) }
@@ -241,11 +241,11 @@ test('请求的行数超过口子那一档时也照样收小重取：整份照�
   assert.deepEqual(reading.nodes, many)
   assert.ok(
     refusals.some(({ code }) => code === 'gateway/bad-request'),
-    '收小的档高过口子那一档时，它给的是 bad-request，这一条也要接着往下收',
+    'a shrunk tier above the port tier gets bad-request, and it must keep shrinking from there',
   )
 })
 
-test('单行本身就超上限时，这一份才是真的读不动', async () => {
+test('When one line alone breaches the cap, that one really is unreadable', async () => {
   const files = record()
   files['.pf/ideas.json'] = json({ nodes: { n1: { ...NODES.n2, description: 'd'.repeat(9000) } } })
   const { port } = fakeWorkspace(files, { pageLines: 500, maxBytes: 4096 })

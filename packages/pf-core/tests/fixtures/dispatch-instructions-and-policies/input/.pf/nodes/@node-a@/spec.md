@@ -1,7 +1,7 @@
-# 组装这一轮的提示词
+# assemble this round's prompt
 
-- spec 里有 `method:` 行时照那个技能跑；没有就照 standard 路径派 Execute。
+- when the spec carries a `method:` line, run that skill; otherwise dispatch Execute down the standard path.
 
-## 完成判定
+## Done when
 
-- 提示词快照逐字节一致。
+- the prompt snapshot matches byte for byte.

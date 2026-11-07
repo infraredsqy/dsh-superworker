@@ -59,11 +59,11 @@ describe('show: one page for one node', () => {
   beforeEach(async () => {
     const pf = open(root);
     await pf.ledger.init();
-    node = (await pf.ledger.dag.add({ title: '甲' })).id;
+    node = (await pf.ledger.dag.add({ title: 'A' })).id;
   });
 
   /** One page as `show` hands it back: the node and its title in front of the note body. */
-  const page = (nodeId: string, note: SessionNoteRecord, title = '甲'): SessionShow => ({
+  const page = (nodeId: string, note: SessionNoteRecord, title = 'A'): SessionShow => ({
     node: nodeId,
     title,
     ...note,
@@ -106,7 +106,7 @@ describe('show: one page for one node', () => {
 
   it('an unreadable note reads as never written, without throwing', async () => {
     mkdirSync(join(root, '.pf', 'meta', 'sessions'), { recursive: true });
-    writeFileSync(notePath(node), '{ 这不是 JSON');
+    writeFileSync(notePath(node), '{ this is not JSON');
     expect(await sessions.show(node)).toEqual(page(node, { v: 1, discussion: [], run: [] }));
   });
 
@@ -230,7 +230,7 @@ describe('session notes travel with their node', () => {
   it('remove takes the session note away with it', async () => {
     const pf = open(root);
     await pf.ledger.init();
-    const node = (await pf.ledger.dag.add({ title: '丙' })).id;
+    const node = (await pf.ledger.dag.add({ title: 'C' })).id;
     writeNote(node, { v: 1, discussion: [{ session: 's', host: 'dsh', at: null }], run: [] });
     expect(existsSync(notePath(node))).toBe(true);
     await pf.ledger.dag.remove(node);

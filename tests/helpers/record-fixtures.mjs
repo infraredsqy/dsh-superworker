@@ -24,10 +24,10 @@ export function cycle(fields = {}) {
 
 /** A legal default issue in the pool. */
 export function issue(fields = {}) {
-  return { id: 'i1', title: '一处对不上的判据', severity: 'P3', status: 'open', discovered: '2026-03-01T00:00:00.000Z', ...fields }
+  return { id: 'i1', title: 'a mismatched criterion', severity: 'P3', status: 'open', discovered: '2026-03-01T00:00:00.000Z', ...fields }
 }
 
 /** A legal default instruction. */
 export function instruction(fields = {}) {
-  return { id: 'i1', text: '一句话', scope: 'global', state: 'live', at: '2026-03-10T00:00:00.000Z', ...fields }
+  return { id: 'i1', text: 'one sentence', scope: 'global', state: 'live', at: '2026-03-10T00:00:00.000Z', ...fields }
 }

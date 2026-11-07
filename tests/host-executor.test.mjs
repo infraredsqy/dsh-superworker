@@ -56,7 +56,7 @@ function defer() {
  * turns no longer reaches `create`; the wait is bounded by wall clock because that is real IO.
  */
 async function opened(created, count = 1) {
-  await until(() => created.length >= count, `第 ${count} 个 create`)
+  await until(() => created.length >= count, `create number ${count}`)
   await flush()
 }
 
@@ -71,7 +71,7 @@ async function bounded(promise, what, ms = 5000) {
     return await Promise.race([
       promise,
       new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`等不到：${what}（上限 ${ms} ms）`)), ms)
+        timer = setTimeout(() => reject(new Error(`did not arrive: ${what} (limit ${ms} ms)`)), ms)
       }),
     ])
   } finally {
@@ -187,7 +187,7 @@ function aliasOf(root) {
   return alias
 }
 
-test('探测：代理登记不在，点名 agents 拒绝，什么都没建', async () => {
+test('Probe: no agent registry, it refuses naming agents, and builds nothing', async () => {
   const agents = fakeAgents()
   const { ctx } = context({ files: {}, agents })
   const noAgents = { ...ctx, get(name) { return name === 'sessions' ? {} : undefined } }
@@ -196,7 +196,7 @@ test('探测：代理登记不在，点名 agents 拒绝，什么都没建', asy
   assert.equal(agents.created.length, 0)
 })
 
-test('归组与首条指令：会话建在工作区根下，计划的提示原话先进去', async () => {
+test('Grouping and the first instruction: the session is created under the workspace root, the plan prompt goes in verbatim', async () => {
   const rigging = rig()
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
@@ -204,18 +204,18 @@ test('归组与首条指令：会话建在工作区根下，计划的提示原�
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const record = rigging.agents.created[0]
-  assert.equal(record.options.meta.cwd, realpathSync(rigging.root), 'cwd 得是这个工作区的根：界面按它归组')
+  assert.equal(record.options.meta.cwd, realpathSync(rigging.root), 'cwd must be this workspace root: the panel groups by it')
   assert.equal(typeof record.options.sessionId, 'string')
-  assert.ok(record.options.sessionId.length > 0, '会话身份是开的时候新铸的')
-  assert.equal(record.followups.length, 1, '首条指令恰好一条')
+  assert.ok(record.options.sessionId.length > 0, 'the session id is minted at open time')
+  assert.equal(record.followups.length, 1, 'exactly one first instruction')
   const said = record.followups[0]
   assert.equal(said.role, 'user')
   assert.equal(said.source.kind, 'user')
   assert.equal(said.content[0].type, 'text')
-  assert.equal(said.content[0].text, PROMPT_LINE, '首条指令就是计划那一句，一字不改')
+  assert.equal(said.content[0].text, PROMPT_LINE, 'the first instruction is the plan line, not one character changed')
 })
 
-test('归组与挂接：宿主带工作区服务时，开出的会话挂到根所在的那个工作区上', async () => {
+test('Grouping and attach: with a workspace service, the opened session attaches to the workspace the root lives in', async () => {
   const created = []
   const attached = []
   const workspaceRegistry = {
@@ -234,11 +234,11 @@ test('归组与挂接：宿主带工作区服务时，开出的会话挂到根�
   rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
-  assert.deepEqual(created, [realpathSync(rigging.root)], '服务按根要的就是那个工作区')
-  assert.deepEqual(attached, [rigging.agents.created[0].options.sessionId], '开出来的会话挂上去')
+  assert.deepEqual(created, [realpathSync(rigging.root)], 'the service is asked for that workspace by root')
+  assert.deepEqual(attached, [rigging.agents.created[0].options.sessionId], 'the opened session is attached')
 })
 
-test('归组与挂接：宿主没有工作区服务时照旧开成，只留一行说会话没能挂上', async () => {
+test('Grouping and attach: with no workspace service it still opens, leaving one line saying the session could not attach', async () => {
   const lines = []
   const rigging = rig()
   const ctx = {
@@ -253,20 +253,20 @@ test('归组与挂接：宿主没有工作区服务时照旧开成，只留一�
   rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
-  assert.equal(lines.length, 1, `一行读数：${lines.join(' / ')}`)
+  assert.equal(lines.length, 1, `one line: ${lines.join(' / ')}`)
   assert.match(lines[0], /^warn: could not attach/u)
-  assert.ok(lines[0].includes(`${rigging.cycle}/${rigging.node}`), '读数点名哪一格')
-  assert.ok(lines[0].includes(realpathSync(rigging.root)), '读数点名哪个工作区')
-  assert.ok(existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')), '会话照常开成、档照常落')
+  assert.ok(lines[0].includes(`${rigging.cycle}/${rigging.node}`), 'the line names the cell')
+  assert.ok(lines[0].includes(realpathSync(rigging.root)), 'the line names the workspace')
+  assert.ok(existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')), 'the session opens and the note lands as usual')
 })
 
-test('归组与挂接：会话已经开出来、宿主才拒了挂接，降级成只带工作目录并留一行读数', async () => {
+test('Grouping and attach: the session is already open when the host refuses the attach, so it degrades to cwd-only and leaves one line', async () => {
   const lines = []
   const workspaceRegistry = {
     async create() {
       return {
         async attachSession() {
-          /* 真实宿主的拒绝句里带着会话身份，这个替身照它那样带：拒绝句本身不许把身份递给读者。 */
+          /* The real host's refusal carries the session id; this stand-in carries it the same way: the refusal itself must not hand the id to the reader. */
           throw new Error('cannot attach session \'session-abc\' to workspace \'ws-1\'')
         },
       }
@@ -285,22 +285,22 @@ test('归组与挂接：会话已经开出来、宿主才拒了挂接，降级�
   rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
 
-  assert.equal(outcome.ok, true, '会话已经在里头了：挂不上不是把这一棒判失败的理由')
+  assert.equal(outcome.ok, true, 'the session is already inside: a failed attach is no reason to fail this leg')
   assert.equal(outcome.session, rigging.agents.created[0].options.sessionId)
-  assert.equal(lines.length, 1, `一条读数：${lines.join(' / ')}`)
-  assert.match(lines[0], /^warn: could not attach/u, '读数点名挂不上')
-  assert.ok(lines[0].includes(`${rigging.cycle}/${rigging.node}`), '读数点名哪一格')
-  assert.ok(lines[0].includes(realpathSync(rigging.root)), '读数点名哪个工作区')
-  assert.ok(lines[0].includes('session-abc'), '读数里留着宿主说的原因')
-  assert.ok(lines[0].includes('cwd-only'), '读数说清会话降级成只带工作目录')
-  assert.equal(rigging.agents.created[0].followups.length, 1, '首条指令照常进箱：会话不因为没分组就空转')
+  assert.equal(lines.length, 1, `one line: ${lines.join(' / ')}`)
+  assert.match(lines[0], /^warn: could not attach/u, 'the line names the failed attach')
+  assert.ok(lines[0].includes(`${rigging.cycle}/${rigging.node}`), 'the line names the cell')
+  assert.ok(lines[0].includes(realpathSync(rigging.root)), 'the line names the workspace')
+  assert.ok(lines[0].includes('session-abc'), 'the line keeps the reason the host gave')
+  assert.ok(lines[0].includes('cwd-only'), 'the line says the session degraded to cwd-only')
+  assert.equal(rigging.agents.created[0].followups.length, 1, 'the first instruction still arrives: an ungrouped session does not idle')
   assert.ok(
     existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')),
-    '降级之后会话档照常落：不会是没纸的孤儿',
+    'the note lands after the degrade too: no orphan without paper',
   )
 })
 
-test('规范拼写：从另一种写法开进来的会话，cwd 与挂接用的都是实路径', async () => {
+test('Canonical spelling: a session opened through another spelling gets the real path for cwd and attach', async () => {
   const created = []
   const workspaceRegistry = {
     async create(path) {
@@ -312,7 +312,7 @@ test('规范拼写：从另一种写法开进来的会话，cwd 与挂接用的�
   const alias = aliasOf(rigging.root)
   try {
     const real = realpathSync(rigging.root)
-    assert.notEqual(alias, real, '这个场景得有两种不同的写法')
+    assert.notEqual(alias, real, 'this case needs two different spellings')
     const pending = openNodeSession(rigging.ctx, 's1', alias, rigging.cycle, rigging.node)
     await opened(rigging.agents.created)
     rigging.agents.created[0].whenIdle.resolve()
@@ -321,18 +321,18 @@ test('规范拼写：从另一种写法开进来的会话，cwd 与挂接用的�
     assert.equal(
       rigging.agents.created[0].options.meta.cwd,
       real,
-      '会话头里的 cwd 是实路径：工作区层 realpath 之后要跟记录对得上',
+      'the session header cwd is the real path: after the workspace layer realpaths, it must match the record',
     )
-    assert.deepEqual(created, [real], '工作区服务按实路径要那个工作区，不是调用方这一种写法')
-    assert.ok(existsSync(join(real, '.pf', 'meta', 'sessions', `${rigging.node}.json`)), '会话档落在同一个根下')
+    assert.deepEqual(created, [real], 'the workspace service is asked for the workspace by real path, not by the caller spelling')
+    assert.ok(existsSync(join(real, '.pf', 'meta', 'sessions', `${rigging.node}.json`)), 'the note lands under the same root')
   } finally {
     rmSync(alias, { recursive: true, force: true })
-    assert.ok(existsSync(rigging.root), '收走别名不带走它指的根')
+    assert.ok(existsSync(rigging.root), 'removing the alias does not take the root it points at')
   }
 })
 
-test('规范拼写：一个根两种写法排同一条线，第二个开等第一个开完才进 create', async () => {
-  /* 两个 open 同时起：哪一格先进 create 由到达顺序决定，用例等的是「create 被调到了」这件事。 */
+test('Canonical spelling: two spellings of one root queue on one line, and the second only enters create when the first is done', async () => {
+  /* Both opens start together: which seat reaches create first belongs to arrival order, so the case waits for "create was called". */
   const doors = createDoors()
   const rigging = rig({
     files: { [promptPath('c1', 'n2')]: '/pf-conduct n2 [pipeline]\n' },
@@ -342,33 +342,33 @@ test('规范拼写：一个根两种写法排同一条线，第二个开等第�
   try {
     const first = openNodeSession(rigging.ctx, 's1', rigging.root, 'c1', 'n1')
     const second = openNodeSession(rigging.ctx, 's1', alias, 'c1', 'n2')
-    await bounded(doors.arrived(0), '第一格进 create')
-    /* 两种写法是同一个根：线上只该有一格，另一格还排着。 */
+    await bounded(doors.arrived(0), 'the first seat enters create')
+    /* Two spellings are one root: only one seat on the line, the other still queued. */
     await flush()
-    assert.equal(rigging.agents.created.length, 1, '两种写法是同一个根：第二个还排在线上，没进 create')
+    assert.equal(rigging.agents.created.length, 1, 'two spellings are one root: the second is still queued, not in create')
     doors.release(0)
     rigging.agents.created[0].whenIdle.resolve()
-    await bounded(doors.arrived(1), '第一格排完，第二格这才进 create')
-    assert.equal(rigging.agents.created.length, 2, '线松了第二个这才进 create')
+    await bounded(doors.arrived(1), 'the first seat is done, so the second enters create')
+    assert.equal(rigging.agents.created.length, 2, 'the line frees up, so the second enters create')
     doors.release(1)
     rigging.agents.created[1].whenIdle.resolve()
-    const outcomes = await bounded(Promise.all([first, second]), '两次开都结算')
+    const outcomes = await bounded(Promise.all([first, second]), 'both opens settle')
     for (const outcome of outcomes) assert.equal(outcome.ok, true, JSON.stringify(outcome))
   } finally {
     rmSync(alias, { recursive: true, force: true })
-    assert.ok(existsSync(rigging.root), '收走别名不带走它指的根')
+    assert.ok(existsSync(rigging.root), 'removing the alias does not take the root it points at')
   }
 })
 
 /* The name says what this case asserts: the fallback spelling. The other half of the old name —
- * 「不为一种写法拒绝开会话」— is pinned by the two cases above, where an open through a junction
+ * "never refuse to open a session for one spelling" — is pinned by the two cases above, where an open through a junction
  * spelling comes back `ok` with the real path in hand. */
-test('规范拼写：取不到实路径的根照原样交回', async () => {
+test('Canonical spelling: a root with no real path comes back as it went in', async () => {
   const missing = join(tmpdir(), `pf-executor-missing-${randomUUID()}`)
   assert.equal(await canonicalWorkspaceRoot(missing), missing)
 })
 
-test('会话档由开会话方写：run 里多了这一条，别的条目原样留着', async () => {
+test('The note is written by the opener: one more run entry, the other entries left as they were', async () => {
   const before = {
     v: 1,
     discussion: [{ session: 'session-talk', host: 'zcode', at: '2026-10-01T00:00:00Z' }],
@@ -384,16 +384,16 @@ test('会话档由开会话方写：run 里多了这一条，别的条目原样�
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const note = noteOnDisk(rigging.root, 'n1')
   assert.equal(note.v, 1)
-  assert.deepEqual(note.discussion, before.discussion, 'discussion 原样留着（zcode 的 host 字不改写）')
+  assert.deepEqual(note.discussion, before.discussion, 'discussion stays as it was (zcode\'s host line is not rewritten)')
   assert.equal(note.run.length, 2)
-  assert.deepEqual(note.run[0], before.run[0], '旧 run 条目原样留着')
+  assert.deepEqual(note.run[0], before.run[0], 'the old run entry stays as it was')
   const added = note.run[1]
   assert.equal(added.session, rigging.agents.created[0].options.sessionId)
   assert.equal(added.host, 'dsh')
-  assert.ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(added.at), '时刻是秒级那一种拼写')
+  assert.ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(added.at), 'the timestamp is the second-resolution spelling')
 })
 
-test('会话档那页读不得时不算拦路：坏页换成一页写得成的', async () => {
+test('An unreadable note is no roadblock: the bad page is replaced with one that writes', async () => {
   const rigging = rig({ node: 'n1' })
   mkdirSync(join(rigging.root, '.pf', 'meta', 'sessions'), { recursive: true })
   writeFileSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json'), '{broken')
@@ -408,18 +408,18 @@ test('会话档那页读不得时不算拦路：坏页换成一页写得成的',
   assert.equal(note.run[0].session, rigging.agents.created[0].options.sessionId)
 })
 
-test('结算那一条，等接口这版：whenIdle 应了才算开成', async () => {
+test('Settling, wait-interface version: it only counts once `whenIdle` answers', async () => {
   const rigging = rig({ withWhenIdle: true })
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
-  assert.equal(rigging.agents.created.length, 1, '队列里这一步先落到 create')
+  assert.equal(rigging.agents.created.length, 1, 'the queued step reaches create first')
   rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   assert.equal(outcome.session, rigging.agents.created[0].options.sessionId)
 })
 
-test('结算那一条，等接口这版：等的人喊停，会话在外头，拒绝点名格子、不带会话身份', async () => {
+test('Settling, wait-interface version: the waiter aborts while the session is out there; the refusal names the cell and carries no session id', async () => {
   const rigging = rig({ withWhenIdle: true })
   const stop = new AbortController()
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node, { signal: stop.signal })
@@ -429,49 +429,49 @@ test('结算那一条，等接口这版：等的人喊停，会话在外头，�
   assert.equal(outcome.ok, false)
   assert.equal(outcome.code, 'open-failed')
   const detail = outcome.detail ?? ''
-  assert.ok(detail.includes(`${rigging.cycle}/${rigging.node}`), '拒绝句点名的是格子：线／节点')
+  assert.ok(detail.includes(`${rigging.cycle}/${rigging.node}`), 'the refusal names the cell: cycle/node')
   assert.ok(
     !detail.includes(rigging.agents.created[0].options.sessionId),
-    '会话身份留在 outcome 的地址位上，拒绝句交给格子来点名',
+    'the session id stays in outcome\'s own field; naming is left to the cell',
   )
   assert.ok(detail.includes('caller gave up'))
-  assert.ok(existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')), '会话档已经落了：会话在外头，纸上得有它')
+  assert.ok(existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')), 'the note has landed: the session is out there, so the paper must have it')
   rigging.agents.created[0].whenIdle.resolve()
 })
 
-test('结算那一条，等接口这版：等接口自己报错，拒绝带原因，会话档已在盘', async () => {
+test('Settling, wait-interface version: the wait interface throws, the refusal carries the reason, the note is already on disk', async () => {
   const rigging = rig({ idleRefusal: new Error('wait interface blew up') })
   const outcome = await openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   assert.equal(outcome.ok, false)
   assert.equal(outcome.code, 'open-failed')
-  assert.ok((outcome.detail ?? '').includes('wait interface blew up'), '拒绝句带着等接口报的原话')
+  assert.ok((outcome.detail ?? '').includes('wait interface blew up'), 'the refusal carries the words the wait interface threw')
   assert.ok(
     !(outcome.detail ?? '').includes(rigging.agents.created[0].options.sessionId),
-    '会话身份留在 outcome 的地址位上，拒绝句交给格子来点名',
+    'the session id stays in outcome\'s own field; naming is left to the cell',
   )
-  assert.ok(existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')), '会话在外头：档已落盘')
+  assert.ok(existsSync(join(rigging.root, '.pf', 'meta', 'sessions', 'n1.json')), 'the session is out there: the note is on disk')
 })
 
-test('结算那一条，老宿主这版：轮次结束加空闲通知，两样都见了才应', async () => {
+test('Settling, old-host version: turn end plus an idle notice, and it answers only once both are seen', async () => {
   const rigging = rig({ withWhenIdle: false })
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
   const agent = rigging.agents.created[0].agent
   const session = { id: rigging.agents.created[0].options.sessionId }
-  /* 空闲通知先来：轮次还没完，不应。 */
+  /* The idle notice comes first: the turn is not over, so it does not answer. */
   rigging.events.emit('agent/status', { agent, status: 'idle' })
   await flush()
   assert.ok(pending instanceof Promise)
-  /* 别的会话的轮次结束：不应。 */
+  /* Another session's turn ends: it does not answer. */
   rigging.events.emit('session/event', { id: 'session-other' }, { type: 'turn/end', turn: 1, reason: { kind: 'completed' } })
   await flush()
-  /* 这一条会话自己的轮次结束：两样都齐了，应。 */
+  /* This session's own turn ends: both are in, so it answers. */
   rigging.events.emit('session/event', session, { type: 'turn/end', turn: 1, reason: { kind: 'completed' } })
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
 })
 
-test('结算那一条，老宿主这版：会话没等到轮次就被拆了，也放行', async () => {
+test('Settling, old-host version: the session is disposed before its turn ends, and it still lets go', async () => {
   const rigging = rig({ withWhenIdle: false })
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
@@ -480,33 +480,33 @@ test('结算那一条，老宿主这版：会话没等到轮次就被拆了，�
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
 })
 
-test('同一条工作区的线：两个开严格一前一后，都开成', async () => {
+test('One line per workspace: two opens go strictly one after another, and both open', async () => {
   mkdirSync(join(tmpdir(), 'pf-executor-'), { recursive: true })
   const root = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-'))
   const files = { [promptPath('c1', 'n1')]: PROMPT, [promptPath('c1', 'n2')]: '/pf-conduct n2 [pipeline]\n' }
-/* 同一条线的先后由到达顺序决定：用例等「create 被调到了」，不替两个 open 排先后。 */
+/* Order on one line belongs to arrival order: the case waits for "create was called" and does not order the two opens. */
   const doors = createDoors()
   const agents = fakeAgents({ gate: doors.gate })
   const { ctx } = context({ files, agents: agents.registry, sessions: {} })
   const first = openNodeSession(ctx, 's1', root, 'c1', 'n1')
   const second = openNodeSession(ctx, 's1', root, 'c1', 'n2')
-  await bounded(doors.arrived(0), '第一格进 create')
+  await bounded(doors.arrived(0), 'the first seat enters create')
   await flush()
-  assert.equal(agents.created.length, 1, '线上只有一格在 create：另一格还排着')
+  assert.equal(agents.created.length, 1, 'only one seat on the line is in create: the other is still queued')
   doors.release(0)
   agents.created[0].whenIdle.resolve()
-  await bounded(doors.arrived(1), '第一格排完，第二格这才进 create')
-  assert.equal(agents.created.length, 2, '线松了，第二个这才进 create')
+  await bounded(doors.arrived(1), 'the first seat is done, so the second enters create')
+  assert.equal(agents.created.length, 2, 'the line frees up, so the second enters create')
   doors.release(1)
   agents.created[1].whenIdle.resolve()
-  const outcomes = await bounded(Promise.all([first, second]), '两次开都结算')
+  const outcomes = await bounded(Promise.all([first, second]), 'both opens settle')
   for (const outcome of outcomes) assert.equal(outcome.ok, true, JSON.stringify(outcome))
-  assert.notEqual(agents.created[0].options.sessionId, agents.created[1].options.sessionId, '两个会话各是各的身份')
+  assert.notEqual(agents.created[0].options.sessionId, agents.created[1].options.sessionId, 'each session has its own id')
   assert.ok(existsSync(join(root, '.pf', 'meta', 'sessions', 'n1.json')))
   assert.ok(existsSync(join(root, '.pf', 'meta', 'sessions', 'n2.json')))
 })
 
-test('同一条工作区的线：一个拒绝毒不死下一条，第二个照常开成', async () => {
+test('One line per workspace: one rejection does not poison the next, and the second still opens', async () => {
   mkdirSync(join(tmpdir(), 'pf-executor-'), { recursive: true })
   const root = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-'))
   const files = { [promptPath('c1', 'n1')]: PROMPT, [promptPath('c1', 'n2')]: '/pf-conduct n2 [pipeline]\n' }
@@ -517,17 +517,17 @@ test('同一条工作区的线：一个拒绝毒不死下一条，第二个照�
   const one = await openNodeSession(ctx, 's1', root, 'c1', 'n1')
   assert.equal(one.ok, false)
   assert.equal(one.code, 'open-failed')
-  assert.ok((one.detail ?? '').includes('create blew up'), '拒绝句带着 create 报的原话')
+  assert.ok((one.detail ?? '').includes('create blew up'), 'the refusal carries the words create threw')
   const two = openNodeSession(ctx, 's1', root, 'c1', 'n2')
   await opened(agents.created, 2)
-  assert.equal(agents.created.length, 2, '线还活着：第二个照常进了 create')
+  assert.equal(agents.created.length, 2, 'the line is still alive: the second enters create as usual')
   agents.created[1].whenIdle.resolve()
   const outcome = await two
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
-  assert.ok(existsSync(join(root, '.pf', 'meta', 'sessions', 'n2.json')), '第二个的会话档照常落盘')
+  assert.ok(existsSync(join(root, '.pf', 'meta', 'sessions', 'n2.json')), 'the second note lands as usual')
 })
 
-test('不同工作区不排队：两边的 create 都进了才谈结算', async () => {
+test('Different workspaces do not queue: settling only comes up once both sides are in create', async () => {
   mkdirSync(join(tmpdir(), 'pf-executor-'), { recursive: true })
   const rootA = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-a-'))
   const rootB = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-b-'))
@@ -539,7 +539,7 @@ test('不同工作区不排队：两边的 create 都进了才谈结算', async 
   const one = openNodeSession(ctx, 's1', rootA, 'c1', 'n1')
   const two = openNodeSession(ctx, 's1', rootB, 'c1', 'n1')
   await opened(agents.created, 2)
-  assert.equal(agents.created.length, 2, '两条线各走各的：两边都进了 create')
+  assert.equal(agents.created.length, 2, 'each line runs on its own: both sides are in create')
   holds[0].resolve()
   holds[1].resolve()
   for (const record of agents.created) record.whenIdle.resolve()
@@ -547,16 +547,16 @@ test('不同工作区不排队：两边的 create 都进了才谈结算', async 
   assert.equal((await two).ok, true)
 })
 
-test('派发提示不在：点名拒绝，什么都没建也没写', async () => {
+test('No dispatch prompt: it refuses by name and builds and writes nothing', async () => {
   const rigging = rig({ prompt: null })
   const outcome = await openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   assert.equal(outcome.ok, false)
   assert.equal(outcome.code, 'prompt-missing')
   assert.equal(rigging.agents.created.length, 0)
-  assert.ok(!existsSync(join(rigging.root, '.pf', 'meta', 'sessions', `${rigging.node}.json`)), '没有会话就没有会话档')
+  assert.ok(!existsSync(join(rigging.root, '.pf', 'meta', 'sessions', `${rigging.node}.json`)), 'no session, no note')
 })
 
-test('派发提示整页是空白：也算没有，拒绝而不开一个空会话', async () => {
+test('A dispatch prompt that is all blank: that counts as none too, refused rather than opening an empty session', async () => {
   const rigging = rig({ prompt: '   \n' })
   const outcome = await openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   assert.equal(outcome.ok, false)
@@ -564,17 +564,17 @@ test('派发提示整页是空白：也算没有，拒绝而不开一个空会�
   assert.equal(rigging.agents.created.length, 0)
 })
 
-test('格子名当不了路：带分隔符或自指的那两级，参数门先拦下', async () => {
+test('A cell name cannot be a path: separators or self-reference in either level stop at the argument gate', async () => {
   for (const [cycle, node] of [['c1', '..'], ['c1/x', 'n1'], ['', 'n1'], ['c1', '.']]) {
     const rigging = rig()
     const outcome = await openNodeSession(rigging.ctx, 's1', rigging.root, cycle, node)
-    assert.equal(outcome.ok, false, `${cycle}/${node} 得拦下`)
-    assert.equal(outcome.code, 'arg-not-allowed', `${cycle}/${node} 拦的理由是参数这一道`)
+    assert.equal(outcome.ok, false, `${cycle}/${node} must be stopped`)
+    assert.equal(outcome.code, 'arg-not-allowed', `${cycle}/${node}: the stop reason is the argument gate`)
     assert.equal(rigging.agents.created.length, 0)
   }
 })
 
-test('部署里带着默认模型选择：新会话照它开', async () => {
+test('The deployment carries a default model selection: the new session opens with it', async () => {
   const rigging = rig({ defaultModel: { currentSelection: () => ({ provider: 'deepseek', model: 'chat' }) } })
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
@@ -583,7 +583,7 @@ test('部署里带着默认模型选择：新会话照它开', async () => {
   assert.deepEqual(rigging.agents.created[0].options.agentOptions, { provider: 'deepseek', model: 'chat' })
 })
 
-test('部署里没有默认模型选择：agentOptions 不带，由循环自己的默认接手', async () => {
+test('No default model selection in the deployment: no agentOptions, the loop\'s own default takes over', async () => {
   const rigging = rig()
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
@@ -594,7 +594,7 @@ test('部署里没有默认模型选择：agentOptions 不带，由循环自己�
 
 /* ---- the standing preset the open composes through ---- */
 
-test('构图：宿主带着 preset 名册时，会话按在册默认 preset 合成，挂载随 setup 进 create', async () => {
+test('Composition: with a preset roster on the host, the session composes against the roster\'s default preset, and the mount rides setup into create', async () => {
   const mounted = []
   const agentPresets = {
     async resolve() { return { id: 'standard-persona' } },
@@ -607,13 +607,13 @@ test('构图：宿主带着 preset 名册时，会话按在册默认 preset 合�
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const record = rigging.agents.created[0]
-  assert.equal(record.options.meta.agentPreset, 'standard-persona', '在册 preset 的身份落进会话元数据')
-  assert.equal(typeof record.options.setup, 'function', 'create 带着 composition setup')
+  assert.equal(record.options.meta.agentPreset, 'standard-persona', 'the roster preset id lands in the session metadata')
+  assert.equal(typeof record.options.setup, 'function', 'create carries the composition setup')
   await record.options.setup({}, record.agent)
-  assert.deepEqual(mounted, ['standard-persona'], 'setup 挂的是 resolve 出来的那一个 id')
+  assert.deepEqual(mounted, ['standard-persona'], 'setup mounts the id resolve answered')
 })
 
-test('构图：宿主没有 preset 名册时照旧开成，不带 setup 也不写 agentPreset', async () => {
+test('Composition: with no preset roster it still opens, carrying no setup and writing no agentPreset', async () => {
   const rigging = rig()
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
@@ -621,11 +621,11 @@ test('构图：宿主没有 preset 名册时照旧开成，不带 setup 也不�
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const record = rigging.agents.created[0]
-  assert.equal(record.options.setup, undefined, '没有名册就没有 setup')
-  assert.equal(record.options.meta.agentPreset, undefined, '没有名册就不写 preset 身份')
+  assert.equal(record.options.setup, undefined, 'no roster, no setup')
+  assert.equal(record.options.meta.agentPreset, undefined, 'no roster, no preset id written')
 })
 
-test('构图：preset 解析拒了，open 按 open-failed 落地带原因，什么都没建', async () => {
+test('Composition: the preset resolve refuses, the open lands as open-failed with the reason, nothing built', async () => {
   const agentPresets = {
     async resolve() { throw new Error('roster blew up') },
     async mount() { throw new Error('mount must not be reached') },
@@ -634,17 +634,17 @@ test('构图：preset 解析拒了，open 按 open-failed 落地带原因，什�
   const outcome = await openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   assert.equal(outcome.ok, false)
   assert.equal(outcome.code, 'open-failed')
-  assert.ok((outcome.detail ?? '').includes('roster blew up'), '拒绝句带着名册报的原话')
-  assert.equal(rigging.agents.created.length, 0, '解析失败的 open 一个代理都不建')
+  assert.ok((outcome.detail ?? '').includes('roster blew up'), 'the refusal carries the words the roster threw')
+  assert.equal(rigging.agents.created.length, 0, 'an open whose resolve failed builds no agent')
   assert.ok(
     !existsSync(join(rigging.root, '.pf', 'meta', 'sessions', `${rigging.node}.json`)),
-    '没有会话就没有会话档',
+    'no session, no note',
   )
 })
 
 /* ---- the session's own tool, armed by the opener ---- */
 
-test('唤醒：open 出的会话在首条指令进箱前就被装上 pathfinder 工具，恰好一次', async () => {
+test('Wake: the opened session gets the pathfinder tool before the first instruction lands, exactly once', async () => {
   const rigging = rig()
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
@@ -652,12 +652,12 @@ test('唤醒：open 出的会话在首条指令进箱前就被装上 pathfinder 
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const record = rigging.agents.created[0]
-  assert.equal(record.registered.length, 1, '注册恰好一次')
-  assert.equal(record.registered[0].name, PATHFINDER_TOOL_NAME, '注册的就是 pathfinder 这一个工具')
-  assert.deepEqual(record.sequence, ['register', 'followup'], '工具先进 scope，首条指令后进')
+  assert.equal(record.registered.length, 1, 'registered exactly once')
+  assert.equal(record.registered[0].name, PATHFINDER_TOOL_NAME, 'the registered one is the pathfinder tool')
+  assert.deepEqual(record.sequence, ['register', 'followup'], 'the tool enters the scope first, the first instruction after')
 })
 
-test('唤醒：会话没有可注册的工具面时，open 照常开成（wake 按契约沉默）', async () => {
+test('Wake: a session with no tools surface still opens as usual (the wake stays silent by contract)', async () => {
   // bespoke: an agent whose ctx has no tools service
   mkdirSync(join(tmpdir(), 'pf-executor-'), { recursive: true })
   const root = mkdtempSync(join(tmpdir(), 'pf-executor-', 'ws-'))
@@ -679,7 +679,7 @@ test('唤醒：会话没有可注册的工具面时，open 照常开成（wake �
   }
   const { ctx } = context({ files: { [promptPath('c1', 'n1')]: PROMPT }, agents: bareAgents, sessions: {} })
   const pending = openNodeSession(ctx, 's1', root, 'c1', 'n1')
-  await until(() => made !== undefined, 'bare agent 进 create')
+  await until(() => made !== undefined, 'the bare agent enters create')
   made.whenIdle.resolve()
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
@@ -687,7 +687,7 @@ test('唤醒：会话没有可注册的工具面时，open 照常开成（wake �
 
 /* ---- the dispatch seam's drill switch ---- */
 
-test('派发接缝的演练档：请求带 dryRun 时只回演练回执，登记里一个代理都没建', async () => {
+test('The dispatch seam\'s drill switch: a request with dryRun answers a drill receipt only, no agent built in the registry', async () => {
   const rigging = rig()
   const executor = executorOf(rigging.ctx, 's1', rigging.root)
   const receipt = await executor.dispatch({
@@ -696,20 +696,20 @@ test('派发接缝的演练档：请求带 dryRun 时只回演练回执，登记
     prompt: PROMPT,
     dryRun: true,
   })
-  assert.deepEqual(receipt, { host: 'drill' }, '演练回执只说这是一次演练，不带会话身份')
-  assert.equal(rigging.agents.created.length, 0, '演练扫不到任何开会话的调用')
+  assert.deepEqual(receipt, { host: 'drill' }, 'the drill receipt says only that this is a drill, carrying no session id')
+  assert.equal(rigging.agents.created.length, 0, 'the drill finds no session-opening call at all')
   assert.ok(
     !existsSync(join(rigging.root, '.pf', 'meta', 'sessions', `${rigging.node}.json`)),
-    '演练也不写会话档',
+    'the drill writes no note either',
   )
 })
 
-test('派发接缝的演练档：请求不带 dryRun 时照常开会话，回执带着会话身份', async () => {
+test('The dispatch seam\'s drill switch: without dryRun it opens a session as usual, and the receipt carries the session id', async () => {
   const rigging = rig()
   const executor = executorOf(rigging.ctx, 's1', rigging.root)
   const pending = executor.dispatch({ cycle: rigging.cycle, node: rigging.node, prompt: PROMPT })
   await opened(rigging.agents.created)
-  assert.equal(rigging.agents.created.length, 1, '普通派发照常进 create')
+  assert.equal(rigging.agents.created.length, 1, 'an ordinary dispatch enters create as usual')
   rigging.agents.created[0].whenIdle.resolve()
   const receipt = await pending
   assert.equal(receipt.host, 'dsh')
@@ -718,7 +718,7 @@ test('派发接缝的演练档：请求不带 dryRun 时照常开会话，回执
 
 /* ---- the session-side diagnostic of the placed skills (K4) ---- */
 
-/* The three diagnostic cases below (the two 会话侧诊断 ones, and the 目录诊断 one that holds the
+/* The three diagnostic cases below (the two session-side diagnostic ones, and the catalog-diagnostic one that holds the
  * catalog open) require process isolation. They place a skill into the temp home this file pinned
  * (`placeOneSkill`) and then rely on the opener reading `DSH_HOME` back out of the process
  * environment (`skill-paths.ts` reads it at call time). Under `--test-isolation=none` every test
@@ -773,9 +773,9 @@ function rigWithCatalog(rigging, view) {
   return { ctx, lines }
 }
 
-test('会话侧诊断：project 根同名副本压过插件这份时，开会话只留一行 skill-shadowed 读数并点名两处', async (t) => {
+test('Session-side diagnostic: when a same-named copy under the project root outranks the plugin\'s, the open leaves one skill-shadowed line naming both places', async (t) => {
   if (process.env.DSH_HOME !== pinned.home) {
-    t.skip(`要求进程隔离：DSH_HOME 在共享进程里被别的测试文件的 pin 盖掉了（现在指向 ${process.env.DSH_HOME}，不是本文件的 ${pinned.home}）`)
+    t.skip(`needs process isolation: DSH_HOME was overwritten in the shared process by another test file's pin (now points at ${process.env.DSH_HOME}, not this file's ${pinned.home})`)
     return
   }
   const name = 'pf-issue-repair'
@@ -785,8 +785,8 @@ test('会话侧诊断：project 根同名副本压过插件这份时，开会话
   try {
     const { ctx, lines } = rigWithCatalog(rigging, (options) => {
       /* The view a session reads: cwd named, the session's own scope passed through. */
-      assert.equal(options.cwd, rigging.root, '会话视角的读回丢了 workspace')
-      assert.ok(options.scope !== undefined, '会话视角的读回丢了 scope')
+      assert.equal(options.cwd, rigging.root, 'the session-view readback lost the workspace')
+      assert.ok(options.scope !== undefined, 'the session-view readback lost the scope')
       return [{ name, provider: 'filesystem', source: 'project-dsh', rank: 100, path: projectCopy }]
     })
     const pending = openNodeSession(ctx, 's1', rigging.root, rigging.cycle, rigging.node)
@@ -794,21 +794,21 @@ test('会话侧诊断：project 根同名副本压过插件这份时，开会话
     rigging.agents.created[0].whenIdle.resolve()
     const outcome = await pending
 
-    assert.equal(outcome.ok, true, '遮蔽读数不许把开会话弄失败')
-    assert.equal(lines.length, 1, `开会话该留一行读数：${lines.join(' / ')}`)
+    assert.equal(outcome.ok, true, 'the shadow line must not fail the open')
+    assert.equal(lines.length, 1, `the open should leave one line: ${lines.join(' / ')}`)
     assert.match(lines[0], /^warn: plugin skills shadowed/u)
-    assert.match(lines[0], /\(diagnostic only\)/u, '读数没写明它只是诊断，读者会误把它当拒绝面')
+    assert.match(lines[0], /\(diagnostic only\)/u, 'the line does not say it is diagnostic only, so a reader takes it for a refusal')
     assert.match(lines[0], /skill-shadowed/u)
-    assert.ok(lines[0].includes(ours), '读数没写出插件自己放的那一处')
-    assert.ok(lines[0].includes(projectCopy), '读数没写出遮蔽方的那一处')
+    assert.ok(lines[0].includes(ours), 'the line does not name where this plugin placed it')
+    assert.ok(lines[0].includes(projectCopy), 'the line does not name the shadowing copy')
   } finally {
     clearPlacement()
   }
 })
 
-test('会话侧诊断：这份在会话视角里赢了自己的名字时，只留一行诊断读数，不报影子', async (t) => {
+test('Session-side diagnostic: when this copy wins its own name in the session view, one diagnostic line and no shadow report', async (t) => {
   if (process.env.DSH_HOME !== pinned.home) {
-    t.skip(`要求进程隔离：DSH_HOME 在共享进程里被别的测试文件的 pin 盖掉了（现在指向 ${process.env.DSH_HOME}，不是本文件的 ${pinned.home}）`)
+    t.skip(`needs process isolation: DSH_HOME was overwritten in the shared process by another test file's pin (now points at ${process.env.DSH_HOME}, not this file's ${pinned.home})`)
     return
   }
   const name = 'pf-issue-repair'
@@ -824,9 +824,9 @@ test('会话侧诊断：这份在会话视角里赢了自己的名字时，只�
     const outcome = await pending
 
     assert.equal(outcome.ok, true)
-    assert.equal(lines.length, 1, `开会话该留一行诊断读数：${lines.join(' / ')}`)
+    assert.equal(lines.length, 1, `the open should leave one diagnostic line: ${lines.join(' / ')}`)
     assert.match(lines[0], /^info: plugin skills checked/u)
-    assert.match(lines[0], /\(diagnostic only\)$/u, '读数没写明 (diagnostic only)，读者会误把它当验收结论')
+    assert.match(lines[0], /\(diagnostic only\)$/u, 'the line does not say (diagnostic only), so a reader takes it for a verdict')
   } finally {
     clearPlacement()
   }
@@ -835,12 +835,12 @@ test('会话侧诊断：这份在会话视角里赢了自己的名字时，只�
 
 /* ---- the queue holds the workspace-touching stretch only (K: the diagnostic left it) ---- */
 
-test('目录诊断不在队列里：catalog 读不回来时，同一个根的下一次开照常进 create', async (t) => {
-  /* 与上面两条会话侧诊断同一个前提：这一格把技能放进本文件 pin 的 home，再靠开仓那一侧把
-   * DSH_HOME 从进程环境读回来——home 被同进程别的文件的 pin 盖掉时，开仓压根不会走到目录读，
-   * 断言的前提（第一开卡在目录读上）就不在了。要求进程隔离，见本段开头的说明。 */
+test('The catalog diagnostic is off the queue: with the catalog never answering, the next open of the same root still enters create', async (t) => {
+  /* Same premise as the two session-side diagnostics above: this case places a skill into the home
+   * this file pinned and relies on the opener reading DSH_HOME back from the process environment —
+   * once another file's pin overwrites that home, the catalog read never happens and the premise is gone. */
   if (process.env.DSH_HOME !== pinned.home) {
-    t.skip(`要求进程隔离：DSH_HOME 在共享进程里被别的测试文件的 pin 盖掉了（现在指向 ${process.env.DSH_HOME}，不是本文件的 ${pinned.home}）`)
+    t.skip(`needs process isolation: DSH_HOME was overwritten in the shared process by another test file's pin (now points at ${process.env.DSH_HOME}, not this file's ${pinned.home})`)
     return
   }
   const name = 'pf-issue-repair'
@@ -872,11 +872,11 @@ test('目录诊断不在队列里：catalog 读不回来时，同一个根的下
     })
     await opened(rigging.agents.created)
     rigging.agents.created[0].whenIdle.resolve()
-    /* 第一开已经交回队列、正在等那一次目录读：第二次开同一个根，必须在它等着的这段时间里进 create。 */
+    /* The first open is back in the queue waiting on that one catalog read: the second open of the same root must enter create while it waits. */
     const second = openNodeSession(ctx, 's1', rigging.root, 'c1', 'n2')
     await opened(rigging.agents.created, 2)
-    assert.equal(rigging.agents.created.length, 2, '目录诊断在队列外：同一个根的下一次开照常进 create')
-    assert.equal(firstSettled, false, '第一开仍在等目录读——这条线正是旧写法把队列堵住的那一段')
+    assert.equal(rigging.agents.created.length, 2, 'the catalog diagnostic is off the queue: the next open of the same root still enters create')
+    assert.equal(firstSettled, false, 'the first open still waits on the catalog read — the stretch the old shape plugged the queue with')
     rigging.agents.created[1].whenIdle.resolve()
     releaseCatalog()
     const one = await first

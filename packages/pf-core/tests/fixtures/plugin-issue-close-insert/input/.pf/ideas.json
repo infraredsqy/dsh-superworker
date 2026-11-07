@@ -3,13 +3,13 @@
     "@node-a@": {
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "问题池收尾插入的对拍起点",
+      "description": "starting point of the issue-pool close-insert parity case",
       "mode": "auto",
       "status": "todo",
       "tags": [
         "coding"
       ],
-      "title": "收尾被关的节点",
+      "title": "the node closed at wrap-up",
       "updated_at": "@t1@"
     }
   }

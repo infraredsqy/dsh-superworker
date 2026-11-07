@@ -143,28 +143,29 @@ function context({ root, agents, config, seen } = {}) {
   })
 }
 
-test('派发落认领：会话开出来，started 标记在盘上，会话档也落了', async () => {
+test('Dispatch lands the claim: the session opens, the started marker is on disk, and the note lands too', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
   const { ctx } = context({ root, agents })
   try {
     const outcome = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
     assert.equal(outcome.ok, true, JSON.stringify(outcome))
-    assert.equal(agents.created.length, 1, '恰好一个会话')
-    assert.ok(existsSync(claimPath(root, 'c-1', 'n-1')), '认领随派发落盘')
-    assert.ok(existsSync(join(root, '.pf', 'meta', 'sessions', 'n-1.json')), '会话档由开会话方写')
+    assert.equal(agents.created.length, 1, 'exactly one session')
+    assert.ok(existsSync(claimPath(root, 'c-1', 'n-1')), 'the claim lands with the dispatch')
+    assert.ok(existsSync(join(root, '.pf', 'meta', 'sessions', 'n-1.json')), 'the note is written by the opener')
     const said = agents.created[0].followups[0]
-    assert.ok(existsSync(join(root, '.pf', 'meta', 'launch', 'c-1', 'n-1', 'prompt.txt')), '提示由派发准备落盘')
-    /* 首条指令对的是盘上那份产物，不锁 pf-core 的措辞：opener 发的就是派发准备落在
-     * prompt.txt 里的那一行，读出来比对即可——身份（节点 id、[pipeline]）随盘上产物锁住。 */
+    assert.ok(existsSync(join(root, '.pf', 'meta', 'launch', 'c-1', 'n-1', 'prompt.txt')), 'the prompt is landed by dispatch preparation')
+    /* The first instruction is judged against the artifact on disk, not against pf-core wording: the opener
+     * sends the very line dispatch preparation landed in prompt.txt, so reading that back is comparison
+     * enough — the identity (node id, [pipeline]) is locked by the artifact. */
     const prompt = (await readFile(join(root, '.pf', 'meta', 'launch', 'c-1', 'n-1', 'prompt.txt'), 'utf8')).trim()
-    assert.equal(said.content[0].text, prompt, '首条指令是盘上那份派发提示')
+    assert.equal(said.content[0].text, prompt, 'the first instruction is the dispatch prompt on disk')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('并发两次只开一个会话：第二个调用读到认领，不再建第二条', async () => {
+test('Two dispatches at once open one session: the second call reads the claim and builds no second one', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
   const { ctx } = context({ root, agents })
@@ -175,50 +176,50 @@ test('并发两次只开一个会话：第二个调用读到认领，不再建�
     ])
     assert.equal(one.ok, true, JSON.stringify(one))
     assert.equal(two.ok, true, JSON.stringify(two))
-    assert.equal(agents.created.length, 1, '同一格并发两次，恰好一个会话')
+    assert.equal(agents.created.length, 1, 'one cell dispatched twice at once, exactly one session')
     assert.ok(existsSync(claimPath(root, 'c-1', 'n-1')))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('触发：自己开的会话收尾，计划说 dispatch，下一棒自己开出来', async () => {
+test('Trigger: the session it opened closes, the plan says dispatch, and the next leg opens itself', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
   const { ctx, events, warnings } = context({ root, agents })
   const installOff = installRelay(ctx)
   try {
-    /* 第一棒由按钮那条路开出来：会话进入宿主自己的追踪表。 */
+    /* The first leg is opened through the button path: the session enters the host's own tracking table. */
     const first = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
     assert.equal(first.ok, true, JSON.stringify(first))
     assert.equal(agents.created.length, 1)
 
-    /* 收尾中途的轮次结束：认领在盘上，计划说 wait，不开下一棒。 */
+    /* A turn end mid-close: the claim is on disk, the plan says wait, no next leg opens. */
     events.emit('session/event', { id: first.session }, { type: 'turn/end' })
     await drain()
-    assert.equal(agents.created.length, 1, '计划说 wait 时什么都不开')
+    assert.equal(agents.created.length, 1, 'nothing opens while the plan says wait')
 
-    /* 收尾落地（关节点、下一格钉进手里）：图与线就是收尾后的样子。 */
+    /* The close lands (the node closed, the next cell pinned in hand): graph and line are in their post-close shape. */
     await settleClose(root, 'n-1', 'n-2')
 
-    /* 收尾后的轮次结束：计划说 dispatch，下一棒自己开出来，全程无按钮。 */
+    /* A turn end after the close: the plan says dispatch, the next leg opens itself, no button anywhere. */
     events.emit('session/event', { id: first.session }, { type: 'turn/end' })
     await until(
       () => agents.created.length >= 2 && existsSync(claimPath(root, 'c-1', 'n-2')),
-      '下一棒的会话与它的认领',
+      'the next leg\'s session and its claim',
       warnings,
     )
-    assert.ok(existsSync(claimPath(root, 'c-1', 'n-2')), '下一棒的认领随派发落盘')
+    assert.ok(existsSync(claimPath(root, 'c-1', 'n-2')), 'the next leg\'s claim lands with the dispatch')
     const second = agents.created[1]
     const promptNext = (await readFile(join(root, '.pf', 'meta', 'launch', 'c-1', 'n-2', 'prompt.txt'), 'utf8')).trim()
-    assert.equal(second.followups[0].content[0].text, promptNext, '下一棒的首条指令是盘上那份派发提示')
+    assert.equal(second.followups[0].content[0].text, promptNext, 'the next leg\'s first instruction is the dispatch prompt on disk')
   } finally {
     installOff()
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('销毁触发：计划说 wait 时，会话被销毁也什么都不开（判据没有变）', async () => {
+test('Dispose trigger: with the plan saying wait, a disposed session still opens nothing (the verdict is unchanged)', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
   const { ctx, events, warnings } = context({ root, agents })
@@ -228,17 +229,17 @@ test('销毁触发：计划说 wait 时，会话被销毁也什么都不开（�
     assert.equal(first.ok, true, JSON.stringify(first))
     assert.equal(agents.created.length, 1)
 
-    /* 认领在盘上、这一格还没收尾：计划说 wait。会话此刻被销毁也不该替他做主。 */
+    /* The claim is on disk and the cell has not closed: the plan says wait. A session disposed now must not decide for it. */
     events.emit('session/disposed', { id: first.session })
     await drain()
-    assert.equal(agents.created.length, 1, '计划说 wait 时销毁不开下一棒')
+    assert.equal(agents.created.length, 1, 'a dispose opens no next leg while the plan says wait')
   } finally {
     installOff()
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('销毁触发：会话没走到回合结束就被销毁，计划说 dispatch 时下一棒照开', async () => {
+test('Dispose trigger: the session is disposed before its turn ends, and the next leg still opens when the plan says dispatch', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
   const { ctx, events, warnings } = context({ root, agents })
@@ -248,24 +249,24 @@ test('销毁触发：会话没走到回合结束就被销毁，计划说 dispatc
     assert.equal(first.ok, true, JSON.stringify(first))
     assert.equal(agents.created.length, 1)
 
-    /* 收尾落地，但这一棒被停掉／崩掉：没有 turn/end 可听，只有宿主说会话没了。 */
+    /* The close lands, but this leg was stopped or crashed: no turn/end to hear, only the host saying the session is gone. */
     await settleClose(root, 'n-1', 'n-2')
     events.emit('session/disposed', { id: first.session })
     await until(
       () => agents.created.length >= 2 && existsSync(claimPath(root, 'c-1', 'n-2')),
-      '销毁之后开出的下一棒与它的认领',
+      'the next leg opened after the dispose and its claim',
       warnings,
     )
     const second = agents.created[1]
     const promptNext = (await readFile(join(root, '.pf', 'meta', 'launch', 'c-1', 'n-2', 'prompt.txt'), 'utf8')).trim()
-    assert.equal(second.followups[0].content[0].text, promptNext, '下一棒的首条指令是盘上那份派发提示')
+    assert.equal(second.followups[0].content[0].text, promptNext, 'the next leg\'s first instruction is the dispatch prompt on disk')
   } finally {
     installOff()
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('销毁触发：不是本宿主开的会话被销毁，什么都不开', async () => {
+test('Dispose trigger: a session this host did not open is disposed, and nothing opens', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
   const { ctx, events, warnings } = context({ root, agents })
@@ -274,17 +275,17 @@ test('销毁触发：不是本宿主开的会话被销毁，什么都不开', as
     const first = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
     assert.equal(first.ok, true, JSON.stringify(first))
     await settleClose(root, 'n-1', 'n-2')
-    /* 计划此刻会说 dispatch，但这个身份不在本宿主的追踪表里：不归它管。 */
+    /* The plan would say dispatch now, but this id is not in this host's tracking table: not its business. */
     events.emit('session/disposed', { id: 'session-someone-else' })
     await drain()
-    assert.equal(agents.created.length, 1, '别人开的会话没了，本宿主不跟着开')
+    assert.equal(agents.created.length, 1, 'someone else\'s session is gone, this host does not open along with it')
   } finally {
     installOff()
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('两份通知都来：轮次结束已经开了下一棒，同一会话的销毁不再开第三棒', async () => {
+test('Both notices arrive: the turn end already opened the next leg, and the same session\'s dispose opens no third', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
   const { ctx, events, warnings } = context({ root, agents })
@@ -297,21 +298,21 @@ test('两份通知都来：轮次结束已经开了下一棒，同一会话的�
     events.emit('session/event', { id: first.session }, { type: 'turn/end' })
     await until(
       () => agents.created.length >= 2 && existsSync(claimPath(root, 'c-1', 'n-2')),
-      '轮次结束开出的下一棒与它的认领',
+      'the next leg opened by the turn end and its claim',
       warnings,
     )
 
-    /* 同一条会话随后被销毁：计划重读，认领已经在盘上，重复开工被它自己挡住。 */
+    /* The same session is disposed afterwards: the plan is re-read, the claim is already on disk, and the duplicate start stops itself. */
     events.emit('session/disposed', { id: first.session })
     await drain()
-    assert.equal(agents.created.length, 2, '两份通知只推一棒')
+    assert.equal(agents.created.length, 2, 'two notices push one leg only')
   } finally {
     installOff()
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('注册先于回合结束：本棒在途时它的 turn/end 就该被接力听到（长首回合形态）', async () => {
+test('Registered before the turn ends: while this leg is in flight its turn/end must already reach the relay (long first round)', async () => {
   const root = rigRecordRoot(['n-1'])
   let releaseIdle
   const idleGate = new Promise((give) => { releaseIdle = give })
@@ -319,36 +320,36 @@ test('注册先于回合结束：本棒在途时它的 turn/end 就该被接力�
   const { ctx, events, warnings } = context({ root, agents })
   const installOff = installRelay(ctx)
   try {
-    /* 第一棒在途：首条指令已进，回合被 gate 挂着——dispatch 尚未返回。 */
+    /* The first leg is in flight: the first instruction is in, the turn is held on the gate — dispatch has not returned yet. */
     const pending = dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
     await until(
       () => agents.created.length >= 1 && agents.created[0].followups.length === 1,
-      '首条指令进箱',
+      'the first instruction is in',
       warnings,
     )
     const sid = agents.created[0].options.sessionId
 
-    /* 本棒在途时收尾落地，轮次结束来了：此刻 tracked 必须已登记，接力才开得出下一棒。 */
+    /* The close lands while this leg is in flight and the turn end arrives: tracked must be registered by now, or the relay cannot open the next leg. */
     await settleClose(root, 'n-1', 'n-2')
     events.emit('session/event', { id: sid }, { type: 'turn/end' })
 
-    /* 下一棒排在本棒之后（进程级串行链）；松开回合，本棒返回，接力这一棒才落地。 */
+    /* The next leg queues behind this one (a process-level serial chain); release the turn, this leg returns, and the relay leg lands only then. */
     releaseIdle()
     const first = await pending
     assert.equal(first.ok, true, JSON.stringify(first))
     await until(
       () => agents.created.length >= 2 && existsSync(claimPath(root, 'c-1', 'n-2')),
-      '下一棒的会话与它的认领',
+      'the next leg\'s session and its claim',
       warnings,
     )
-    assert.ok(existsSync(claimPath(root, 'c-1', 'n-2')), '下一棒的认领随派发落盘')
+    assert.ok(existsSync(claimPath(root, 'c-1', 'n-2')), 'the next leg\'s claim lands with the dispatch')
   } finally {
     installOff()
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('开关关掉：turn/end 来了也不开下一棒；开关打开后同一事件照开，按钮那条路不受开关管', async () => {
+test('Switch off: a turn/end opens no next leg; switched on, the same event opens it, and the button path is not under the switch', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
   /* The line's resolved config rides apply's second argument; the volatile
@@ -359,23 +360,23 @@ test('开关关掉：turn/end 来了也不开下一棒；开关打开后同一�
   const { ctx, events, warnings } = context({ root, agents })
   const installOff = installRelay(ctx, config)
   try {
-    /* 按钮那条路不受开关管：第一棒照常开出来，会话进追踪表。 */
+    /* The button path is not under the switch: the first leg opens as usual and the session enters the tracking table. */
     const first = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
     assert.equal(first.ok, true, JSON.stringify(first))
     assert.equal(agents.created.length, 1)
 
-    /* 收尾落地：此刻的计划会说 dispatch——但开关关着。 */
+    /* The close lands: the plan would say dispatch now — but the switch is off. */
     await settleClose(root, 'n-1', 'n-2')
     events.emit('session/event', { id: first.session }, { type: 'turn/end' })
     await drain()
-    assert.equal(agents.created.length, 1, '开关关掉，触发不出会话')
+    assert.equal(agents.created.length, 1, 'switch off, the trigger opens no session')
 
-    /* 开关的快照翻到开：下一次轮次结束照常接力——读的是当下那份快照，不重载。 */
+    /* The switch snapshot flips on: the next turn end relays as usual — it reads the snapshot of the moment, no reload. */
     snapshot = true
     events.emit('session/event', { id: first.session }, { type: 'turn/end' })
     await until(
       () => agents.created.length >= 2 && existsSync(claimPath(root, 'c-1', 'n-2')),
-      '开关打开后开出的下一棒与它的认领',
+      'the next leg opened once the switch is on and its claim',
       warnings,
     )
   } finally {
@@ -384,7 +385,7 @@ test('开关关掉：turn/end 来了也不开下一棒；开关打开后同一�
   }
 })
 
-test('按钮走同一条路：网关的 openNodeSession 端点一样落认领', async () => {
+test('The button walks the same path: the gateway\'s openNodeSession endpoint lands the claim too', async () => {
   const root = rigRecordRoot(['n-1'])
   const agents = fakeAgents()
   const { ctx } = context({ root, agents })
@@ -393,13 +394,13 @@ test('按钮走同一条路：网关的 openNodeSession 端点一样落认领', 
     const outcome = await gateway.openNodeSession('caller', '', 'c-1', 'n-1')
     assert.equal(outcome.ok, true, JSON.stringify(outcome))
     assert.equal(agents.created.length, 1)
-    assert.ok(existsSync(claimPath(root, 'c-1', 'n-1')), '按钮那一次派发同样把认领落在盘上')
+    assert.ok(existsSync(claimPath(root, 'c-1', 'n-1')), 'a dispatch through the button lands the claim on disk too')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('格子派发不成：拒绝带引擎的原话，认领不落盘，一个会话都没建', async () => {
+test('A cell dispatch that fails: the refusal carries the engine\'s words, no claim lands, no session built', async () => {
   const root = rigRecordRoot([])
   const agents = fakeAgents()
   const { ctx } = context({ root, agents })
@@ -407,19 +408,19 @@ test('格子派发不成：拒绝带引擎的原话，认领不落盘，一个�
     const outcome = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
     assert.equal(outcome.ok, false)
     assert.equal(outcome.code, 'dispatch-refused')
-    assert.ok((outcome.detail ?? '').length > 0, '拒绝句带着引擎说的原话')
+    assert.ok((outcome.detail ?? '').length > 0, 'the refusal carries the engine\'s own words')
     assert.equal(agents.created.length, 0)
-    assert.ok(!existsSync(claimPath(root, 'c-1', 'n-1')), '没有会话就没有认领')
+    assert.ok(!existsSync(claimPath(root, 'c-1', 'n-1')), 'no session, no claim')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-/* 这条读数是两处规范化合在一起撑出来的：relay 的入口这一处，与开仓那一处（`openNodeSession`
- * 里再取一次实路径）。只摘掉 relay 这一处，用例照绿——它对 relay 那一行没有独立读数
- * （known untested）；两处一起摘掉才红。用例名只照实说盘上读到的：引擎按实路径读记录，
- * 不是说 relay 那一行被单独钉住了。 */
-test('派发拿别名开出去：照常开成，引擎读记录用的是实路径（relay 与开仓两处规范化合撑，relay 这处无独立读数）', async () => {
+/* This reading is held up by two canonicalisations together: the relay entry, and the opener (which takes
+ * the real path again inside `openNodeSession`). Pull only the relay one and the case stays green — it has
+ * no independent reading of that relay line (known untested); pull both and it goes red. The case name says
+ * only what is read off disk: the engine reads the record by real path, not that the relay line is pinned on its own. */
+test('A dispatch through the alias opens as usual, and the engine reads the record by real path (held by both canonicalisations, no independent reading of the relay one)', async () => {
   const root = rigRecordRoot(['n-1'])
   const alias = join(tmpdir(), `pf-relay-alias-${randomUUID()}`)
   symlinkSync(root, alias, 'junction')
@@ -430,15 +431,15 @@ test('派发拿别名开出去：照常开成，引擎读记录用的是实路�
   try {
     const outcome = await dispatchCell(ctx, 'caller', alias, 'c-1', 'n-1')
     assert.equal(outcome.ok, true, JSON.stringify(outcome))
-    assert.ok(seen.length > 0, '派发把提示读进来了：这些读就是这条读数的来源')
+    assert.ok(seen.length > 0, 'the dispatch read the prompt in: these reads are where this reading comes from')
     assert.deepEqual(
       [...new Set(seen)],
       [real],
-      '入口链交给引擎的那个根是实路径：两次读都落在它上面，没有一次按调用方的写法读',
+      'the root the entry chain hands the engine is the real path: both reads land on it, not one of them by the caller spelling',
     )
-    assert.ok(existsSync(claimPath(real, 'c-1', 'n-1')), '认领落在实路径那棵树上')
+    assert.ok(existsSync(claimPath(real, 'c-1', 'n-1')), 'the claim lands on the real-path tree')
   } finally {
     rmSync(alias, { recursive: true, force: true })
-    assert.ok(existsSync(root), '收走别名不带走它指的根')
+    assert.ok(existsSync(root), 'removing the alias does not take the root it points at')
   }
 })

@@ -118,7 +118,7 @@ function instructionLine(entry: InstructionRecord, index: number): string {
   if (typeof entry.stop_after_nodes === 'number') {
     words.push(`stop_after_nodes=${entry.stop_after_nodes}`);
   }
-  return `  ${index + 1}. ${stringCellOf((entry as { text?: unknown }).text)}（${words.join('，')}）`;
+  return `  ${index + 1}. ${stringCellOf((entry as { text?: unknown }).text)} (${words.join(', ')})`;
 }
 
 /**
@@ -236,25 +236,25 @@ function buildRunDoc(input: {
     .join(', ');
   const holding = cycleHoldingIds(cycle).map(short);
   const lines = [
-    `# run.md — 节点 ${short(nodeId)}（线 ${cycle.id}：${title}）`,
+    `# run.md — node ${short(nodeId)} (cycle ${cycle.id}: ${title})`,
     '',
-    '## 做了什么',
+    '## What I did',
     '',
-    '## 自主决策清单',
+    '## Autonomous decisions',
     '',
-    '## 已知未解决项',
+    '## Known unresolved',
     '',
-    '## 已核事实',
+    '## Facts checked',
     '',
-    `- 节点：${short(nodeId)}（mode=${mode}，weight=${weight}，tags=${pyList(tags)}）`,
+    `- node: ${short(nodeId)} (mode=${mode}, weight=${weight}, tags=${pyList(tags)})`,
     `- spec: ${specPath}`,
     ...(method === null ? [] : [`- method: ${method}`]),
-    `- 线 ${cycle.id}：${cycle.status}，tags=${pyList(cycleTags)}，Policy: ${policyText}，` +
+    `- cycle ${cycle.id}: ${cycle.status}, tags=${pyList(cycleTags)}, Policy: ${policyText}, ` +
       `holding=${pyList(holding)}`,
     `- test_tier=${shown(knobs.test_tier)}`,
     `- worktree_mode=${shown(knobs.worktree_mode)}`,
     `- max_agents=${shown(knobs.max_agents)}`,
-    instructions.length > 0 ? '- 用户指令（生效中）：' : '- 用户指令（生效中）：（none）',
+    instructions.length > 0 ? '- User instructions in effect:' : '- User instructions in effect: (none)',
     ...instructions.map(instructionLine),
   ];
   return `${lines.join('\n')}\n`;

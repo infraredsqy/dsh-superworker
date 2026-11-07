@@ -2,7 +2,7 @@
   "instructions": [
     {
       "id": "i-0001",
-      "text": "改动只落在分配给这个节点的文件里",
+      "text": "changes land only in the files assigned to this node",
       "scope": "global",
       "target": "stage",
       "state": "live",

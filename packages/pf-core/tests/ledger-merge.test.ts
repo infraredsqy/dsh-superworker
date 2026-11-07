@@ -176,8 +176,8 @@ describe('byte-for-byte replay: the output collected in a temp git repo', () => 
     });
     expect(run1.code).toBe(1);
     expect(run1.stderr).toContain('merge-ledger: conflict [.pf/ideas.json] Node aaaaaaaa field title');
-    expect(run1.stderr).toContain('ours="甲侧标题"');
-    expect(run1.stderr).toContain('theirs="乙侧标题"');
+    expect(run1.stderr).toContain('ours="A-side title"');
+    expect(run1.stderr).toContain('theirs="B-side title"');
     expect(run1.stderr).toContain('1 places need a human decision');
   });
 
@@ -227,7 +227,7 @@ describe('one side has no such file', () => {
     {
       nodes: {
         'dddddddd-4444-4444-8444-444444444444': {
-          title: '只有这边有',
+          title: 'only this side has it',
           description: '',
           status: 'todo',
           mode: 'auto',
@@ -294,7 +294,7 @@ describe('a side that is present but unreadable: exit 2, a line on stderr, not a
     {
       nodes: {
         'dddddddd-4444-4444-8444-444444444444': {
-          title: '只有这边有',
+          title: 'only this side has it',
           description: '',
           status: 'todo',
           mode: 'auto',
@@ -411,8 +411,8 @@ describe('the record directory was never init-ed: not a byte is written', () => 
           2,
         );
       const base = JSON.stringify({ nodes: {} }, null, 2);
-      const ours = side('aaaaaaaa-1111-4111-8111-111111111111', '甲侧新节点');
-      const theirs = side('bbbbbbbb-2222-4222-8222-222222222222', '乙侧新节点');
+      const ours = side('aaaaaaaa-1111-4111-8111-111111111111', 'new node on the A side');
+      const theirs = side('bbbbbbbb-2222-4222-8222-222222222222', 'new node on the B side');
       const sides = join(bare, 'sides');
       mkdirSync(sides, { recursive: true });
       const paths = {
@@ -454,9 +454,9 @@ describe('the rules', () => {
   }
 
   it('both sides moved the state: the higher rank wins (todo < shelved < completed)', async () => {
-    const base = JSON.stringify({ nodes: { [nodeA]: node('甲', 'todo', '2026-02-01T00:00:00.000000Z') } }, null, 2);
-    const ours = JSON.stringify({ nodes: { [nodeA]: node('甲', 'shelved', '2026-02-01T01:00:00.000000Z') } }, null, 2);
-    const theirs = JSON.stringify({ nodes: { [nodeA]: node('甲', 'completed', '2026-02-01T02:00:00.000000Z') } }, null, 2);
+    const base = JSON.stringify({ nodes: { [nodeA]: node('A', 'todo', '2026-02-01T00:00:00.000000Z') } }, null, 2);
+    const ours = JSON.stringify({ nodes: { [nodeA]: node('A', 'shelved', '2026-02-01T01:00:00.000000Z') } }, null, 2);
+    const theirs = JSON.stringify({ nodes: { [nodeA]: node('A', 'completed', '2026-02-01T02:00:00.000000Z') } }, null, 2);
     const run1 = await run({ base, ours, theirs, path: '.pf/ideas.json' });
     expect(run1.code).toBe(0);
     expect(JSON.parse(run1.oursBytes.toString('utf8'))).toMatchObject({
@@ -465,8 +465,8 @@ describe('the rules', () => {
   });
 
   it('the graph: one side takes the node away while the other leaves it be, so the node is gone', async () => {
-    const base = JSON.stringify({ nodes: { [nodeA]: node('甲', 'todo', '2026-02-01T00:00:00.000000Z'), [nodeB]: node('乙', 'todo', '2026-02-01T00:00:00.000000Z') } }, null, 2);
-    const ours = JSON.stringify({ nodes: { [nodeA]: node('甲', 'todo', '2026-02-01T00:00:00.000000Z') } }, null, 2);
+    const base = JSON.stringify({ nodes: { [nodeA]: node('A', 'todo', '2026-02-01T00:00:00.000000Z'), [nodeB]: node('B', 'todo', '2026-02-01T00:00:00.000000Z') } }, null, 2);
+    const ours = JSON.stringify({ nodes: { [nodeA]: node('A', 'todo', '2026-02-01T00:00:00.000000Z') } }, null, 2);
     const theirs = base;
     const run1 = await run({ base, ours, theirs, path: '.pf/ideas.json' });
     expect(run1.code).toBe(0);
@@ -474,9 +474,9 @@ describe('the rules', () => {
   });
 
   it('the graph: one side takes the node away and the other changed it, which is a delete-versus-edit conflict', async () => {
-    const base = JSON.stringify({ nodes: { [nodeA]: node('甲', 'todo', '2026-02-01T00:00:00.000000Z') } }, null, 2);
+    const base = JSON.stringify({ nodes: { [nodeA]: node('A', 'todo', '2026-02-01T00:00:00.000000Z') } }, null, 2);
     const ours = JSON.stringify({ nodes: {} }, null, 2);
-    const theirs = JSON.stringify({ nodes: { [nodeA]: node('甲改', 'todo', '2026-02-01T02:00:00.000000Z') } }, null, 2);
+    const theirs = JSON.stringify({ nodes: { [nodeA]: node('A changed', 'todo', '2026-02-01T02:00:00.000000Z') } }, null, 2);
     const run1 = await run({ base, ours, theirs, path: '.pf/ideas.json' });
     expect(run1.code).toBe(1);
     expect(run1.stderr).toContain('Node aaaaaaaa field (the whole record)');
@@ -484,9 +484,9 @@ describe('the rules', () => {
   });
 
   it('the graph: a dependency edge the merge breaks has to be named (a dangling one reads as satisfied, so the pipeline will not find it on its own)', async () => {
-    const base = JSON.stringify({ nodes: { [nodeA]: node('甲', 'todo', '2026-02-01T00:00:00.000000Z'), [nodeB]: node('乙', 'todo', '2026-02-01T00:00:00.000000Z') } }, null, 2);
-    const ours = JSON.stringify({ nodes: { [nodeB]: node('乙', 'todo', '2026-02-01T00:00:00.000000Z') } }, null, 2);
-    const theirs = JSON.stringify({ nodes: { [nodeA]: node('甲', 'todo', '2026-02-01T00:00:00.000000Z'), [nodeB]: node('乙', 'todo', '2026-02-01T00:00:00.000000Z', [nodeA]) } }, null, 2);
+    const base = JSON.stringify({ nodes: { [nodeA]: node('A', 'todo', '2026-02-01T00:00:00.000000Z'), [nodeB]: node('B', 'todo', '2026-02-01T00:00:00.000000Z') } }, null, 2);
+    const ours = JSON.stringify({ nodes: { [nodeB]: node('B', 'todo', '2026-02-01T00:00:00.000000Z') } }, null, 2);
+    const theirs = JSON.stringify({ nodes: { [nodeA]: node('A', 'todo', '2026-02-01T00:00:00.000000Z'), [nodeB]: node('B', 'todo', '2026-02-01T00:00:00.000000Z', [nodeA]) } }, null, 2);
     const run1 = await run({ base, ours, theirs, path: '.pf/ideas.json' });
     expect(run1.code).toBe(1);
     expect(run1.stderr).toContain('a dependency was deleted by the merge');
@@ -508,9 +508,9 @@ describe('the rules', () => {
       resolved_at: null,
       note: null,
     });
-    const base = JSON.stringify({ instructions: [first('1', '第一条'), first('2', '第二条')], removed: [] }, null, 2);
-    const ours = JSON.stringify({ instructions: [first('1', '第一条')], removed: [{ id: '2', at: '2026-02-01T02:00:00Z' }] }, null, 2);
-    const theirs = JSON.stringify({ instructions: [first('1', '第一条'), first('2', '第二条')], removed: [{ id: '9', at: '2026-02-01T03:00:00Z' }] }, null, 2);
+    const base = JSON.stringify({ instructions: [first('1', 'first entry'), first('2', 'second entry')], removed: [] }, null, 2);
+    const ours = JSON.stringify({ instructions: [first('1', 'first entry')], removed: [{ id: '2', at: '2026-02-01T02:00:00Z' }] }, null, 2);
+    const theirs = JSON.stringify({ instructions: [first('1', 'first entry'), first('2', 'second entry')], removed: [{ id: '9', at: '2026-02-01T03:00:00Z' }] }, null, 2);
     const run1 = await run({ base, ours, theirs, path: '.pf/instructions.json' });
     expect(run1.code).toBe(0);
     const merged = JSON.parse(run1.oursBytes.toString('utf8')) as {
@@ -525,7 +525,7 @@ describe('the rules', () => {
   it('instructions: one side puts it back and the other changes it again, with neither timestamp orderable — a conflict', async () => {
     const first = (state: string, resolved: string | null) => ({
       id: '1',
-      text: '第一条',
+      text: 'first entry',
       scope: 'global',
       target: 'stage',
       state,
@@ -553,7 +553,7 @@ describe('the rules', () => {
     });
     const cycle = (path: unknown[]) => ({
       id: 'pf-core',
-      title: '主线程',
+      title: 'main thread',
       status: 'active',
       holding: [],
       path,
@@ -578,9 +578,9 @@ describe('the rules', () => {
       outputs: {},
       timestamp: stamp,
     });
-    const base = JSON.stringify(ticket('原报告', '2026-02-01T00:00:00Z'), null, 2);
-    const ours = JSON.stringify(ticket('甲侧报告', '2026-02-01T01:00:00Z'), null, 2);
-    const theirs = JSON.stringify(ticket('乙侧报告', '2026-02-01T02:00:00Z'), null, 2);
+    const base = JSON.stringify(ticket('original report', '2026-02-01T00:00:00Z'), null, 2);
+    const ours = JSON.stringify(ticket('A-side report', '2026-02-01T01:00:00Z'), null, 2);
+    const theirs = JSON.stringify(ticket('B-side report', '2026-02-01T02:00:00Z'), null, 2);
     const path = `.pf/signals/pf-core/${nodeA}.json`;
 
     // git hands the driver its own temporary files; their names and timestamps say nothing about
@@ -603,7 +603,7 @@ describe('the rules', () => {
     expect(first.mtimes.ours).toBeGreaterThan(first.mtimes.theirs);
     expect(first.code).toBe(0);
     expect(JSON.parse(first.oursBytes.toString('utf8'))).toMatchObject({
-      summary: '乙侧报告',
+      summary: 'B-side report',
       timestamp: '2026-02-01T02:00:00Z',
     });
 
@@ -618,7 +618,7 @@ describe('the rules', () => {
     expect(second.mtimes.ours).toBeGreaterThan(second.mtimes.theirs);
     expect(second.code).toBe(0);
     expect(JSON.parse(second.oursBytes.toString('utf8'))).toMatchObject({
-      summary: '乙侧报告',
+      summary: 'B-side report',
       timestamp: '2026-02-01T02:00:00Z',
     });
   });
@@ -636,25 +636,25 @@ describe('the rules', () => {
 
     // Neither side carries a timestamp: there is nothing to order them by.
     const noStamp = await run({
-      base: JSON.stringify(ticket('原报告'), null, 2),
-      ours: JSON.stringify(ticket('甲侧报告'), null, 2),
-      theirs: JSON.stringify(ticket('乙侧报告'), null, 2),
+      base: JSON.stringify(ticket('original report'), null, 2),
+      ours: JSON.stringify(ticket('A-side report'), null, 2),
+      theirs: JSON.stringify(ticket('B-side report'), null, 2),
       path,
     });
     expect(noStamp.code).toBe(1);
     expect(noStamp.stderr).toContain('cannot be ordered');
-    expect(JSON.parse(noStamp.oursBytes.toString('utf8'))).toMatchObject({ summary: '甲侧报告' });
+    expect(JSON.parse(noStamp.oursBytes.toString('utf8'))).toMatchObject({ summary: 'A-side report' });
 
     // Both carry the same timestamp: the two attempts happen at one moment, and nothing may be guessed.
     const sameStamp = await run({
-      base: JSON.stringify(ticket('原报告', '2026-02-01T00:00:00Z'), null, 2),
-      ours: JSON.stringify(ticket('甲侧报告', '2026-02-01T03:00:00Z'), null, 2),
-      theirs: JSON.stringify(ticket('乙侧报告', '2026-02-01T03:00:00Z'), null, 2),
+      base: JSON.stringify(ticket('original report', '2026-02-01T00:00:00Z'), null, 2),
+      ours: JSON.stringify(ticket('A-side report', '2026-02-01T03:00:00Z'), null, 2),
+      theirs: JSON.stringify(ticket('B-side report', '2026-02-01T03:00:00Z'), null, 2),
       path,
     });
     expect(sameStamp.code).toBe(1);
     expect(sameStamp.stderr).toContain('both attempts carry the timestamp 2026-02-01T03:00:00Z');
-    expect(JSON.parse(sameStamp.oursBytes.toString('utf8'))).toMatchObject({ summary: '甲侧报告' });
+    expect(JSON.parse(sameStamp.oursBytes.toString('utf8'))).toMatchObject({ summary: 'A-side report' });
   });
 
   it('--dry-run: only the decisions and conflicts are printed, and not a byte is written', async () => {
@@ -704,7 +704,7 @@ describe('the side branches of the decision: each branch has a case of its own',
   function instruction(state: string, resolved: string | null) {
     return {
       id: '1',
-      text: '第一条',
+      text: 'first entry',
       scope: 'global',
       target: 'stage',
       state,
@@ -756,9 +756,9 @@ describe('the side branches of the decision: each branch has a case of its own',
   });
 
   it('the graph: a state written outside the vocabulary is never guessed at', async () => {
-    const base = JSON.stringify({ nodes: { [nodeA]: idea('甲') } }, null, 2);
-    const ours = JSON.stringify({ nodes: { [nodeA]: idea('甲', { status: 'in_progress' }) } }, null, 2);
-    const theirs = JSON.stringify({ nodes: { [nodeA]: idea('甲', { status: 'completed' }) } }, null, 2);
+    const base = JSON.stringify({ nodes: { [nodeA]: idea('A') } }, null, 2);
+    const ours = JSON.stringify({ nodes: { [nodeA]: idea('A', { status: 'in_progress' }) } }, null, 2);
+    const theirs = JSON.stringify({ nodes: { [nodeA]: idea('A', { status: 'completed' }) } }, null, 2);
     const run1 = await run({ base, ours, theirs, path: '.pf/ideas.json' });
     expect(run1.code).toBe(1);
     expect(run1.stderr).toContain('Node aaaaaaaa field status');
@@ -770,21 +770,21 @@ describe('the side branches of the decision: each branch has a case of its own',
     // edges, and with no common starting point "added one" and "trimmed one" look exactly alike on
     // the same value.
     const baseNode = {
-      title: '甲',
+      title: 'A',
       description: '',
       status: 'todo',
       mode: 'auto',
       created_at: '2026-02-01T00:00:00.000000Z',
       updated_at: '2026-02-01T00:00:00.000000Z',
     };
-    const base = JSON.stringify({ nodes: { [nodeA]: baseNode, [nodeB]: idea('乙') } }, null, 2);
+    const base = JSON.stringify({ nodes: { [nodeA]: baseNode, [nodeB]: idea('B') } }, null, 2);
     const ours = JSON.stringify(
-      { nodes: { [nodeA]: idea('甲', { dependencies: [nodeB] }), [nodeB]: idea('乙') } },
+      { nodes: { [nodeA]: idea('A', { dependencies: [nodeB] }), [nodeB]: idea('B') } },
       null,
       2,
     );
     const theirs = JSON.stringify(
-      { nodes: { [nodeA]: idea('甲', { dependencies: [] }), [nodeB]: idea('乙') } },
+      { nodes: { [nodeA]: idea('A', { dependencies: [] }), [nodeB]: idea('B') } },
       null,
       2,
     );
@@ -798,9 +798,9 @@ describe('the side branches of the decision: each branch has a case of its own',
     const base = JSON.stringify(
       {
         nodes: {
-          [nodeA]: idea('甲', { dependencies: [nodeB] }),
-          [nodeB]: idea('乙'),
-          [nodeC]: idea('丙'),
+          [nodeA]: idea('A', { dependencies: [nodeB] }),
+          [nodeB]: idea('B'),
+          [nodeC]: idea('C'),
         },
       },
       null,
@@ -809,9 +809,9 @@ describe('the side branches of the decision: each branch has a case of its own',
     const ours = JSON.stringify(
       {
         nodes: {
-          [nodeA]: idea('甲', { dependencies: [] }),
-          [nodeB]: idea('乙'),
-          [nodeC]: idea('丙'),
+          [nodeA]: idea('A', { dependencies: [] }),
+          [nodeB]: idea('B'),
+          [nodeC]: idea('C'),
         },
       },
       null,
@@ -820,9 +820,9 @@ describe('the side branches of the decision: each branch has a case of its own',
     const theirs = JSON.stringify(
       {
         nodes: {
-          [nodeA]: idea('甲', { dependencies: [nodeB, nodeC] }),
-          [nodeB]: idea('乙'),
-          [nodeC]: idea('丙'),
+          [nodeA]: idea('A', { dependencies: [nodeB, nodeC] }),
+          [nodeB]: idea('B'),
+          [nodeC]: idea('C'),
         },
       },
       null,
@@ -837,7 +837,7 @@ describe('the side branches of the decision: each branch has a case of its own',
   it('the line: each side says a word, and no coin is tossed', async () => {
     const cycle = (status: string) => ({
       id: 'pf-core',
-      title: '主线程',
+      title: 'main thread',
       status,
       holding: [] as string[],
       path: [] as unknown[],
@@ -882,8 +882,8 @@ describe('the tables: one reading of a list-or-mapping shape', () => {
 
   it('a graph list entry whose id and uuid are both empty is left out, not keyed under nothing', async () => {
     const emptyId = { id: '', uuid: '' };
-    const base = JSON.stringify({ nodes: [idea('甲', emptyId)] }, null, 2);
-    const ours = JSON.stringify({ nodes: [idea('甲侧', emptyId)] }, null, 2);
+    const base = JSON.stringify({ nodes: [idea('A', emptyId)] }, null, 2);
+    const ours = JSON.stringify({ nodes: [idea('A side', emptyId)] }, null, 2);
     const theirs = JSON.stringify({ nodes: [] }, null, 2);
     const run1 = await run({ base, ours, theirs, path: '.pf/ideas.json' });
     expect(run1.code).toBe(0);
@@ -897,7 +897,7 @@ describe('the tables: one reading of a list-or-mapping shape', () => {
     // said "Node : only ours has it -> take ours", naming a node that is no node. The writers never
     // produce an empty identity, so this guards hand edits only.
     const base = JSON.stringify({ nodes: [] }, null, 2);
-    const ours = JSON.stringify({ nodes: [idea('手写的一条', { id: '', uuid: '' })] }, null, 2);
+    const ours = JSON.stringify({ nodes: [idea('a hand-written entry', { id: '', uuid: '' })] }, null, 2);
     const theirs = JSON.stringify({ nodes: [] }, null, 2);
     const run1 = await run({ base, ours, theirs, path: '.pf/ideas.json' });
     expect(run1.code).toBe(0);
@@ -926,15 +926,15 @@ describe('the tables: one reading of a list-or-mapping shape', () => {
       note: null,
     });
     const base = JSON.stringify(
-      { instructions: [instruction('1', '第一条', 'live', null)], removed: [] },
+      { instructions: [instruction('1', 'first entry', 'live', null)], removed: [] },
       null,
       2,
     );
     const ours = JSON.stringify(
       {
         instructions: [
-          instruction('', '没有身份的一条', 'live', null),
-          instruction('1', '第一条', 'withdrawn', '2026-02-01T02:00:00Z'),
+          instruction('', 'an entry with no identity', 'live', null),
+          instruction('1', 'first entry', 'withdrawn', '2026-02-01T02:00:00Z'),
         ],
         removed: [],
       },
@@ -942,7 +942,7 @@ describe('the tables: one reading of a list-or-mapping shape', () => {
       2,
     );
     const theirs = JSON.stringify(
-      { instructions: [instruction('1', '第一条', 'withdrawn', '2026-02-01T01:00:00Z')], removed: [] },
+      { instructions: [instruction('1', 'first entry', 'withdrawn', '2026-02-01T01:00:00Z')], removed: [] },
       null,
       2,
     );
@@ -962,7 +962,7 @@ describe('the tables: one reading of a list-or-mapping shape', () => {
   it('a hand-written mapping is taken as it is: the line table merges by its key and lands as a list', async () => {
     const cycle = (status: string) => ({
       id: 'pf-core',
-      title: '主线程',
+      title: 'main thread',
       status,
       holding: [] as string[],
       path: [] as unknown[],
@@ -1031,11 +1031,11 @@ describe('the writing half of the driver: the record lock and the default landin
   }
 
   it('another writer holds the record lock: the driver waits for it to let go, and not a byte moves before it writes', async () => {
-    const oursText = ideasSide(nodeA, '甲侧新节点');
+    const oursText = ideasSide(nodeA, 'new node on the A side');
     const paths = laySides(root, {
       base: JSON.stringify({ nodes: {} }, null, 2),
       ours: oursText,
-      theirs: ideasSide(nodeB, '乙侧新节点'),
+      theirs: ideasSide(nodeB, 'new node on the B side'),
     });
     // A real writer holds this record tree's lock: the lock file being there is the whole signal of a cross-process hold.
     const lock = ledgerLockPath(pfPaths(root));
@@ -1066,11 +1066,11 @@ describe('the writing half of the driver: the record lock and the default landin
     const project = join(root, 'packages', 'app');
     mkdirSync(project, { recursive: true });
     await open(project).ledger.init();
-    const oursText = ideasSide(nodeA, '甲侧新节点');
+    const oursText = ideasSide(nodeA, 'new node on the A side');
     const paths = laySides(root, {
       base: JSON.stringify({ nodes: {} }, null, 2),
       ours: oursText,
-      theirs: ideasSide(nodeB, '乙侧新节点'),
+      theirs: ideasSide(nodeB, 'new node on the B side'),
     });
     const before = process.cwd();
     process.chdir(root);
@@ -1095,11 +1095,11 @@ describe('the writing half of the driver: the record lock and the default landin
     // no %P comes in, so only the walk up can place the record tree -- the branch the "nothing
     // found" case below does not reach.
     await open(root).ledger.init();
-    const oursText = ideasSide(nodeA, '甲侧新节点');
+    const oursText = ideasSide(nodeA, 'new node on the A side');
     const paths = laySides(root, {
       base: JSON.stringify({ nodes: {} }, null, 2),
       ours: oursText,
-      theirs: ideasSide(nodeB, '乙侧新节点'),
+      theirs: ideasSide(nodeB, 'new node on the B side'),
     });
     const below = join(root, 'notes');
     mkdirSync(below, { recursive: true });
@@ -1131,10 +1131,10 @@ describe('the writing half of the driver: the record lock and the default landin
         theirs: join(sides, 'theirs'),
       };
       const base = JSON.stringify({ nodes: {} }, null, 2);
-      const oursText = ideasSide(nodeA, '甲侧新节点');
+      const oursText = ideasSide(nodeA, 'new node on the A side');
       writeFileSync(paths.base, base);
       writeFileSync(paths.ours, oursText);
-      writeFileSync(paths.theirs, ideasSide(nodeB, '乙侧新节点'));
+      writeFileSync(paths.theirs, ideasSide(nodeB, 'new node on the B side'));
       const before = process.cwd();
       process.chdir(bare);
       let code = -1;
@@ -1174,10 +1174,10 @@ describe('the writing half of the driver: the record lock and the default landin
         ours: join(sides, 'ours'),
         theirs: join(sides, 'theirs'),
       };
-      const oursText = ideasSide(nodeA, '甲侧新节点');
+      const oursText = ideasSide(nodeA, 'new node on the A side');
       writeFileSync(paths.base, JSON.stringify({ nodes: {} }, null, 2));
       writeFileSync(paths.ours, oursText);
-      writeFileSync(paths.theirs, ideasSide(nodeB, '乙侧新节点'));
+      writeFileSync(paths.theirs, ideasSide(nodeB, 'new node on the B side'));
       const before = process.cwd();
       process.chdir(bare);
       let code = -1;

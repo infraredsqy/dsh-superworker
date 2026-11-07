@@ -99,7 +99,7 @@ export function apply(ctx: unknown): void {
    * inventing a second preference: when the service is absent (an older DSH, a stand-in context)
    * the port keeps serving the bundled table, so the panel still says real words. */
   const locale = createLocalePort()
-  injectAt(ctx, ['locale'], '语言那一层没接上', (owner) => {
+  injectAt(ctx, ['locale'], 'the locale layer did not attach', (owner) => {
     locale.attach((serviceAt(owner, 'locale') as LocaleService | undefined) ?? null)
   })
   const api: PathfinderPanelApi = {
@@ -119,7 +119,7 @@ export function apply(ctx: unknown): void {
     const provide = (ctx as { provide?: (key: string, value: unknown) => void } | null | undefined)?.provide
     if (typeof provide === 'function') provide.call(ctx, SERVICE_KEY, api)
   } catch (error) {
-    report('面板这一格没装上去', error)
+    report('the panel seat did not mount', error)
   }
   registerSettingsSection(ctx, prefs, locale)
   /* The two seats' unmount hangs on the `effect` in `mount.ts`: this line only registers them. */

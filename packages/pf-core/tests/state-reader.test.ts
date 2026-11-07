@@ -61,7 +61,7 @@ function stateText(): string {
 describe('one reading of the lines table', () => {
   it("a node's settings read asks state.json once: the holder and the line record come from the same reading", async () => {
     const pf = open(root);
-    const node = (await pf.ledger.dag.add({ title: '甲' })).id;
+    const node = (await pf.ledger.dag.add({ title: 'A' })).id;
     await pf.ledger.cycles.create({ id: 'c1', tags: ['coding'] });
     await pf.ledger.cycles.hold('c1', node);
     const config = createConfigNamespace(root, { homeDir: home, declaredKnobs: DECLARED });
@@ -74,7 +74,7 @@ describe('one reading of the lines table', () => {
   });
 
   it('entries that are not line records are skipped by both readers, not crashed on by one of them', async () => {
-    const node = (await open(root).ledger.dag.add({ title: '乙' })).id;
+    const node = (await open(root).ledger.dag.add({ title: 'B' })).id;
     // A hand-edited table: a null, a bare string and an array around the one real line. None of the
     // three can be a line record, and the read side already keeps that kind of silence.
     writeFileSync(
@@ -109,7 +109,7 @@ describe('one reading of the lines table', () => {
   });
 
   it('a line record read back with the old bare-id claim list is still one line holding its node', async () => {
-    const node = (await open(root).ledger.dag.add({ title: '丙' })).id;
+    const node = (await open(root).ledger.dag.add({ title: 'C' })).id;
     writeFileSync(
       join(root, '.pf', 'state.json'),
       JSON.stringify({

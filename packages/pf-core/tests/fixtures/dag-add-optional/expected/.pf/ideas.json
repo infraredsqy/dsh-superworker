@@ -3,13 +3,13 @@
     "@node-a@": {
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "写作线的第一件",
+      "description": "first item on the writing line",
       "mode": "auto",
       "status": "todo",
       "tags": [
         "coding"
       ],
-      "title": "写作底稿",
+      "title": "writing draft",
       "updated_at": "@t1@"
     },
     "@node-b@": {
@@ -18,7 +18,7 @@
       "description": "",
       "mode": "checkpoint",
       "status": "todo",
-      "title": "复核校样",
+      "title": "review proof",
       "updated_at": "@t2@"
     },
     "@node-c@": {
@@ -31,7 +31,7 @@
         "art",
         "writing"
       ],
-      "title": "轻量小件",
+      "title": "light item",
       "updated_at": "@t4@",
       "weight": "light"
     },
@@ -43,7 +43,7 @@
       "description": "",
       "mode": "manual",
       "status": "todo",
-      "title": "汇总交付",
+      "title": "roll up and deliver",
       "updated_at": "@t5@"
     },
     "@node-e@": {
@@ -51,14 +51,14 @@
       "dependencies": [
         "@node-a@"
       ],
-      "description": "依赖与标签齐全的登记",
+      "description": "a registration with dependencies and tags",
       "mode": "manual",
       "status": "todo",
       "tags": [
         "coding",
         "review"
       ],
-      "title": "全链彩排",
+      "title": "full-chain rehearsal",
       "updated_at": "@t6@",
       "weight": "light"
     }

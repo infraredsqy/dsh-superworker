@@ -39,8 +39,8 @@ async function plantNodes(nodes: Record<string, unknown>): Promise<void> {
 
 describe('validate: the whole-graph check', () => {
   it('a clean graph is ok, with every status counted', async () => {
-    const a = await pf.ledger.dag.add({ title: '甲' });
-    const b = await pf.ledger.dag.add({ title: '乙' });
+    const a = await pf.ledger.dag.add({ title: 'A' });
+    const b = await pf.ledger.dag.add({ title: 'B' });
     await pf.ledger.dag.setStatus(b.id, 'completed');
     await pf.ledger.dag.setStatus(a.id, 'shelved');
     const report = await pf.ledger.dag.validate();
@@ -53,8 +53,8 @@ describe('validate: the whole-graph check', () => {
     const a = 'aaaaaaaa-1111-4111-8111-111111111111';
     const b = 'bbbbbbbb-2222-4222-8222-222222222222';
     await plantNodes({
-      [a]: nodeOf('甲', [b]),
-      [b]: nodeOf('乙', [a]),
+      [a]: nodeOf('A', [b]),
+      [b]: nodeOf('B', [a]),
     });
     const report = await pf.ledger.dag.validate();
     expect(report.ok).toBe(false);
@@ -68,7 +68,7 @@ describe('validate: the whole-graph check', () => {
   it('each dangling reference reports FAIL, naming both sides', async () => {
     const a = 'aaaaaaaa-1111-4111-8111-111111111111';
     const ghost = 'cccccccc-3333-4333-8333-333333333333';
-    await plantNodes({ [a]: nodeOf('甲', [ghost]) });
+    await plantNodes({ [a]: nodeOf('A', [ghost]) });
     const report = await pf.ledger.dag.validate();
     expect(report.ok).toBe(false);
     expect(report.problems).toEqual([
@@ -80,8 +80,8 @@ describe('validate: the whole-graph check', () => {
     const a = 'aaaaaaaa-1111-4111-8111-111111111111';
     const b = 'bbbbbbbb-2222-4222-8222-222222222222';
     await plantNodes({
-      [a]: nodeOf('甲', []),
-      [b]: { ...nodeOf('乙', [a, a]) },
+      [a]: nodeOf('A', []),
+      [b]: { ...nodeOf('B', [a, a]) },
     });
     const report = await pf.ledger.dag.validate();
     expect(report.ok).toBe(false);
@@ -95,9 +95,9 @@ describe('validate: the whole-graph check', () => {
     const b = 'bbbbbbbb-2222-4222-8222-222222222222';
     const iso = 'dddddddd-4444-4444-8444-444444444444';
     await plantNodes({
-      [a]: nodeOf('甲', [b]),
-      [b]: nodeOf('乙', []),
-      [iso]: nodeOf('孤岛', []),
+      [a]: nodeOf('A', [b]),
+      [b]: nodeOf('B', []),
+      [iso]: nodeOf('island', []),
     });
     const report = await pf.ledger.dag.validate();
     expect(report.ok).toBe(true);
@@ -111,8 +111,8 @@ describe('validate: the whole-graph check', () => {
     const b = 'bbbbbbbb-2222-4222-8222-222222222222';
     const ghost = 'cccccccc-3333-4333-8333-333333333333';
     await plantNodes({
-      [a]: nodeOf('甲', [b, ghost]),
-      [b]: nodeOf('乙', [a]),
+      [a]: nodeOf('A', [b, ghost]),
+      [b]: nodeOf('B', [a]),
     });
     const report = await pf.ledger.dag.validate();
     expect(report.problems).toHaveLength(2);
@@ -123,21 +123,21 @@ describe('validate: the whole-graph check', () => {
 
 describe('context: the transitive upstream and downstream closure', () => {
   it('a chain and a diamond: depth starts at 1 and each side follows its own edges', async () => {
-    const a = await pf.ledger.dag.add({ title: '地基' });
-    const b = await pf.ledger.dag.add({ title: '中层', depends_on: [a.id] });
-    const c = await pf.ledger.dag.add({ title: '顶层', depends_on: [b.id] });
-    const d = await pf.ledger.dag.add({ title: '旁支', depends_on: [a.id] });
+    const a = await pf.ledger.dag.add({ title: 'groundwork' });
+    const b = await pf.ledger.dag.add({ title: 'middle layer', depends_on: [a.id] });
+    const c = await pf.ledger.dag.add({ title: 'top layer', depends_on: [b.id] });
+    const d = await pf.ledger.dag.add({ title: 'side branch', depends_on: [a.id] });
 
     const up = await pf.ledger.dag.context(c.id);
     expect(up.upstream).toEqual([
-      { id: b.id, title: '中层', status: 'todo', depth: 1 },
-      { id: a.id, title: '地基', status: 'todo', depth: 2 },
+      { id: b.id, title: 'middle layer', status: 'todo', depth: 1 },
+      { id: a.id, title: 'groundwork', status: 'todo', depth: 2 },
     ]);
     expect(up.downstream).toEqual([]);
 
     const mid = await pf.ledger.dag.context(b.id);
-    expect(mid.upstream).toEqual([{ id: a.id, title: '地基', status: 'todo', depth: 1 }]);
-    expect(mid.downstream).toEqual([{ id: c.id, title: '顶层', status: 'todo', depth: 1 }]);
+    expect(mid.upstream).toEqual([{ id: a.id, title: 'groundwork', status: 'todo', depth: 1 }]);
+    expect(mid.downstream).toEqual([{ id: c.id, title: 'top layer', status: 'todo', depth: 1 }]);
 
     // Downstream de-queues breadth first: the first layer of dependents follows the on-disk order
     // of the reverse adjacency (sorted node id), the second layer is appended as it is found; depth
@@ -146,18 +146,18 @@ describe('context: the transitive upstream and downstream closure', () => {
     expect(base.upstream).toEqual([]);
     expect(base.downstream.map((entry) => entry.id)).toEqual([...[b.id, d.id].sort(), c.id]);
     expect(base.downstream.find((entry) => entry.id === b.id)).toEqual(
-      { id: b.id, title: '中层', status: 'todo', depth: 1 },
+      { id: b.id, title: 'middle layer', status: 'todo', depth: 1 },
     );
     expect(base.downstream.find((entry) => entry.id === c.id)).toEqual(
-      { id: c.id, title: '顶层', status: 'todo', depth: 2 },
+      { id: c.id, title: 'top layer', status: 'todo', depth: 2 },
     );
     expect(base.downstream.find((entry) => entry.id === d.id)).toEqual(
-      { id: d.id, title: '旁支', status: 'todo', depth: 1 },
+      { id: d.id, title: 'side branch', status: 'todo', depth: 1 },
     );
   });
 
   it('a dangling reference is listed as (unknown) and the closure does not blow up', async () => {
-    const a = await pf.ledger.dag.add({ title: '挂着悬边的' });
+    const a = await pf.ledger.dag.add({ title: 'dangling an edge' });
     const ghost = 'cccccccc-3333-4333-8333-333333333333';
     const data = JSON.parse(readFileSync(join(root, '.pf', 'ideas.json'), 'utf8')) as {
       nodes: Record<string, unknown>;
@@ -175,9 +175,9 @@ describe('context: the transitive upstream and downstream closure', () => {
 
 describe('list: the ordering rule and filtering', () => {
   it('importance times urgency: completed and shelved sink, and readiness and scores go only to nodes that can run', async () => {
-    const a = await pf.ledger.dag.add({ title: '地基' });
-    const b = await pf.ledger.dag.add({ title: '中层', depends_on: [a.id] });
-    const c = await pf.ledger.dag.add({ title: '顶层', depends_on: [a.id, b.id] });
+    const a = await pf.ledger.dag.add({ title: 'groundwork' });
+    const b = await pf.ledger.dag.add({ title: 'middle layer', depends_on: [a.id] });
+    const c = await pf.ledger.dag.add({ title: 'top layer', depends_on: [a.id, b.id] });
 
     const rows = await pf.ledger.dag.list();
     // More dependents means more important: the base (2) > the middle (1) > the top (0); scores exist only on runnable nodes.
@@ -215,9 +215,9 @@ describe('list: the ordering rule and filtering', () => {
   });
 
   it('ready, status, tags and limit each filter on their own; a tagged node is invisible to an outside scope', async () => {
-    const a = await pf.ledger.dag.add({ title: '编码活', tags: ['coding'] });
-    const b = await pf.ledger.dag.add({ title: '写作活', tags: ['writing'] });
-    const c = await pf.ledger.dag.add({ title: '无标签活' });
+    const a = await pf.ledger.dag.add({ title: 'coding work', tags: ['coding'] });
+    const b = await pf.ledger.dag.add({ title: 'writing work', tags: ['writing'] });
+    const c = await pf.ledger.dag.add({ title: 'untagged work' });
     await pf.ledger.dag.setStatus(c.id, 'completed');
 
     const ready = await pf.ledger.dag.list({ ready: true });
@@ -248,9 +248,9 @@ describe('list: the ordering rule and filtering', () => {
     const blanks = 'bbbbbbbb-2222-4222-8222-222222222222';
     const other = 'cccccccc-3333-4333-8333-333333333333';
     await plantNodes({
-      [padded]: { ...nodeOf('标签带空白', []), tags: [' coding'] },
-      [blanks]: { ...nodeOf('只有空白的标签', []), tags: ['  '] },
-      [other]: { ...nodeOf('别的范围', []), tags: ['writing'] },
+      [padded]: { ...nodeOf('tag with blanks', []), tags: [' coding'] },
+      [blanks]: { ...nodeOf('blank-only tags', []), tags: ['  '] },
+      [other]: { ...nodeOf('another scope', []), tags: ['writing'] },
     });
 
     const coding = await pf.ledger.dag.list({ tags: ['coding'] });
@@ -276,11 +276,11 @@ describe('list: the ordering rule and filtering', () => {
     const leafB = 'dddddddd-4444-4444-8444-444444444444';
     const alone = 'eeeeeeee-5555-4555-8555-555555555555';
     await plantNodes({
-      [base]: nodeOf('地基', []),
-      [middle]: nodeOf('中层', [base]),
-      [leafA]: nodeOf('顶层甲', [middle]),
-      [leafB]: nodeOf('顶层乙', [middle]),
-      [alone]: nodeOf('孤岛', []),
+      [base]: nodeOf('groundwork', []),
+      [middle]: nodeOf('middle layer', [base]),
+      [leafA]: nodeOf('top layer A', [middle]),
+      [leafB]: nodeOf('top layer B', [middle]),
+      [alone]: nodeOf('island', []),
     });
 
     const rows = await pf.ledger.dag.list();
@@ -295,8 +295,8 @@ describe('list: the ordering rule and filtering', () => {
   });
 
   it('the summary skeleton: tags and weight appear only when they really have content', async () => {
-    const plain = await pf.ledger.dag.add({ title: '素节点' });
-    const light = await pf.ledger.dag.add({ title: '轻节点', tags: ['art'], weight: 'light' });
+    const plain = await pf.ledger.dag.add({ title: 'bare node' });
+    const light = await pf.ledger.dag.add({ title: 'light node', tags: ['art'], weight: 'light' });
     const rows = await pf.ledger.dag.list();
     const plainRow = rows.find((row) => row.id === plain.id)!;
     const lightRow = rows.find((row) => row.id === light.id)!;
@@ -322,11 +322,11 @@ describe('ready: an absent status reads todo, in every reader', () => {
     const done = 'dddddddd-4444-4444-8444-444444444444'; // completed
     const child = 'eeeeeeee-5555-4555-8555-555555555555'; // waits on the status-less node
     await plantNodes({
-      [bare]: withoutStatus(nodeOf('无状态', [])),
-      [nulled]: { ...nodeOf('空状态', []), status: null },
-      [odd]: { ...nodeOf('未知状态词', []), status: 'waiting' },
-      [done]: { ...nodeOf('已完成', []), status: 'completed' },
-      [child]: nodeOf('等无状态的那格', [bare]),
+      [bare]: withoutStatus(nodeOf('no status', [])),
+      [nulled]: { ...nodeOf('empty status', []), status: null },
+      [odd]: { ...nodeOf('unknown status word', []), status: 'waiting' },
+      [done]: { ...nodeOf('already completed', []), status: 'completed' },
+      [child]: nodeOf('the one waiting on the statusless node', [bare]),
     });
 
     const rows = await pf.ledger.dag.list();
@@ -371,26 +371,26 @@ describe('ready: an absent status reads todo, in every reader', () => {
 
 describe('search: a regex over titles and descriptions', () => {
   it('title hits come first and get the full text; a single hit in a description gets an excerpt', async () => {
-    await pf.ledger.dag.add({ title: '登录页重做', description: '与登录无关的铺垫文字' });
-    await pf.ledger.dag.add({ title: '导航条', description: '把登录入口挪到右上角' });
+    await pf.ledger.dag.add({ title: 'login page rebuild', description: 'setup text unrelated to login' });
+    await pf.ledger.dag.add({ title: 'nav bar', description: 'move login to top right' });
     await pf.ledger.dag.add({
-      title: '页脚',
-      description: '先把导航梳理一遍，把次级入口收进抽屉，然后再把登录入口挪到右上角并保证一眼可见，' +
-        '注册入口次之，页脚保留备用通道以便排查问题',
+      title: 'footer',
+      description: 'go over the nav first and tuck the secondary entries into a drawer, then move the login entry to the top right where it is visible at a glance, ' +
+        'then the signup entry, the footer keeping a spare path for troubleshooting',
     });
 
-    const hits = await pf.ledger.dag.search('登录');
+    const hits = await pf.ledger.dag.search('login');
     expect(hits).toHaveLength(3);
     // Title hits come first and description-only hits after; inside each group the order follows the on-disk sort of node ids.
-    expect(hits.slice(0, 1).map((hit) => hit.title)).toEqual(['登录页重做']);
-    expect(hits.slice(1).map((hit) => hit.title).sort()).toEqual(['导航条', '页脚'].sort());
+    expect(hits.slice(0, 1).map((hit) => hit.title)).toEqual(['login page rebuild']);
+    expect(hits.slice(1).map((hit) => hit.title).sort()).toEqual(['nav bar', 'footer'].sort());
     // A title hit gives the full text.
-    expect(hits[0]!.description).toBe('与登录无关的铺垫文字');
+    expect(hits[0]!.description).toBe('setup text unrelated to login');
     const byTitle = new Map(hits.slice(1).map((hit) => [hit.title, hit]));
     // One hit in a short description: the window covers the whole text and the excerpt carries no ellipsis.
-    expect(byTitle.get('导航条')!.description).toBe('把登录入口挪到右上角');
+    expect(byTitle.get('nav bar')!.description).toBe('move login to top right');
     // One hit in a long description: twenty characters on each side of the first hit, and both trimmed ends get an ellipsis.
-    const footer = byTitle.get('页脚')!.description!;
+    const footer = byTitle.get('footer')!.description!;
     expect(footer.startsWith('...')).toBe(true);
     expect(footer.endsWith('...')).toBe(true);
     expect(footer.length).toBeLessThan(90);
@@ -398,25 +398,25 @@ describe('search: a regex over titles and descriptions', () => {
   });
 
   it('two or more hits in a description get the full text', async () => {
-    await pf.ledger.dag.add({ title: '纯描述的', description: '缓存失效是唯一难题，缓存击穿更难' });
-    const hits = await pf.ledger.dag.search('缓存');
+    await pf.ledger.dag.add({ title: 'description only', description: 'cache invalidation is the only hard problem; a cache stampede is harder' });
+    const hits = await pf.ledger.dag.search('cache');
     expect(hits).toHaveLength(1);
-    expect(hits[0]!.description).toBe('缓存失效是唯一难题，缓存击穿更难');
+    expect(hits[0]!.description).toBe('cache invalidation is the only hard problem; a cache stampede is harder');
   });
 
   it('activeOnly leaves out completed nodes; limit caps the result (5 by default)', async () => {
-    const done = await pf.ledger.dag.add({ title: '已完成的:alpha' });
+    const done = await pf.ledger.dag.add({ title: 'already completed:alpha' });
     await pf.ledger.dag.setStatus(done.id, 'completed');
-    await pf.ledger.dag.add({ title: '在册的:alpha' });
+    await pf.ledger.dag.add({ title: 'on record:alpha' });
 
     const all = await pf.ledger.dag.search('alpha');
     expect(all).toHaveLength(2);
     const active = await pf.ledger.dag.search('alpha', { activeOnly: true });
     expect(active).toHaveLength(1);
-    expect(active[0]!.title).toBe('在册的:alpha');
+    expect(active[0]!.title).toBe('on record:alpha');
 
     for (let index = 0; index < 6; index++) {
-      await pf.ledger.dag.add({ title: `批量${index}:needle` });
+      await pf.ledger.dag.add({ title: `batch${index}:needle` });
     }
     expect(await pf.ledger.dag.search('needle')).toHaveLength(5);
     expect(await pf.ledger.dag.search('needle', { limit: 0 })).toHaveLength(6);

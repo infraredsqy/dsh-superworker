@@ -113,7 +113,7 @@ export class PathfinderRecordsGateway implements PathfinderRecords {
       for (const name of Object.getOwnPropertyNames(proto)) {
         if (name === 'constructor' || registered.has(name)) continue
         if (typeof Reflect.get(proto, name) !== 'function') continue
-        throw new Error(`端点表漏登记：方法 ${name} 在类上，却没有挂进 REMOTE_METHODS，浏览器半身看不到它。`)
+        throw new Error(`the endpoint table is missing an entry: method ${name} is on the class but is not in REMOTE_METHODS, so the browser half cannot see it.`)
       }
     }
     this.typertRemote = bindTypertRemote(this, serviceKey)

@@ -172,7 +172,7 @@ describe('a process without an opener', () => {
     const closed: WordsIO = { ...io, openerAvailable: false };
     const refused = await answer(['dispatch', 'c1'], closed);
     expect(refused.code).toBe(2);
-    expect(refused.stderr).toContain('寻路中心');
+    expect(refused.stderr).toContain('Pathfinder Center');
     expect(existsSync(join(root, '.pf', 'meta', 'launch', 'c1', node, 'prompt.txt'))).toBe(false);
 
     await call(closed, ['handoff', 'c1', node, 'completed', '-s', 'done']);

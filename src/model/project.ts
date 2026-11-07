@@ -82,7 +82,7 @@ type NodeSeed = Omit<NodeFacts, 'openDependencies'>
 export function readProject(input: RecordsAtMoment): ProjectReading {
   const at = input.at
   if (!(at instanceof Date) || Number.isNaN(at.getTime())) {
-    throw new TypeError('读到哪一刻：进来的不是一个时刻')
+    throw new TypeError('read at: the input is not a moment')
   }
 
   const cut = input.cycles.map((cycle) => cutCycle(cycle, at))

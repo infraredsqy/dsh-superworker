@@ -54,7 +54,7 @@ Object.defineProperty(globalThis, 'localStorage', {
   writable: true,
 })
 
-test('字段表就是那几个键，出厂默认那几条与浏览器那侧逐项对得上', () => {
+test('the field table is exactly those keys, and the factory defaults line up item by item with the browser side', () => {
   assert.deepEqual(Object.keys(PANEL_PREF_DEFAULTS).sort(), Object.values(PANEL_PREF_FIELDS).sort())
   /* The words printed on the settings page and the panel: one entry per view. The table holds
    * KEYS, so what has to line up is the key set. */
@@ -64,8 +64,8 @@ test('字段表就是那几个键，出厂默认那几条与浏览器那侧逐�
    * print, and it is the lookup table in force that says it. */
   const t = createLocalePort().getSnapshot().t
   for (const entry of Object.values(VIEW_WORDS)) {
-    assert.equal(typeof t(entry), 'string', `${entry} 在随包的词典里没有对应的字`)
-    assert.notEqual(t(entry), entry, `${entry} 应当查得到一个词，不能把键本身画出来`)
+    assert.equal(typeof t(entry), 'string', `${entry} has no word in the bundled dictionary`)
+    assert.notEqual(t(entry), entry, `${entry} should resolve to a word, not draw the key itself`)
   }
 
   /* And the five views. */
@@ -82,7 +82,7 @@ test('字段表就是那几个键，出厂默认那几条与浏览器那侧逐�
   assert.notEqual(VIEW_WORDS.map, t(VIEW_WORDS.map))
 })
 
-test('一份写全的设置文档读成面板那几个值', () => {
+test('a fully written settings document reads as those panel values', () => {
   const prefs = prefsFromSection({
     sideWidth: 200,
     defaultTab: 'detail',
@@ -93,10 +93,10 @@ test('一份写全的设置文档读成面板那几个值', () => {
   assert.deepEqual(prefs, { sideWidth: 200, tab: 'detail', archived: true, otherStates: true, autoRelay: false })
 })
 
-test('那几节读不懂时各自退到出厂那一份，别的照读', () => {
+test('sections that cannot be read fall back to the factory ones, the rest read through', () => {
   assert.deepEqual(prefsFromSection(undefined), DEFAULT_PREFS)
   assert.deepEqual(prefsFromSection(null), DEFAULT_PREFS)
-  assert.deepEqual(prefsFromSection('不是一份文档'), DEFAULT_PREFS)
+  assert.deepEqual(prefsFromSection('not a document'), DEFAULT_PREFS)
   assert.deepEqual(prefsFromSection({}), DEFAULT_PREFS)
   /* Stored records may still hold words written by older versions: unrecognized ones each fall back, the rest read through. */
   assert.deepEqual(
@@ -116,7 +116,7 @@ test('那几节读不懂时各自退到出厂那一份，别的照读', () => {
   assert.deepEqual(prefsFromSection({ infoLevel: 'lean' }), DEFAULT_PREFS)
 })
 
-test('宽度收进上下限：越界的收回来，量不出来的用出厂那一个', () => {
+test('width clamps into its bounds: out of range comes back in, unmeasurable uses the factory one', () => {
   assert.equal(clampSide(SIDE_MIN - 1), SIDE_MIN)
   assert.equal(clampSide(SIDE_MAX + 1), SIDE_MAX)
   assert.equal(clampSide(SIDE_DEFAULT), SIDE_DEFAULT)
@@ -127,7 +127,7 @@ test('宽度收进上下限：越界的收回来，量不出来的用出厂那�
   assert.equal(prefsFromSection({ sideWidth: Number.POSITIVE_INFINITY }).sideWidth, SIDE_DEFAULT)
 })
 
-test('写回是一条顶层 set，路径就是字段表里那个字', () => {
+test('the write is one top-level set, its path the field table\'s own word', () => {
   assert.deepEqual(prefsWriteOp(PANEL_PREF_FIELDS.defaultTab, 'map'), {
     op: 'set',
     path: ['defaultTab'],
@@ -142,7 +142,7 @@ test('写回是一条顶层 set，路径就是字段表里那个字', () => {
   assert.notEqual(prefsWriteOp(PANEL_PREF_FIELDS.showArchived, true), prefsWriteOp(PANEL_PREF_FIELDS.showArchived, true))
 })
 
-test('设置服务还没到场：出厂那几条，写回不作数', async () => {
+test('the settings service has not arrived: the factory values, and the write does not count', async () => {
   const source = createPrefsSource()
   assert.deepEqual(source.getSnapshot(), {
     prefs: DEFAULT_PREFS,
@@ -154,7 +154,7 @@ test('设置服务还没到场：出厂那几条，写回不作数', async () =>
   assert.equal(await source.write(PANEL_PREF_FIELDS.defaultTab, 'detail'), false)
 })
 
-test('挂上表单之后读数就是那一节的值，修订号跟着来', () => {
+test('once the form is attached the reading is that section, revision and all', () => {
   const form = fakeForm({ sideWidth: 300, defaultTab: 'issue', showArchived: true })
   const source = createPrefsSource()
   source.attach(form)
@@ -165,7 +165,7 @@ test('挂上表单之后读数就是那一节的值，修订号跟着来', () =>
   assert.equal(snapshot.writable, true)
 })
 
-test('写回带的是读到的那一个修订号，第二次带最新那一个', async () => {
+test('the write carries the revision it read; the second carries the latest one', async () => {
   const form = fakeForm({})
   const source = createPrefsSource()
   source.attach(form)
@@ -185,7 +185,7 @@ test('写回带的是读到的那一个修订号，第二次带最新那一个',
   assert.equal(form.document().defaultTab, 'notes')
 })
 
-test('同一趟往返里的第二笔：头一笔带着过期修订号被拒，摘掉围栏再走一次就落定', async () => {
+test('the second write in one round trip: the first is refused with a stale revision, and without the fence it lands on the retry', async () => {
   const form = fakeForm({})
   const source = createPrefsSource()
   source.attach(form)
@@ -208,7 +208,7 @@ test('同一趟往返里的第二笔：头一笔带着过期修订号被拒，�
   assert.equal(source.getSnapshot().prefs.archived, true)
 })
 
-test('两笔都不作数时不静默：读数里摆出「被拒」这一事实，下一笔写成就把它收回', async () => {
+test('two attempts, neither accepted: not silent — the reading says refused, and the next successful write takes it back', async () => {
   const form = fakeForm({})
   const source = createPrefsSource()
   source.attach(form)
@@ -219,8 +219,8 @@ test('两笔都不作数时不静默：读数里摆出「被拒」这一事实�
   assert.equal(form.writes[1].expected, undefined)
   /* Two attempts, neither accepted: the reading says so. A fact, not a sentence — which words say
    * it is the panel's business, because the language is the reader's. */
-  assert.equal(source.getSnapshot().refused, true, '两笔都不作数这件事要摆进读数里，不能静默')
-  assert.equal(source.getSnapshot().failure, undefined, '读数里不再摆句子，只摆「被拒」这个事实')
+  assert.equal(source.getSnapshot().refused, true, 'two failed attempts must show in the reading, not stay silent')
+  assert.equal(source.getSnapshot().failure, undefined, 'the reading carries the fact of refusal, not a sentence')
 
   /* A successful write clears it: the fact is about "the previous write did not land". */
   form.refuse(false)
@@ -228,7 +228,7 @@ test('两笔都不作数时不静默：读数里摆出「被拒」这一事实�
   assert.equal(source.getSnapshot().refused, false)
 })
 
-test('接上设置表单那一刻扫掉旧版那四个键，别人的键不动', () => {
+test('attaching the settings form sweeps away the four legacy keys, other keys stay', () => {
   const held = new Set([...LEGACY_PREF_KEYS, 'somebody-else.key'])
   const storage = {
     keys: () => [...held],
@@ -246,10 +246,10 @@ test('接上设置表单那一刻扫掉旧版那四个键，别人的键不动',
   }
 })
 
-test('本地存储不可用时偏好清理安静算了：那条口子照常挂得上', () => {
+test('when local storage is unavailable the prefs clean-up gives up quietly: the seam still attaches', () => {
   const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
   Object.defineProperty(globalThis, 'localStorage', {
-    value: { removeItem() { throw new Error('这个环境不让删') } },
+    value: { removeItem() { throw new Error('this environment does not allow deletes') } },
     configurable: true,
     writable: true,
   })
@@ -266,7 +266,7 @@ test('本地存储不可用时偏好清理安静算了：那条口子照常挂�
   }
 })
 
-test('别处翻了一行：订阅者当场收到新读数', () => {
+test('a row flipped elsewhere: subscribers get the new reading at once', () => {
   const form = fakeForm({})
   const source = createPrefsSource()
   let rounds = 0
@@ -286,7 +286,7 @@ test('别处翻了一行：订阅者当场收到新读数', () => {
   assert.equal(rounds, before)
 })
 
-test('表单换一份、或收回去：读数跟着换，收回去就回到出厂那几条', () => {
+test('a form swapped or taken back: the reading follows, and taking it back returns to the factory values', () => {
   const first = fakeForm({ defaultTab: 'detail' })
   const second = fakeForm({ defaultTab: 'notes', showOtherStates: true })
   const source = createPrefsSource()
@@ -332,17 +332,17 @@ function fakeSchemastery() {
   }
 }
 
-test('宿主那份 schema：四个字段都在，个个标了 volatile', () => {
+test('the host schema: all four fields are there, each marked volatile', () => {
   const z = fakeSchemastery()
   const schema = buildConfig(z)
   assert.deepEqual(Object.keys(schema.dict), Object.values(PANEL_PREF_FIELDS))
   /* Asked one by one: a field missing the volatile mark never appears on the settings page, and the page raises no error either. */
   for (const [name, node] of Object.entries(schema.dict)) {
-    assert.ok(node.marks.includes('volatile'), `${name} 那一个字段漏标了 volatile`)
+    assert.ok(node.marks.includes('volatile'), `${name} is missing its volatile mark`)
   }
 })
 
-test('宿主那份 schema：字段的种类、出厂默认与上下限就是字段表里那几个数', () => {
+test('the host schema: kinds, factory defaults and bounds are the field table\'s own numbers', () => {
   const z = fakeSchemastery()
   const dict = buildConfig(z).dict
   const read = (name) => {
@@ -379,8 +379,8 @@ test('宿主那份 schema：字段的种类、出厂默认与上下限就是字�
   assert.equal(PANEL_PREF_DEFAULTS.autoRelay, true)
 })
 
-test('prefs 不再带 POLICY_KEYS：策略键在面板这一侧没有第二份清单', async () => {
+test('prefs no longer carries POLICY_KEYS: no second policy-key list on the panel side', async () => {
   const prefs = await import('../src/client/prefs.ts')
 
-  assert.equal(prefs.POLICY_KEYS, undefined, '面板不另立一份策略键清单：可写与否由工具自己判')
+  assert.equal(prefs.POLICY_KEYS, undefined, 'the panel keeps no policy-key list of its own: whether a key is writable is the tool\'s call')
 })

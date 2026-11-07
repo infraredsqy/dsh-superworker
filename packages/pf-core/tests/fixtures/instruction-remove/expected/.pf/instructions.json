@@ -2,7 +2,7 @@
   "instructions": [
     {
       "id": "i-0002",
-      "text": "留下的第二条",
+      "text": "the second one left behind",
       "scope": "global",
       "target": "stage",
       "state": "live",

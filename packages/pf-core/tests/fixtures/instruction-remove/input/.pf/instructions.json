@@ -2,7 +2,7 @@
   "instructions": [
     {
       "id": "i-0001",
-      "text": "要摘走的第一条",
+      "text": "the first one to take away",
       "scope": "global",
       "target": "stage",
       "state": "live",
@@ -15,7 +15,7 @@
     },
     {
       "id": "i-0002",
-      "text": "留下的第二条",
+      "text": "the second one left behind",
       "scope": "global",
       "target": "stage",
       "state": "live",

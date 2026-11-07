@@ -1,19 +1,19 @@
 {
   "id": "@node-a@",
-  "title": "甲",
+  "title": "A",
   "status": "todo",
   "mode": "checkpoint",
-  "description": "甲的说明",
+  "description": "the note on A",
   "depends_on": [
     {
       "id": "@node-b@",
-      "title": "乙"
+      "title": "B"
     }
   ],
   "depended_by": [
     {
       "id": "@node-c@",
-      "title": "丙"
+      "title": "C"
     }
   ],
   "ready": true,

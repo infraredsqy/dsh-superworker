@@ -332,7 +332,7 @@ record.write = {
 process.stdout.write(JSON.stringify(record) + '\\n')
 `
 
-test('发布形状无 bin/：PATH 上没有 pf 时整条管线照跑，空项目先答词索引', { skip }, () => {
+test('Release shape with no bin/: with no `pf` on PATH the whole pipeline still runs, and an empty project answers the word index first', { skip }, () => {
   /* A stale host bundle is the one failure the rest of this case cannot see: the assembled tree copies
    * whatever `lib/host/index.js` already is, so a write path that still named a command could hide
    * behind a bundle built before that change. The bundle must therefore be newer than every source it
