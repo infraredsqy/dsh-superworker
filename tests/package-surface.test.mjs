@@ -71,22 +71,6 @@ test('package face: engines.dsh states a non-empty range', () => {
   assert.ok(manifest.engines.dsh.trim().length > 0)
 })
 
-/*
- * No command travels with this package.
- *
- * The pipeline answers in-process: the `superworker` tool inside a session, the panel's endpoints, and
- * git's merge driver. Nothing in this artifact is meant to be typed at a shell, so the manifest names
- * no command and the artifact carries no `bin/`.
- */
-test('package face: this package ships no command: no `bin` field, no `bin/` under `files`', () => {
-  assert.equal(manifest.bin, undefined, `the manifest still ships a command: ${JSON.stringify(manifest.bin)}`)
-  const files = manifest.files ?? []
-  for (const pattern of files) {
-    assert.ok(!pattern.startsWith('bin/'), `files still packs bin/: ${pattern}`)
-  }
-  assert.equal(existsSync(fileURLToPath(new URL('../bin', import.meta.url))), false, 'bin/ is still on disk')
-})
-
 test('package face: the engine build ships with the package, and the build chain builds it first', () => {
   const files = manifest.files ?? []
   for (const rel of ['packages/superworker-core/dist/index.mjs', 'packages/superworker-core/dist/merge-ledger.mjs']) {

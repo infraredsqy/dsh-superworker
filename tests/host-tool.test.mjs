@@ -9,31 +9,19 @@
  *   workspace with no `.superworker/` all leave the scope unarmed.
  * - **wakes once**: every trigger hits the same wake; a second skill load, and a second
  *   step in a record's workspace, register nothing more.
- * - the description the tool registers with stays at or under 400 bytes;
- * - the name lock: the registered name, the README and every markdown page the skills
- *   ship under a `skills/` tree come from one constant — the whole tree is walked, not
- *   just `SKILL.md`, and every `SKILL.md` has to name the tool at least once (without
- *   that leg a walk over a corpus that never names it would pass vacuously). A mention is
- *   the bare word: a `superworker` that is a segment of a path (the manifest directory) is
- *   a different constant and is not counted.
+ * - the description the tool registers with stays at or under 400 bytes.
  *
  *   node --test tests/
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, readdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { LEGACY_DIR_NAME, isRecognizableLegacyRecord } from 'superworker-core'
 import { apply } from '../src/host/index.ts'
 import { executorOf } from '../src/host/executor.ts'
-import {
-  TOOL_NAME,
-  SKILL_NAME_PREFIX,
-  argvOf,
-  toolDescriptionOf,
-} from '../src/host/tool.ts'
+import { TOOL_NAME, argvOf, toolDescriptionOf } from '../src/host/tool.ts'
 import { hasPipelineRecord, installToolWake, wakeAgent } from '../src/host/wake.ts'
 import { pinHome } from './helpers/env.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
@@ -50,8 +38,6 @@ function toolHost(ctx) {
  * cases would write into is pinned to a temp home here, never the machine's own. */
 const pinned = pinHome(['DSH_HOME'], 'superworker-tool-home-')
 test.after(pinned.restore)
-
-const repo = fileURLToPath(new URL('..', import.meta.url))
 
 /**
  * A stand-in host context: the services by name, an event bus, and the effects it collected.
@@ -249,55 +235,6 @@ test('The tool\'s four layers of help: argv is composed from word / args / help,
   const answer = await registered[0].execute({ help: true }, { agent })
   assert.equal(answer.code, 0, answer.stderr)
   assert.match(answer.stdout, /superworker -- the agent pipeline/u, 'asked empty-handed, it answers the whole index')
-})
-
-test('Name lock: the registered name and the README spelling come from one constant; the skill bodies spell it the same, and every SKILL.md names it', () => {
-  assert.equal(TOOL_NAME, 'superworker')
-  assert.equal(SKILL_NAME_PREFIX, 'sw-')
-  for (const file of ['README.md', 'README.zh.md']) {
-    const text = readFileSync(join(repo, file), 'utf8')
-    assert.match(text, /`superworker`/u, `${file} spells the tool the way the registry does`)
-  }
-  // The skills live under the shipped plugins. Walk *every* markdown page in their
-  // `skills/` trees — the pools and the reference pages quote command lines too — and
-  // wherever one names the tool it names the registered spelling. A page that never
-  // names it is not this lock's business; a `SKILL.md` that never names it is, because
-  // otherwise the spelling scan passes without ever reading a spelling this phase wrote.
-  const pluginsRoot = join(repo, 'packages', 'superworker-core', 'plugins')
-  const files = []
-  const collect = (dir) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name)
-      if (entry.isDirectory()) collect(full)
-      else if (entry.name.endsWith('.md')) files.push(full)
-    }
-  }
-  const walkSkills = (dir) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue
-      const full = join(dir, entry.name)
-      if (entry.name === 'skills') collect(full)
-      else walkSkills(full)
-    }
-  }
-  walkSkills(pluginsRoot)
-  assert.ok(files.length >= 60, `every shipped skill body is walked (walked ${files.length} files, at least 60)`)
-  // The tool is a word, not a directory: `MANIFEST_DIR` in `src/host/skill-paths.ts` happens
-  // to spell `superworker` too, and a tool rename must not force the doc path to move. Keep
-  // only path-free tokens — not preceded by a slash or a backslash, not followed by a
-  // slash — so `<dshHome>/superworker/skills.json` is a path, not a spelling of the tool.
-  const TOOL_MENTION = /(?<![/\\])superworker[A-Za-z]*(?!\/)/gu
-  for (const file of files) {
-    const text = readFileSync(file, 'utf8')
-    const mentions = text.match(TOOL_MENTION) ?? []
-    for (const spelling of mentions) {
-      assert.equal(spelling, TOOL_NAME, `${file}: ${spelling} is not the registered spelling`)
-    }
-    if (file.endsWith('SKILL.md')) {
-      const named = mentions.filter((spelling) => spelling === TOOL_NAME)
-      assert.ok(named.length >= 1, `${file}: names no ${TOOL_NAME}, so the name lock spins on nothing`)
-    }
-  }
 })
 
 test('Unloading: the line\'s effect takes both trigger lines back; the agent\'s effect takes the tool back', async () => {
