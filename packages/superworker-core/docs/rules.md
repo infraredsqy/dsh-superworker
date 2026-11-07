@@ -66,4 +66,4 @@
 
 - `pnpm typecheck`——tsc --noEmit
 - `pnpm test`——vitest run
-- `pnpm build`——tsdown；Node 22+，用 pnpm 装依赖
+- `pnpm build`——tsdown；Node 26+，用 pnpm 装依赖

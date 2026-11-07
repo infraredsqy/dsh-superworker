@@ -85,7 +85,7 @@ describe('src content guard', () => {
 
   it('src imports only relative paths and node: built-ins: zero outside dependencies', () => {
     // The base layer (shared record IO) needs disk IO to read and write records: node: built-ins
-    // are part of the Node 22+ platform surface and fall under "zero runtime dependencies"; what is
+    // are part of the Node 26+ platform surface and fall under "zero runtime dependencies"; what is
     // blocked here is outside packages -- anything without a ./ ../ or node: prefix counts.
     const offenders: string[] = [];
     for (const file of srcFiles) {

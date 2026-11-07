@@ -5,7 +5,7 @@
   "type": "module",
   "description": "The superworker engine behind the pipeline record: frozen record types, the word table and the settings chain, plus the one process entry point it ships, the sw-merge-ledger merge driver. Pure TypeScript, zero runtime dependencies.",
   "engines": {
-    "node": ">=22"
+    "node": ">=26"
   },
   "exports": {
     ".": {
