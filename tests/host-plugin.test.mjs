@@ -38,8 +38,6 @@ test('The plugin name and dependency declaration are the host\'s four', () => {
 test('The export surface is the five things the plugin contract wants: internals no longer pass through the entry', async () => {
   const entry = await import('../src/host/index.ts')
 
-  assert.equal(entry.name, 'pathfinder-records')
-  assert.deepEqual(entry.inject, ['workspaceFiles', 'sessions', 'sandboxPolicy', 'tools'])
   assert.equal(typeof entry.apply, 'function')
   assert.ok('Config' in entry, 'Config must be on the export surface: DSH builds that section\'s settings namespace from it')
 

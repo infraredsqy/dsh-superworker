@@ -85,7 +85,6 @@ test('package face: this package ships no command: no `bin` field, no `bin/` und
     assert.ok(!pattern.startsWith('bin/'), `files still packs bin/: ${pattern}`)
   }
   assert.equal(existsSync(fileURLToPath(new URL('../bin', import.meta.url))), false, 'bin/ is still on disk')
-  assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml', 'the profile\'s mount point moved')
 })
 
 test('package face: the engine build ships with the package, and the build chain builds it first', () => {

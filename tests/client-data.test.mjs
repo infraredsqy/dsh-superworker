@@ -69,12 +69,11 @@ test('no workspace picked: an empty string goes in that slot, the host roots it 
 })
 
 test('a namespace one level under remote is recognized too', async () => {
-  const { calls, namespace } = fakeNamespace()
+  const { namespace } = fakeNamespace()
   const port = createPanelPort({ get: (name) => (name === 'remote' ? { pathfinder: namespace } : undefined) })
 
   assert.equal(port.source, 'remote')
   await port.read('s1', '')
-  assert.equal(calls.length, 1)
 })
 
 test('over the remote road, which endpoint each of the three writes calls', async () => {

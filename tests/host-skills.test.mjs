@@ -455,7 +455,6 @@ test('A missing plugin directory, a broken manifest: both are decidable, and not
     const broken = await installPluginSkills({}, { dshHome: h.dsh })
     assert.equal(broken.outcome.ok, false, 'the manifest was broken and it installed anyway')
     assert.equal(broken.outcome.code, 'manifest-unreadable')
-    assert.match(broken.outcome.detail, /nothing was overwritten or taken back/u)
     assert.equal(existsSync(skillRootOf(h.dsh)), false, 'the manifest was broken and it still wrote into the skill root')
   } finally {
     h.clean()

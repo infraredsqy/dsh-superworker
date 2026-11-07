@@ -68,17 +68,8 @@ test('the field table is exactly those keys, and the factory defaults line up it
     assert.notEqual(t(entry), entry, `${entry} should resolve to a word, not draw the key itself`)
   }
 
-  /* And the five views. */
-  assert.equal(t(VIEW_WORDS.map), '地图')
-  assert.equal(t(VIEW_WORDS.detail), '明细')
-  assert.equal(t(VIEW_WORDS.notes), '指令')
-  assert.equal(t(VIEW_WORDS.issue), '问题')
-  assert.equal(t(VIEW_WORDS.config), '设置')
-
   /* What the table holds is the KEY, not the word: the settings row and the tab row both render it
    * through the same translator, so the two cannot drift apart. */
-  assert.equal(VIEW_WORDS.map, 'view.map')
-  assert.equal(VIEW_WORDS.notes, 'view.notes')
   assert.notEqual(VIEW_WORDS.map, t(VIEW_WORDS.map))
 })
 

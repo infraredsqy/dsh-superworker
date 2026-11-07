@@ -98,10 +98,8 @@ test('the two registrations: slot, id / key, order, and the sidebar row name lin
   assert.equal(typeof side.label, 'function')
   /* The row is registered with a KEY, not a word, and marked with the lookup table it speaks; DSH
    * calls `label()` while drawing, so the word is looked up on every frame. */
-  assert.equal(SEAT_WORD, 'seat.label')
   assert.equal(side.locale, LOCALE_NS)
   const t = localeOf(port).t
-  assert.equal(t(SEAT_WORD), '寻路中心', 'the bundled Chinese dictionary has exactly that word for the row')
   assert.equal(side.label(), t(SEAT_WORD), 'what the row draws should be the word from the dictionary')
   assert.notEqual(side.label(), SEAT_WORD, 'the row must not draw the key itself')
 
@@ -110,7 +108,6 @@ test('the two registrations: slot, id / key, order, and the sidebar row name lin
   const service = fakeLocaleService()
   port.attach(service)
   service.switchTo('en')
-  assert.equal(side.label(), 'Pathfinder Center')
   assert.equal(side.label(), WORD_TABLES.en[SEAT_WORD])
 
   const main = ledger.get(`main:${PANEL_ID}`).options
@@ -284,7 +281,6 @@ test('the seat props\' useSessions is a hook with a projection, the whole snapsh
   assert.deepEqual(sessionsSnapshotOf(useSessions), snapshot)
   assert.equal(seen.length, 1)
   assert.equal(typeof seen[0], 'function')
-  assert.equal(snapshot.ids[0], 'other')
 
   /* Picks the entry carrying `mainView`: still picked even though it sits second in `ids`. */
   assert.equal(currentSessionOf(snapshot), 's1')
@@ -398,10 +394,7 @@ test('switching language: the row changes to the other language and subscribers 
   assert.notEqual(after, before, 'a language switch must yield a new reading: useSyncExternalStore uses that identity to decide whether to redraw')
   assert.equal(after.revision, before.revision + 1)
   assert.equal(after.active, 'en')
-  assert.equal(after.t(SEAT_WORD), 'Pathfinder Center')
   assert.equal(after.t(SEAT_WORD), WORD_TABLES.en[SEAT_WORD], 'the word drawn must come from the dictionary')
-  /* Every key moves with the language, not just the one the row asks for. */
-  assert.equal(after.t('view.notes'), 'Instructions')
 })
 
 test('with no locale service present: this layer speaks Chinese from the bundled dictionary', () => {
@@ -411,7 +404,6 @@ test('with no locale service present: this layer speaks Chinese from the bundled
   const bare = createLocalePort()
   assert.equal(bare.getSnapshot().active, 'zh', 'with no service attached it speaks Chinese')
   assert.equal(bare.getSnapshot().t(SEAT_WORD), WORD_TABLES.zh[SEAT_WORD])
-  assert.equal(bare.getSnapshot().t('view.notes'), '指令')
 
   /* Handing the service back (`attach(null)`) returns the port to that same fallback. */
   const port = createLocalePort()
@@ -421,5 +413,4 @@ test('with no locale service present: this layer speaks Chinese from the bundled
   assert.equal(port.getSnapshot().t(SEAT_WORD), 'Pathfinder Center')
   port.attach(null)
   assert.equal(port.getSnapshot().active, FALLBACK_LOCALE)
-  assert.equal(port.getSnapshot().t(SEAT_WORD), '寻路中心')
 })

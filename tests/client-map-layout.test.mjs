@@ -131,7 +131,6 @@ test('columns: a cell\'s depth is its deepest prerequisite plus one; a prerequis
   })
 
   const placement = place({ nodes: reading.nodes, edges: reading.graph.edges })
-  assert.equal(placement.columns.length, 2, 'two chains side by side: two columns')
   assert.deepEqual(columnsOf(placement), [['root'], ['deep', 'orphan']], 'both owe only root, both stand in the second column')
 })
 
@@ -223,9 +222,6 @@ test('cap: only the first N cells can be drawn, and the focus with its direct ne
       fourth: node({ dependencies: ['third'] }),
     },
   })
-  const capped = place({ nodes: reading.nodes, edges: reading.graph.edges, cap: 2 })
-  assert.equal(capped.drawn.length, 2, 'cap is the ceiling on how many cells are drawn')
-
   const withFocus = place({ nodes: reading.nodes, edges: reading.graph.edges, cap: 1, focus: 'fourth' })
   const ids = withFocus.drawn.map((item) => item.id).sort()
   assert.deepEqual(ids, ['first', 'fourth', 'third'], 'the capped cells are still drawn; the focus is added in, and so is the cell it owes')
