@@ -71,6 +71,13 @@ The repository map and ground rules live in [AGENTS.md](AGENTS.md). Read
 [docs/design-principles.md](docs/design-principles.md) before touching the UI, and
 [docs/publish.md](docs/publish.md) before shipping a version.
 
+## Contact
+
+Support for running this in your own pipeline, feedback on how it went, and commercial questions
+go to [infraredsaw@gmail.com](mailto:infraredsaw@gmail.com). Bugs and feature requests are better
+filed as [issues](https://github.com/infraredsqy/dsh-superworker/issues) — that way the next person
+who hits the same wall finds them.
+
 ## License
 
 [MIT](LICENSE)

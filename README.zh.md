@@ -58,6 +58,12 @@ npm pack                  # 打出分发件
 [docs/design-principles.md](docs/design-principles.md)，发一版前看
 [docs/publish.md](docs/publish.md)。
 
+## 联系
+
+在你自己那条流水线上用它的技术支持、用后想说的话、以及商务上的问题，发到
+[infraredsaw@gmail.com](mailto:infraredsaw@gmail.com)。缺陷与功能请求更适合开一条
+[issue](https://github.com/infraredsqy/dsh-superworker/issues)：下一个人撞上同一堵墙时找得到它。
+
 ## License
 
 [MIT](LICENSE)
