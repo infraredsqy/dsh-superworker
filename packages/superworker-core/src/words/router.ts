@@ -43,6 +43,7 @@ const SELF_VERBS = CORE_SELF_VERBS;
 const HANDLERS: Record<string, VerbHandler> = {
   init: verbs.initVerb,
   register: verbs.registerVerb,
+  migrate: verbs.migrateVerb,
   plan: planVerb,
   hold: verbs.holdVerb,
   settle: settleVerb,

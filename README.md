@@ -6,13 +6,13 @@ English | [中文](README.zh.md)
 that renders a `.superworker/` pipeline record as a panel in the DSH Web UI.
 
 The host half reads the record (`.superworker/`) of the current session's workspace and serves it behind a
-gateway; the browser half draws it as the **Superworker Center** panel in the sidebar. Everything on screen —
+gateway; the browser half draws it as the **Superworker** panel in the sidebar. Everything on screen —
 instructions, node details, the map of who owes whom, the issue pool — comes from that record, and
 writes from the panel go back to the same place.
 
 In a session the pipeline is also reachable as the agent-facing `superworker` tool: it answers the
 pipeline's words in place. A session whose workspace holds a `.superworker/` record sees the tool from its
-first step; anywhere else it appears only after one of the `superworker-*` skills loads — until then that
+first step; anywhere else it appears only after one of the `sw-*` skills loads — until then that
 session's request header stays exactly as it would be without this plugin.
 
 ## Status
@@ -46,9 +46,9 @@ ignored. The version policy and the third route (installing from git) live in
 
 ## What you get
 
-- a **Superworker Center** entry in the Web UI sidebar: views over the record — the map, details,
+- a **Superworker** entry in the Web UI sidebar: views over the record — the map, details,
   instructions, the issue pool, and the panel's own settings
-- a **Superworker Settings** section in the DSH settings: whether archived instructions show,
+- a **Superworker settings** section in the DSH settings: whether archived instructions show,
   whether closed issues show
 - to verify an install: `dsh --profile <name> --dump-config`, and look for the
   `# == dsh-superworker` section

@@ -1,7 +1,8 @@
 /* The agent-facing `superworker` tool and its wake: the tool exists for the agents whose
- * workspace holds a `.superworker/` record, and for those whose session loads a pipeline skill —
- * by the `skill` tool's call result or by a user `/superworker-*` invocation — never for anyone
- * else, and only once per agent.
+ * workspace holds a `.superworker/` record (or a recognizable record directory under the
+ * old name, which is what keeps `migrate` reachable), and for those whose session loads a
+ * pipeline skill — by the `skill` tool's call result or by a user `/sw-*` invocation —
+ * never for anyone else, and only once per agent.
  *
  * - **never resident**: an unrelated agent's scope stays without the tool; a settled call of a
  *   tool that is not `skill`, a failed skill load, a `/some-skill` invocation, and a
@@ -20,14 +21,15 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, readdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { LEGACY_DIR_NAME, isRecognizableLegacyRecord } from 'superworker-core'
 import { apply } from '../src/host/index.ts'
 import { executorOf } from '../src/host/executor.ts'
 import {
-  SUPERWORKER_TOOL_NAME,
+  TOOL_NAME,
   SKILL_NAME_PREFIX,
   argvOf,
   toolDescriptionOf,
@@ -123,7 +125,7 @@ test('Wakes once: the skill tool loads a skill, and the next round this agent\'s
 
   await firePostExecute(events, { name: 'skill', agent }, { isError: false })
   assert.equal(registered.length, 1, 'registered once')
-  assert.equal(registered[0].name, SUPERWORKER_TOOL_NAME)
+  assert.equal(registered[0].name, TOOL_NAME)
 
   await firePostExecute(events, { name: 'skill', agent }, { isError: false })
   await firePreStep(events, { agent }, [{ source: { kind: 'skill-invocation', name: 'sw-route' } }])
@@ -140,7 +142,7 @@ test('Wakes once: a user typing /sw-route goes through the same wake, the two li
     { source: { kind: 'skill-invocation', name: 'sw-conduct' } },
   ])
   assert.equal(registered.length, 1)
-  assert.equal(registered[0].name, SUPERWORKER_TOOL_NAME)
+  assert.equal(registered[0].name, TOOL_NAME)
 })
 
 test('Fact wake: the workspace has .superworker, so the first step request carries the tool, no skill needed', async () => {
@@ -153,7 +155,7 @@ test('Fact wake: the workspace has .superworker, so the first step request carri
 
     await firePreStep(events, { agent }, [])
     assert.equal(registered.length, 1, 'the workspace has a record, armed on the first step')
-    assert.equal(registered[0].name, SUPERWORKER_TOOL_NAME)
+    assert.equal(registered[0].name, TOOL_NAME)
 
     await firePreStep(events, { agent }, [])
     assert.equal(registered.length, 1, 'one copy per agent')
@@ -182,13 +184,42 @@ test('Fact wake: no .superworker in the workspace, no arming; once the record ap
   }
 })
 
+test('Fact wake: only the old record directory, and only when the engine recognizes it — an unmigrated workspace still arms, a same-named stranger does not', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'superworker-workspace-'))
+  /* The old directory counts only when `init` laid it down — the same two marks every record
+   * directory carries — because that recognition is what makes `migrate` and `doctor` reachable
+   * in a workspace that has not moved yet: the tool is the only road to them. The control line
+   * ties the fixture to the engine's own recognition reading, so the day a third mark lands
+   * this case fails loudly here instead of arming on somebody else's directory. */
+  mkdirSync(join(root, LEGACY_DIR_NAME), { recursive: true })
+  try {
+    const { ctx, events } = context({ cwd: root })
+    apply(ctx)
+    const { agent, registered } = fakeAgent()
+
+    assert.equal(hasPipelineRecord(root), false, 'an unrecognized old directory is somebody else\'s: it counts as nothing')
+    await firePreStep(events, { agent }, [])
+    assert.equal(registered.length, 0, 'no recognizable record, no arming')
+
+    writeFileSync(join(root, LEGACY_DIR_NAME, '.gitignore'), '', 'utf8')
+    writeFileSync(join(root, LEGACY_DIR_NAME, '.gitattributes'), '', 'utf8')
+    assert.ok(isRecognizableLegacyRecord(root), 'the fixture is now one the engine recognizes')
+    assert.equal(hasPipelineRecord(root), true, 'the old directory alone is a fact that arms')
+    await firePreStep(events, { agent }, [])
+    assert.equal(registered.length, 1, 'an unmigrated workspace gets the tool, so it reaches migrate')
+    assert.equal(registered[0].name, TOOL_NAME)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('The tool\'s shape: name, description bytes, parameters and output are all the declared surface', () => {
   const { ctx } = context()
   const { agent, registered } = fakeAgent()
   wakeAgent(agent, toolHost(ctx))
 
   const tool = registered[0]
-  assert.equal(tool.name, SUPERWORKER_TOOL_NAME)
+  assert.equal(tool.name, TOOL_NAME)
   assert.deepEqual(Object.keys(tool.parameters.properties ?? {}), ['word', 'args', 'help'])
   assert.deepEqual(tool.parameters.required, undefined, 'no required parameters: word names are not enumerated')
   assert.deepEqual(Object.keys(tool.output.schema.properties ?? {}), ['code', 'stdout', 'stderr'])
@@ -221,8 +252,8 @@ test('The tool\'s four layers of help: argv is composed from word / args / help,
 })
 
 test('Name lock: the registered name and the README spelling come from one constant; the skill bodies spell it the same, and every SKILL.md names it', () => {
-  assert.equal(SUPERWORKER_TOOL_NAME, 'superworker')
-  assert.equal(SKILL_NAME_PREFIX, 'superworker-')
+  assert.equal(TOOL_NAME, 'superworker')
+  assert.equal(SKILL_NAME_PREFIX, 'sw-')
   for (const file of ['README.md', 'README.zh.md']) {
     const text = readFileSync(join(repo, file), 'utf8')
     assert.match(text, /`superworker`/u, `${file} spells the tool the way the registry does`)
@@ -260,11 +291,11 @@ test('Name lock: the registered name and the README spelling come from one const
     const text = readFileSync(file, 'utf8')
     const mentions = text.match(TOOL_MENTION) ?? []
     for (const spelling of mentions) {
-      assert.equal(spelling, SUPERWORKER_TOOL_NAME, `${file}: ${spelling} is not the registered spelling`)
+      assert.equal(spelling, TOOL_NAME, `${file}: ${spelling} is not the registered spelling`)
     }
     if (file.endsWith('SKILL.md')) {
-      const named = mentions.filter((spelling) => spelling === SUPERWORKER_TOOL_NAME)
-      assert.ok(named.length >= 1, `${file}: names no ${SUPERWORKER_TOOL_NAME}, so the name lock spins on nothing`)
+      const named = mentions.filter((spelling) => spelling === TOOL_NAME)
+      assert.ok(named.length >= 1, `${file}: names no ${TOOL_NAME}, so the name lock spins on nothing`)
     }
   }
 })

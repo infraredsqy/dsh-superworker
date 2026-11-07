@@ -43,10 +43,9 @@ import type { CyclePolicies, CycleRecord } from './types';
  * - Every verb takes an optional directory to work in. Left out, the handle's own project root is
  *   used; either way that directory has to hold a `.superworker` of its own — a directory that is not a superworker
  *   project root is refused outright, never guessed upward to a wider directory. A fork-mode node works
- *   in a worktree of its own; under the own-repo layout that checkout carries no `.superworker`, so the agent there
- *   is told the directory is not a superworker project instead of being handed the main tree's settings (under the
- *   in-repo layout the records travel with the checkout, so the verb answers from that worktree's own
- *   records). A relative path is resolved against the process's current directory.
+ *   in a worktree of its own, and that checkout carries no `.superworker` (the records stay out of every
+ *   repository), so the agent there is told the directory is not a superworker project instead of being handed
+ *   the main tree's settings. A relative path is resolved against the process's current directory.
  *
  * There are only four kinds: `number` (a positive numeric value), `integer` (a positive integer), `word` (a
  * word from a vocabulary), `switch` (on / off). The read side and the write side go through the same
@@ -455,10 +454,9 @@ function layerPointOf(at: ConfigLayer | undefined, verb: string): LayerPoint {
  * the caller noticing. A relative path is taken against the process's current directory.
  *
  * The handle's own root is a directory like any other here, and the same `.superworker` refusal applies to it: a
- * fork-mode node works in its own worktree; under the own-repo layout that checkout carries no `.superworker` of
- * its own, and the answer an agent gets there has to be "this is not a superworker project" — never the main
- * tree's settings read quietly from a wider layer (under the in-repo layout the records travel with the
- * checkout, so that worktree answers from its own copies).
+ * fork-mode node works in its own worktree, and that checkout carries no `.superworker` of
+ * its own (the records stay out of every repository), so the answer an agent gets there has to be "this is
+ * not a superworker project" — never the main tree's settings read quietly from a wider layer.
  */
 function rootOf(dir: string | undefined, fallback: string): string {
   let root: string;

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { warningsOf } from '../src/conductor';
-import { open, type Pf } from '../src/open';
+import { open, type Superworker } from '../src/open';
 import { recordPaths } from '../src/paths';
 import { offer } from '../plugins/issue/impl.mjs';
 
@@ -25,11 +25,11 @@ const CORPUS_CASE = fileURLToPath(new URL('./fixtures/plugin-issue-close-insert'
 
 interface Lab {
   root: string;
-  superworker: Pf;
+  superworker: Superworker;
 }
 
 let root: string;
-let superworker: Pf;
+let superworker: Superworker;
 
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'superworker-issue-close-'));

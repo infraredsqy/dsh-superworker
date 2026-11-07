@@ -34,7 +34,7 @@ disable-model-invocation: true
 | 方法 | spec 里的 `method: <技能名>` 一行；没写＝没有 | read `spec.md` | 这个节点这一趟谁跑、按哪个技能跑（见「方法」） |
 | 测试档与验证 | `full` / `minimal` | `config get test_tier` | 每步验什么、写不写测试（见「测试档与验证」） |
 | worktree 档 | `off` / `fork` / `reuse` | `config get worktree_mode` | 准备的 fork 与收尾的合回这两个步骤（见「并行：worktree」） |
-| 子 agent 上限 | 正整数 | `config get max_agents` | 派活的批怎么分（见 [`shared/sw/subagents.md`](shared/sw/subagents.md)） |
+| 子 agent 上限 | 正整数 | `config get max_agents` | 派活的批怎么分（见 [`shared/superworker/subagents.md`](shared/superworker/subagents.md)） |
 | 并行档 | 这是哪条线自己开的几个节点 | `cycle current` 的 `Policy:` 行 | 这一趟同时跑几个节点（见「并行：worktree」） |
 | 节点 tag | `writing` / `coding` / `art` | 图上，sw-route 落的笔 | 只影响这条线挑谁（本流程只读） |
 
@@ -105,7 +105,7 @@ tag 说清一个节点属于哪条线：`writing`（文案）、`coding`（代�
 - **线（cycle）**：`tags`（挑谁）、`when_shelved`、`parallel`（同时握几个节点、开几个会话）、两条维护阈值；写它们用 `cycle policy`，读它们用 `cycle current` 的 `Policy:` 行。线之间没有别的耦合：两条线并排跑，各自握各自的那几个节点
 - **节点**：mode、weight、tags、spec、报告集——随图与节点目录走，一个节点一处
 
-并发上限从外到内分三层：图上的依赖边（谁挡着谁）决定哪些节点**可以**并排；这条线的 `parallel`（`cycle current` 的 `Policy:` 行）决定这条线同时**握**几个节点；`config get max_agents`（见 [`shared/sw/subagents.md`](shared/sw/subagents.md)）决定这个会话同时**进行中**几个子 agent。第三层在最外面：握着的每一个节点都可能同时开着自己的孩子，它们加起来不许越过它。
+并发上限从外到内分三层：图上的依赖边（谁挡着谁）决定哪些节点**可以**并排；这条线的 `parallel`（`cycle current` 的 `Policy:` 行）决定这条线同时**握**几个节点；`config get max_agents`（见 [`shared/superworker/subagents.md`](shared/superworker/subagents.md)）决定这个会话同时**进行中**几个子 agent。第三层在最外面：握着的每一个节点都可能同时开着自己的孩子，它们加起来不许越过它。
 
 ## 开局
 
@@ -189,7 +189,7 @@ instruction list --project <项目根绝对路径>
 
 准备过完，直接进循环；**派完 subagent 就不要等它**——它是异步的，完成时运行时会把这轮唤醒回来，报告已经在上下文里。一次派多个，写在同一条消息里；要给下一批分工，先等这一批的结果。
 
-派之前先按 [`shared/sw/subagents.md`](shared/sw/subagents.md) 数一次进行中的：越不过就照那份卡的顺序退让。这条外圈压着下面每一处「并行派」。
+派之前先按 [`shared/superworker/subagents.md`](shared/superworker/subagents.md) 数一次进行中的：越不过就照那份卡的顺序退让。这条外圈压着下面每一处「并行派」。
 
 ### Execute
 

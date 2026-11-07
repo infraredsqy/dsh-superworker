@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { open } from '../src/open';
 
 /**
- * No stub left on the surface: all sixty verbs across the seven namespaces are methods, and
+ * No stub left on the surface: all sixty-one verbs across the seven namespaces are methods, and
  * the source tree has no "not implemented yet" path either.
  * The probe handle's root is a made-up address; the assertions here touch only methods and source
  * text, and nothing lands on disk.
@@ -35,14 +35,14 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
 }
 
 describe('verbs on the handle', () => {
-  it('seven namespaces, sixty verbs, none missing', () => {
+  it('seven namespaces, sixty-one verbs, none missing', () => {
     let count = 0;
     for (const [, ns] of SURFACE) {
       for (const value of Object.values(ns)) {
         if (typeof value === 'function') count += 1;
       }
     }
-    expect(count).toBe(3 + 16 + 14 + 5 + 5 + 3 + 14);
+    expect(count).toBe(4 + 16 + 14 + 5 + 5 + 3 + 14);
   });
 
   it("each level's verb names match the frozen surface", () => {
@@ -56,7 +56,7 @@ describe('verbs on the handle', () => {
       ]),
     );
     expect(names).toEqual({
-      ledger: ['cleanTemp', 'init', 'register'],
+      ledger: ['cleanTemp', 'init', 'migrate', 'register'],
       'ledger.dag': [
         'add', 'addMany', 'approve', 'context', 'get', 'info', 'link', 'list', 'remove', 'revive',
         'search', 'setStatus', 'specPath', 'unlink', 'update', 'validate',

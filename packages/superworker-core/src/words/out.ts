@@ -10,8 +10,9 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { RecordError } from '../errors';
 import type { RecordErrorCode } from '../errors';
 import { open } from '../open';
-import type { Pf } from '../open';
+import type { Superworker } from '../open';
 import { short as shortOf } from '../graph';
+import { RECORD_DIR_NAME } from '../paths';
 import type { VerbAnswer, VerbCall, WordsIO } from './types';
 
 const encoder = new TextEncoder();
@@ -142,7 +143,7 @@ export interface VerbScene extends VerbCall {
   /** The project root this word acts on: `--project`, else the caller's own (worktrees resolved). */
   readonly root: string;
   /** The engine handle of that root, opened on this call's own seams. */
-  readonly superworker: Pf;
+  readonly superworker: Superworker;
   /** The first word of one positional cell — `undefined` when the line did not give one. */
   readonly at: (index: number) => string | undefined;
 }
@@ -210,7 +211,7 @@ function mainTreeOf(start: string): string | null {
   if (basename(dirname(gitdir)) !== 'worktrees') return null;
   const main = resolve(gitdir, '..', '..', '..');
   try {
-    if (!statSync(join(main, '.superworker')).isDirectory()) return null;
+    if (!statSync(join(main, RECORD_DIR_NAME)).isDirectory()) return null;
   } catch {
     return null;
   }
@@ -218,7 +219,7 @@ function mainTreeOf(start: string): string | null {
 }
 
 /** The engine handle of one project, opened on this call's own seams. */
-export function handleOf(root: string, io: WordsIO): Pf {
+export function handleOf(root: string, io: WordsIO): Superworker {
   return open(root, {
     executor: io.executor,
     ...(io.homeDir === undefined ? {} : { homeDir: io.homeDir }),

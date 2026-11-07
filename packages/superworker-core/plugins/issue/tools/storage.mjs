@@ -51,8 +51,11 @@ import { basename, dirname, join, resolve } from 'node:path';
 
 // ═══ Paths and constants ═════════════════════════════════════════════════════
 
+// The record directory's name is spelled here because a plugin's tool file cannot import the engine's constant.
+const RECORD_DIR_NAME = '.superworker';
+
 export function poolPath(root) {
-  return join(root, '.superworker', 'issues', 'issues.json');
+  return join(root, RECORD_DIR_NAME, 'issues', 'issues.json');
 }
 
 /**
@@ -62,7 +65,7 @@ export function poolPath(root) {
  * never stand in for the other, and no operation ends up holding both.
  */
 export function poolLockPath(root) {
-  return join(root, '.superworker', 'meta', 'issues.lock');
+  return join(root, RECORD_DIR_NAME, 'meta', 'issues.lock');
 }
 
 /** The limit for waiting on the pool lock: core's ledger lock reads the same limit (writing one record takes milliseconds; the limit only guards against a deadlock). */

@@ -39,12 +39,15 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { open, type Executor, type Pf } from 'superworker-core'
+import { open, type Executor } from 'superworker-core'
 import { canonicalWorkspaceRoot, executorOf, type SessionOpenOutcome } from './executor.ts'
 import type { RecordRefusalCode } from './failure.ts'
 import { busOf, logLineOf, messageOf } from './seams.ts'
 import { PANEL_PREF_FIELDS } from './settings-fields.ts'
 import { shippedPluginsDir } from './skill-paths.ts'
+
+/** The engine handle one dispatch-side call reads: `open`'s own answer, read off the open itself so this file carries no second name for it. */
+type EngineHandle = ReturnType<typeof open>
 
 /** The one refusal this layer adds: the engine (or the opener inside it) said no. */
 export type DispatchRefusalCode = RecordRefusalCode | 'dispatch-refused'
@@ -130,7 +133,7 @@ export function trackedExecutorOf(ctx: Context, sessionId: SessionId, workspaceR
  * opened. Every dispatch-side call — `dispatch`, `advance`, the read-only
  * `next` — builds its handle here, so the option set has one spelling.
  */
-function dispatchHandleOf(ctx: Context, sessionId: SessionId, workspaceRoot: string): Pf {
+function dispatchHandleOf(ctx: Context, sessionId: SessionId, workspaceRoot: string): EngineHandle {
   return open(workspaceRoot, {
     executor: trackedExecutorOf(ctx, sessionId, workspaceRoot),
     pluginsDir: shippedPluginsDir(),

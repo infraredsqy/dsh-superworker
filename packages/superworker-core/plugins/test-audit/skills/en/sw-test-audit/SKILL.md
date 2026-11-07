@@ -138,7 +138,7 @@ report back.
 | The project has no tests | report "no test files found" and exit |
 
 **Products go into the report only**: the scan's conclusions enter no repository and land on no
-disk; to keep raw output, put it where superworker's conventions say (in a node,
+disk; to keep raw output, put it where Superworker's conventions say (in a node,
 `.superworker/nodes/<node uuid>/temp/`; in a project, `.tmp/`).
 
 ## Anti-patterns

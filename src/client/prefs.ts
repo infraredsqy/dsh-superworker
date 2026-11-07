@@ -61,49 +61,6 @@ export function clampSide(px: number): number {
   return Math.round(Math.max(SIDE_MIN, Math.min(SIDE_MAX, px)))
 }
 
-/** The panel's legacy keys: surviving browsers may still hold them; swept away the moment the settings form attaches. */
-export const LEGACY_PREF_KEYS: readonly string[] = [
-  'dsh-superworker.sideWidth',
-  'dsh-superworker.infoLevel',
-  'dsh-superworker.defaultTab',
-  'dsh-superworker.showOtherStates',
-]
-
-/** The local-storage handle: this layer only ever deletes; it uses neither read nor write. */
-export interface PrefStorage {
-  removeItem(key: string): unknown
-}
-
-/**
- * Sweep the legacy keys out of local storage. Delete only, never read: whatever is stored there
- * counts for nothing, values always come from the settings document.
- *
- * When local storage is unusable (missing in this environment, blocked by policy, `removeItem`
- * itself throws), quietly give up: preference cleanup must not break the panel.
- * @param storage - Local storage; the current environment's `localStorage` is used when absent.
- */
-export function dropLegacyPrefs(storage?: PrefStorage | null): number {
-  let held = storage
-  if (held === undefined) {
-    try {
-      held = (globalThis as { localStorage?: PrefStorage | null }).localStorage ?? null
-    } catch (error) {
-      held = null
-    }
-  }
-  if (held === null || held === undefined || typeof held.removeItem !== 'function') return 0
-  let dropped = 0
-  for (const key of LEGACY_PREF_KEYS) {
-    try {
-      held.removeItem(key)
-      dropped += 1
-    } catch (error) {
-      /* If this one cannot be deleted, let it go — it must not take the rest down with it. */
-    }
-  }
-  return dropped
-}
-
 /**
  * Read this section of the settings document into the values the panel wants.
  *
@@ -287,7 +244,6 @@ export function createPrefsSource(): PrefsStore {
         return () => undefined
       }
       form = next
-      dropLegacyPrefs()
       try {
         off = next.subscribe(derive)
       } catch (error) {

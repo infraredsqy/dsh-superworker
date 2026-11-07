@@ -83,6 +83,6 @@ export class RecordError extends Error {
 }
 
 /** Tell whether a thrown value is a RecordError carrying this code (the wording is not touched, only the code is read). */
-export function isPfError(value: unknown, code?: RecordErrorCode): value is RecordError {
+export function isRecordError(value: unknown, code?: RecordErrorCode): value is RecordError {
   return value instanceof RecordError && (code === undefined || value.code === code);
 }

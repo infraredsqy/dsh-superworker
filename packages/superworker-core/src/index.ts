@@ -5,7 +5,7 @@
  */
 
 export { open } from './open';
-export type { Pf, RecordOpenOptions } from './open';
+export type { Superworker, RecordOpenOptions } from './open';
 export { SimulatedExecutor } from './executor';
 /* The words layer: the one table, its parser and printer, the verbs that read engine answers into
    lines, and the two entries a caller answers through — `answer(argv, io)` (one line of words in, the
@@ -109,15 +109,31 @@ export type {
   InstructionsNamespace,
   ExcludeReading,
   InitReport,
+  KnownGeneration,
   LedgerInitOptions,
-  LedgerLayout,
+  LedgerMigrateOptions,
   LedgerNamespace,
   LedgerRegisterOptions,
   MergeDriverReading,
+  MigrationReport,
   NodeContext,
   NodeContextEntry,
   NodeSummary,
 } from './ledger';
+
+/* The one module that still knows the old record directory: the facts a workspace that ran the
+   pipeline before the rename can be asked — is one here, can it be recognised, may it move — plus
+   the fixed sentence the panel's link hands to an agent. Nothing else in the package spells that
+   directory; a reader that must act on it asks here. */
+export {
+  CONSULT_PROMPT,
+  LEGACY_DIR_NAME,
+  hasLegacyRecord,
+  isRecognizableLegacyRecord,
+  legacyRecordDir,
+  migrationPreconditions,
+} from './legacy';
+export type { MigrationRefusal, MigrationReading } from './legacy';
 
 export type { CleanTempEntry, CleanTempOptions, CleanTempReport } from './tempclean';
 
@@ -176,5 +192,10 @@ export type {
   PluginSourceCell,
   PluginTiming,
 } from './plugins/types';
+
+/* The record directory's own name, exported rather than respelled: the host half builds its
+   workspace-relative source paths from this one constant, so a second spelling of the directory
+   has nowhere to appear. */
+export { RECORD_DIR_NAME } from './paths';
 
 export type { RecordLocations, RecordPaths } from './paths';

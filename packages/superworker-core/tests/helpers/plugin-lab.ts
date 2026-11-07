@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { open, type Pf } from '../../src/open';
+import { open, type Superworker } from '../../src/open';
 
 /**
  * The stage for plugin tests: a project root (already initialised), a home walled into the root,
@@ -13,7 +13,7 @@ export interface PluginLab {
   readonly root: string;
   /** The machine-level home, walled into the temp project root: `<root>/_home`. */
   readonly home: string;
-  readonly superworker: Pf;
+  readonly superworker: Superworker;
   /** Write one plugin folder: a declaration (object or raw text) plus any number of accompanying files. */
   plugin(name: string, decl: unknown, files?: Record<string, string>): string;
   /** Set up one active cycle in state.json (the items it holds come along). */

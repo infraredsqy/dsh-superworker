@@ -8,7 +8,7 @@
 
 - 纯 TypeScript：源码树（`src/`、`tests/`）里没有 .py 文件；不出现 `@deepseek-ai/*`，不打开会话、不联网。
 - 进程面只有一个入口——`sw-merge-ledger`（git 的合并驱动只能靠进程叫它）；本包没有命令面：没有 CLI、没有安装期脚本、包根没有 `bin/`（调用它的那一层在包外）。接口面里写了它的产物与出口。
-- 引擎不管仓库：工作树、分支、提交、合并、工作树状态、git 那边的锁与目录布局都不是它的事，那些 git 命令由 agent 自己敲。注入的 git（`src/git.ts` 只有形状）只用来问 git 自己的事实——这个目录在不在 checkout 里、`info/exclude` 落在哪、项目根在仓库根下哪一段——以及经 git 自己的命令做三件事：写、读配置里的两个合并驱动键，和给 `.superworker` 立它自己要的那个仓库（`ledger.init` 的 `ownRepo`：`in-repo` 档不立，已经在场的一个字节不碰）。
+- 引擎不管仓库：工作树、分支、提交、合并、工作树状态、git 那边的锁与目录布局都不是它的事，那些 git 命令由 agent 自己敲。注入的 git（`src/git.ts` 只有形状）只用来问 git 自己的事实——这个目录在不在 checkout 里、`info/exclude` 落在哪、项目根在仓库根下哪一段——以及经 git 自己的命令做三件事：写、读配置里的两个合并驱动键，和给 `.superworker` 立它自己要的那个仓库（`ledger.init` 的 `ownRepo`：要才立，已经在场的一个字节不碰）。
 - 「不起进程」这半是暂定的：管线宿主的半端会照常起进程。执行只能经 `RecordOpenOptions.executor` 从外面注入。
 - 私有包（`"private": true`），不发版；零运行时依赖，devDependencies 只许 typescript、tsdown、vitest。
 

@@ -10,7 +10,7 @@
  * makes "commit and push first, then open the next session" expressible as two commands.
  */
 import { EXIT, pyIndented, pyList, refuse, run, short } from './out';
-import type { Pf } from '../open';
+import type { Superworker } from '../open';
 import { actionText } from './plan';
 
 /** The cells one advance hands to the executor, as the receipt reads them. */
@@ -88,7 +88,7 @@ export const advanceVerb = run('advance', async (call) => {
 });
 
 /** The sentence a process without an opener answers: no session opens here, and where the material goes. */
-function noOpenerSentence(superworker: Pf, cycleId: unknown, nodeIds: readonly string[]): string {
+function noOpenerSentence(superworker: Superworker, cycleId: unknown, nodeIds: readonly string[]): string {
   const prompts = nodeIds.map((nodeId) => superworker.locations.launchPrompt(String(cycleId), nodeId));
   const where = prompts.length === 0 ? 'the plan names no cell' : `the material goes to ${prompts.join(', ')}`;
   return (

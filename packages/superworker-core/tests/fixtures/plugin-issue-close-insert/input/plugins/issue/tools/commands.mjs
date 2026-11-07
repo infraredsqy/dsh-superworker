@@ -1123,6 +1123,9 @@ function flagUsage(key) {
   return `[${short}${cell.long}${tail}]`;
 }
 
+// The record directory's name is spelled here because a plugin's tool file cannot import the engine's constant.
+const RECORD_DIR_NAME = '.superworker';
+
 /** The `issue help` list: the verbs and their flags, derived from the command surface's single table, with an old spelling named on the row it still routes to. */
 export function usage() {
   const rows = Object.keys(SPECS).map((word) => {
@@ -1139,7 +1142,7 @@ export function usage() {
   return [
     USAGE_HEAD,
     '',
-    'the issue pool: one file per project, `<root>/.superworker/issues/issues.json`.',
+    `the issue pool: one file per project, \`<root>/${RECORD_DIR_NAME}/issues/issues.json\`.`,
     '',
     ...rows,
     '',

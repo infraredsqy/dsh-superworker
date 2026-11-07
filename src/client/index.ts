@@ -1,6 +1,6 @@
 /**
  * Entry of the browser-half plugin: mounts the panel as the service `ctx.superworkerPanel`, then
- * wires up the settings section, Superworker Center's sidebar items, and the center-column cell.
+ * wires up the settings section, Superworker's sidebar items, and the center-column cell.
  *
  * Readings arrive through the port; the panel only draws. The panel's own preferences come from
  * settings and are written back to settings.
@@ -39,7 +39,7 @@ export {
   SettingsSection,
 } from './settings.tsx'
 
-/** The identities of the two Superworker Center spots, readable off the bundle. */
+/** The identities of the two Superworker spots, readable off the bundle. */
 export { createWorkspaceNav, PANEL_ORDER, SEAT_WORD } from './mount.ts'
 
 /** Why and which session a card opens: the session-list projections, readable off the bundle. */

@@ -3,6 +3,8 @@ import { createDagNamespace } from './dag';
 import { createInstructionsNamespace } from './instruct';
 import { initLedger, registerLedger } from './initledger';
 import type { InitReport, LedgerInitOptions, LedgerRegisterOptions } from './initledger';
+import { migrateLedger } from './migrate';
+import type { LedgerMigrateOptions, MigrationReport } from './migrate';
 import { recordPaths } from './paths';
 import { cleanTemp } from './tempclean';
 import type { CleanTempOptions, CleanTempReport } from './tempclean';
@@ -406,19 +408,25 @@ export type {
   ExcludeReading,
   InitReport,
   LedgerInitOptions,
-  LedgerLayout,
   LedgerRegisterOptions,
   MergeDriverReading,
   OwnRepoReading,
 } from './initledger';
 
-/** The record directory (`.superworker/`) namespace: init, register, and the graph, cycles and instructions sub-spaces. */
+export type {
+  KnownGeneration,
+  LedgerMigrateOptions,
+  MigrationReport,
+} from './migrate';
+
+/** The record directory (`.superworker/`) namespace: init, register, migrate, and the graph, cycles and instructions sub-spaces. */
 export interface LedgerNamespace {
   /**
    * Set up the `.superworker/` record directory for a project and hand back what it did: the layout files
    * (always), plus the three best-effort attachments — a repository of `.superworker`'s own, the project
    * repository's `info/exclude` line, the merge driver's two git config keys — each missing one
-   * named in `warnings` rather than thrown.
+   * named in `warnings` rather than thrown. A record directory the project's git tracks is the one
+   * refusal, thrown before a byte lands.
    */
   init(options?: LedgerInitOptions): Promise<InitReport>;
   /**
@@ -427,6 +435,13 @@ export interface LedgerNamespace {
    * command now in force, or null when nothing was registered (no runner, or not a git checkout).
    */
   register(options?: LedgerRegisterOptions): Promise<string | null>;
+  /**
+   * Move this workspace's records from the old record directory into `.superworker/`, one generation at
+   * a time (`0.1.0` is the one known). The refusals are `migrationPreconditions`' — `absent` is the
+   * quiet empty-work answer, the other five throw — and the report names what moved and what was
+   * skipped, in the shape `init` reports in.
+   */
+  migrate(generation?: string, options?: LedgerMigrateOptions): Promise<MigrationReport>;
   /** List (or, with `remove`, delete) every node's `temp/` directory: one sweep, whole directories only. */
   cleanTemp(options?: CleanTempOptions): Promise<CleanTempReport>;
   readonly dag: DagNamespace;
@@ -437,13 +452,14 @@ export interface LedgerNamespace {
 // ── assembly ─────────────────────────────────────────────────────────────────
 
 /**
- * Assemble the ledger namespace: init, register, the temp sweep and the three blocks of graph, lines
- * and instructions (the locations come from the caller's project root).
+ * Assemble the ledger namespace: init, register, migrate, the temp sweep and the three blocks of
+ * graph, lines and instructions (the locations come from the caller's project root).
  */
 export function createLedgerNamespace(root: string): LedgerNamespace {
   return {
     init: (initOptions) => initLedger(root, initOptions),
     register: (registerOptions) => registerLedger(root, registerOptions),
+    migrate: (generation, migrateOptions) => migrateLedger(root, generation, migrateOptions),
     cleanTemp: (cleanOptions) => cleanTemp(recordPaths(root), cleanOptions),
     dag: createDagNamespace(root),
     cycles: createCyclesNamespace(root),

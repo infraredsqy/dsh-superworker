@@ -1,4 +1,4 @@
-# superworker toolcraft
+# Superworker toolcraft
 
 > This file describes how to use the DAG management tool efficiently. Complementary to
 > `philosophy.md` (the WHY), this file focuses on the HOW.

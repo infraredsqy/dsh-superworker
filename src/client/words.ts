@@ -15,7 +15,7 @@
 import type { Translate } from './locale.ts'
 import type { Failure, FailureCode } from './failure.ts'
 import type { WordKey } from './locales/index.ts'
-import { clock, dayParts, lineStateOf } from '../model/index.ts'
+import { clock, dayParts, everySourceIs, lineStateOf } from '../model/index.ts'
 import type {
   CycleReading,
   CycleState,
@@ -27,6 +27,7 @@ import type {
   NodeReading,
   NodeState,
   PoolReading,
+  SuperworkerReading,
 } from '../model/index.ts'
 
 /**
@@ -182,6 +183,31 @@ export function timeOf(t: Translate, moment: Date | null, at: Date): string {
  * which reads the same in every language. A localised spelling once stood here beside it with no
  * place that drew it; a second spelling of one duration is the thing this file exists to avoid, so
  * it is gone rather than kept for a future caller. */
+
+/** The legacy-directory notice in the three pieces the panel renders it with. */
+export interface LegacyNoticeWords {
+  /** What happened, as the card's heading. */
+  readonly title: string
+  /** Why there is nothing to draw, as the card's one sentence. */
+  readonly body: string
+  /** The one way forward, as the action's word. */
+  readonly link: string
+}
+
+/**
+ * The legacy-directory notice, when the reading is one.
+ *
+ * A workspace that still holds only the previous record directory hands this half a reading with
+ * nothing in it — every source said `legacy` — and every pane would draw an empty board over it,
+ * so the panel shows one card instead and this layer says its three pieces. The judgment is the
+ * model's (`everySourceIs`), and the words are the lookup tables'; the body names the directory
+ * this plugin reads and never the one it replaced, because the old name is the engine's fact to
+ * spell and a reader who needs it can ask the agent this card hands the work to.
+ */
+export function legacyNoticeWords(t: Translate, reading: SuperworkerReading): LegacyNoticeWords | null {
+  if (!everySourceIs(reading, 'legacy')) return null
+  return { title: t('panel.legacy.title'), body: t('panel.legacy.body'), link: t('panel.legacy.link') }
+}
 
 /** What each refusal code reads as. One entry per code, so a new code fails to compile until it speaks. */
 const FAILURE_WORDS: Readonly<Record<FailureCode, WordKey>> = {

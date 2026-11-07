@@ -1,4 +1,4 @@
-import { isPfError, type RecordError } from '../../src/errors.ts';
+import { isRecordError, type RecordError } from '../../src/errors.ts';
 
 /**
  * Catch a call that is supposed to be rejected and hand the rejection to the assertion that
@@ -13,7 +13,7 @@ export async function rejection(promise: Promise<unknown>): Promise<RecordError>
   try {
     await promise;
   } catch (error) {
-    if (isPfError(error)) return error;
+    if (isRecordError(error)) return error;
     throw error;
   }
   throw new Error('this call should have been rejected, but it went through');

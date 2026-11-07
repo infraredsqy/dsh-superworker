@@ -15,14 +15,12 @@ git 那一侧由 `init` / `register` 接上：`.superworker/.gitattributes` 是 
 - 项目 git 配置里两个键，都走 `git config --local`：`merge.superworker.name`（git 给人看的标签
   `superworker ledger three-way merge`）与 `merge.superworker.driver`（命令串）。写之前先读一遍：本机真答得上的注册
   一个字节都不改写，没有注册、或注册已经答不上时才写——重跑因此幂等；
-- 命令串在写的时候现算，三档，按这个次序挑：命令形式 `superworker merge-ledger %O %A %B %P`（`superworker` 在
-  `PATH` 上解析得到时——位置无关，换机器、挪 checkout 都不用重注册）；名字形式
-  `sw-merge-ledger %O %A %B %P`（只有本包的 bin 在 `PATH` 上时）；绝对形式
-  `"<node 可执行文件的绝对路径>" "<本包 merge-ledger.mjs 的绝对路径>" %O %A %B %P`（两条路径都带
-  引号；Windows 的 node 路径里有空格，git 按空格切这条命令串）。
+- 命令串只有一种写法，写的时候现算：绝对形式
+  `"<node 可执行文件的绝对路径>" "<本包 merge-ledger.mjs 的绝对路径>" %O %A %B %P`。两条路径都带
+  引号（Windows 的 node 路径里有空格，git 按空格切这条命令串），末尾是 git 自己的参数。不探测
+  `PATH`：绝对路径只指向发布件里自己的文件，不回到仓、也不要 `node_modules`，装到哪儿都答得起来。
 
-回答那条命令的就是 `sw-merge-ledger` 这一个进程（命令形式由 `superworker` 把整行转交给它，两者
-跑的是同一份合并）：它把 git 给的四个参数（`%O` 公共侧、`%A` 这一侧、
+回答那条命令的就是 `sw-merge-ledger` 这一个进程：它把 git 给的四个参数（`%O` 公共侧、`%A` 这一侧、
 `%B` 另一侧、`%P` 记录在仓库里的路径）搬进来，把合并交给 `runMergeDriver`，再把退出码原样交出去。
 `--dry-run` 出现在参数里的任何位置都只打判词、一个字节都不写。stdout / stderr 按 UTF-8 写。
 

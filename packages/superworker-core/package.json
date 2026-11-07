@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "superworker handle and ledger library: frozen record types, the executor seam and the namespaced interface surface. Pure TypeScript, zero runtime dependencies.",
+  "description": "The superworker engine behind the pipeline record: frozen record types, the word table and the settings chain, plus the one process entry point it ships, the sw-merge-ledger merge driver. Pure TypeScript, zero runtime dependencies.",
   "engines": {
     "node": ">=22"
   },

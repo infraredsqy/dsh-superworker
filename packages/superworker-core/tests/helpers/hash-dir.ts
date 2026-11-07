@@ -20,9 +20,10 @@ import { join, relative } from 'node:path';
  * mistake.
  *
  * A directory that does not exist comes back as a fixed sentinel: absent before and absent after
- * means consistent; a directory appearing out of nowhere mid-run is still caught. The records
- * themselves do travel with a checkout (the in-repo layout puts them in the repository); the cell a
- * checkout never carries is a node's `temp/` one, kept out by the record dir's own `.gitignore`.
+ * means consistent; a directory appearing out of nowhere mid-run is still caught. The records stay
+ * out of the project repository — the one layout there is — so a checkout of this project carries
+ * no records of its own; the cell a checkout would never carry even then is a node's `temp/` one,
+ * kept out of any repository by the record dir's own `.gitignore`.
  */
 export function hashDirectory(dir: string): string {
   if (!existsSync(dir)) return createHash('sha256').update('absent').digest('hex');

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { isPfError, RecordError } from '../src/errors.ts';
+import { isRecordError, RecordError } from '../src/errors.ts';
 import { atomicWriteJson, jsonOptionsForRecord, readJsonFile } from '../src/jsonio.ts';
 import { recordPaths } from '../src/paths.ts';
 
@@ -65,7 +65,7 @@ describe('the three readings of a read', () => {
       () => 'no-error',
       (error: unknown) => error,
     );
-    expect(isPfError(outcome, 'invalid_utf8')).toBe(true);
+    expect(isRecordError(outcome, 'invalid_utf8')).toBe(true);
     expect((outcome as RecordError).path).toBe(paths.stateJson);
     expect((outcome as RecordError).cause).toBeInstanceOf(Error);
     // Never repaired on its own: every bad byte is still there.
@@ -79,7 +79,7 @@ describe('the three readings of a read', () => {
       () => 'no-error',
       (error: unknown) => error,
     );
-    expect(isPfError(outcome, 'parse_failure')).toBe(true);
+    expect(isRecordError(outcome, 'parse_failure')).toBe(true);
   });
 
   it('a record with a byte order mark follows the same rule: parse failure', async () => {
@@ -89,7 +89,7 @@ describe('the three readings of a read', () => {
       () => 'no-error',
       (error: unknown) => error,
     );
-    expect(isPfError(outcome, 'parse_failure')).toBe(true);
+    expect(isRecordError(outcome, 'parse_failure')).toBe(true);
   });
 
   it('an empty file is a parse failure, not an empty record', async () => {
@@ -99,19 +99,19 @@ describe('the three readings of a read', () => {
       () => 'no-error',
       (error: unknown) => error,
     );
-    expect(isPfError(outcome, 'parse_failure')).toBe(true);
+    expect(isRecordError(outcome, 'parse_failure')).toBe(true);
   });
 
-  it('the error code is the contract: isPfError only accepts a matching code, and message and code stay independent', async () => {
+  it('the error code is the contract: isRecordError only accepts a matching code, and message and code stay independent', async () => {
     const paths = tempPaths();
     writeFileSync(paths.stateJson, 'not json at all');
     const outcome = await readJsonFile(paths.stateJson, 'state.json').then(
       () => 'no-error',
       (error: unknown) => error,
     );
-    expect(isPfError(outcome)).toBe(true);
-    expect(isPfError(outcome, 'invalid_utf8')).toBe(false);
-    expect(isPfError(outcome, 'lock_timeout')).toBe(false);
+    expect(isRecordError(outcome)).toBe(true);
+    expect(isRecordError(outcome, 'invalid_utf8')).toBe(false);
+    expect(isRecordError(outcome, 'lock_timeout')).toBe(false);
     expect(new RecordError('parse_failure', 'x', 'y').code).toBe('parse_failure');
   });
 });

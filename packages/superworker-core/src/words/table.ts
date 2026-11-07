@@ -23,6 +23,7 @@ export const TOP = {
   "verbs": [
     "init",
     "register",
+    "migrate",
     "plan",
     "hold",
     "settle",
@@ -46,7 +47,7 @@ export const COMMANDS = {
     "word": "init",
     "prog": "init",
     "summary": "put the ledger in place (run once per project)",
-    "description": "Write `.superworker/.gitignore` and `.superworker/.gitattributes`, and decide whether this project commits its `.superworker/` or keeps that directory to itself. `--local` (the default) writes one line into the repository's `info/exclude` -- a per-clone file, so no teammate ever sees a line about a directory that does not exist for them -- and gives `.superworker/` its own repository unless `--no-own-repo`. `--commit` takes the exclude line back out and lets `.superworker/` travel with the project. Idempotent: re-running it never does anything twice, and switching modes is just running it again with the other flag.",
+    "description": "Write `.superworker/.gitignore`, `.superworker/.gitattributes`, `.superworker/AGENTS.md` and `.superworker/config.json` (the last only when absent), and write one line into the repository's `info/exclude` -- a per-clone file, so no teammate ever sees a line about a directory that does not exist for them -- so the records never enter the project repository. `--no-own-repo` leaves `.superworker/` as plain ignored files; otherwise it gets a repository of its own. A record directory the project's git tracks is an error, not a mode: taking records back out of a repository's history is a person's decision, and the error says to consult an agent. Idempotent: re-running it never does anything twice.",
     "positionals": [],
     "options": [
       {
@@ -65,34 +66,16 @@ export const COMMANDS = {
       },
       {
         "flags": [
-          "--local"
-        ],
-        "help": "Keep `.superworker/` out of the project's repository (the default)",
-      },
-      {
-        "flags": [
-          "--commit"
-        ],
-        "help": "Let `.superworker/` go into the project's repository",
-      },
-      {
-        "flags": [
           "--own-repo"
         ],
-        "help": "Local mode only: give `.superworker/` a repository of its own (the default)",
+        "help": "Give `.superworker/` a repository of its own (the default)",
       },
       {
         "flags": [
           "--no-own-repo"
         ],
-        "help": "Local mode only: leave `.superworker/` as plain ignored files",
+        "help": "Leave `.superworker/` as plain ignored files",
       }
-    ],
-    "exclusive": [
-      [
-        "--local",
-        "--commit"
-      ]
     ]
   },
 
@@ -116,6 +99,43 @@ export const COMMANDS = {
         ],
         "metavar": "PROJECT",
         "help": "Project root (default: current directory)",
+      }
+    ]
+  },
+
+  "migrate": {
+    "word": "migrate",
+    "prog": "migrate",
+    "summary": "move a 0.1.x workspace's records into `.superworker/`",
+    "description": "Move this workspace's records from the old record directory into `.superworker/`, and nothing else: the directory is renamed, the repository's ignore line switches to the new name, the record directory's `.gitattributes` is brought to the current driver, the driver is re-registered in git's config, the machine layer's settings are copied to the new home (never moved; a file already there is kept), and the issue pool's `plan_path` values follow the directory. A workspace that cannot be moved is refused with the reason and nothing is written -- the refusals read the same preconditions `doctor` grades its cells by, and each one says to consult an agent rather than edit anything by hand. With no generation named, the known generations are printed and nothing happens; with an unknown one, the call is refused and the known ones listed. Idempotent: a workspace that has already been migrated is empty work.",
+    "positionals": [
+      {
+        "name": "generation",
+        "metavar": "GENERATION",
+        "required": false,
+        "help": "Which generation of records this workspace holds: `0.1.0` labels the records 0.1.x wrote. With none named, the known generations are printed and nothing is done"
+      }
+    ],
+    "options": [
+      {
+        "flags": [
+          "-h",
+          "--help"
+        ],
+        "help": "show this help message and exit",
+      },
+      {
+        "flags": [
+          "--project"
+        ],
+        "metavar": "PROJECT",
+        "help": "Project root (default: current directory)",
+      },
+      {
+        "flags": [
+          "--json"
+        ],
+        "help": "Print raw JSON",
       }
     ]
   },
@@ -1971,7 +1991,7 @@ export const GROUPS = {
   "session": {
     "word": "session",
     "prog": "session",
-    "summary": "a node's own conversations, which live on this machine only",
+    "summary": "a node's own conversations, which live on this machine",
     "description": "A session id is machine-local -- a conversation lives on the machine that opened it -- so the ids live in `.superworker/meta/sessions/<node id>.json` instead of on the record: guaranteed dead on another machine, and impossible to tell apart from \"that session was deleted here\". `show` reads one node's note, and `list` reads every note this machine holds (keyed by node id, for a panel).",
     "metavar": "{show,list}",
     "dest": "session_command",

@@ -2,13 +2,21 @@
  * The wake: putting the agent-facing `superworker` tool in front of exactly the agents that have a
  * reason to see it, and nowhere else.
  *
- * Three triggers, one wake. A `.superworker/` workspace at the step's start (the fact trigger), the `skill`
- * tool's settled call result, and a user's `/superworker-*` invocation in a step proposal. An agent with none
- * of them keeps exactly the request header it would have without this plugin: no trigger, no tool.
+ * Three triggers, one wake. A workspace holding a record directory the pipeline recognizes — the
+ * one it lays down today, or the older layer a workspace that has not migrated yet still holds —
+ * at the step's start (the fact trigger), the `skill` tool's settled call result, and a user's
+ * `/sw-*` invocation in a step proposal. An agent with none of them keeps exactly the request
+ * header it would have without this plugin: no trigger, no tool.
  *
- * This module owns only that decision and its memory. The tool's face lives in `tool.ts`, and the
- * opener seam travels on the host face it is handed (`SuperworkerToolHost`), so this file imports
- * neither: the wake depends on the face it registers and on the seams it reads, nothing else.
+ * The fact trigger counts the older layer on purpose: a workspace that has not migrated yet must
+ * still reach `migrate` and `doctor`, and the tool is the only way it reaches them, so a record
+ * under the old name arms the tool exactly as a record under the new one does.
+ *
+ * This module owns only that decision and its memory. The tool's face lives in `tool.ts`, the
+ * record directory's one spelling comes from the contract (`RECORD_DIR`), the older layer's
+ * recognition is the engine's (`isRecognizableLegacyRecord`), and the opener seam travels on the
+ * host face it is handed (`SuperworkerToolHost`): the wake depends on the face it registers, the
+ * seams it reads, and those two facts, and it never reaches the opener or the relay themselves.
  *
  * Registration is per agent scope (`agent.ctx.tools.register`) and idempotent: one agent, one
  * registration, one `tool-addition` developer record on the next request. The disposer hangs on the
@@ -17,9 +25,10 @@
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { isRecognizableLegacyRecord } from 'superworker-core'
+import { RECORD_DIR } from './contract.ts'
 import { agentIdOf, agentScopeOf, busOf, effectOf, liveWorkspaceRootOf, toolsOf } from './seams.ts'
 import {
-  PIPELINE_DIR,
   SKILL_NAME_PREFIX,
   SKILL_TOOL_NAME,
   defineSuperworkerTool,
@@ -71,11 +80,18 @@ export function isAwake(agent: object): boolean {
 
 /**
  * Whether this workspace carries a pipeline record — the fact that arms a session.
+ *
+ * A record under today's name answers first. A workspace holding only the older layer counts
+ * too, when the engine recognizes it as one the pipeline laid down, so an unmigrated workspace
+ * reaches `migrate` and `doctor` at all — the tool is how it reaches them. An old directory the
+ * engine does not recognize is somebody else's directory that shares a name: it counts as
+ * nothing, and the workspace keeps the header it would have had without this plugin.
  */
 export function hasPipelineRecord(root: string | undefined): boolean {
   if (root === undefined) return false
   try {
-    return existsSync(join(root, PIPELINE_DIR))
+    if (existsSync(join(root, RECORD_DIR))) return true
+    return isRecognizableLegacyRecord(root)
   } catch {
     /* An unreadable root is not a record: the session stays as it would be without us. */
     return false
@@ -86,7 +102,8 @@ export function hasPipelineRecord(root: string | undefined): boolean {
  * Wake one agent whose workspace holds a pipeline record.
  *
  * The third trigger, and the one that makes the tool self-serve: a session sitting in a
- * `.superworker/` workspace sees the tool from its first request, with no skill loaded and no
+ * workspace that holds a record — today's, or the older layer a migration has not moved yet —
+ * sees the tool from its first request, with no skill loaded and no
  * guess about the conversation. Every other workspace keeps exactly the header it would
  * have had without this plugin — the answer is a fact on disk, not a judgement.
  */
@@ -105,7 +122,7 @@ function isSkillLoad(exec: { name?: unknown; agent?: unknown }, result: { isErro
 
 /**
  * Arm the wake: one listener on the skill tool's settled calls, one on the step
- * proposals that carry a user's `/superworker-*` invocation, and one on every step where the
+ * proposals that carry a user's `/sw-*` invocation, and one on every step where the
  * agent's workspace holds a pipeline record. All three hit the same wake, and the
  * returned disposer takes the listeners back (the line's own effect collects it).
  * A host without an event surface takes nothing — the panel keeps working, only the
@@ -123,7 +140,7 @@ export function installToolWake(host: SuperworkerToolHost): () => void {
   })
   const offStep = bus.on('agent/pre-step', (payload: unknown, next: () => Promise<unknown>) => {
     /* The fact trigger runs before the proposal settles: registering here lands the tool
-     * in the request this very step assembles, which is what makes a `.superworker/` workspace
+     * in the request this very step assembles, which is what makes a record-bearing workspace
      * see it from its first step. The other two triggers ride the same step for a
      * session that started anywhere else. */
     const proposed = (payload as { agent?: unknown } | undefined)?.agent

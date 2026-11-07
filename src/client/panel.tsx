@@ -4,8 +4,9 @@
  *
  * Each pane's own layout is its own document: the map `map.tsx` (with its layout engine in
  * `map-layout.ts`), detail `detail.tsx`, instruction book `notes.tsx`, project settings `config.tsx`,
- * and the issue pane `pool.tsx`; the modal is `delete-confirm.tsx`; the
- * reading widgets shared by the map, detail, and instruction book are in `marks.tsx`.
+ * and the issue pane `pool.tsx`; the modal is `delete-confirm.tsx`; the legacy-directory notice that
+ * replaces the whole stage is `legacy.tsx`; the reading widgets shared by the map, detail, and
+ * instruction book are in `marks.tsx`.
  *
  * Not a single reading is computed here: the four records arrive through the port, and the pure
  * functions in `src/model` read them into the reading for this moment; this layer only draws it. The
@@ -19,7 +20,7 @@ import { everySourceIs, readProject, readSessions, strandedCycleOf } from '../mo
 import type { PrefField, PrefsSource, ViewId } from './prefs.ts'
 import { clampSide, DEFAULT_SOURCE, PANEL_PREF_FIELDS, VIEW_IDS, VIEW_WORDS } from './prefs.ts'
 import { useT } from './locale.ts'
-import { failureWord } from './words.ts'
+import { failureWord, legacyNoticeWords } from './words.ts'
 import type { Outcome } from './failure.ts'
 import { failureOf } from './failure.ts'
 import type { Load as LoadOf, Note } from './outcome.ts'
@@ -30,6 +31,7 @@ import { MapPane, type CardGo } from './map.tsx'
 import { ConfigPane } from './config.tsx'
 import { DeleteConfirm } from './delete-confirm.tsx'
 import { DetailPane, pickedCycleOf } from './detail.tsx'
+import { LegacyNotice } from './legacy.tsx'
 import { NotesPane } from './notes.tsx'
 import { IssuePool } from './pool.tsx'
 import { PaneFrame } from './widgets.tsx'
@@ -150,6 +152,10 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
    * second click inside that window would open a second session on the same cell. The
    * per-workspace queue serializes opens; this gate is the cell's own completeness. */
   const [openingNode, setOpeningNode] = React.useState<string | null>(null)
+  /* Whether the legacy notice's migration hand is in flight: the notice's action stands disabled
+   * until the call settles, success or refusal alike — a second click inside that window would
+   * open a second migration session for the same workspace. */
+  const [consulting, setConsulting] = React.useState(false)
 
   /* Fetching: read once on the pass this view becomes visible; again when the workspace changes or
    * after a write lands (`tick` is that pass's marker). */
@@ -282,6 +288,19 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     [],
   )
 
+  /* The migration hand behind the legacy notice's action: the whole move is the host opening an
+   * agent session, so this loop deliberately carries no read-again — a landed call changes nothing
+   * on this panel (the migration happens in the session it opens, and a re-read could only repeat
+   * the same notice), and only a refusal has a word for the note line. */
+  const consult = React.useCallback(() => {
+    if (consulting) return
+    setConsulting(true)
+    setNote(null)
+    void writeToNote(() => port.consultMigration(sessionId ?? '', workspaceRoot), {
+      note: (next) => setNote(next),
+    }).finally(() => setConsulting(false))
+  }, [consulting, port, sessionId, workspaceRoot])
+
   /* The change made on the panel: the changed value leads, then it is written back to the settings
    * document — both sides read the same form, so the settings page's row moves on the spot too.
    * When the write cannot land, the control does not silently snap back: the sentence in the port's
@@ -330,6 +349,12 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
             ? t('panel.unreadable')
             : null
 
+  /* The legacy-directory state is a fourth nothing-to-draw case, but it says more than one
+   * sentence: the workspace still holds only the previous record directory, so the content area
+   * gives way to the notice — tabs and body go together here exactly as they do above. The words
+   * come from `words.ts`, judged from the reading; `null` means this reading is not one of those. */
+  const legacy = reading !== null ? legacyNoticeWords(t, reading) : null
+
   return (
     <div className="superworker-page">
       <header className="superworker-head">
@@ -351,7 +376,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
             )}
           </div>
         </div>
-        {nothing === null ? (
+        {nothing === null && legacy === null ? (
           <div className="superworker-tabs" role="tablist">
             {VIEWS.map((id) => (
               <button
@@ -371,7 +396,9 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
         ) : null}
       </header>
 
-      {nothing === null ? (
+      {legacy !== null ? (
+        <LegacyNotice notice={legacy} busy={consulting} onConsult={consult} />
+      ) : nothing === null ? (
       <div className="superworker-stage">
         {/* The frame fills the footprint in every view — each pane scrolls what does not fit inside
             itself — and every pane inside it is a direct child, so its own `flex` does the sharing. */}

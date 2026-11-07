@@ -23,14 +23,14 @@ import {
   instructionReviveLine,
 } from 'superworker-core'
 import type { SuperworkerReading, SuperworkerReadOptions, SuperworkerRecords } from './contract.ts'
-import type { SessionOpenOutcome } from './executor.ts'
+import { openConsultSession, type SessionOpenOutcome } from './executor.ts'
 import type { RecordOutcome } from './failure.ts'
 import { parseConfigList, type SuperworkerConfigReading } from './project-config.ts'
 import { dispatchCell } from './relay.ts'
 import { readReading } from './records.ts'
 import { aliveAgentIds, workspaceRootOf } from './seams.ts'
 import { readClaims, readSessionNotes, type SuperworkerSessionsReading } from './sessions.ts'
-import { runPf } from './write.ts'
+import { runWords } from './write.ts'
 
 /**
  * The scopes an instruction can bind to, as the engine spells them: this side keeps no list of its
@@ -51,6 +51,7 @@ const REMOTE_METHODS: readonly string[] = [
   'setConfig',
   'readSessions',
   'openNodeSession',
+  'consultMigration',
 ]
 
 /**
@@ -199,7 +200,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    */
   async readConfig(sessionId: SessionId, workspaceRoot: string): Promise<SuperworkerConfigReading> {
     const project = await rootFor(this.ctx, sessionId, workspaceRoot)
-    const outcome = await runPf(project, ['config', 'list'])
+    const outcome = await runWords(project, ['config', 'list'])
     if (!outcome.ok) {
       return {
         workspaceRoot: project,
@@ -293,11 +294,27 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
   }
 
   /**
+   * Open the consult session the panel's legacy notice links to: one session of
+   * this host's own, at the named workspace, whose first instruction is the
+   * engine's fixed consult sentence. The panel only opens the door — what the
+   * session is asked to do is the engine's sentence, spelled in one place there
+   * so this half never carries a second copy of it. The open shares the node
+   * open's sides (agent registry, standing preset, workspace attach, tool arm)
+   * and answers its own refusals as codes, the way every open here does.
+   *
+   * The parameter list stays on one line with no trailing comma, same reason as `read`.
+   * @param workspaceRoot - The workspace to open the session in, absolute; an empty string means this session's own root.
+   */
+  async consultMigration(sessionId: SessionId, workspaceRoot: string): Promise<SessionOpenOutcome> {
+    return openConsultSession(this.ctx, sessionId, workspaceRoot)
+  }
+
+  /**
    * The single write path shared by the five write endpoints; the true private `#superworker` is not on the prototype, so the endpoint table's missing-registration scan cannot see it.
    */
   async #superworker(sessionId: SessionId, workspaceRoot: string, args: readonly string[], said?: string): Promise<RecordOutcome> {
     const root = await rootFor(this.ctx, sessionId, workspaceRoot)
-    return runPf(root, args, said)
+    return runWords(root, args, said)
   }
 }
 

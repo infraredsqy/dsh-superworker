@@ -311,8 +311,12 @@ test('No restating shared/: a SKILL.md and the shared/ beside it share no run of
   }
 })
 
-/** A path-free mention of the tool: `superworker` as a word, not a directory in a path. */
-const TOOL_MENTION = /(?<![/\\])superworker[A-Za-z]*(?!\/)/u
+/** A path-free mention of the tool: `superworker` as a bare word. Not a directory in a path
+ * (`<dshHome>/superworker/skills.json`, the manifest directory), and — since the rename — not
+ * the record directory either: `.superworker` shares the spelling but is `RECORD_DIR_NAME`,
+ * a different constant, so a paragraph about the directory names no tool and is not this
+ * rule's business. */
+const TOOL_MENTION = /(?<![/\\.\w])superworker[A-Za-z]*(?!\/)/u
 /** The three parameter tokens the surface sentence carries, the same in either language. */
 const PARAMETER_TOKENS = ['`word`', '`args`', '`help`']
 

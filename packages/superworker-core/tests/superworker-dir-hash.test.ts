@@ -15,7 +15,7 @@ import { hashDirectory } from './helpers/hash-dir.ts';
  * red, while a record file that changes must.
  */
 
-const repoPfDir = fileURLToPath(new URL('../.superworker', import.meta.url));
+const repoRecordDir = fileURLToPath(new URL('../.superworker', import.meta.url));
 
 function makeTempTree(): string {
   const root = mkdtempSync(join(tmpdir(), 'superworker-hash-'));
@@ -27,7 +27,7 @@ function makeTempTree(): string {
 }
 
 /** Lay out a small tree the way `.superworker` is laid out: record files plus the three self-managed directories. */
-function makePfTree(): string {
+function makeRecordTree(): string {
   const root = mkdtempSync(join(tmpdir(), 'superworker-hash-ledger-'));
   mkdirSync(join(root, 'nodes', 'n1', 'temp'), { recursive: true });
   mkdirSync(join(root, 'meta', 'sessions'), { recursive: true });
@@ -78,7 +78,7 @@ describe('directory hash', () => {
   });
 
   it('every engine operation lands in a temporary directory: the repo-root .superworker is not touched', () => {
-    const before = hashDirectory(repoPfDir);
+    const before = hashDirectory(repoRecordDir);
     const workdir = mkdtempSync(join(tmpdir(), 'superworker-engine-'));
     try {
       mkdirSync(join(workdir, '.superworker', 'nodes'), { recursive: true });
@@ -87,11 +87,11 @@ describe('directory hash', () => {
     } finally {
       rmSync(workdir, { recursive: true, force: true });
     }
-    expect(hashDirectory(repoPfDir)).toBe(before);
+    expect(hashDirectory(repoRecordDir)).toBe(before);
   });
 
   it('changes in the self-managed areas do not change the hash: top-level worktrees/meta and temp at any depth', () => {
-    const root = makePfTree();
+    const root = makeRecordTree();
     try {
       const before = hashDirectory(root);
       writeFileSync(join(root, 'worktrees', 'w1', 'cache.bin'), 'dirty');
@@ -110,7 +110,7 @@ describe('directory hash', () => {
   });
 
   it('a byte changed in a record file still goes red: nodes/<id>/spec.md and ideas.json', () => {
-    const root = makePfTree();
+    const root = makeRecordTree();
     try {
       const before = hashDirectory(root);
       writeFileSync(join(root, 'nodes', 'n1', 'spec.md'), '# spec v2\n');

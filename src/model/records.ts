@@ -17,6 +17,23 @@ export type SuperworkerSourceState =
   | 'missing'
   /** Listed but unreadable: not readable JSON text, or an error midway. */
   | 'unusable'
+  /**
+   * The only record directory here is the older layer this reader does not
+   * open: nothing was fetched, and no file of that layer was parsed to produce
+   * the empty collections this state travels with.
+   */
+  | 'legacy'
+
+/**
+ * Which record layer one fetch answered for. `records` is the layer this
+ * reader reads — present and read, or simply absent, which is the ordinary
+ * empty reading. `legacy` says the workspace's records sit only in the older
+ * layer, and it is a state of its own rather than an empty reading because the
+ * two mean different things on the screen: "nothing happened here" and "this
+ * workspace needs a migration before anything can be shown" are not one
+ * answer, and the panel draws the second one's notice from this state alone.
+ */
+export type SuperworkerReadingState = 'records' | 'legacy'
 
 /** A node in the records: fields copied from the record, value types as written by whichever spelling actually appears in the record. */
 export interface SuperworkerNode {
@@ -139,6 +156,13 @@ export interface SuperworkerReading {
   readonly workspaceRoot: string
   /** The directory layer holding the records, workspace-relative. */
   readonly recordPath: string
+  /**
+   * Which record layer this reading answers for ({@link SuperworkerReadingState}).
+   * On `legacy` every source below answers `legacy` and every collection is
+   * empty: the content area's whole job in such a workspace is the migration
+   * notice, and nothing else is drawn from this reading.
+   */
+  readonly state: SuperworkerReadingState
   /**
    * Each of the four sources' outcome this round, keyed by {@link RecordSourceKey}.
    * Sources that could not be fetched yield empty collections below: the panel draws "absent from the records".

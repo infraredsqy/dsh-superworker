@@ -14,7 +14,7 @@ import {
   type ConfigNamespace,
   type KnobSpec,
 } from '../src/config';
-import { isPfError, type RecordError } from '../src/errors';
+import { isRecordError, type RecordError } from '../src/errors';
 import { open } from '../src/open';
 import { nodeConfigPath, recordPaths } from '../src/paths';
 import { declarationProblems, declaredKnobSpecs, loadPlugins } from '../src/plugins/registry';
@@ -157,7 +157,7 @@ async function refusalOf(run: () => Promise<unknown>): Promise<RecordError> {
   try {
     await run();
   } catch (error) {
-    if (isPfError(error)) return error;
+    if (isRecordError(error)) return error;
     throw error;
   }
   throw new Error('an operation expected to be refused went through');
@@ -168,7 +168,7 @@ function thrownBy(run: () => unknown): RecordError {
   try {
     run();
   } catch (error) {
-    if (isPfError(error)) return error;
+    if (isRecordError(error)) return error;
     throw error;
   }
   throw new Error('a call expected to be refused went through');

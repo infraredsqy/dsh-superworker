@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isPfError } from '../src/errors';
+import { isRecordError } from '../src/errors';
 import type { AddedNode } from '../src/ledger';
 import { makeLab } from './helpers/plugin-lab';
 
@@ -263,7 +263,7 @@ describe('the lock boundary of a close: the plugin half is asked outside the loc
         }
         // The re-read under the lock finds no verdict to settle and refuses on the spot — before the
         // record snapshot is taken, so no byte of the records moves.
-        expect(isPfError(caught, 'nothing_to_settle')).toBe(true);
+        expect(isRecordError(caught, 'nothing_to_settle')).toBe(true);
         expect(readFileSync(statePath)).toEqual(stateBefore);
         expect(readFileSync(ideasPath)).toEqual(ideasBefore);
         // And nothing settled either: the node is still open and still on the line's claim list.

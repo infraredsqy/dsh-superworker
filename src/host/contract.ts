@@ -12,6 +12,7 @@
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { RECORD_DIR_NAME } from 'superworker-core'
 import type { SuperworkerReading, RecordSourceKey } from '../model/records.ts'
 
 export type {
@@ -21,12 +22,20 @@ export type {
   SuperworkerIssue,
   SuperworkerNode,
   SuperworkerReading,
+  SuperworkerReadingState,
   SuperworkerSourceState,
   SuperworkerStep,
 } from '../model/records.ts'
 
-/** The directory layer holding the records, workspace-relative. */
-export const RECORD_DIR = '.superworker'
+/**
+ * The directory layer holding the records, workspace-relative.
+ *
+ * The name comes from the engine, never respelled here: the engine is the side
+ * that lays the directory down and reads it back, and a second spelling on this
+ * side would let the panel and the records disagree about where the records
+ * are while both sides still compile.
+ */
+export const RECORD_DIR = RECORD_DIR_NAME
 
 /** Workspace-relative locations of the four sources; keys match the model layer's source keys ({@link RecordSourceKey}). */
 export const RECORD_SOURCES: Readonly<Record<RecordSourceKey, string>> = {
@@ -75,7 +84,9 @@ export interface SuperworkerReadOptions {
  * The service the host exposes to the browser half: given a session id and a
  * workspace root, it reads that workspace's records into a reading. Missing
  * records yield an empty reading (all four sources `missing`, all collections
- * empty).
+ * empty). A workspace whose records sit only in the older layer yields the
+ * `legacy` reading instead — all four sources `legacy`, all collections empty,
+ * and no old file read to produce them.
  *
  * The workspace root is named by the caller, selecting which workspace to
  * read; an empty string means "not named", in which case it is resolved from

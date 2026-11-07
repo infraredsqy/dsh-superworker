@@ -32,6 +32,13 @@ export const zh = {
   'panel.unreadable': '无法读取当前工作区的记录。',
   'panel.no-session': '尚未选中会话，无法确定工作区。',
 
+  /* The legacy-directory notice: the workspace still holds the previous record directory, so the
+   * panel has nothing to draw and one way forward. The body names the directory this plugin reads,
+   * never the one it replaced — the old name is the engine's fact to spell, not this panel's. */
+  'panel.legacy.title': '记录目录已更名',
+  'panel.legacy.body': '当前项目仍在使用旧版记录目录。本插件只读取 `.superworker`，因此这里没有可显示的内容。',
+  'panel.legacy.link': '由 agent 完成迁移',
+
   /* ── The workspace selector ───────────────────────────────────────────────────────────────── */
   'workspace.aria': '工作区',
   'workspace.ungrouped': '未分组',

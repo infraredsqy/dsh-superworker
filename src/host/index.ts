@@ -1,7 +1,8 @@
 /**
  * Entry point of the host half's plugin: installs the `superworker` service on the
  * host, and arms the wake that registers the agent-facing `superworker` tool into the
- * scope of exactly the agents whose session loads a pipeline skill.
+ * scope of exactly the agents with a reason to see it — a workspace holding a record
+ * directory the pipeline recognizes, a pipeline skill load, or a `/sw-*` invocation.
  *
  * It holds no data and caches nothing: every call resolves the workspace root
  * from the session identity on the spot. A process gateway is not in `inject`
@@ -67,8 +68,11 @@ export { SuperworkerRecordsGateway }
  * one diagnostic line, where a workspace is known (`executor.ts`).
  *
  * The tool wake's listeners live here too: `installToolWake` watches the skill
- * tool's settled calls, the step proposals that carry a user `/superworker-*` invocation, and
- * every step of a session whose workspace holds a `.superworker/` record, and registers the
+ * tool's settled calls, the step proposals that carry a user `/sw-*` invocation, and
+ * every step of a session whose workspace holds a record directory the pipeline
+ * recognizes — the one it lays down today, or the older layer a workspace that has
+ * not migrated yet still holds, which must reach `migrate` and `doctor` somehow,
+ * and the tool is how — and registers the
  * agent-facing tool into the waking agent's own scope — never anywhere else, so a
  * session with no pipeline around it keeps the request header it would have had
  * without this plugin.

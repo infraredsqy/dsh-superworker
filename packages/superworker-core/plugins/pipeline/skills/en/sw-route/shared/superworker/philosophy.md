@@ -1,6 +1,6 @@
-# The superworker system's design philosophy
+# Superworker's design philosophy
 
-> This file describes the superworker system's background and design principles; sw-route cites it and does
+> This file describes Superworker's background and design principles; sw-route cites it and does
 > not retell it.
 
 ## The core problem
@@ -61,7 +61,7 @@ another node's `deps`, it most likely points at a completed node — confirm wit
 
 ### Ground truth stays clean
 
-Once every future plan has moved into the superworker system, the project's docs/ holds implemented content
+Once every future plan has moved into Superworker, the project's docs/ holds implemented content
 only. An agent reading docs/ can trust that what it reads is the present state, and no longer
 mixes up "is this a plan or is it implemented".
 
@@ -75,5 +75,5 @@ down "what is there now".
 The **sw-conduct** pipeline (one sw-conduct node finishing: prepare, execute, an independent
 review, fix, close out) answers "how do we implement it".
 
-The superworker system answers "what are we going to do" — it is the sw-conduct pipeline's upstream input.
+Superworker answers "what are we going to do" — it is the sw-conduct pipeline's upstream input.
 An idea enters the DAG from sw-route, and sw-conduct refines it and executes it.

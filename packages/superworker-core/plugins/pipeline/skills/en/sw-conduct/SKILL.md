@@ -42,7 +42,7 @@ them in `run.md`'s "Facts checked".
 | Method | the `method: <skill name>` line in the spec; absent = none | read `spec.md` | who runs this node this run, and under which skill (see "Method") |
 | Test tier and verification | `full` / `minimal` | `config get test_tier` | what each step verifies, and whether tests get written (see "Test tier and verification") |
 | worktree mode | `off` / `fork` / `reuse` | `config get worktree_mode` | the two steps, prepare's fork and the close's merge-back (see "Parallel: worktree") |
-| The subagent cap | a positive integer | `config get max_agents` | how the dispatched work is batched (see [`shared/sw/subagents.md`](shared/sw/subagents.md)) |
+| The subagent cap | a positive integer | `config get max_agents` | how the dispatched work is batched (see [`shared/superworker/subagents.md`](shared/superworker/subagents.md)) |
 | Parallel setting | how many nodes this line itself opened | the `Policy:` line of `cycle current` | how many nodes this run runs at once (see "Parallel: worktree") |
 | Node tag | `writing` / `coding` / `art` | on the graph, written down by sw-route | it only affects who this line picks (this flow only reads it) |
 
@@ -176,7 +176,7 @@ never changes them.
 The concurrency cap has three layers, outside in: the graph's dependency edges (who blocks whom)
 decide which nodes **may** sit side by side; this line's `parallel` (the `Policy:` line of
 `cycle current`) decides how many nodes the line **holds** at once; `config get max_agents`
-(see [`shared/sw/subagents.md`](shared/sw/subagents.md)) decides how many subagents this
+(see [`shared/superworker/subagents.md`](shared/superworker/subagents.md)) decides how many subagents this
 session has **in flight** at once. The third layer is the outermost: every node you hold may have
 its own children open at the same time, and together they may not cross it.
 
@@ -354,7 +354,7 @@ the report is already in context. Dispatch several at once by writing them into 
 to hand out the next batch's work, wait for this batch's results first.
 
 Before dispatching, count what is in flight against
-[`shared/sw/subagents.md`](shared/sw/subagents.md): when it cannot be crossed, yield in
+[`shared/superworker/subagents.md`](shared/superworker/subagents.md): when it cannot be crossed, yield in
 the order that card gives. This outer ring presses on every "dispatch in parallel" below.
 
 ### Execute

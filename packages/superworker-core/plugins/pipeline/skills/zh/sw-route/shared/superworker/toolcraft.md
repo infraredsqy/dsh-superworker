@@ -1,4 +1,4 @@
-# superworker 工具使用技巧
+# 超级工坊工具使用技巧
 
 > 本文件描述 DAG 管理工具的高效使用方法。与 `philosophy.md`（WHY）互补，本文件聚焦 HOW。
 

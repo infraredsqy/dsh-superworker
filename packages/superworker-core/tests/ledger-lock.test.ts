@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { isPfError, type RecordError } from '../src/errors.ts';
+import { isRecordError, type RecordError } from '../src/errors.ts';
 import { withLedgerLock } from '../src/ledgerlock.ts';
 import { ledgerLockPath, recordPaths, type RecordPaths } from '../src/paths.ts';
 
@@ -105,7 +105,7 @@ describe('in-process lock invariants', () => {
     const failure: unknown = await withLedgerLock(paths, async () => 'never reached', { timeoutMs: 0 }).catch(
       (error: unknown) => error,
     );
-    expect(isPfError(failure, 'lock_timeout')).toBe(true);
+    expect(isRecordError(failure, 'lock_timeout')).toBe(true);
     const error = failure as RecordError;
     // The code is the contract; the sentence still has to let a person act on their own.
     expect(error.path).toBe(lock);

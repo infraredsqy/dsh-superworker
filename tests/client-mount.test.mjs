@@ -410,7 +410,7 @@ test('with no locale service present: this layer speaks Chinese from the bundled
   const service = fakeLocaleService()
   port.attach(service)
   service.switchTo('en')
-  assert.equal(port.getSnapshot().t(SEAT_WORD), 'Superworker Center')
+  assert.equal(port.getSnapshot().t(SEAT_WORD), 'Superworker')
   port.attach(null)
   assert.equal(port.getSnapshot().active, FALLBACK_LOCALE)
 })

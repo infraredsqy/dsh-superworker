@@ -46,7 +46,7 @@ export function answerHandleOf(root: string, opener?: { readonly executor: Execu
  * @param args - The word line, as the words layer spells it.
  * @param said - The user's verbatim sentence, appended to the line as one last cell, as-is.
  */
-export async function runPf(workspaceRoot: string, args: readonly string[], said?: string): Promise<RecordOutcome> {
+export async function runWords(workspaceRoot: string, args: readonly string[], said?: string): Promise<RecordOutcome> {
   const settled = await answer(said === undefined ? args : [...args, said], answerHandleOf(workspaceRoot))
   if (settled.code === 0) return { ok: true, text: settled.stdout.trim() }
   /* A non-zero answer is not this plugin's sentence to write: the words layer said its own

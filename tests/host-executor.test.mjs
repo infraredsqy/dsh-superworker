@@ -23,7 +23,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { canonicalWorkspaceRoot, executorOf, openNodeSession } from '../src/host/executor.ts'
-import { SUPERWORKER_TOOL_NAME } from '../src/host/tool.ts'
+import { TOOL_NAME } from '../src/host/tool.ts'
 import { pinHome } from './helpers/env.mjs'
 import { until, flush } from './helpers/wait.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
@@ -652,7 +652,7 @@ test('Wake: the opened session gets the superworker tool before the first instru
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const record = rigging.agents.created[0]
   assert.equal(record.registered.length, 1, 'registered exactly once')
-  assert.equal(record.registered[0].name, SUPERWORKER_TOOL_NAME, 'the registered one is the superworker tool')
+  assert.equal(record.registered[0].name, TOOL_NAME, 'the registered one is the superworker tool')
   assert.deepEqual(record.sequence, ['register', 'followup'], 'the tool enters the scope first, the first instruction after')
 })
 

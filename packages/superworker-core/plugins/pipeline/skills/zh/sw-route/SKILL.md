@@ -40,7 +40,7 @@ DAG 与项目文档（docs/、spec）直接读；**工程代码不读**——实
 
 ### 第一步：读文档与上下文
 
-1. 读 `shared/sw/toolcraft.md` 与 `shared/sw/philosophy.md`
+1. 读 `shared/superworker/toolcraft.md` 与 `shared/superworker/philosophy.md`
 2. 读项目 docs/、spec
 3. 建或改图时，`config get test_tier` 读这个项目的测试档（`full` / `minimal`；出厂默认 `full`，同 `config list` 印的那样）。它还没被这个项目改过、而这一趟又需要 `minimal` 时，问一次、只问一次，并给出建议：demo／快速迭代原型 → `minimal`；产品级、要长期维护 → `full`，最终由用户定。拍板后用 `config set test_tier minimal` 写进项目的 `.superworker/config.json`。两档各是什么、谁读它，见 [`../sw-conduct/SKILL.md`](../sw-conduct/SKILL.md) 的「测试档与验证」表；它是项目级的，不进 spec。**不写进项目根的 `AGENTS.md`／`CLAUDE.md`**——设置只住 `.superworker/config.json` 与全局那份。worktree 档同理，走 `config set worktree_mode`。纯查图不问
 4. 读 DAG，也读线：先 `dag --help` 确认命令全集，再列一遍图看骨架；`cycle list` 与 `cycle current` 说出哪条线在服务中、各线 tags 盖着什么——线的事这一步就进场，第三步跟节点一起定
@@ -121,7 +121,7 @@ DAG 与项目文档（docs/、spec）直接读；**工程代码不读**——实
 
 ### 第四步：落地
 
-**现在就做（不进图）：** 派 subagent 去做，可以并行派几个（先按 [`shared/sw/subagents.md`](shared/sw/subagents.md) 数一遍进行中的），**它们只改文件，不提交**；做完向用户报告，提交在第五步一起做。这条路上有三类活：
+**现在就做（不进图）：** 派 subagent 去做，可以并行派几个（先按 [`shared/superworker/subagents.md`](shared/superworker/subagents.md) 数一遍进行中的），**它们只改文件，不提交**；做完向用户报告，提交在第五步一起做。这条路上有三类活：
 
 - **文档、设计说明追上现状**：派 subagent 照 sw-conduct 的 Doc-sync 角色卡走（[`../sw-conduct/subagent-prompts/doc-sync.md`](../sw-conduct/subagent-prompts/doc-sync.md)），只写已经实现的东西——docs/ 只装 ground truth 是这套系统的地基
 - **非行为性的小改**：注释、文档字符串、格式、纯文档

@@ -3,11 +3,11 @@
  * reads the claim and the walked path once); what lives here is only the words a caller reads when
  * there is no single line to name.
  */
-import type { Pf } from '../open';
+import type { Superworker } from '../open';
 
 /** The line a closing call started without `--cycle`, or the sentence that says why there is none. */
 export async function lineHoldingOf(
-  superworker: Pf,
+  superworker: Superworker,
   nodeId: string,
 ): Promise<{ cycle?: string; refusal?: string }> {
   const holder = await superworker.ledger.cycles.holder(nodeId);

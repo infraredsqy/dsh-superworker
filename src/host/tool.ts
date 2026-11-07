@@ -9,7 +9,7 @@
  * that builds the host hands the same seam the dispatch relay uses. Keeping it on the host face is
  * what lets this module stay out of the opener/relay/wake triangle entirely.
  *
- * Three names are pinned in one place ({@link SUPERWORKER_TOOL_NAME},
+ * Three names are pinned in one place ({@link TOOL_NAME},
  * {@link SKILL_TOOL_NAME}, {@link SKILL_NAME_PREFIX}); the registration, the skill-body
  * scan and the README all read them, and the lock test goes red when they disagree.
  */
@@ -19,14 +19,12 @@ import { answer, describe, longResultPointerOf, type Executor } from 'superworke
 import { workspaceRootOf } from './seams.ts'
 import { answerHandleOf } from './write.ts'
 
-/** The agent-facing tool's name: the same spelling the skills and the README name. */
-export const SUPERWORKER_TOOL_NAME = 'superworker'
+/** The agent-facing tool's own name: the same spelling the skills and the README name. */
+export const TOOL_NAME = 'superworker'
 /** The tool whose call result means "a skill was loaded": DSH's own skill loader. */
 export const SKILL_TOOL_NAME = 'skill'
-/** The prefix the pipeline's skills are named with, in the catalog and as `/superworker-*`. */
-export const SKILL_NAME_PREFIX = 'superworker-'
-/** The record's directory at a workspace root: the fact that says this workspace has a pipeline. */
-export const PIPELINE_DIR = '.superworker'
+/** The prefix the pipeline's skills are named with, in the catalog and as `/sw-*`. */
+export const SKILL_NAME_PREFIX = 'sw-'
 
 /** The tool's parameters, as the model spells them (the words are never enumerated here). */
 export interface SuperworkerToolArgs {
@@ -116,7 +114,7 @@ export interface SuperworkerToolHost {
 /** The tool itself: every call goes through the words layer's one `answer()`. */
 export function defineSuperworkerTool(host: SuperworkerToolHost): SuperworkerToolDefinition {
   return {
-    name: SUPERWORKER_TOOL_NAME,
+    name: TOOL_NAME,
     description: toolDescriptionOf(),
     parameters: {
       type: 'object',

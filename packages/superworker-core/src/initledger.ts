@@ -1,12 +1,12 @@
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { basename, delimiter, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { GitRunner } from './git';
+import type { GitResult, GitRunner } from './git';
 import { isMissingPath } from './fs-helpers';
 import { atomicWriteBytes } from './jsonio';
 import { withLedgerLock } from './ledgerlock';
-import { recordPaths, type RecordPaths } from './paths';
+import { RECORD_DIR_NAME, recordPaths, type RecordPaths } from './paths';
 
 /**
  * `init` and `register`: the one-shot setup action that lays down `.superworker/`, and the two keys that
@@ -25,23 +25,26 @@ import { recordPaths, type RecordPaths } from './paths';
  *   keeps `.superworker` out of the project repository, and the merge driver's two keys in the project's git
  *   config. Each one that does not happen is named in one sentence of `warnings` — never a throw,
  *   never a rollback.
+ * - **The records stay out of the project repository, and a tracked directory is an error.** The
+ *   exclude line is the one layout there is; a record directory the project's git tracks is refused
+ *   by `init` outright, because taking records back out of a repository's history is a person's
+ *   decision, and no flag of this action is allowed to make it for them.
  * - **git is asked, never guessed at.** All directory-layout knowledge of git (where
  *   `info/exclude` lives, where the repository root is, whether this is a checkout at all) goes
  *   through the injected `GitRunner`. No `.git` file is parsed by hand. A repository of `.superworker`'s own
- *   is given only when the caller asks for it (`ownRepo`, the default, own-repo layout only), and
+ *   is given when the caller asks for one (`ownRepo`, the default), and
  *   the giving is one `git init --quiet` through the same runner; an existing one is never touched.
  *   Without a runner the git-side attachments are skipped and said so, and a `git init` git refuses
  *   leaves one warning.
- * - **The merge driver's registration is read before it is written.** A registration this machine
- *   really answers — the command form `superworker merge-ledger …` with `superworker` on `PATH`, the package's own name
- *   form `sw-merge-ledger …` with that command on `PATH`, or the absolute form whose two quoted paths
- *   are both files here — is left exactly as it is (re-running `init` must not silently rewrite a
- *   working driver, a string a person may have chosen on purpose), and the reading says so. Only a
- *   missing or dead registration is replaced, with the command computed at write time: the command
- *   form when `superworker` resolves on `PATH` (position-independent, and the form an installed `superworker` answers),
- *   the package's name form when only `sw-merge-ledger` does, and the absolute form otherwise (quoted,
- *   `process.execPath` plus this package's built entry). The command now in force is handed back with
- *   the report, so a caller prints what was really written or kept.
+ * - **The merge driver is registered in the absolute form, and read before it is written.** A
+ *   registration this machine really answers — the one form, both quoted paths files here — is left
+ *   exactly as it is (re-running `init` must not silently rewrite a working driver, a string a person
+ *   may have chosen on purpose), and the reading says so. Only a missing or dead registration is
+ *   replaced, with the command computed at write time: the quoted node path plus this package's built
+ *   entry, both absolute — no form of the registration depends on what a machine happens to have on
+ *   `PATH`, so the one string a person can read is the one string the doctor's predicate can judge.
+ *   The command now in force is handed back with the report, so a caller prints what was really
+ *   written or kept.
  */
 
 /**
@@ -137,23 +140,16 @@ export const LAYOUT_FILE_NAMES: readonly string[] = LAYOUT_FILES.map((file) => f
 const INIT_MARKERS: readonly string[] = LAYOUT_FILES.filter((file) => file.initMarker).map(
   (file) => file.name,
 );
+/** The marks, under their own name: a legacy record directory is recognised by the same two files. */
+export { INIT_MARKERS };
 
 /**
  * The strict reader of the exclude file: bytes that are not valid UTF-8 are refused rather than
  * replaced, and a leading byte order mark is kept as U+FEFF, so what this run writes back is the
- * same bytes it read (valid UTF-8 round-trips byte for byte).
+ * same bytes it read (valid UTF-8 round-trips byte for byte). Exported because the migration
+ * switches the same file to the new directory name under the same rules.
  */
-const excludeDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-
-/** The name the merge driver is registered under, and the one command on `PATH` that answers it. */
-const MERGE_DRIVER_COMMAND = 'sw-merge-ledger';
-
-/** The other command form this tree answers: an installed `superworker` command's own `merge-ledger` word. */
-const PF_COMMAND = 'superworker';
-const MERGE_DRIVER_PF_FORM = `${PF_COMMAND} merge-ledger`;
-
-/** The two command forms, under the names the doctor's cell speaks of them: the writer and the reader share them. */
-export { MERGE_DRIVER_COMMAND as MERGE_DRIVER_NAME_FORM, MERGE_DRIVER_PF_FORM };
+export const excludeDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /** The args git hands a merge driver, in its own order — one array, and both the command string and the reading pattern are built from it. */
 const MERGE_DRIVER_ARGS = ['%O', '%A', '%B', '%P'] as const;
@@ -181,19 +177,7 @@ export function assertLedgerInitialized(paths: RecordPaths): void {
   );
 }
 
-// ── the two layouts ──────────────────────────────────────────────────────────
-
-/**
- * The two layouts, and there are exactly two:
- *
- * - `own-repo`: `.superworker` is not part of the project repository (the default). One `info/exclude` line
- *   in the project repository keeps it out; a repository of `.superworker`'s own is created when the caller
- *   asks for one (`ownRepo`, the default) and there is none yet.
- * - `in-repo`: `.superworker` travels with the project repository. That `info/exclude` line is taken away;
- *   `.superworker/.git`, if there is one from an earlier layout, is left exactly where it is — removing a
- *   directory is removing history, and that is not this engine's call.
- */
-export type LedgerLayout = 'own-repo' | 'in-repo';
+// ── the choices ──────────────────────────────────────────────────────────────
 
 /** The choices of `init`. */
 export interface LedgerInitOptions {
@@ -203,13 +187,10 @@ export interface LedgerInitOptions {
    * whenever they differ by default, and force does not govern them.
    */
   readonly force?: boolean;
-  /** Which layout to set up: `own-repo` (the default) or `in-repo`. Re-running switches idempotently either way. */
-  readonly layout?: LedgerLayout;
   /**
    * Whether `.superworker` should have a repository of its own: one `git init --quiet` in the record
-   * directory, run through the injected runner, when it has none yet and the layout is `own-repo`.
-   * The default is yes; `in-repo` never creates one, and an existing
-   * one is never touched.
+   * directory, run through the injected runner, when it has none yet. The default is yes, and an
+   * existing one is never touched.
    */
   readonly ownRepo?: boolean;
   /** The git capability; without it the git-side attachments are skipped and named in `warnings`. */
@@ -231,7 +212,7 @@ export type OwnRepoReading =
   | 'created'
   /** `.superworker/.git` is there. The engine created nothing this time and removes nothing. */
   | 'present'
-  /** No `.superworker/.git`, and one was not asked for (or the layout is `in-repo`): plain files, on purpose. */
+  /** No `.superworker/.git`, and one was not asked for: plain files, on purpose. */
   | 'skipped'
   /** No `.superworker/.git`, one was asked for, and no git was handed in: `git init .superworker` stays the person's move. */
   | 'skipped-no-git';
@@ -244,12 +225,8 @@ export type OwnRepoReading =
 export type ExcludeReading =
   /** The line is in place (written now, or already there). */
   | 'written'
-  /** The line was taken away (now, or it was not there any more). */
-  | 'removed'
   /** Nothing was looked at or written: no git was handed in, git would not answer, or it would not say where the file or this project is. */
   | 'skipped-not-a-checkout'
-  /** The in-repo layout has no exclude line to take away. */
-  | 'skipped-not-own-repo'
   /** The checkout and the file were found, and reading or writing it failed; `warnings` names the file and the failure, and nothing was written. */
   | 'failed';
 
@@ -264,7 +241,6 @@ export type MergeDriverReading =
 
 /** What `init` hands back: what it did, and what it could not do and why. */
 export interface InitReport {
-  layout: LedgerLayout;
   /** The layout files this run really wrote (a file whose bytes already match is left alone). */
   written: string[];
   ownRepo: OwnRepoReading;
@@ -292,8 +268,8 @@ async function bytesMatch(path: string, payload: Uint8Array): Promise<boolean> {
   return true;
 }
 
-/** Whether the file is there and is a file (a directory or an unreadable cell is not). */
-function isFileThere(path: string): boolean {
+/** Whether the file is there and is a file (a directory or an unreadable cell is not). Exported: the migration's machine-layer copy asks the same question about two files. */
+export function isFileThere(path: string): boolean {
   try {
     return statSync(path).isFile();
   } catch {
@@ -344,6 +320,22 @@ async function writeLayoutFiles(paths: RecordPaths, force: boolean): Promise<str
   return written;
 }
 
+/**
+ * Bring one constant layout file's bytes current, under the same rule the whole landing applies:
+ * written when its bytes differ, untouched when they match. `name` must be one of the layout table's
+ * constant names — the migration asks for the one file whose driver attribute moves with a directory
+ * rename, and the constant body is the only spelling of the new attribute there is.
+ */
+export async function repairLayoutFile(paths: RecordPaths, name: string): Promise<boolean> {
+  const file = LAYOUT_FILES.find((entry) => entry.name === name);
+  if (file === undefined || file.onlyWhenAbsent === true) return false;
+  const path = join(paths.recordDir, file.name);
+  const payload = encoder.encode(file.body);
+  if (await bytesMatch(path, payload)) return false;
+  await atomicWriteBytes(path, payload);
+  return true;
+}
+
 // ── git, as asked through the injected runner ────────────────────────────────
 
 /** The answer of "can git answer here at all?"; nothing below it runs when the answer is no. */
@@ -369,8 +361,8 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Ask git for a path it knows the location of; null when it will not say. */
-async function gitPathOf(root: string, git: GitRunner, ...args: string[]): Promise<string | null> {
+/** Ask git for a path it knows the location of; null when it will not say. Exported: the migration asks where the same file lives before it writes it. */
+export async function gitPathOf(root: string, git: GitRunner, ...args: string[]): Promise<string | null> {
   try {
     const result = await git.run(root, ['rev-parse', ...args]);
     if (result.code !== 0) return null;
@@ -387,15 +379,19 @@ async function gitPathOf(root: string, git: GitRunner, ...args: string[]): Promi
  * Put this project's line into the exclude text (`keep`), or take it out.
  *
  * Exactly one line per project root: a duplicate of this project's line is dropped, and a line
- * spelling the same project root is replaced in place, so switching layouts back and forth never
- * leaves two lines behind. Lines belonging to **other** project roots in the same repository are
+ * spelling the same project root is replaced in place, so a repeated write never leaves two lines
+ * behind. Lines belonging to **other** project roots in the same repository are
  * left exactly as they are — taking one away would silently un-ignore another project's records,
  * which is the accident this rule exists to prevent. "Exactly as they are" is byte-level: every
  * line keeps the ending it already had (`\n`, `\r\n`, or a lone `\r`), so a CRLF file stays CRLF
  * and a hand-mixed one is not half-normalized by this write. `had` says whether this project's
  * line was there before.
+ *
+ * Exported because the migration switches the same file to the new directory name: the old line
+ * goes out through one `keep: false` call per old spelling, and the new line in through one
+ * `keep: true` call — one splicer, so the byte rules cannot drift between the two writers.
  */
-function withExcludeLine(
+export function withExcludeLine(
   text: string,
   line: string,
   keep: boolean,
@@ -431,8 +427,8 @@ function withExcludeLine(
   return { text: pieces.join(''), had };
 }
 
-/** One line of the exclude text with the ending it arrived with. */
-interface ExcludeLine {
+/** One line of the exclude text with the ending it arrived with (exported beside the splicer and the splitter that produce and consume it). */
+export interface ExcludeLine {
   readonly text: string;
   readonly ending: string;
 }
@@ -448,8 +444,8 @@ function addedEndingOf(lines: readonly ExcludeLine[]): string {
   return lines.every((one) => one.ending === shared) ? shared : '\n';
 }
 
-/** Split the exclude text into lines, keeping each line's own ending (`\r\n`, `\n`, a lone `\r`, or none on the last one). */
-function splitExcludeLines(text: string): ExcludeLine[] {
+/** Split the exclude text into lines, keeping each line's own ending (`\r\n`, `\n`, a lone `\r`, or none on the last one). Exported beside the splicer it serves: a reader of these lines that split them differently would read the endings differently too. */
+export function splitExcludeLines(text: string): ExcludeLine[] {
   const lines: ExcludeLine[] = [];
   const pattern = /([^\r\n]*)(\r\n|\n|\r|$)/g;
   for (;;) {
@@ -462,13 +458,22 @@ function splitExcludeLines(text: string): ExcludeLine[] {
   return lines;
 }
 
-/** The line for this project: anchored at the repository root, so several `.superworker`s in one repository each get their own. */
-async function excludeLineFor(root: string, git: GitRunner): Promise<string | null> {
+/**
+ * The exclude line one directory name gets for this project: anchored at the repository root, so
+ * several record directories in one repository each get their own. The directory name is a
+ * parameter, not a constant, because the migration asks for the old name's line — the line it has
+ * to take out — through the same probe that writes the new name's.
+ */
+export async function excludeLineFor(
+  root: string,
+  git: GitRunner,
+  dirName: string = RECORD_DIR_NAME,
+): Promise<string | null> {
   try {
     const result = await git.run(root, ['rev-parse', '--show-prefix']);
     if (result.code !== 0) return null;
     const prefix = result.stdout.trim().replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
-    return prefix === '' ? '/.superworker/' : `/${prefix}/.superworker/`;
+    return prefix === '' ? `/${dirName}/` : `/${prefix}/${dirName}/`;
   } catch {
     return null;
   }
@@ -482,22 +487,15 @@ interface ExcludeOutcome {
 /** The three ways the exclude file itself can defeat this run: unreadable, bytes we cannot re-encode, unwritable. */
 type ExcludeFailure = 'read' | 'bytes' | 'write';
 
-/** The exclude attachment's opening clause per layout: keeping `.superworker` out (own-repo), or taking that line away (in-repo). */
-function excludeGoal(layout: LedgerLayout): string {
-  return layout === 'own-repo'
-    ? '.superworker is not kept out of the project repository'
-    : '.superworker should travel with the project, but its info/exclude line could not be taken away';
-}
+/** The exclude attachment's opening clause: the sentence says what the workspace is like without the line. */
+const EXCLUDE_GOAL = '.superworker is not kept out of the project repository';
 
 /**
- * The sentence a failed exclude attachment leaves. The two layouts want opposite things — own-repo
- * keeps `.superworker` out of the project repository, in-repo takes that exclusion line away so `.superworker` travels
- * with it — so each one states its own job and names the failure; the own-repo sentence is not the
- * in-repo one. All three kinds are `failed` readings: a file the engine could not read, could not
- * re-encode, or could not write must not be rewritten from a half-reading of it.
+ * The sentence a failed exclude attachment leaves. All three kinds are `failed` readings: a file
+ * the engine could not read, could not re-encode, or could not write must not be rewritten from a
+ * half-reading of it, and each sentence names which one it was.
  */
 function excludeFailure(
-  layout: LedgerLayout,
   excludePath: string,
   kind: ExcludeFailure,
   detail?: string,
@@ -508,41 +506,27 @@ function excludeFailure(
       : kind === 'bytes'
         ? `${excludePath} was found but its bytes are not valid UTF-8`
         : `${excludePath} was found but could not be written (${detail ?? ''})`;
-  if (layout === 'own-repo') {
-    if (kind === 'read') {
-      return (
-        `.superworker is not kept out of the project repository: ${failure}, so rewriting it could drop ` +
-        "another project's line; nothing was written."
-      );
-    }
-    if (kind === 'bytes') {
-      return (
-        `.superworker is not kept out of the project repository: ${failure}, so rewriting it would replace ` +
-        'bytes this engine cannot re-encode; nothing was written.'
-      );
-    }
-    return `.superworker is not kept out of the project repository: ${failure}.`;
+  if (kind === 'read') {
+    return (
+      `${EXCLUDE_GOAL}: ${failure}, so rewriting it could drop ` +
+      "another project's line; nothing was written."
+    );
   }
-  const still =
-    kind === 'write' ? 'the line is still there' : 'nothing was written, so the line is still there';
-  return (
-    `.superworker should travel with the project, but its info/exclude line could not be taken away: ` +
-    `${failure}; ${still} — .superworker stays out of the project.`
-  );
+  if (kind === 'bytes') {
+    return (
+      `${EXCLUDE_GOAL}: ${failure}, so rewriting it would replace ` +
+      'bytes this engine cannot re-encode; nothing was written.'
+    );
+  }
+  return `${EXCLUDE_GOAL}: ${failure}.`;
 }
 
-async function syncExclude(
-  root: string,
-  layout: LedgerLayout,
-  probe: CheckoutProbe,
-): Promise<ExcludeOutcome> {
+async function syncExclude(root: string, probe: CheckoutProbe): Promise<ExcludeOutcome> {
   if (probe.kind !== 'checkout') {
     return {
       reading: 'skipped-not-a-checkout',
       warning:
-        layout === 'own-repo'
-          ? `.superworker is not kept out of the project repository: the info/exclude line was not written because ${probe.note}.`
-          : `The info/exclude line was not looked at because ${probe.note}.`,
+        `${EXCLUDE_GOAL}: the info/exclude line was not written because ${probe.note}.`,
     };
   }
   const excludePath = await gitPathOf(root, probe.git, '--git-path', 'info/exclude');
@@ -550,7 +534,7 @@ async function syncExclude(
     return {
       reading: 'skipped-not-a-checkout',
       warning:
-        `${excludeGoal(layout)}: git would not say where info/exclude is ` +
+        `${EXCLUDE_GOAL}: git would not say where info/exclude is ` +
         '(rev-parse --git-path info/exclude answered nothing usable).',
     };
   }
@@ -559,7 +543,7 @@ async function syncExclude(
     return {
       reading: 'skipped-not-a-checkout',
       warning:
-        `${excludeGoal(layout)}: git would not say where this project sits ` +
+        `${EXCLUDE_GOAL}: git would not say where this project sits ` +
         'inside the repository (rev-parse --show-prefix answered nothing usable).',
     };
   }
@@ -574,7 +558,7 @@ async function syncExclude(
     if (!isMissingPath(error)) {
       return {
         reading: 'failed',
-        warning: excludeFailure(layout, excludePath, 'read', messageOf(error)),
+        warning: excludeFailure(excludePath, 'read', messageOf(error)),
       };
     }
   }
@@ -589,11 +573,11 @@ async function syncExclude(
       // `failed`, the warning names the encoding, and the file is left exactly as it was.
       return {
         reading: 'failed',
-        warning: excludeFailure(layout, excludePath, 'bytes'),
+        warning: excludeFailure(excludePath, 'bytes'),
       };
     }
   }
-  const next = withExcludeLine(current, line, layout === 'own-repo');
+  const next = withExcludeLine(current, line, true);
   if (next.text !== current) {
     try {
       await atomicWriteBytes(excludePath, encoder.encode(next.text));
@@ -603,12 +587,11 @@ async function syncExclude(
       // names the file and the reason.
       return {
         reading: 'failed',
-        warning: excludeFailure(layout, excludePath, 'write', messageOf(error)),
+        warning: excludeFailure(excludePath, 'write', messageOf(error)),
       };
     }
   }
-  if (layout === 'own-repo') return { reading: 'written' };
-  return { reading: next.had ? 'removed' : 'skipped-not-own-repo' };
+  return { reading: 'written' };
 }
 
 // ── the merge driver's registration string ───────────────────────────────────
@@ -619,27 +602,6 @@ function isFile(path: string): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * Whether the command resolves on `PATH`: the bare name, and on Windows the `PATHEXT` spellings npm's
- * shims use. The writer asks this before it chooses the name form, and the doctor asks the same
- * helper before it certifies that form — one resolution, so the registration and the reading of it
- * cannot disagree.
- */
-export function resolvesOnPath(command: string): boolean {
-  const raw = process.env['PATH'] ?? process.env['Path'] ?? '';
-  const extensions =
-    process.platform === 'win32'
-      ? ['', ...(process.env['PATHEXT'] ?? '.COM;.EXE;.BAT;.CMD').split(';').filter((ext) => ext !== '')]
-      : [''];
-  for (const dir of raw.split(delimiter)) {
-    if (dir === '') continue;
-    for (const extension of extensions) {
-      if (isFile(join(dir, command + extension))) return true;
-    }
-  }
-  return false;
 }
 
 /**
@@ -668,24 +630,13 @@ function mergeLedgerProductPath(): string {
 }
 
 /**
- * The string written into `merge.superworker.driver`, computed at write time in exactly three forms:
- *
- * - the **command form** (preferred) when `superworker` resolves on `PATH`: `superworker merge-ledger %O %A %B %P` — the
- *   form an installed `superworker` command answers, position-independent, and the one this tree's own router
- *   answers;
- * - the **name form** when only `sw-merge-ledger` resolves: this package's own bin entry, also
- *   position-independent;
- * - the **absolute form** otherwise: `process.execPath` (node) plus this package's built entry, both
- *   quoted — a Windows node path has spaces in it, and git splits the driver string on spaces. It runs
- *   here and now with nothing on `PATH`, and goes on running after `superworker` is installed.
+ * The string written into `merge.superworker.driver`, in the one form this package writes and reads:
+ * `process.execPath` (node) plus this package's built entry, both quoted — a Windows node path has
+ * spaces in it, and git splits the driver string on spaces. The registration names no command on
+ * `PATH`: a form that depends on what a machine happens to have installed answers on one machine and
+ * dies on the next, and a registration spelled out in full is one the reader can actually judge.
  */
 export function mergeDriverCommand(): string {
-  if (resolvesOnPath(PF_COMMAND)) {
-    return `${MERGE_DRIVER_PF_FORM} ${MERGE_DRIVER_ARGS_TEXT}`;
-  }
-  if (resolvesOnPath(MERGE_DRIVER_COMMAND)) {
-    return `${MERGE_DRIVER_COMMAND} ${MERGE_DRIVER_ARGS_TEXT}`;
-  }
   return `"${process.execPath}" "${mergeLedgerProductPath()}" ${MERGE_DRIVER_ARGS_TEXT}`;
 }
 
@@ -708,11 +659,11 @@ export interface AbsoluteFormReading {
 }
 
 /**
- * Read an absolute-form registration against this machine. The two forms this package writes are the
- * name form (a command on `PATH`) and this absolute form; a registration is only worth the green
- * cell when the thing it names can actually be answered here, so the interpreter **and** the built
- * entry both have to be present. A moved checkout leaves both paths behind, and the string that
- * pointed at them is dead — it must not be certified as "works on this machine".
+ * Read an absolute-form registration against this machine. The absolute form is the only form this
+ * package writes; a registration is only worth the green cell when the thing it names can actually
+ * be answered here, so the interpreter **and** the built entry both have to be present. A moved
+ * checkout leaves both paths behind, and the string that pointed at them is dead — it must not be
+ * certified as "works on this machine".
  */
 export function readAbsoluteForm(driver: string): AbsoluteFormReading {
   const match = ABSOLUTE_FORM.exec(driver);
@@ -723,25 +674,12 @@ export function readAbsoluteForm(driver: string): AbsoluteFormReading {
 }
 
 /**
- * The command a registered driver string names, when it is spelled in one of the command forms this
- * tree answers: `superworker merge-ledger …` (this tree's own router, the form an installed `superworker` command
- * writes) or this package's `sw-merge-ledger …`. Anything else — the absolute form included — answers `null`.
- * The writer and the doctor both go through this one reading, so what is written and what is judged
- * cannot describe two different forms.
+ * Whether this machine really answers one registered driver string: the absolute form only, with
+ * both quoted paths files here. One predicate for the writer and the doctor, so what is written and
+ * what is judged cannot describe two different forms — anything else on the key is dead, whatever
+ * once wrote it.
  */
-export function namedDriverCommand(driver: string): string | null {
-  if (driver.startsWith(`${MERGE_DRIVER_PF_FORM} `)) return PF_COMMAND;
-  if (driver.startsWith(`${MERGE_DRIVER_COMMAND} `)) return MERGE_DRIVER_COMMAND;
-  return null;
-}
-
-/**
- * Whether this machine really answers one registered driver string: the command forms only when their
- * command resolves on `PATH` here, the absolute form only when both quoted paths are files here.
- */
-export function registeredDriverRuns(driver: string): boolean {
-  const command = namedDriverCommand(driver);
-  if (command !== null) return resolvesOnPath(command);
+export function driverRunsHere(driver: string): boolean {
   const absolute = readAbsoluteForm(driver);
   return absolute.shaped && absolute.missing.length === 0;
 }
@@ -753,6 +691,34 @@ interface MergeDriverOutcome {
   /** The command `merge.superworker.driver` holds after this run, or null when the registration was skipped. */
   readonly command: string | null;
   readonly warning?: string;
+}
+
+/**
+ * Write the two keys through `git config --local`, and nothing else: git owns the config file's
+ * locking, atomicity and every other section in it, so the engine writes no config byte itself.
+ * The first key that comes back non-zero is the failure, named with git's own first stderr line.
+ * Exported because the migration re-registers the same pair, through the same one writer.
+ */
+export async function writeMergeDriverKeys(
+  root: string,
+  git: GitRunner,
+  command: string,
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly detail: string }> {
+  const name = 'superworker ledger three-way merge';
+  const wroteName = await git.run(root, ['config', '--local', 'merge.superworker.name', name]);
+  const wroteDriver = await git.run(root, [
+    'config',
+    '--local',
+    'merge.superworker.driver',
+    command,
+  ]);
+  const failed = [wroteName, wroteDriver].find((result) => result.code !== 0);
+  if (failed === undefined) return { ok: true };
+  const detail = failed.stderr.trim().split(/\r?\n/)[0] ?? '';
+  return {
+    ok: false,
+    detail: `git config exited ${failed.code}${detail === '' ? '' : ` (${detail})`}`,
+  };
 }
 
 /**
@@ -773,32 +739,22 @@ async function writeMergeDriver(root: string, probe: CheckoutProbe): Promise<Mer
         'a record come back as a plain git conflict.',
     };
   }
-  const name = 'superworker ledger three-way merge';
   try {
     const read = await probe.git.run(root, ['config', '--local', '--get', 'merge.superworker.driver']);
     const registered = read.code === 0 ? read.stdout.trim() : '';
-    if (registered !== '' && registeredDriverRuns(registered)) {
+    if (registered !== '' && driverRunsHere(registered)) {
       // Already there and answerable here: kept byte for byte, and the report says which string it is.
       return { reading: 'kept', command: registered };
     }
     const command = mergeDriverCommand();
-    const wroteName = await probe.git.run(root, ['config', '--local', 'merge.superworker.name', name]);
-    const wroteDriver = await probe.git.run(root, [
-      'config',
-      '--local',
-      'merge.superworker.driver',
-      command,
-    ]);
-    const failed = [wroteName, wroteDriver].find((result) => result.code !== 0);
-    if (failed !== undefined) {
-      const detail = failed.stderr.trim().split(/\r?\n/)[0] ?? '';
+    const wrote = await writeMergeDriverKeys(root, probe.git, command);
+    if (!wrote.ok) {
       return {
         reading: 'skipped-no-config',
         command: null,
         warning:
-          `The merge driver was not registered: git config exited ${failed.code}` +
-          `${detail === '' ? '' : ` (${detail})`}. Two branches that both changed a record come back ` +
-          'as a plain git conflict.',
+          `The merge driver was not registered: ${wrote.detail}. Two branches that both changed a record ` +
+          'come back as a plain git conflict.',
       };
     }
     return { reading: 'written', command };
@@ -824,24 +780,12 @@ interface OwnRepoOutcome {
  */
 async function settleOwnRepo(
   paths: RecordPaths,
-  layout: LedgerLayout,
   ownRepo: boolean,
   git: GitRunner | undefined,
 ): Promise<OwnRepoOutcome> {
   const dotGit = join(paths.recordDir, '.git');
-  const asked = ownRepo && layout === 'own-repo';
-  if (existsSync(dotGit)) {
-    return layout === 'in-repo'
-      ? {
-          reading: 'present',
-          warning:
-            'This directory still has a repository of its own (.superworker/.git): its history does not ' +
-            'travel with the project. Remove .superworker/.git by hand if the project is meant to carry ' +
-            'these records.',
-        }
-      : { reading: 'present' };
-  }
-  if (!asked) return { reading: 'skipped' };
+  if (existsSync(dotGit)) return { reading: 'present' };
+  if (!ownRepo) return { reading: 'skipped' };
   const advice =
     'The records are one local copy until then: `git clean -xdf` would take the history with it.';
   if (git === undefined) {
@@ -869,6 +813,30 @@ async function settleOwnRepo(
   }
 }
 
+/**
+ * The one gate `init` refuses on: a record directory the project's git tracks. The records belong to
+ * the machine that runs the pipeline, and taking them back out of a repository's history is a
+ * person's decision — so the error hands the job to an agent instead of naming git's own commands,
+ * and lands no byte. A git that cannot be asked is not this gate: outside a checkout there is
+ * nothing to track with, and the doctor's tracked cell names the state where one appears.
+ */
+async function refuseTrackedRecordDir(root: string, git: GitRunner | undefined): Promise<void> {
+  if (git === undefined) return;
+  let listing: GitResult;
+  try {
+    listing = await git.run(root, ['ls-files', '--', RECORD_DIR_NAME]);
+  } catch {
+    return;
+  }
+  if (listing.code === 0 && listing.stdout.trim() !== '') {
+    throw new Error(
+      `${join(root, RECORD_DIR_NAME)} is tracked by this project's git: the records belong to the ` +
+        'machine that runs the pipeline, and taking them back out of the repository\'s history is not ' +
+        'this engine\'s call — consult an agent. Nothing was written.',
+    );
+  }
+}
+
 // ── the two verbs ────────────────────────────────────────────────────────────
 
 /**
@@ -889,14 +857,14 @@ export async function registerLedger(
 /**
  * Set up the `.superworker/` record directory for a project: the four layout files first (the bottom line,
  * true in every environment), then the three best-effort attachments, each failure named in
- * `warnings` instead of thrown. Idempotent, and switching between the two layouts is idempotent
- * both ways.
+ * `warnings` instead of thrown. Idempotent: re-running it never does anything twice. A record
+ * directory the project's git tracks is the one refusal — it stops `init` before a byte lands.
  */
 export async function initLedger(
   root: string,
   options: LedgerInitOptions = {},
 ): Promise<InitReport> {
-  const layout: LedgerLayout = options.layout === 'in-repo' ? 'in-repo' : 'own-repo';
+  await refuseTrackedRecordDir(root, options.git);
   const paths = recordPaths(root);
   mkdirSync(paths.recordDir, { recursive: true });
 
@@ -905,17 +873,16 @@ export async function initLedger(
   const warnings: string[] = [];
   const probe = await probeCheckout(root, options.git);
 
-  const ownRepo = await settleOwnRepo(paths, layout, options.ownRepo !== false, options.git);
+  const ownRepo = await settleOwnRepo(paths, options.ownRepo !== false, options.git);
   if (ownRepo.warning !== undefined) warnings.push(ownRepo.warning);
 
-  const exclude = await syncExclude(root, layout, probe);
+  const exclude = await syncExclude(root, probe);
   if (exclude.warning !== undefined) warnings.push(exclude.warning);
 
   const mergeDriver = await writeMergeDriver(root, probe);
   if (mergeDriver.warning !== undefined) warnings.push(mergeDriver.warning);
 
   return {
-    layout,
     written,
     ownRepo: ownRepo.reading,
     exclude: exclude.reading,

@@ -8,6 +8,7 @@
  * "fetch page by page until `eof`", halving the line count and retrying
  * whenever a page is refused.
  */
+import { isRecognizableLegacyRecord } from 'superworker-core'
 import { RECORD_DIR, RECORD_SOURCES } from './contract.ts'
 import type {
   SuperworkerCycle,
@@ -15,6 +16,7 @@ import type {
   SuperworkerIssue,
   SuperworkerNode,
   SuperworkerReading,
+  SuperworkerReadingState,
   SuperworkerSourceState,
 } from './contract.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -211,7 +213,10 @@ export async function readWholeFile(
  *
  * The four sources that cannot be fetched yield empty collections and the
  * reading still returns: a workspace without records is a normal reading,
- * and the panel draws "nothing happened" from it. Real errors (refused
+ * and the panel draws "nothing happened" from it. A workspace whose records
+ * sit only in the older layer gets the `legacy` reading instead — every source
+ * `legacy`, every collection empty, and not one old file opened, because what
+ * that workspace needs is a migration, not a read. Real errors (refused
  * directory listing, caller cancellation) are rethrown, not swallowed here.
  */
 export async function readReading(
@@ -240,14 +245,15 @@ export async function readReading(
     instructions: 'missing',
     issues: 'missing',
   }
-  /* The accumulators wear the reading's own field types: every fill below is judged against them. The reading itself is assembled once, by the contextually typed literal in `finish`, both at the no-records early exit and at the end. */
+  /* The accumulators wear the reading's own field types: every fill below is judged against them. The reading itself is assembled only by the contextually typed literal in `finish`, at the legacy exit, at the no-records exit and at the end alike. */
   const nodes: Record<string, SuperworkerNode> = {}
   const cycles: SuperworkerCycle[] = []
   const instructions: SuperworkerInstruction[] = []
   const issues: Record<string, SuperworkerIssue> = {}
-  const finish = (): SuperworkerReading => ({
+  const finish = (state: SuperworkerReadingState): SuperworkerReading => ({
     workspaceRoot: scope.workspaceRoot,
     recordPath: RECORD_DIR,
+    state,
     sources,
     nodes,
     cycles,
@@ -255,8 +261,17 @@ export async function readReading(
     issues,
   })
 
-  // List the records' directory layer once first: a listing means the workspace has records; no listing means "no such records".
-  if ((await listDir(RECORD_DIR)) === undefined) return finish()
+  // List the records' directory layer once first: a listing means the workspace has records; no
+  // listing means either "no records at all" or a workspace whose records sit in the older layer
+  // this reader does not open. The second fact is recognised, never read — the panel's whole job
+  // in such a workspace is saying so, and it can only say it if the reading names the state.
+  if ((await listDir(RECORD_DIR)) === undefined) {
+    if (isRecognizableLegacyRecord(scope.workspaceRoot)) {
+      for (const key of Object.keys(sources) as (keyof typeof RECORD_SOURCES)[]) sources[key] = 'legacy'
+      return finish('legacy')
+    }
+    return finish('records')
+  }
 
   for (const key of Object.keys(RECORD_SOURCES) as (keyof typeof RECORD_SOURCES)[]) {
     const segments = RECORD_SOURCES[key].split('/')
@@ -288,5 +303,5 @@ export async function readReading(
       sources[key] = 'unusable'
     }
   }
-  return finish()
+  return finish('records')
 }

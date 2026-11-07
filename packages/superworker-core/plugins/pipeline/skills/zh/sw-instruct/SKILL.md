@@ -1,6 +1,6 @@
 ---
 name: sw-instruct
-description: 往项目指令清单里记一条约束，让以后干活的 agent 都照办（superworker 会话内用）
+description: 往项目指令清单里记一条约束，让以后干活的 agent 都照办（管线会话内用）
 disable-model-invocation: true
 ---
 

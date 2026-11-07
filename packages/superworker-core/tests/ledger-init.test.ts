@@ -67,7 +67,6 @@ describe('ledger.init: the bottom line holds in an environment without git', () 
   it('the four layout files land, LF on every platform, and no repository of .superworker is created', async () => {
     const superworker = open(root);
     const report = await superworker.ledger.init();
-    expect(report.layout).toBe('own-repo');
     expect(report.written).toEqual(LAYOUT_FILES);
     expect(readFileSync(join(root, '.superworker', '.gitignore'), 'utf8')).toBe(GITIGNORE);
     expect(readFileSync(join(root, '.superworker', '.gitattributes'), 'utf8')).toBe(GITATTRIBUTES);
@@ -211,16 +210,6 @@ describe('ledger.init: the bottom line holds in an environment without git', () 
     const before = hashTree(recordDir);
     await superworker.ledger.init({ force: true });
     expect(hashTree(recordDir)).toBe(before);
-  });
-
-  it('the in-repo layout is the same bottom line without git: layout written, exclude skipped', async () => {
-    const superworker = open(root);
-    const report = await superworker.ledger.init({ layout: 'in-repo' });
-    expect(report.layout).toBe('in-repo');
-    expect(report.written).toEqual(LAYOUT_FILES);
-    expect(report.exclude).toBe('skipped-not-a-checkout');
-    expect(existsSync(join(root, '.superworker', '.git'))).toBe(false);
-    expect(readFileSync(join(root, '.superworker', '.gitignore'), 'utf8')).toBe(GITIGNORE);
   });
 });
 

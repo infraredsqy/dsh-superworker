@@ -32,7 +32,7 @@ export interface RecordOpenOptions {
 }
 
 /** The superworker handle: the project root plus four namespaces and where the record tree lives. */
-export interface Pf {
+export interface Superworker {
   /** The project root, the spelling open received is kept as it is (open itself does not touch disk). */
   readonly root: string;
   readonly ledger: LedgerNamespace;
@@ -47,10 +47,10 @@ export interface Pf {
   readonly locations: RecordLocations;
 }
 
-const executors = new WeakMap<Pf, Executor | undefined>();
+const executors = new WeakMap<Superworker, Executor | undefined>();
 
 /** Read the executor injected into a handle (an in-package seam, not on the frozen surface). */
-export function executorOf(superworker: Pf): Executor | undefined {
+export function executorOf(superworker: Superworker): Executor | undefined {
   return executors.get(superworker);
 }
 
@@ -62,11 +62,11 @@ export function executorOf(superworker: Pf): Executor | undefined {
  * touches no disk — it hands the namespace a reader, and the reader scans the plugin folder on the call
  * that asks, so a plugin installed or removed is in force on the next call rather than at the next open.
  */
-export function open(root: string, options: RecordOpenOptions = {}): Pf {
+export function open(root: string, options: RecordOpenOptions = {}): Superworker {
   if (typeof root !== 'string' || root.length === 0) {
     throw new TypeError('open(root, ...) needs a non-empty project root path');
   }
-  const superworker: Pf = {
+  const superworker: Superworker = {
     root,
     ledger: createLedgerNamespace(root),
     conductor: createConductorNamespace(root, options.executor, {

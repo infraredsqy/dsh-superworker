@@ -2,7 +2,7 @@
 
 这份文件是本包接口面的唯一参考。名字与签名已经冻结，不另行改名；改动要先过指挥者。
 
-- `open(root, options?)` 交回一个 `superworker` 句柄，里面是 `ledger` / `conductor` / `config` /
+- `open(root, options?)` 交回一个记录句柄，里面是 `ledger` / `conductor` / `config` /
   `sessions` 四个命名空间；`options` 的形状是 `RecordOpenOptions`。
 - `RecordOpenOptions { executor?: Executor; homeDir?: string; pluginsDir?: string }` —— `executor` 是执行的唯一注入点；不传执行者时，`conductor.dispatch`
   直接抛错，记录一个字节都不动。git 不走这里：`ledger.init`、`ledger.register` 与 `conductor.doctor`
@@ -13,9 +13,10 @@
   home。`pluginsDir` 是这个句柄扫描的插件目录
   （设置声明的并入、插件命令、doctor 与两道时机门读的都是它）：点名优先于 `SUPERWORKER_PLUGINS_DIR`，两者都压过
   缺省的 `<root>/plugins`；不点名时读法照旧。
-- `Pf { root: string; ledger; conductor; config; sessions; locations }` —— `root` 是打开时给的项目根，原样保存；
+- 句柄的形状是 `{ root: string; ledger; conductor; config; sessions; locations }` —— `root` 是打开时给的项目根，原样保存；
   `locations` 是这个根那份记录树的落点（`RecordLocations { paths; signal; launchPrompt }`）：
-  谁要把一个落点印出来就问它，`.superworker` 的拼法只在 `paths.ts` 一处。
+  谁要把一个落点印出来就问它。`.superworker` 的拼法收在 `paths.ts` 的 `RECORD_DIR_NAME`；改名前的旧目录拼法全树只剩
+  `legacy.ts` 一处——这个名字总得落在某个地方，不收进一个模块就会落到每个模块，要认得旧目录的那几个读法都问它取事实。
 - `superworker.ledger.dag`、`superworker.ledger.cycles`、`superworker.ledger.instructions`、`superworker.config` 各自的动词、
   `ledger.init` / `ledger.register` / `ledger.cleanTemp`、`superworker.sessions` 与
   `conductor.next` / `conductor.close` / `conductor.advance` / `conductor.settle` / `conductor.settlePreview` /
@@ -31,20 +32,27 @@
 
 ```text
 COMMANDS
+CONSULT_PROMPT
 GROUPS
 INSTRUCTION_SCOPES
+LEGACY_DIR_NAME
 LONG_RESULT_LIMIT
 PLUGIN_SKILL_FILE
+RECORD_DIR_NAME
 SimulatedExecutor
 answer
 describe
+hasLegacyRecord
 helpText
 instructionAddLine
 instructionArchiveLine
 instructionRemoveLine
 instructionReviveLine
+isRecognizableLegacyRecord
+legacyRecordDir
 loadPlugins
 longResultPointerOf
+migrationPreconditions
 open
 parse
 skillFolders
@@ -54,7 +62,7 @@ topHelp
 usageError
 ```
 
-`PLUGIN_SKILL_FILE` 是技能文件名（`SKILL.md`）；`SimulatedExecutor` 是执行者接缝；`open` 是句柄入口；`INSTRUCTION_SCOPES` 是指令能绑的 scope 词表（命令表里 `--scope` 的选项读的就是这一份），`instruction*Line` 是面板那几个动作到词面那一行的构造（`archive` 就是 `instruction resolve --state withdrawn`）。
+`PLUGIN_SKILL_FILE` 是技能文件名（`SKILL.md`）；`SimulatedExecutor` 是执行者接缝；`open` 是句柄入口；`INSTRUCTION_SCOPES` 是指令能绑的 scope 词表（命令表里 `--scope` 的选项读的就是这一份），`instruction*Line` 是面板那几个动作到词面那一行的构造（`archive` 就是 `instruction resolve --state withdrawn`）。`LEGACY_DIR_NAME` / `legacyRecordDir` / `hasLegacyRecord` / `isRecognizableLegacyRecord` / `migrationPreconditions` / `CONSULT_PROMPT` 是旧目录那一问的六个词，见下面「旧目录与迁移」。
 `loadPlugins` / `skillFolders` / `skillProblems` 读的是插件自带技能——`loadPlugins` 装载插件目录，
 `skillFolders` 交出一个插件带的技能目录，`skillProblems` 说出它与声明对不上的两种情形（度量点名的
 方法没有技能、一个技能名被两个插件交出）。读的是同一个插件目录，判什么由调用方定：引擎只交结论，
@@ -75,8 +83,8 @@ usageError
 面板（超级工坊）与那几份 prompt 的位置念出来），`readInput` 是「取输入」的那条接缝：`handoff -o -`
 的字节从它来（调用方自己的流，词面不碰本进程），没给的调用按名字拒绝 `-` 并指向 `@path`，
 `packageRoot` 是「这套东西部署在哪」那一格：`version` 与 `doctor` 的第一行印它，调用方知道就交进来，
-不给时按本模块所在的包根答（引擎产物的那个根）。本进程自己的三个词（checkout 的 doctor、version、
-合并驱动的进程交接）与其余词一样在词面的表上、由词面路由——命令面的适配器要不要先抢着答是它自己的
+不给时按本模块所在的包根答（引擎产物的那个根）。本进程自己的四个词（checkout 的 doctor、version、
+migrate、合并驱动的进程交接）与其余词一样在词面的表上、由词面路由——命令面的适配器要不要先抢着答是它自己的
 选择，不是这张表缺了词。`describe()` 交出词表的静态索引数据（`WordsIndex`：形状说明、三个
 自述词、动词与组的行、版式常数），顶层清单与 agent 面的帮助页渲染同一份；`topHelp(io)` 交出拼好的
 顶层清单文本（插件词按 `io` 现读）。`COMMANDS` / `GROUPS` / `specOf` / `helpText` / `parse` /
@@ -95,6 +103,26 @@ argv 与退出码的搬运，一条合并规则都不在它里面。
 外部调用方按名字 `import type` 就能拿到：`DagInfo`、`DagInfoEdge`、`DagInfoOptions`、
 `InstructionReaderRow`、`ConductorDispatchInput`、`SessionShow` 都在这张清单上。
 
+## 旧目录与迁移
+
+记录目录改名过一次。新拼法 `.superworker` 收在 `paths.ts`（`RECORD_DIR_NAME`）；改名前的旧拼法全树只剩
+`legacy.ts` 一处（`LEGACY_DIR_NAME`）——这个名字总得落在某个地方，不收进一个模块就会落到每个模块，于是它
+落在这里一次。模块只回答关于一个工作区根的三个问题，不读、不写任何记录：有没有旧目录（`legacyRecordDir`
+给出它的位置，`hasLegacyRecord` 答在不在；读不动的根当作从没有过）；是不是这个管线 `init` 立的那份
+（`isRecognizableLegacyRecord`，认的是每份记录目录都有的那两枚 init 标记；认不出的目录全系统当作不存在，
+只有 `migrate` 把它明说出来而不是猜）；迁不迁得动（`migrationPreconditions`，`doctor` 与 `migrate` 共用这
+同一份判断，不写两遍）：`ready`，或 `MigrationRefusal` 的五条拒绝之一——记录被项目 git 跟踪、新旧目录
+同存、锁在场、worktrees 非空、旧目录认不出。每条拒绝都指向「consult 一个 agent」，不给人手改的指令；
+`MigrationReading` 是这一次判断的读数。`CONSULT_PROMPT` 是面板那条链接开新会话时交出的固定第一句——
+写死的一句话，而不是从工作区拼出来的句子：拼句子会把两个目录名再拼一遍。
+
+`migrate` 是词面上的一个顶层动词，收一个可选的位置参数点名要迁的记录代（`migrate 0.1.0`）：它把一份
+工作区在旧目录下的记录搬进 `.superworker`。不带参数时列出已知的记录代，不动任何字节；不认得的代拒绝
+并列出已知代；已迁完的工作区再跑是空报告。搬的六件事：目录改名；`info/exclude` 删旧行写新行；记录目录
+里 `.gitattributes` 的合并驱动词改写；重注册合并驱动；机器层设置从旧名字的 home **复制**到新 home
+（目标已存在则跳过，旧目录原样不动）；`issues.json` 里 `plan_path` 值的旧前缀改写——不改这一步，下一次
+落盘会把旧目录重建出来。任何一条拒绝命中就整份不动，报告与 `init` 同构：做了什么、跳了什么、为什么。
+
 ## superworker.ledger
 
 记录目录（`.superworker/`）的读写入口。
@@ -103,18 +131,19 @@ argv 与退出码的搬运，一条合并规则都不在它里面。
 | --- | --- | --- |
 | `ledger.init` | `init(options?)` | 为项目立起 `.superworker/` 记录目录，交回这一次做了什么的读数 |
 | `ledger.register` | `register(options?)` | 把合并驱动的两个 git config 键写进本项目（`[merge "superworker"]` 一节）；这台机器已经答得上的注册原样留着，交回此刻生效的命令串；不是 git checkout、或没给 git 时静默跳过，交回 `null` |
+| `ledger.migrate` | `migrate(generation?, options?)` | 把旧记录目录里的一份工作区搬进 `.superworker/`：不给代号就只列已知代，给错代号当场拒，两种情形都不动一个字节 |
 | `ledger.cleanTemp` | `cleanTemp(options?)` | 列（给 `remove` 就删）每个节点自己的 `temp/`：一处清扫，只整目录 |
 
 ### superworker.ledger.init 与 superworker.ledger.register
 
-`init(options?)` 的选项是 `LedgerInitOptions { force?; layout?; ownRepo?; git? }`。
+`init(options?)` 的选项是 `LedgerInitOptions { force?; ownRepo?; git? }`。
 
-**两档布局，只有两档。** `layout` 缺省 `'own-repo'`：`.superworker` 不在项目仓库里，项目仓库的
-`info/exclude` 里有一行把它挡在外面；`'in-repo'`：`.superworker` 随项目仓库走，那一行被抽掉。`.superworker`
-自己的仓库只有 `ownRepo` 要的时候才给（缺省要，且只在 `'own-repo'` 那一档）：`.superworker/.git` 不在
-时，经调用方插进来的 `GitRunner` 跑一次 `git init --quiet`；`.git` 已经在场时一个字节不碰，
-`'in-repo'` 档永远不建。引擎只给不收：`.superworker/.git` 一旦在场就留在原处，删它等于删历史，这个
-决定留给人。两档各自幂等，来回切也幂等。
+**一份记录不进项目的仓库。** 布局只有一档：`.superworker` 站在项目仓库之外，项目仓库的 `info/exclude`
+里有一行把它挡在外面。记录目录被项目 git 跟踪时 `init` 直接报错拒绝——把记录从 git 手里摘出来要动
+历史，那是一句该问 agent 的话，文案就指向它。`.superworker` 自己的仓库只有 `ownRepo` 要的时候才给
+（缺省要）：`.superworker/.git` 不在时，经调用方插进来的 `GitRunner` 跑一次 `git init --quiet`；
+`.git` 已经在场时一个字节不碰。引擎只给不收：`.superworker/.git` 一旦在场就留在原处，删它等于删历史，
+这个决定留给人。幂等：重跑不改变任何已经对了的落点。
 
 **底线先落，附加件后做。** 四份布局文件（`.gitignore`、`.gitattributes`、`AGENTS.md`、
 `config.json`；`config.json` 只在缺席或 `force` 时写）在任何环境里都落——没有 git、不是
@@ -127,10 +156,9 @@ checkout，都一样；字节不同就从常量重写，一样就一个字节不
 
 | 字段 | 取值 |
 | --- | --- |
-| `layout` | `'own-repo' \| 'in-repo'` |
 | `written` | 这次真写了的布局文件名 |
 | `ownRepo` | `'created' \| 'present' \| 'skipped' \| 'skipped-no-git'` |
-| `exclude` | `'written' \| 'removed' \| 'skipped-not-a-checkout' \| 'skipped-not-own-repo' \| 'failed'` |
+| `exclude` | `'written' \| 'skipped-not-a-checkout' \| 'failed'` |
 | `mergeDriver` | `'written' \| 'kept' \| 'skipped-no-config'` |
 | `mergeDriverCommand` | 这一轮之后 `merge.superworker.driver` 里的那个命令串（这一轮写的，或留着没动的）；什么都没注册成时 `null` |
 | `warnings` | 每一件没做成的附加件一条人话：没做什么、为什么、`.superworker` 现在是什么状态 |
@@ -144,9 +172,9 @@ checkout，都一样；字节不同就从常量重写，一样就一个字节不
 checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 
 **已经答得上的注册原样留着。** `init` 与 `register` 都先读一遍 `merge.superworker.driver`：这个命令串要是
-本机此刻真答得上的一种形式，那就一个字节都不改写，读数记 `kept`，命令串照交回——重跑 `init` 不会
-把人选好的、能用的驱动悄悄换掉。没有注册、或注册已经答不上时，才按写的时候现算的那一档重写。
-哪几种形式算答得上、现算的是哪一档，见 [merge.md](merge.md)。
+本机此刻真答得上的那一条绝对命令（哪种写法算答得上、写的是什么，见 [merge.md](merge.md)），那就一个字节
+都不改写，读数记 `kept`，命令串照交回——重跑 `init` 不会把人选好的、能用的驱动悄悄换掉。没有注册、或
+注册已经答不上时，才按写的时候现算的那一条重写。
 
 **`cleanTemp(options?)` 是那一处清扫**：扫的是这个项目自己的节点目录，一个节点最多一个
 `nodes/<id>/temp/`。选项是 `CleanTempOptions { node?; remove?; force? }`：`node` 收全 id 或前缀，
@@ -293,9 +321,8 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 
 五个动词都带一个可选目录 `dir`：缺席时用句柄自己的项目根。无论哪种，那个目录都得自己有一份
 `.superworker`——没有就是 `not_a_project`，不会往上找更宽的目录。句柄自己的根也不豁免：fork 档的节点在
-自己的 worktree 里干活；own-repo 档下那份 worktree 里没有 `.superworker`，在那里问设置得到的是「这不是
-superworker 项目」，主树的设置一个字都漏不出来（in-repo 档记录随检出走，问的是那个 worktree 自己的记录）。
-相对路径按进程当前目录解。
+自己的 worktree 里干活，那份 worktree 里没有 `.superworker`，在那里问设置得到的是「这不是
+superworker 项目」，主树的设置一个字都漏不出来。相对路径按进程当前目录解。
 
 值的种类四种：`number`（正的数值）、`integer`（正整数）、`word`（词汇表里的词）、`switch`（`on` / `off`
 两个词），读写两侧过同一道校验门。写侧不合种类当场拒绝（`invalid_value`），什么都没写；线层骑在线
@@ -556,7 +583,7 @@ stdout / stderr 是它在本进程里直接写的，调用方不必、也不能�
 ## 可判定错误码
 
 错误码就是契约，文案由调用方自己写。`RecordError` 带 `code`（下面这些词）、`path`（出错时面对的那份
-记录或那把锁）与 `message`；`isPfError(value, code?)` 只读 `code`，不碰文案。
+记录或那把锁）与 `message`；判一个抛出的值是不是带某个码的 `RecordError` 只读 `code`，不碰文案。
 
 | 层 | 错误码 | 什么时候 |
 | --- | --- | --- |

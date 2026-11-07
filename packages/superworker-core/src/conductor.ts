@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createDagNamespace } from './dag';
 import { nowSeconds } from './clock';
-import { DOCTOR_GIT_TIMEOUT_MS, mergeDriverCheck, recordChecks } from './doctor';
+import { DOCTOR_GIT_TIMEOUT_MS, mergeDriverCheck, migrationChecks, recordChecks } from './doctor';
 import type { DoctorCheck, DoctorReport } from './doctor';
 import { pluginAssemblyOf } from './plugins/assembly';
 import type { PluginAssembly } from './plugins/assembly';
@@ -1205,6 +1205,9 @@ export function createConductorNamespace(
             : clashes.join('\n'),
         },
         ...(await recordChecks(paths, dag)),
+        // The two cells about which directory holds these records: they share `migrate`'s own
+        // preconditions, so the check-up and the word that moves the records cannot disagree.
+        ...(await migrationChecks(root, input?.git, options.gitTimeoutMs ?? DOCTOR_GIT_TIMEOUT_MS)),
         await mergeDriverCheck(root, input?.git, options.gitTimeoutMs ?? DOCTOR_GIT_TIMEOUT_MS),
       ];
       return { ok: checks.every((check) => check.ok), checks };

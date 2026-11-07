@@ -73,7 +73,7 @@ spec is read-only to downstream.
 
 ### Step 1: read the docs and the context
 
-1. Read `shared/sw/toolcraft.md` and `shared/sw/philosophy.md`
+1. Read `shared/superworker/toolcraft.md` and `shared/superworker/philosophy.md`
 2. Read the project's docs/ and spec
 3. When building or changing a graph, `config get test_tier` reads this project's test tier
    (`full` / `minimal`; factory default `full`, the same as `config list` prints). When this
@@ -264,7 +264,7 @@ carries no `method`.
 **Do it now (no graph entry):**
 
 Dispatch subagents to do it, several in parallel if you like (first count what is in flight
-against [`shared/sw/subagents.md`](shared/sw/subagents.md)), and **they only change files,
+against [`shared/superworker/subagents.md`](shared/superworker/subagents.md)), and **they only change files,
 they do not commit**; when it is done, report to the user, and commit in step 5 together. Three
 kinds of work go this road:
 

@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isPfError } from '../src/errors';
+import { isRecordError } from '../src/errors';
 import { SimulatedExecutor } from '../src/executor';
 import { open } from '../src/open';
 import { recordPaths } from '../src/paths';
@@ -199,7 +199,7 @@ describe('blocked before dispatch: a block carries its reason, and only a green 
       } catch (error) {
         caught = error;
       }
-      expect(isPfError(caught, 'dispatch_blocked')).toBe(true);
+      expect(isRecordError(caught, 'dispatch_blocked')).toBe(true);
       expect((caught as Error).message).toContain('tests are red, fix them first');
     } finally {
       lab.cleanup();
@@ -222,7 +222,7 @@ describe('blocked before dispatch: a block carries its reason, and only a green 
         caught = error;
       }
       const message = (caught as Error).message;
-      expect(isPfError(caught, 'dispatch_blocked')).toBe(true);
+      expect(isRecordError(caught, 'dispatch_blocked')).toBe(true);
       expect(message).toContain('reason alpha');
       expect(message).toContain('reason beta');
     } finally {

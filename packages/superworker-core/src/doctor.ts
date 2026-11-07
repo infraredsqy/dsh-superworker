@@ -4,12 +4,10 @@ import { cycleHoldingIds, readStateLedger } from './cycles';
 import type { GitResult, GitRunner } from './git';
 import {
   LAYOUT_FILE_NAMES,
-  MERGE_DRIVER_NAME_FORM,
-  MERGE_DRIVER_PF_FORM,
-  namedDriverCommand,
+  driverRunsHere,
   readAbsoluteForm,
-  resolvesOnPath,
 } from './initledger';
+import { hasLegacyRecord, isRecognizableLegacyRecord, migrationPreconditions } from './legacy';
 import type { DagNamespace } from './ledger';
 import { RECORD_DIR_NAME, type RecordPaths } from './paths';
 import { readGraphSnapshot } from './graph';
@@ -172,8 +170,8 @@ function unansweredCell(args: readonly string[], waitedMs: number, timeoutMs: nu
 }
 
 /**
- * The merge-driver cell of the check-up: git's `merge.superworker.driver` is registered, and the registration
- * is one this machine can actually answer.
+ * The merge-driver cell of the check-up: git's `merge.superworker.driver` is registered, and the
+ * registration is one this machine can actually answer.
  *
  * - not a git checkout, or no git handed in: **not red** — a project outside git has nowhere to
  *   register a driver, and a reading that cannot be taken is never read as zero.
@@ -184,21 +182,14 @@ function unansweredCell(args: readonly string[], waitedMs: number, timeoutMs: nu
  * - `merge.superworker.driver` there but `merge.superworker.name` absent: **not red** — `merge.superworker.name` is only the
  *   label git shows for the driver, so a merge is driven all the same; the detail still says the
  *   pair `ledger.register` writes is incomplete.
- * - registered in a command form this tree answers — `superworker merge-ledger %O %A %B %P` (this tree's own
- *   router, the form an installed `superworker` command writes) or `sw-merge-ledger %O %A %B %P` (this
- *   package's bin) — and that command resolves on `PATH` here: green.
- * - registered in one of those command forms, but its command does not resolve on `PATH`: **red** —
- *   the string was written where the command was installed, and nothing answers it here; every record
- *   merge comes back as a plain git conflict.
  * - registered in the absolute form (the quoted node path plus the quoted built entry), and both
  *   those paths are files here: **not red**, but said out loud — the two paths it names are here,
- *   and a moved checkout or another machine breaks it, so it should be re-registered as the command
- *   form.
+ *   and a moved checkout or another machine breaks them, so it should be re-registered then.
  * - registered in that absolute form but pointing at paths that are not here (a moved checkout):
- *   **red**, with the re-register advice rather than "both quoted paths are here".
- * - registered as anything else — neither form: **red**, and the sentence names the value and says
- *   to re-register. Nothing this tree answers such a string, so a merge of records still comes back
- *   as a plain git conflict; certifying it would tell a person to keep a dead line.
+ *   **red**, and the sentence names the paths that are gone.
+ * - registered as anything else — that is, a string this tree no longer writes at all, including the
+ *   command forms an older release wrote: **red**, with the value named and the re-register advice,
+ *   because nothing answers it and a merge of records still comes back as a plain git conflict.
  */
 export async function mergeDriverCheck(
   root: string,
@@ -254,64 +245,35 @@ export async function mergeDriverCheck(
         ? '. The pair ledger.register writes is incomplete: merge.superworker.name (the label git shows for ' +
           'the driver, not what drives a merge) is not set -- run ledger.register to write the pair'
         : '';
-    // The shape alone is not the answer: the string was written where its command was on `PATH`, and
-    // this machine may not have it. Ask the same reading the writer asked, over the same two command
-    // forms — this package's bin, and this tree's own `superworker merge-ledger` word.
-    const command = namedDriverCommand(driver);
-    if (command !== null) {
-      const form = driver.startsWith(`${MERGE_DRIVER_PF_FORM} `) ? MERGE_DRIVER_PF_FORM : MERGE_DRIVER_NAME_FORM;
-      if (resolvesOnPath(command)) {
-        return {
-          name: 'merge-driver',
-          ok: true,
-          detail: `registered in the name form (${form}), which resolves on PATH here${incompletePair}`,
-        };
-      }
+    // The shape alone is not the answer: a string written on another machine, or before this checkout
+    // moved, names paths that are not here, and git falls back to a plain text merge in silence.
+    if (driverRunsHere(driver)) return {
+      name: 'merge-driver',
+      ok: true,
+      detail:
+        `registered in the absolute form (${driver}): both quoted paths are here, but a moved ` +
+        `checkout or another machine breaks that, and then a merge of records comes back as a plain ` +
+        `git conflict -- re-register with ledger.register after a move${incompletePair}`,
+    };
+    const absolute = readAbsoluteForm(driver);
+    if (absolute.shaped) {
       return {
         name: 'merge-driver',
         ok: false,
         detail:
-          `registered in the name form (${form}), but ${command} ` +
-          'does not resolve on PATH on this machine: nothing answers it, so a merge of records ' +
-          'comes back as a plain git conflict -- put it on PATH and re-register with ledger.register',
+          `registered as ${driver}: the absolute form points at ${absolute.missing.join(' and ')}, ` +
+          `which ${absolute.missing.length === 1 ? 'is' : 'are'} not on this machine any more (a ` +
+          'moved checkout leaves its paths behind), so nothing answers a merge of records -- ' +
+          're-register it with ledger.register',
       };
-    }
-    if (driver.startsWith('"')) {
-      // The quoted form this package writes names two paths. Certify it only when both are here;
-      // a moved checkout leaves them behind, and that is exactly the string a person is about to
-      // keep because the paths were there the day the cell last looked.
-      const absolute = readAbsoluteForm(driver);
-      if (absolute.shaped && absolute.missing.length === 0) {
-        return {
-          name: 'merge-driver',
-          ok: true,
-          detail:
-            `registered in the absolute form (${driver}): both quoted paths are here, but a moved ` +
-            `checkout or another machine breaks it -- re-register as the name form ` +
-            `(${MERGE_DRIVER_PF_FORM} or ${MERGE_DRIVER_NAME_FORM} on PATH)${incompletePair}`,
-        };
-      }
-      if (absolute.shaped) {
-        return {
-          name: 'merge-driver',
-          ok: false,
-          detail:
-            `registered as ${driver}: the absolute form points at ${absolute.missing.join(' and ')}, ` +
-            `which ${absolute.missing.length === 1 ? 'is' : 'are'} not on this machine any more (a ` +
-            'moved checkout leaves its paths behind), so nothing answers a merge of records -- ' +
-            're-register it with ledger.register (the name form, ' +
-            `${MERGE_DRIVER_PF_FORM} or ${MERGE_DRIVER_NAME_FORM} on PATH, survives a moved checkout)`,
-        };
-      }
     }
     return {
       name: 'merge-driver',
       ok: false,
       detail:
-        `registered as ${driver}: that is neither the name form (${MERGE_DRIVER_PF_FORM} %O %A %B %P ` +
-        `or ${MERGE_DRIVER_NAME_FORM} %O %A %B %P) nor the absolute form (this package's built entry, ` +
-        'both paths quoted), so no command answers it and a merge of records comes back as a plain ' +
-        'git conflict -- re-register it with ledger.register',
+        `registered as ${driver}: that is not the absolute form this package writes (the quoted node ` +
+        'path, the quoted built entry, then git\'s arguments), so nothing answers it and a merge of ' +
+        'records comes back as a plain git conflict -- re-register it with ledger.register',
     };
   } catch {
     return {
@@ -320,4 +282,72 @@ export async function mergeDriverCheck(
       detail: 'not asked: git answered nothing this time, so the registration is not judged',
     };
   }
+}
+
+/**
+ * The cells about which directory holds this workspace's records, and whether a move is possible.
+ *
+ * The pipeline's records used to live under another directory name. A workspace that has not been
+ * moved forward is not broken — its records are all there — but this plugin reads one directory only,
+ * so the panel is blank and the agent's words answer about records that are not the ones on disk. The
+ * cell says which of the two situations the workspace is in and what moves it forward.
+ *
+ * A move is a judgement, not a button, and the doctor is not the place that makes it: the refusals
+ * come from the same reading `migrate` uses (`migrationPreconditions`), so the two words cannot
+ * disagree about whether this workspace can be moved. A directory under the older name that this
+ * pipeline never laid down is not ours to judge and gets no cell at all — the reading treats it as
+ * absent everywhere.
+ *
+ * The second cell is red: a record directory tracked by the project's own git is a state `init`
+ * refuses and no word can undo, because taking it back out of history is a person's decision.
+ */
+export async function migrationChecks(
+  root: string,
+  git: GitRunner | undefined,
+  timeoutMs: number,
+): Promise<DoctorCheck[]> {
+  const cells: DoctorCheck[] = [];
+  if (hasLegacyRecord(root) && isRecognizableLegacyRecord(root)) {
+    const reading = await migrationPreconditions(root, git);
+    if (!reading.ready) {
+      const detail =
+        reading.refusal === 'both-present'
+          ? `both ${RECORD_DIR_NAME}/ and the older directory are here: this plugin reads ` +
+            `${RECORD_DIR_NAME}/ only, and which records are the true ones is a judgement — consult an agent`
+          : reading.refusal === 'tracked-by-git'
+            ? 'the older record directory is tracked by this project\'s git: renaming it would ' +
+              'half-remove it from history — consult an agent'
+            : reading.refusal === 'locked'
+              ? 'a run is holding the record lock right now: move the records once it has finished, ' +
+                'or consult an agent'
+              : reading.refusal === 'worktrees'
+                ? 'a parallel-mode worktree is checked out, and its git metadata holds absolute ' +
+                  'paths: consult an agent before moving the records'
+                : 'the records cannot be moved forward from here — consult an agent';
+      cells.push({ name: 'record-directory', ok: true, detail });
+    } else {
+      cells.push({
+        name: 'record-directory',
+        ok: true,
+        detail:
+          `the records are still under the older directory name, and this plugin reads ` +
+          `${RECORD_DIR_NAME}/ only: run \`migrate 0.1.0\` to move them forward`,
+      });
+    }
+  }
+  if (git !== undefined && existsSync(join(root, RECORD_DIR_NAME))) {
+    const trackedArgs = ['ls-files', '--', RECORD_DIR_NAME] as const;
+    const tracked = await boundedGitAnswer(git, root, trackedArgs, timeoutMs);
+    if (tracked.result !== null && tracked.result.code === 0 && tracked.result.stdout.trim() !== '') {
+      cells.push({
+        name: 'record-tracked',
+        ok: false,
+        detail:
+          `this project's git tracks ${RECORD_DIR_NAME}/: the records belong to the machine that ` +
+          'runs the pipeline and must not be in the repository -- consult an agent, since taking ' +
+          'them back out of history is not this plugin\'s call',
+      });
+    }
+  }
+  return cells;
 }

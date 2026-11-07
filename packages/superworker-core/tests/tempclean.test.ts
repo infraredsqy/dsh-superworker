@@ -21,9 +21,10 @@ import { rejection } from './helpers/rejection.ts';
  * holds (the `holding` in `state.json`) is skipped unless `force`; a list-only run changes not one
  * byte; an unreadable `state.json` makes the whole thing refuse.
  *
- * The area under `.superworker/worktrees/` is never entered. A checkout of this project set up there does
- * carry its `.superworker` records when the layout is in-repo, and the cell a checkout never carries is a
- * node's `temp/` one — `temp/` is kept out of the repository by the record dir's own `.gitignore`.
+ * The area under `.superworker/worktrees/` is never entered. The records stay out of the project
+ * repository — the one layout there is — so a worktree checkout of this project carries no
+ * `.superworker` records at all, and the cell a checkout would never carry even then is a node's
+ * `temp/` one, kept out of any repository by the record dir's own `.gitignore`.
  * So a `temp/` cell found under that area was not laid down by a checkout of ours, and the sweep's
  * one place stays the record tree it was handed: no cell under that area is swept — not even one
  * named like the short id of a node this project holds. That rule is what the delete pass hangs on,

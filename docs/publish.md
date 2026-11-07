@@ -208,10 +208,11 @@ dsh plugin --profile <名字> remove dsh-superworker      # 撤销：依赖与�
 
 - `<装机目录>/packages/superworker-core/dist/merge-ledger.mjs`。git 按 `merge.superworker.driver` 这条字符串起进程，
   参数是 `%O %A %B %P`；登记在承载记录的那个仓库的 git config 里，`init` 顺带写、`register` 重写。
-- 登记有三种写法：PATH 上有 `superworker` 时写 `superworker merge-ledger %O %A %B %P`（旧装机的命令还能用），只有
-  `sw-merge-ledger` 时写那一条，两条都没有时写绝对形——两个带引号的路径，解释器加这个文件。
-  绝对形只指向发布件里自己的文件，不回到仓、也不要 `node_modules`，所以装到哪儿都答得起来。
-- `doctor` 的 `merge-driver` 那一格认这三种写法，并判断它在这台机器上真的跑不跑得起来。
+- 登记只有一种写法，绝对形——`"<node 可执行文件的绝对路径>" "<本包 merge-ledger.mjs 的绝对路径>" %O %A %B %P`，
+  两条路径都带引号（Windows 的 node 路径里有空格，git 按空格切这条命令串）。绝对形只指向发布件里自己的
+  文件，不回到仓、也不要 `node_modules`，所以装到哪儿都答得起来；登记不探测 `PATH`——`PATH` 上有什么
+  命令与登记无关。
+- `doctor` 的 `merge-driver` 那一格认这条写法，并判断它在这台机器上真的跑不跑得起来。
 
 卸掉插件：
 
@@ -221,23 +222,10 @@ dsh plugin --profile <名> remove dsh-superworker
 
 面板那一行从 profile 的 `dsh.profile.bundles` 里消失；再装上同一个 `.tgz` 就回到新的这份。技能那一半也由发布件供给：`issue` 与 `test-audit` 两个插件带的四条
 （`sw-issue-scan` / `sw-issue-repair` / `sw-issue-discuss` / `sw-test-audit`），加上 `pipeline` 插件带的三条核心技能
-（`sw-conduct` / `sw-route` / `sw-instruct`，每份把它正文指向的 `shared/sw/` 单页带在自己目录里）。
+（`sw-conduct` / `sw-route` / `sw-instruct`，每份把它正文指向的 `shared/superworker/` 单页带在自己目录里）。
 都落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的同哈希，根序 rank 400）。派发的第一行
 `/sw-conduct <节点 id>` 因此在干净机器上也读得到；DSH 自己的 `~\.agents\skills` 是 rank 500 的那一根，
 同一个名字在它面前读的是 `$DSH_HOME/skills` 这一份。
-
-### 盘上留着一个常驻 `ledger.lock` 时
-
-`.superworker/meta/ledger.lock` 在引擎这一侧是**文件存在即互斥**：以排他方式建文件，建不上就等，等满 10 秒报 busy，
-记录一个字不改。写完就删，所以它不是常驻文件。
-
-别的读法把锁当成常驻文件（文件一直在盘上，锁的是文件内容），于是在盘上留下一个 0 字节的 `ledger.lock`：
-
-- 留着它 → 引擎的任何写命令等满 10 秒后报 busy；
-- 先把它备份到别处再删掉，引擎的写就正常了；
-- 引擎自己不建常驻锁文件（写完就删），所以删过之后不会再出现；若它又出现，照上面再删一次。
-
-引擎侧一个字不改（那是它的协议）。这条互操作记在问题池 `engine-lock-file-interop`。
 
 ## 发版前走一遍
 
@@ -258,7 +246,7 @@ dsh plugin --profile <名> remove dsh-superworker
 行装进你自己那个 profile，在一个有 `.superworker` 的工作区里开面板——本仓自己就有一份：
 
 - 一份真记录：五格都画得出来——地图上的卡与线、问题池的读数、指令那一栏的三种作用域；
-- 一个没有 `.superworker` 的工作区：面板说这个工作区没有记录，五格不画；
+- 一个新旧记录目录都没有的工作区：面板说这个工作区没有记录，五格不画；
 - 一个 `.superworker` 在、四份文件读不动的工作区：面板说记录读不动；
 - 只有问题池、或只有管线的工作区：相应那两格各退化成一行话；
 - 手上的动作：拖明细分隔条、切五个标签、切语言、加一条指令再归档再删掉、改一个配置值看它落盘。

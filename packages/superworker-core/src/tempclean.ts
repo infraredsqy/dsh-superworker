@@ -11,9 +11,9 @@ import { nodeTempDir, type RecordPaths } from './paths.ts';
  *
  * One place is swept, and only this one: the nodes dir of the record tree handed in. The worktrees
  * area (`<record>/worktrees/`) is not entered, because nothing under it is provably ours: a checkout of
- * a project set up here does carry its `.superworker` records when the layout is in-repo, but no `temp/` cell
- * of ours — `temp/` is kept out of the repository by the record dir's own `.gitignore` — and a
- * directory name is user data, not a provenance record.
+ * a fork-mode node carries a copy of `.superworker/` as of the fork, but no `temp/` cell of ours —
+ * `temp/` is kept out of the repository by the record dir's own `.gitignore` — and
+ * a directory name is user data, not a provenance record.
  *
  * Only this one cell is touched: spec, reports, run doc, session notes and the rest of the tree
  * stay as they are. Nodes a line holds (`holding` in `state.json`) are skipped unless `force` — raw

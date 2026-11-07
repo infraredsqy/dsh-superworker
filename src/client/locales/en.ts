@@ -14,8 +14,8 @@ export const en: Readonly<Record<WordKey, string>> = {
    * in DSH's sidebar is where the panel sits; the section is its knobs. The Chinese section word is
    * deliberately 配置 rather than 设置, so it stays apart from the panel's own 设置 pane. */
   'brand.mark': 'SUPERWORKER',
-  'seat.label': 'Superworker Center',
-  'settings.section': 'Superworker Settings',
+  'seat.label': 'Superworker',
+  'settings.section': 'Superworker settings',
 
   /* ── When the panel has nothing to draw ───────────────────────────────────────────────────── */
   'panel.not-enabled': 'Superworker is not enabled in this workspace.',
@@ -23,6 +23,13 @@ export const en: Readonly<Record<WordKey, string>> = {
   'panel.ungrouped-empty': 'The ungrouped bucket holds no record; this session belongs to a workspace in the list.',
   'panel.unreadable': 'This workspace’s record cannot be read.',
   'panel.no-session': 'No session is selected, so the workspace cannot be determined.',
+
+  /* The legacy-directory notice: the workspace still holds the previous record directory, so the
+   * panel has nothing to draw and one way forward. The body names the directory this plugin reads,
+   * never the one it replaced — the old name is the engine's fact to spell, not this panel's. */
+  'panel.legacy.title': 'The record directory was renamed',
+  'panel.legacy.body': 'This project still uses the previous record directory. The plugin reads `.superworker` only, so there is nothing to show here.',
+  'panel.legacy.link': 'Let an agent finish the migration',
 
   /* ── The workspace selector ───────────────────────────────────────────────────────────────── */
   'workspace.aria': 'Workspace',

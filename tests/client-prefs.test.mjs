@@ -31,8 +31,6 @@ import {
   clampSide,
   createPrefsSource,
   DEFAULT_PREFS,
-  dropLegacyPrefs,
-  LEGACY_PREF_KEYS,
   prefsFromSection,
   prefsWriteOp,
   VIEW_WORDS,
@@ -43,16 +41,6 @@ import { fakeSettingsForm } from './helpers/dsh-standins.mjs'
 /* The shared settings-document stand-in, with this file's extra face switched on: every case here
  * reads the write log (and notify / bump) the option adds. */
 const fakeForm = (initial) => fakeSettingsForm(initial, { writeLog: true })
-
-/* This Node version exposes `localStorage` as a getter that fires an ExperimentalWarning on every
- * touch, and this pathway consults it the moment the settings form attaches. Pad a minimal
- * stand-in over it: this one covers the whole file; a case that wants to measure local storage
- * itself swaps in its own (the two below do exactly that). */
-Object.defineProperty(globalThis, 'localStorage', {
-  value: { removeItem() {} },
-  configurable: true,
-  writable: true,
-})
 
 test('the field table is exactly those keys, and the factory defaults line up item by item with the browser side', () => {
   assert.deepEqual(Object.keys(PANEL_PREF_DEFAULTS).sort(), Object.values(PANEL_PREF_FIELDS).sort())
@@ -217,44 +205,6 @@ test('two attempts, neither accepted: not silent — the reading says refused, a
   form.refuse(false)
   assert.equal(await source.write(PANEL_PREF_FIELDS.showOtherStates, true), true)
   assert.equal(source.getSnapshot().refused, false)
-})
-
-test('attaching the settings form sweeps away the four legacy keys, other keys stay', () => {
-  const held = new Set([...LEGACY_PREF_KEYS, 'somebody-else.key'])
-  const storage = {
-    keys: () => [...held],
-    removeItem(key) { held.delete(key) },
-  }
-  const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
-  Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true })
-  try {
-    const source = createPrefsSource()
-    source.attach(fakeForm({}))
-    assert.deepEqual(storage.keys(), ['somebody-else.key'])
-  } finally {
-    if (had === undefined) delete globalThis.localStorage
-    else Object.defineProperty(globalThis, 'localStorage', had)
-  }
-})
-
-test('when local storage is unavailable the prefs clean-up gives up quietly: the seam still attaches', () => {
-  const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
-  Object.defineProperty(globalThis, 'localStorage', {
-    value: { removeItem() { throw new Error('this environment does not allow deletes') } },
-    configurable: true,
-    writable: true,
-  })
-  try {
-    const form = fakeForm({ defaultTab: 'detail' })
-    const source = createPrefsSource()
-    source.attach(form)
-    assert.equal(source.getSnapshot().prefs.tab, 'detail')
-    assert.equal(source.getSnapshot().status, 'ready')
-    assert.equal(dropLegacyPrefs(), 0)
-  } finally {
-    if (had === undefined) delete globalThis.localStorage
-    else Object.defineProperty(globalThis, 'localStorage', had)
-  }
 })
 
 test('a row flipped elsewhere: subscribers get the new reading at once', () => {

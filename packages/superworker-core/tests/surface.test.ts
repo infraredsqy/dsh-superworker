@@ -35,11 +35,12 @@ describe('the handle open() hands back', () => {
 });
 
 describe('superworker.ledger', () => {
-  it('init / register / cleanTemp / dag / cycles / instructions are all there', () => {
+  it('init / register / migrate / cleanTemp / dag / cycles / instructions are all there', () => {
     expect(Object.keys(superworker.ledger).sort())
-      .toEqual(['cleanTemp', 'cycles', 'dag', 'init', 'instructions', 'register']);
+      .toEqual(['cleanTemp', 'cycles', 'dag', 'init', 'instructions', 'migrate', 'register']);
     expect(typeof superworker.ledger.init).toBe('function');
     expect(typeof superworker.ledger.register).toBe('function');
+    expect(typeof superworker.ledger.migrate).toBe('function');
     expect(typeof superworker.ledger.cleanTemp).toBe('function');
   });
   it('dag has all sixteen verbs', () => {

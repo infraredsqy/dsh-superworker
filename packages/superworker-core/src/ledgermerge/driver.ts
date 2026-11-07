@@ -42,12 +42,12 @@
 
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { isPfError } from '../errors';
+import { isRecordError } from '../errors';
 import { isMissingPath } from '../fs-helpers';
 import { assertLedgerInitialized, isLedgerInitialized } from '../initledger';
 import { atomicWriteBytes, jsonBytes, jsonOptionsForRecord, readJsonFile } from '../jsonio';
 import { withLedgerLock } from '../ledgerlock';
-import { recordPaths } from '../paths';
+import { RECORD_DIR_NAME, recordPaths } from '../paths';
 import {
   EXIT_CONFLICT,
   EXIT_OK,
@@ -308,7 +308,7 @@ function mergeByKind(
 function recordRootOf(path: string | undefined, cwd: string): string | null {
   if (path !== undefined && path !== '') {
     const segments = path.replace(/\\/g, '/').split('/');
-    const at = segments.lastIndexOf('.superworker');
+    const at = segments.lastIndexOf(RECORD_DIR_NAME);
     if (at >= 0) {
       const candidate = resolve(cwd, ...segments.slice(0, at));
       if (isLedgerInitialized(recordPaths(candidate))) return candidate;
@@ -379,7 +379,7 @@ async function readSide(path: string, side: SideRole, io: MergeDriverIo): Promis
     const read = await readJsonFile(path, sideLabel(side, path));
     return { side: read.kind === 'present' ? { bytes, value: read.value } : null };
   } catch (error) {
-    if (isPfError(error)) {
+    if (isRecordError(error)) {
       io.stderr(`Error: ${messageOf(error)}\n`);
     }
     io.stderr(

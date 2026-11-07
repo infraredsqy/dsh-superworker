@@ -31,31 +31,27 @@ import {
   short,
   splitTags,
 } from './out';
-import type { Pf } from '../open';
+import type { Superworker } from '../open';
 import type { WordsIO } from './types';
 
 // ═══ the pipeline verbs ══════════════════════════════════════════════════════
 
 /**
  * `init`: put the record directory in place. The engine's report is the reading; the lines below
- * are that reading spelled out (what was written, what was skipped and why).
+ * are that reading spelled out (what was written, what was skipped and why). There is one layout:
+ * the records stay out of the project repository, and a tracked record directory is `init`'s own
+ * refusal, thrown before a byte lands.
  */
 export const initVerb = run("init", async (call) => {
   const { values, io, superworker } = call;
   // The record tree's own locations are the engine's read: this layer prints them, it does not spell them.
   const { recordDir, configJson } = superworker.locations.paths;
-  const layout = values.commit === true ? 'in-repo' : 'own-repo';
-  // The record directory gets a repository of its own in the own-repo layout, unless the line said
-  // `--no-own-repo`: that is the default, and `--own-repo` is the flag on the other side.
-  const ownRepoAsked = layout === 'own-repo' && values.no_own_repo !== true;
-  const report = await superworker.ledger.init({ layout, ownRepo: ownRepoAsked, git: io.git });
+  // The record directory gets a repository of its own unless the line said `--no-own-repo`: that is
+  // the default, and `--own-repo` is the flag on the other side.
+  const ownRepoAsked = values.no_own_repo !== true;
+  const report = await superworker.ledger.init({ ownRepo: ownRepoAsked, git: io.git });
   const lines: string[] = [];
   lines.push(`Ledger: ${recordDir}`);
-  lines.push(
-    report.layout === 'own-repo'
-      ? 'Mode: this machine only (.superworker/ does not enter the team repository)'
-      : 'Mode: into the version repository with the project',
-  );
   const configFile = configJson;
   lines.push(
     report.written.includes('config.json')
@@ -64,14 +60,12 @@ export const initVerb = run("init", async (call) => {
   );
   const exclude = {
     written: 'the ignore line is in place in this repository\'s info/exclude',
-    removed: 'the ignore line was taken out of this repository\'s info/exclude',
     'skipped-not-a-checkout': 'this project is not a git checkout: there is no ignore line to speak of',
-    'skipped-not-own-repo': 'the record directory travels with the project: no ignore line is written',
     failed: 'the ignore line could not be written',
   }[report.exclude];
   if (exclude !== undefined) lines.push(exclude);
-  // The two own-repo sentences printed when a repository was asked for (and the two
-  // nothing is printed for: `--no-own-repo`, and the in-repo layout, which never creates one).
+  // The two own-repo sentences printed when a repository was asked for (and nothing is printed for
+  // `--no-own-repo`, which is the caller saying "plain files on purpose").
   const ownRepo = ownRepoAsked
     ? ({
         created: `Gave ${recordDir} a repository of its own: local history starts here, and once a remote is attached to it, it can travel to another machine on its own.`,
@@ -98,6 +92,71 @@ export const registerVerb = run("register", async (call) => {
     };
   }
   return { stdout: command };
+});
+
+/**
+ * `migrate`: move a 0.1.x workspace's records into `.superworker/`. The engine's report is the
+ * reading, spelled out the way `init`'s is — what moved, what was skipped and why. A refused
+ * migration arrives here as the engine's own thrown sentence (the word carries it as it is), and
+ * the listing question — no generation named — is answered from the report's own list.
+ */
+export const migrateVerb = run("migrate", async (call) => {
+  const { values, positionals, io, superworker } = call;
+  const generation = (positionals[0] ?? [])[0];
+  const report = await superworker.ledger.migrate(generation, {
+    git: io.git,
+    ...(io.homeDir === undefined ? {} : { homeDir: io.homeDir }),
+  });
+  if (values.json === true) return { stdout: pyIndented(report) };
+  if (generation === undefined) {
+    // The listing question: the engine named what it can move and moved nothing.
+    const lines = [
+      'Known generations:',
+      ...(report.known ?? []).map((entry) => `  ${entry.id} — ${entry.label}`),
+      '',
+      'Name one to move this workspace\'s records into `.superworker/`; with none named, nothing was done.',
+    ];
+    return { stdout: lines.join('\n') };
+  }
+  if (!report.moved) {
+    return {
+      stdout:
+        'Nothing to move: this workspace holds no old record directory (re-running a finished migration is empty work).',
+    };
+  }
+  const lines: string[] = [];
+  lines.push(`Ledger: ${report.to} (moved from ${report.from})`);
+  const exclude = {
+    written: 'the old ignore line is out of this repository\'s info/exclude and the new one is in place',
+    'skipped-not-a-checkout': 'this project is not a git checkout: no ignore line was touched',
+    skipped: 'no ignore line was touched',
+    failed: 'the ignore line could not be rewritten (the warning below names why)',
+  }[report.exclude];
+  if (exclude !== undefined) lines.push(`Exclude: ${exclude}.`);
+  const gitattributes = {
+    rewritten: 'the record directory\'s .gitattributes now names the current driver',
+    unchanged: 'the record directory\'s .gitattributes already named the current driver',
+    skipped: 'the record directory\'s .gitattributes was not touched',
+    failed: 'the record directory\'s .gitattributes could not be rewritten (the warning below names why)',
+  }[report.gitattributes];
+  if (gitattributes !== undefined) lines.push(`Driver attribute: ${gitattributes}.`);
+  if (report.mergeDriverCommand !== null) {
+    // What this run left in `merge.superworker.driver`: the migration writes the registration, it does not keep an old one.
+    lines.push(`Merge driver registered: merge.superworker.driver = ${report.mergeDriverCommand}`);
+  }
+  const machineLayer = {
+    copied: 'the machine layer\'s settings were copied to the new home; the old machine layer was left as it was',
+    'skipped-target-present': 'the machine layer already holds its settings; nothing was copied and the old copy was left alone',
+    'skipped-no-source': 'the old machine layer held no settings file; nothing was copied',
+    skipped: 'the machine layer was not looked at',
+    failed: 'the machine layer\'s settings could not be copied (the warning below names why)',
+  }[report.machineLayer];
+  if (machineLayer !== undefined) lines.push(`Machine layer: ${machineLayer}.`);
+  if (report.planPathsRewritten > 0) {
+    lines.push(`Issue pool: ${report.planPathsRewritten} plan_path value(s) rewritten to the new record directory.`);
+  }
+  for (const warning of report.warnings) lines.push(`Warning: ${warning}`);
+  return { stdout: lines.join('\n') };
 });
 
 /** `clean-temp`: list (or with `--yes`, remove) every node's `temp/` directory. */
@@ -617,7 +676,7 @@ export const dagListVerb = run("dag list", async (call) => {
 });
 
 /** `dag list --verbose`: each row grows its two dependency lists, spelled the same way. */
-async function verboseList(superworker: Pf, rows: readonly unknown[]): Promise<unknown[]> {
+async function verboseList(superworker: Superworker, rows: readonly unknown[]): Promise<unknown[]> {
   const out: unknown[] = [];
   for (const row of rows) {
     const one = row as { id: string };
@@ -854,7 +913,7 @@ function emptyAccountLines(total: number, scope: string | undefined, globalTotal
 }
 
 /** The account's own two counts: every entry, and how many of them read global. Both come off the engine's account view. */
-async function instructionTotals(superworker: Pf) {
+async function instructionTotals(superworker: Superworker) {
   const all = await superworker.ledger.instructions.list({ all: true });
   const global = await superworker.ledger.instructions.list({ all: true, scope: 'global' });
   return { total: all.length, globalTotal: global.length };

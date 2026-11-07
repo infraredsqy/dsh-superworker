@@ -136,6 +136,32 @@
   margin: 0;
   font: var(--dsw-font-s-14);
   color: var(--dsw-alias-label-caption);
+}/* ---- The legacy-directory notice -------------------------------------------
+ * The workspace still holds the previous record directory, so no pane has anything to draw and
+ * the whole content area gives way to one card. It sits where the "nothing" sentence sits —
+ * pinned to the middle of the footprint — and wears the modal sheet's ground, so it reads as a
+ * message to act on rather than as a sixth pane. */
+.superworker-page .superworker-legacy{
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}.superworker-page .superworker-legacy-card{
+  max-width: 560px;
+  padding: 24px 28px;
+  text-align: center;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+}.superworker-page .superworker-legacy-title{
+  margin: 0;
+  font: var(--dsw-font-s-14);
+  color: var(--dsw-alias-label-primary);
+}.superworker-page .superworker-legacy-body{
+  margin: 8px 0 16px;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-secondary);
 }/* ---- One modal: a line's own settings / delete one ------------------------
  * Two cells share this component (overlay, sheet, head, close, the action row at the foot), shaped
  * after DSH's own dialog: an R28 sheet, `border: 0`, the prominent elevation tier, the sheet's own
@@ -200,6 +226,10 @@
 }.superworker-page .superworker-btn:hover{
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}/* While a call is in flight its action stands down: the same object, the reader just cannot press it. */
+.superworker-page .superworker-btn:disabled{
+  cursor: default;
+  color: var(--dsw-alias-label-dimmed);
 }/* ---- Selection and hover ---------------------------------------------------
  * Interface words are not selectable; content is: tabs, controls and readings are interface; a
  * title is content, and that rule follows the element that draws the title. */.superworker-page{ user-select: none; }

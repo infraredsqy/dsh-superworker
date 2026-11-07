@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { warningsOf } from '../src/conductor';
 import type { DispatchReceipt } from '../src/conductor';
-import { isPfError } from '../src/errors';
+import { isRecordError } from '../src/errors';
 import { SimulatedExecutor } from '../src/executor';
 import { open } from '../src/open';
 import { makeLab, type PluginLab } from './helpers/plugin-lab';
@@ -198,7 +198,7 @@ describe('blockers and reruns: pending counts as a blocker, and the traces a rer
     } catch (error) {
       caught = error;
     }
-    expect(isPfError(caught, 'nothing_to_settle')).toBe(true);
+    expect(isRecordError(caught, 'nothing_to_settle')).toBe(true);
     expect(readFileSync(join(lab.root, '.superworker', 'state.json'))).toEqual(stateBefore);
 
     const plan = await superworker.conductor.next({ cycle: 'c1' });
@@ -358,7 +358,7 @@ describe('the two gates and naming', () => {
     } catch (error) {
       caught = error;
     }
-    expect(isPfError(caught, 'not_holding')).toBe(true);
+    expect(isRecordError(caught, 'not_holding')).toBe(true);
     expect(readFileSync(join(lab.root, '.superworker', 'state.json'))).toEqual(stateBefore);
   });
 
@@ -375,7 +375,7 @@ describe('the two gates and naming', () => {
     } catch (error) {
       caught = error;
     }
-    expect(isPfError(caught, 'not_holding')).toBe(true);
+    expect(isRecordError(caught, 'not_holding')).toBe(true);
     expect(existsSync(join(lab.root, '.superworker', 'signals', 'c1', `${stranger}.json`))).toBe(false);
   });
 

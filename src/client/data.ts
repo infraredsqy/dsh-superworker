@@ -57,6 +57,8 @@ export interface PanelPort {
   setConfig(sessionId: string, workspaceRoot: string, key: string, value: string): Promise<Outcome>
   /** Open, on the host, the session that works one node of one line: the plan's prompt goes in as the first instruction. */
   openNodeSession(sessionId: string, workspaceRoot: string, cycle: string, node: string): Promise<Outcome>
+  /** Hand a legacy record directory's migration to an agent: the host opens the session that does it. */
+  consultMigration(sessionId: string, workspaceRoot: string): Promise<Outcome>
 }
 
 /** What one endpoint call yields before the two branches are unfolded: the value, or why not. */
@@ -146,6 +148,7 @@ const REMOTE_PARAM_ORDER: Readonly<Record<string, readonly string[]>> = {
   readConfig: ['sessionId', 'workspaceRoot'],
   setConfig: ['sessionId', 'workspaceRoot', 'key', 'value'],
   openNodeSession: ['sessionId', 'workspaceRoot', 'cycle', 'node'],
+  consultMigration: ['sessionId', 'workspaceRoot'],
 }
 
 /** The arguments this endpoint call receives: laid out per the parameter table; keys absent from it are dropped. */
@@ -213,6 +216,13 @@ function portFromCall(source: PanelPort['source'], call: PortCall): PanelPort {
       /* The receipt's session id is an address for navigation, not a word the panel shows: a landed open says nothing on the note line, and the re-read that follows shows the session where it belongs. */
       return answer.ok ? { ok: true, text: '' } : refused(answer.failure)
     },
+    async consultMigration(sessionId, workspaceRoot) {
+      const answer = await call<SessionOpenOutcome>('consultMigration', { sessionId, workspaceRoot })
+      /* The same silence as an opened node session: a landed consult renders nothing here — the
+       * new session appearing in DSH is the whole effect, and the migration itself happens over
+       * there, so a re-read could only repeat this panel's own notice. */
+      return answer.ok ? { ok: true, text: '' } : refused(answer.failure)
+    },
   }
 }
 
@@ -259,7 +269,7 @@ function absentPort(): PanelPort {
     throw new RefusedError({ code: 'not-connected' })
   }
   const refusedWrite = async (): Promise<Outcome> => ({ ok: false, code: 'no-write-channel' })
-  return { source: 'none', read: missing, readSessions: missing, say: refusedWrite, write: refusedWrite, readConfig: missing, setConfig: refusedWrite, openNodeSession: refusedWrite }
+  return { source: 'none', read: missing, readSessions: missing, say: refusedWrite, write: refusedWrite, readConfig: missing, setConfig: refusedWrite, openNodeSession: refusedWrite, consultMigration: refusedWrite }
 }
 
 /**

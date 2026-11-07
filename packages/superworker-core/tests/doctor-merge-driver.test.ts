@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createConductorNamespace } from '../src/conductor';
 import type { DoctorReport } from '../src/conductor';
@@ -9,14 +9,17 @@ import { git, gitRunner as realGit } from './helpers/git-runner';
 
 /**
  * The merge-driver cell of doctor: is the driver registered, and does this machine answer the
- * registration. The cell decides nothing from the shape of the string: the name form is green only
- * when the command resolves on `PATH`, the absolute form only when both quoted paths are files
- * here. A registration nothing answers is red — including the name form whose command is not on
- * this machine and the absolute form of a checkout that has moved away.
+ * registration. The registration has one form now — the absolute one, the quoted node path plus
+ * the quoted built entry — so the cell judges the string against this machine: green only when
+ * both quoted paths are files here, red when they are gone (a moved checkout leaves its paths
+ * behind), and red for any other string, including the command forms an older release wrote, for
+ * which nothing answers any more. The cell decides nothing from what a machine happens to have on
+ * `PATH`: there is no probe of `PATH` left to make.
  *
  * `merge.superworker.driver` is the key git runs and `merge.superworker.name` is only the label it shows, so a driver
- * with no label is green with the incomplete pair said out loud — never red, and never "a plain git
- * conflict" for a merge the driver does answer.
+ * with no label is green with the incomplete pair said out loud — never red. (The green
+ * absolute-form cell does say what a moved checkout would do to the registration; that sentence is
+ * about a future merge, not about one this driver fails to answer.)
  *
  * Not a git checkout — or no git handed in — is not red: a project outside git has nowhere to
  * register a driver, and a reading that cannot be taken is never read as zero. The git is handed in
@@ -30,16 +33,12 @@ import { git, gitRunner as realGit } from './helpers/git-runner';
  */
 
 let root: string;
-let pathBefore: string | undefined;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'superworker-doctor-driver-'));
-  pathBefore = process.env['PATH'];
 });
 
 afterEach(() => {
-  if (pathBefore === undefined) delete process.env['PATH'];
-  else process.env['PATH'] = pathBefore;
   rmSync(root, { recursive: true, force: true });
   root = undefined!;
 });
@@ -68,20 +67,25 @@ function registeredAgainst(driver: string): GitRunner {
   };
 }
 
-/** Put one `superworker` on `PATH` for the duration of one test (this tree's own command, which routes the word). */
-function onPath(): string {
-  const shimDir = mkdtempSync(join(tmpdir(), 'superworker-command-'));
-  writeFileSync(join(shimDir, 'superworker'), '#!/usr/bin/env node\n', 'utf8');
-  process.env['PATH'] = `${shimDir}${delimiter}${pathBefore ?? ''}`;
-  return shimDir;
+/** The same three questions, with the label key absent: the state `ledger.register` half wrote. */
+function driverOnlyAgainst(driver: string): GitRunner {
+  const full = registeredAgainst(driver);
+  return {
+    run(cwd: string, args: readonly string[]): Promise<GitResult> {
+      if (args.join(' ') === 'config --local --get merge.superworker.name') {
+        // git answers a key it does not have with exit 1 and no text: absent, not empty.
+        return Promise.resolve({ code: 1, stdout: '', stderr: '' });
+      }
+      return full.run(cwd, args);
+    },
+  };
 }
 
-/** Put one `sw-merge-ledger` on `PATH` for the duration of one test (the shim this package installs). */
-function shimOnPath(): string {
-  const shimDir = mkdtempSync(join(tmpdir(), 'superworker-shim-'));
-  writeFileSync(join(shimDir, 'sw-merge-ledger'), '#!/usr/bin/env node\n', 'utf8');
-  process.env['PATH'] = `${shimDir}${delimiter}${pathBefore ?? ''}`;
-  return shimDir;
+/** An absolute-form registration whose two quoted paths really are files on this machine. */
+function liveAbsoluteDriver(): string {
+  const script = join(root, 'merge-ledger.mjs');
+  writeFileSync(script, '#!/usr/bin/env node\n', 'utf8');
+  return `"${process.execPath}" "${script}" %O %A %B %P`;
 }
 
 describe('the merge-driver cell', () => {
@@ -130,77 +134,34 @@ describe('the merge-driver cell', () => {
     expect(check.detail).toContain('ledger.register');
   });
 
-  it('registered in the name form and the command resolves on PATH: green, and both facts are named', async () => {
-    await git(root, 'init', '-b', 'master');
-    await git(root, 'config', '--local', 'merge.superworker.name', 'superworker ledger three-way merge');
-    await git(root, 'config', '--local', 'merge.superworker.driver', 'sw-merge-ledger %O %A %B %P');
-    const shimDir = shimOnPath();
-    try {
-      const check = (await doctorWithGit()).checks.find((entry) => entry.name === 'merge-driver')!;
-      expect(check.ok).toBe(true);
-      expect(check.detail).toContain('name form');
-      expect(check.detail).toContain('resolves on PATH');
-    } finally {
-      rmSync(shimDir, { recursive: true, force: true });
-    }
-  });
-
-  it('only merge.superworker.driver registered: green (git runs the driver, the name is its label), and the incomplete pair is named', async () => {
+  it('only merge.superworker.driver registered, in an absolute form this machine answers: green, and the incomplete pair is named', async () => {
     // The state `ledger.register` half wrote, and a state git really does drive merges in: the
     // driver key alone. Reding it would call a working registration dead; passing it in silence
     // would hide that the pair is incomplete.
     await git(root, 'init', '-b', 'master');
-    await git(root, 'config', '--local', 'merge.superworker.driver', 'sw-merge-ledger %O %A %B %P');
-    const shimDir = shimOnPath();
-    try {
-      const check = (await doctorWithGit()).checks.find((entry) => entry.name === 'merge-driver')!;
-      expect(check.ok).toBe(true);
-      expect(check.detail).toContain('name form');
-      expect(check.detail).toContain('pair ledger.register writes is incomplete');
-      expect(check.detail).toContain('merge.superworker.name');
-      expect(check.detail).not.toContain('plain git conflict');
-    } finally {
-      rmSync(shimDir, { recursive: true, force: true });
-    }
+    await git(root, 'config', '--local', 'merge.superworker.driver', liveAbsoluteDriver());
+    const check = (await doctorWithGit()).checks.find((entry) => entry.name === 'merge-driver')!;
+    expect(check.ok).toBe(true);
+    expect(check.detail).toContain('absolute form');
+    expect(check.detail).toContain('pair ledger.register writes is incomplete');
+    expect(check.detail).toContain('merge.superworker.name');
+    // The label's absence is said as a pair gap, not as a present failure: the cell does not claim
+    // the driver is missing.
+    expect(check.detail).not.toContain('not registered');
   });
 
-  it('registered in the name form but the command does not resolve on PATH: red, naming the missing command', async () => {
-    // The registration was written where the package was installed; this machine's PATH has no
-    // `sw-merge-ledger`. An empty directory stands in for that PATH so the case does not depend on
-    // what the test machine happens to have installed.
-    const emptyPath = mkdtempSync(join(tmpdir(), 'superworker-nopath-'));
-    try {
-      process.env['PATH'] = emptyPath;
-      const check = (
-        await createConductorNamespace(root).doctor({
-          git: registeredAgainst('sw-merge-ledger %O %A %B %P'),
-        })
-      ).checks.find((entry) => entry.name === 'merge-driver')!;
-      expect(check.ok).toBe(false);
-      expect(check.detail).toContain('sw-merge-ledger does not resolve on PATH');
-      expect(check.detail).toContain('ledger.register');
-      // The dead string must not be certified as working: no "it works on this machine" sentence.
-      expect(check.detail).not.toContain('works on this machine');
-    } finally {
-      rmSync(emptyPath, { recursive: true, force: true });
-    }
-  });
-
-  it('registered in the absolute form and both quoted paths are files here: not red, but it says to re-register as the name form', async () => {
+  it('registered in the absolute form and both quoted paths are files here: green, with the after-a-move advice said out loud', async () => {
     await git(root, 'init', '-b', 'master');
     await git(root, 'config', '--local', 'merge.superworker.name', 'superworker ledger three-way merge');
-    // An absolute form whose interpreter and script both exist on this machine: the form this
-    // package writes when the name form cannot be used. (The script's content is irrelevant to the
-    // cell: what is checked is that the registration can be answered here.)
-    const script = join(root, 'merge-ledger.mjs');
-    writeFileSync(script, '#!/usr/bin/env node\n', 'utf8');
-    const driver = `"${process.execPath}" "${script}" %O %A %B %P`;
-    await git(root, 'config', '--local', 'merge.superworker.driver', driver);
+    // An absolute form whose interpreter and script both exist on this machine: the one form this
+    // package writes. (The script's content is irrelevant to the cell: what is checked is that the
+    // registration can be answered here.)
+    await git(root, 'config', '--local', 'merge.superworker.driver', liveAbsoluteDriver());
     const check = (await doctorWithGit()).checks.find((entry) => entry.name === 'merge-driver')!;
     expect(check.ok).toBe(true);
     expect(check.detail).toContain('absolute form');
     expect(check.detail).toContain('both quoted paths are here');
-    expect(check.detail).toContain('re-register as the name form');
+    expect(check.detail).toContain('re-register with ledger.register after a move');
     // Two existing paths are what was measured; "it works on this machine" is more than that.
     expect(check.detail).not.toContain('works on this machine');
   });
@@ -217,43 +178,23 @@ describe('the merge-driver cell', () => {
     expect(check.detail).toContain('C:/nonexistent/old-checkout/dist/merge-ledger.mjs');
     expect(check.detail).toContain('ledger.register');
     expect(check.detail).not.toContain('works on this machine');
-    expect(check.detail).not.toContain('registered in the absolute form (');
+    // The dead string is not certified as answerable here: the green cell's sentence is absent.
+    expect(check.detail).not.toContain('both quoted paths are here');
   });
 
-  it('registered in the command form this tree routes (`superworker merge-ledger …`) with superworker on PATH: green', async () => {
-    // The command form this tree answers through its own `superworker` command:
-    // a real registration in a drill area is this string, so the cell must not call it dead.
-    await git(root, 'init', '-b', 'master');
-    await git(root, 'config', '--local', 'merge.superworker.name', 'superworker ledger three-way merge');
-    await git(root, 'config', '--local', 'merge.superworker.driver', 'superworker merge-ledger %O %A %B %P');
-    const commandDir = onPath();
-    try {
-      const check = (await doctorWithGit()).checks.find((entry) => entry.name === 'merge-driver')!;
-      expect(check.ok).toBe(true);
-      expect(check.detail).toContain('name form (superworker merge-ledger)');
-      expect(check.detail).toContain('resolves on PATH');
-      expect(check.detail).not.toContain('plain git conflict');
-    } finally {
-      rmSync(commandDir, { recursive: true, force: true });
-    }
-  });
-
-  it('registered as `superworker merge-ledger …` but superworker does not resolve on PATH: red, naming the missing command', async () => {
-    const emptyPath = mkdtempSync(join(tmpdir(), 'superworker-nopath-'));
-    try {
-      process.env['PATH'] = emptyPath;
+  it('registered as a command form an older release wrote: red, naming the string — nothing answers it now', async () => {
+    // An older release wrote the driver as a bare command and let git resolve it; the tree writes
+    // the absolute form only now, and nothing answers the old string — whatever this machine has on
+    // `PATH`. The cell must call it dead rather than probe for it.
+    for (const driver of ['sw-merge-ledger %O %A %B %P', 'superworker merge-ledger %O %A %B %P']) {
       const check = (
-        await createConductorNamespace(root).doctor({
-          git: registeredAgainst('superworker merge-ledger %O %A %B %P'),
-        })
+        await createConductorNamespace(root).doctor({ git: registeredAgainst(driver) })
       ).checks.find((entry) => entry.name === 'merge-driver')!;
-      expect(check.ok).toBe(false);
-      expect(check.detail).toContain('superworker merge-ledger');
-      expect(check.detail).toContain('superworker does not resolve on PATH');
+      expect(check.ok, driver).toBe(false);
+      expect(check.detail).toContain(driver);
+      expect(check.detail).toContain('not the absolute form');
       expect(check.detail).toContain('ledger.register');
       expect(check.detail).not.toContain('works on this machine');
-    } finally {
-      rmSync(emptyPath, { recursive: true, force: true });
     }
   });
 });
