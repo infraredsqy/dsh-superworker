@@ -24,7 +24,7 @@ The pipeline's words are one table with one door: call the `superworker` tool â€
 | "how much is in the pool right now" | **Look at the state**: `status` + `top --limit 10`, reporting the total and the grades by severity and by source |
 | "that one is fixed" | **Settle it**: locate with `search` â†’ `resolve <id>`; when you are not sure which one it is, lay them out for the user to pick |
 | "walk me through the external ones" | **Rule**: review first, then discuss batch by batch |
-| "fix this bug" | A single debug goes to `/trace`; a batch of same-domain debt goes to `/sw-issue-repair` |
+| "fix this bug" | A single debug is this session's own work -- do it here; a batch of same-domain debt goes to `/sw-issue-repair` |
 
 When recording, do not cross-examine: one sentence is enough to record it. When the user says more
 about the file or the module, fill in `--module` / `--files` / `--description` in passing.

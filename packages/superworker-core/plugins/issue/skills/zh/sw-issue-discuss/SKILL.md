@@ -23,7 +23,7 @@ disable-model-invocation: true
 | "池子里现在有多少" | **看现状**：`status` + `top --limit 10`，报总数与按严重度、按 source 的分档 |
 | "那条修好了" | **结掉**：`search` 定位 → `resolve <id>`；不确定是哪条就摆出来让用户选 |
 | "陪我过一遍 external" | **裁定**：先复核，再逐批讨论 |
-| "把这条 bug 修了" | 单条调试转 `/trace`；同一批的债转 `/sw-issue-repair` |
+| "把这条 bug 修了" | 单条调试是本 session 自己的活，当场做；同一批的债转 `/sw-issue-repair` |
 
 记录时不要追问：一句话能记就行。用户多说了文件或模块，顺手填 `--module` / `--files` / `--description`。
 
