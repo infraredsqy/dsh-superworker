@@ -167,9 +167,10 @@ never changes them.
   each node's worktree and merge it back are yours to type yourself, and the tool owns only the
   record and the naming (see "Parallel: worktree")
 - **The line (cycle)**: `tags` (who it picks), `when_shelved`, `parallel` (how many nodes it
-  holds and how many sessions it opens), and the two debt thresholds; write them with
-  `cycle policy`, read them from the `Policy:` line of `cycle current`. Lines are coupled in no
-  other way: two lines run side by side, each holding its own few nodes
+  holds and how many sessions it opens), `stop_after_nodes` (how many nodes it runs before it
+  stops), and the two debt thresholds; write them with `cycle policy`, read them from the
+  `Policy:` line of `cycle current`. Lines are coupled in no other way: two lines run side by
+  side, each holding its own few nodes
 - **The node**: mode, weight, tags, spec, report set — they travel with the graph and
   the node directory, one place per node
 
@@ -222,17 +223,19 @@ nothing.
 Either way **your run ends here — do not wait on it here**: the next round is the host's to open
 (the panel's cell, or the relay firing on `turn/end`); when the host opens nothing, hand the user
 the prompt path and the line in it. Before stopping, tell the user how far you will push; in full
-auto, say: "Full auto is on; I will keep pushing until the graph has no ready node left, or some
-instruction says stop."
+auto, say: "Full auto is on; I will keep pushing until the graph has no ready node left, or this
+line has run as many nodes as its `stop_after_nodes`."
 
-**How far this line runs depends on the node's own mode alone**: a `checkpoint` node stops at its
-close and hands over to a human; a `manual` node lives in the conversation throughout, and once
-the user explicitly lets it through ("mark it complete, continue") the line carries on like
-`auto`; an `auto` node opens the next one itself when it is done. **A stop is the plan's answer**:
-when the plan says it stopped (`checkpoint`, a non-delivered node with `when_shelved=stop`, or
-nothing ready left) and nothing is in hand, `advance` turns the line `inactive` itself; a human puts
-it back in service with `cycle status <cycle> active`, and only then does it pick the next node (why
-only a human writes that, see `docs/conduct-state.md` "the two ways in").
+**How far this line runs is settled first by the node's own mode**: a `checkpoint` node stops at
+its close and hands over to a human; a `manual` node lives in the conversation throughout, and
+once the user explicitly lets it through ("mark it complete, continue") the line carries on like
+`auto`; an `auto` node opens the next one itself when it is done. The line's `stop_after_nodes`
+only adds a stop point on top (`cycle policy <cycle> stop_after_nodes <n>`; unwritten, there is
+none) and never loosens the mode. **A stop is the plan's answer**: when the plan says it stopped
+(`checkpoint`, a non-delivered node with `when_shelved=stop`, the line's `stop_after_nodes` count
+reached, or nothing ready left) and nothing is in hand, `advance` turns the line `inactive` itself;
+a human puts it back in service with `cycle status <cycle> active`, and only then does it pick the
+next node (why only a human writes that, see `docs/conduct-state.md` "the two ways in").
 
 ## Prepare
 
@@ -286,8 +289,8 @@ instruction list --project <absolute path to the project root>
   fresh each time, rather than a session settling it on the entry's behalf. Only the user can
   archive an instruction, and only the user can put it back; a session does not touch that
   record.
-- **This line's own policies** (`when_shelved`, the two debt lines, `model`) are on
-  the `Policy:` line of `cycle current`; write them with
+- **This line's own policies** (`when_shelved`, `parallel`, `stop_after_nodes`, `model`, plus
+  the two debt lines) are on the `Policy:` line of `cycle current`; write them with
   `cycle policy <cycle> <key> <value>`, and cancel a numeric one with `off`.
 
 **2 | Read**, in one go before touching anything:

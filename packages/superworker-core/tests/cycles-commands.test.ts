@@ -348,6 +348,25 @@ describe('policy: the cycle\'s own policies', () => {
     expect(shown.policies).toEqual({ parallel: 3, when_shelved: 'continue' });
   });
 
+  it('stop_after_nodes: a positive integer lands, a zero and a word are refused, and off drops it back to "no count"', async () => {
+    await superworker.ledger.cycles.create({ id: 'main', tags: ['coding'] });
+    expect(await superworker.ledger.cycles.setPolicy('main', 'stop_after_nodes', 2)).toEqual({
+      when_shelved: 'stop',
+      parallel: 1,
+      stop_after_nodes: 2,
+    });
+    await expect(superworker.ledger.cycles.setPolicy('main', 'stop_after_nodes', 0)).rejects.toThrow('at least 1');
+    await expect(superworker.ledger.cycles.setPolicy('main', 'stop_after_nodes', 'soon')).rejects.toThrow(
+      'positive integer',
+    );
+    // Unlike the two always-present keys this one has no default: clearing it leaves the effective set.
+    expect(await superworker.ledger.cycles.setPolicy('main', 'stop_after_nodes', 'off')).toEqual({
+      when_shelved: 'stop',
+      parallel: 1,
+    });
+    expect((await superworker.ledger.cycles.show('main')).policies).toEqual({});
+  });
+
   it('a policy key this engine does not know is skipped as an unknown key: the line still reads, and the word is in no effective set', async () => {
     // A record another implementation wrote carries a word of its own in the same `policies` slot.
     // It stays on disk as data; the reading neither throws nor leaves it out of the line record.

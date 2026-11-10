@@ -10,7 +10,7 @@ import type { MicroTimestamp, SecondsTimestamp } from './types';
  * within the process — writes in the same microsecond each get their own timestamp,
  * none shares a value with another.
  *
- * Lines (state.json), handoff tickets, instructions and session files use the seconds
+ * Lines (state.json), handoff tickets and session files use the seconds
  * shape (`2026-01-01T00:00:00Z`): the wall clock truncated to seconds, writes in the
  * same second share one reading — the seconds shape is coarse by design.
  */
@@ -81,7 +81,7 @@ export function secondsTimestampOf(epochUs: number): SecondsTimestamp {
 }
 
 /**
- * The seconds-shape timestamp of now (the shape lines, handoff tickets, instructions and session files
+ * The seconds-shape timestamp of now (the shape lines, handoff tickets and session files
  * use); drawn from the same microsecond clock, also increasing within the process.
  *
  * The spelling is `secondsTimestampOf`'s, not a second one cut out of the micro shape: a test that pins

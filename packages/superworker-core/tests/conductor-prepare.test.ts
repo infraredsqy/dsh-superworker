@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { prepareDispatch } from '../src/prepare';
 import { open } from '../src/open';
+import { main as instruction } from '../plugins/instruction/tools/commands.mjs';
 import { generateExpected, type CorpusRunner } from './helpers/corpus';
 import { makeLab } from './helpers/plugin-lab';
 import { hashDirectory } from './helpers/hash-dir.ts';
@@ -249,6 +250,18 @@ describe('dispatch preparation: landing spots and idempotence', () => {
     expect(doc).toContain('Policy: when_shelved=stop, parallel=2');
     expect(doc).toContain('- test_tier=full');
     expect(doc).toContain('- spec: ');
+  });
+
+  it('the run doc carries no user-instruction cell: the account is on disk elsewhere and the material does not list it', async () => {
+    const root = freshRoot();
+    await stageDispatchable(root);
+    // The account is the instruction plugin's own record; it is there, and the run doc still does not gain a cell for it.
+    await instruction(['add', '--text', 'changes land only in the assigned files', '--scope', 'global'], { root });
+    const prepared = await prepareDispatch(root, { cycle: 'c1' }, { homeDir: join(root, '_home') });
+    const doc = readFileSync(prepared.nodes[0]!.run_doc, 'utf8');
+    expect(doc).not.toContain('User instructions in effect');
+    // The verified facts end with the settings readings: nothing was appended after them.
+    expect(doc.trimEnd().split('\n').at(-1)).toBe('- max_agents=3');
   });
 });
 

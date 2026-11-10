@@ -19,7 +19,15 @@
  * side touched is asked about by nobody.
  */
 
-import { IDEAS_FILE_NAME, INSTRUCTIONS_FILE_NAME, SIGNALS_DIR_NAME, STATE_FILE_NAME } from '../paths';
+import { IDEAS_FILE_NAME, SIGNALS_DIR_NAME, STATE_FILE_NAME } from '../paths';
+
+/**
+ * The file name of the one record the driver merges that this engine no longer owns: the standing user
+ * instruction account belongs to its own plugin folder (`plugins/instruction/`), which writes it and keeps
+ * its lock, so the engine's own layout module does not name it. The driver still has to recognise the file
+ * it is called on, and that spelling lives here, beside the kind table that reads it.
+ */
+const INSTRUCTIONS_FILE_NAME = 'instructions.json';
 
 /** The kind words of a record: graph (nodes) / lines / instructions / handoff ticket. */
 export const KIND_IDEAS = 'ideas';
@@ -43,7 +51,7 @@ export type MergeKind =
  */
 export interface RecordKindRow {
   readonly kind: MergeKind;
-  /** The file name `paths.ts` lands this record under, or null for the one record kept in a directory of its own. */
+  /** The file name this record lands under (the engine's layout names two of them; the instruction account's is this folder's own constant), or null for the one record kept in a directory of its own. */
   readonly fileName: string | null;
   /** The collection key this record carries, or null for the one record that is a single entry. */
   readonly collectionKey: string | null;

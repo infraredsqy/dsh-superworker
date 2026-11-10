@@ -1,5 +1,5 @@
 /**
- * The frozen record types: node, line, instruction, issue, handoff ticket, session file.
+ * The frozen record types: node, line, issue, handoff ticket, session file.
  *
  * Key names and value vocabularies are written as `.superworker` records are on disk (snake_case key names
  * included): whatever a record on disk looks like, the interface here looks the same. Optional keys land
@@ -9,8 +9,8 @@
  * There are two timestamp shapes, both UTC with a literal `Z`:
  * - the microsecond shape (`2026-01-01T00:00:00.000000Z`): used by the graph (node records) and by the
  *   records a plugin keeps of its own;
- * - the seconds shape (`2026-01-01T00:00:00Z`): used by lines (state.json), handoff tickets, instructions
- *   and session files.
+ * - the seconds shape (`2026-01-01T00:00:00Z`): used by lines (state.json), handoff tickets and
+ *   session files.
  */
 
 /** A seconds-shape timestamp (`2026-01-01T00:00:00Z`). */
@@ -72,12 +72,14 @@ export interface CyclePathStep {
   result: NodeResult;
 }
 
-/** The policy layer a line declares itself; besides the three core keys these are knobs a plugin declares, which land on this layer under the same name. */
+/** The policy layer a line declares itself; besides the core keys these are knobs a plugin declares, which land on this layer under the same name. */
 export interface CyclePolicies {
   /** When a node is put down without being delivered: stop the line and wait for someone, or record it as shelved and keep picking. Defaults to stop. */
   when_shelved?: 'stop' | 'continue';
   /** How many nodes this line claims at once and how many sessions it opens; 1 by default. It is a ceiling: whether they can run in parallel is up to the graph. */
   parallel?: number;
+  /** Stop this line once this many of its nodes have closed. The node's own `mode` keeps its gate; this key can only add a stop point, never take one away. Absent means no count. */
+  stop_after_nodes?: number;
   /** Knobs a plugin declares and that are allowed to be declared on the line layer. */
   [key: string]: unknown;
 }
@@ -97,47 +99,6 @@ export interface CycleRecord {
   tags?: string[];
   /** The policy layer the line declares itself. */
   policies?: CyclePolicies;
-}
-
-// ── instruction ──────────────────────────────────────────────────────────────
-
-/** The visible range of an instruction: global / one line / one node. */
-export type InstructionScope = 'global' | 'cycle' | 'node';
-
-/** What an instruction hangs on: `stage` is in force on a process stage; `boundary` is in force at the line-closing boundary. */
-export type InstructionTarget = 'stage' | 'boundary';
-
-/** Instruction state: `live` is in force; `withdrawn` is archived (the record stays, it is just no longer read). */
-export type InstructionState = 'live' | 'withdrawn';
-
-/** An instruction record (an entry of the `instructions` table in instructions.json): the standing user instruction channel. */
-export interface InstructionRecord {
-  id: string;
-  text: string;
-  scope: InstructionScope;
-  target: InstructionTarget;
-  state: InstructionState;
-  /** The binding when scope is cycle / node; null for global. */
-  cycle: string | null;
-  node: string | null;
-  said_by: string;
-  at: SecondsTimestamp;
-  resolved_at: SecondsTimestamp | null;
-  note: string | null;
-  /** Optional: lapses after this many nodes have closed the line. */
-  stop_after_nodes?: number;
-}
-
-/** The trace an instruction removal leaves: only the id and the timestamp, no text. */
-export interface InstructionRemovalTrace {
-  id: string;
-  at: SecondsTimestamp;
-}
-
-/** The whole instructions.json document: the instruction table plus the removal traces (bookkeeping, shown to no view). */
-export interface InstructionLedger {
-  instructions: InstructionRecord[];
-  removed?: InstructionRemovalTrace[];
 }
 
 // ── issue ────────────────────────────────────────────────────────────────────

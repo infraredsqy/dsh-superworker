@@ -235,7 +235,7 @@ describe('planning: when to stop', () => {
     if (carried.action === 'open_node') expect(carried.node_id).toBe(next.id);
   });
 
-  it('a boundary instruction tightens the stop: "walk two nodes then stop" stops at the 2nd, and keeps walking before that', async () => {
+  it("a line's own stop_after_nodes tightens the stop: 'walk two nodes then stop' stops at the 2nd, and keeps walking before that", async () => {
     const root = freshRoot();
     const superworker = open(root);
     await superworker.ledger.init();
@@ -249,24 +249,68 @@ describe('planning: when to stop', () => {
     await superworker.ledger.dag.setStatus(first.id, 'completed');
     await superworker.ledger.cycles.hold('c1', second.id);
     putSignal(root, 'c1', second.id, 'completed');
-    // The account belongs to the instruction plugin now: its own command surface is what writes the
-    // record, and the planner reads the cap off that same record.
-    const cap = await instruction(
-      ['add', '--text', 'stop after two nodes', '--scope', 'global', '--target', 'boundary', '--stop-after-nodes', '2'],
-      { root },
-    );
-    void cap;
+    // The count is the line's own policy key: writing it is `cycle policy`, and the planner reads it off the same record.
+    const written = await superworker.ledger.cycles.setPolicy('c1', 'stop_after_nodes', 2);
+    expect(written.stop_after_nodes).toBe(2);
     const stopped = await open(root).conductor.next({ after: second.id });
     expect(actionOf(stopped)).toBe('stop_pipeline');
     if (stopped.action === 'stop_pipeline') {
-      expect(stopped.reason).toBe('instruction "stop after two nodes": stop after 2 nodes');
+      expect(stopped.reason).toBe('cycle policy stop_after_nodes=2: stop after 2 nodes');
     }
-    // The same instruction relaxed to 3: the count has not been reached, so the cycle picks the next one.
-    await instruction(['rm', 'i-0001'], { root });
+    // The same line asked for 3: the count has not been reached, so it picks the next one.
+    await superworker.ledger.cycles.setPolicy('c1', 'stop_after_nodes', 3);
+    const carried = await open(root).conductor.next({ after: second.id });
+    expect(actionOf(carried)).toBe('open_node');
+    if (carried.action === 'open_node') expect(carried.node_id).toBe(next.id);
+    // `off` drops the count: no stop point of the line's own left.
+    await superworker.ledger.cycles.setPolicy('c1', 'stop_after_nodes', 'off');
+    const withoutCount = await open(root).conductor.next({ after: second.id });
+    expect(actionOf(withoutCount)).toBe('open_node');
+  });
+
+  it('the count sits under the node mode: a checkpoint node stops at its own gate even when the line asks for more', async () => {
+    const root = freshRoot();
+    const superworker = open(root);
+    await superworker.ledger.init();
+    const round = await superworker.ledger.dag.add({ title: 'round', mode: 'checkpoint' });
+    await superworker.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
+    await superworker.ledger.cycles.hold('c1', round.id);
+    await superworker.ledger.cycles.setPolicy('c1', 'stop_after_nodes', 99);
+    putSignal(root, 'c1', round.id, 'completed');
+    const stopped = await open(root).conductor.next({ after: round.id });
+    expect(actionOf(stopped)).toBe('stop_pipeline');
+    if (stopped.action === 'stop_pipeline') {
+      // The mode speaks first: the line's count can add a stop point, never take the checkpoint gate away.
+      expect(stopped.reason).toContain('node mode=checkpoint');
+      expect(stopped.reason).not.toContain('stop_after_nodes');
+    }
+  });
+
+  it('an entry in the instruction account no longer stops the plan: the count is the line policy, not the record', async () => {
+    const root = freshRoot();
+    const superworker = open(root);
+    await superworker.ledger.init();
+    const first = await superworker.ledger.dag.add({ title: 'first round' });
+    const second = await superworker.ledger.dag.add({ title: 'second round' });
+    const next = await superworker.ledger.dag.add({ title: 'next' });
+    await superworker.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
+    await superworker.ledger.cycles.hold('c1', first.id);
+    await superworker.ledger.cycles.close('c1', { node: first.id, result: 'completed' });
+    await superworker.ledger.dag.setStatus(first.id, 'completed');
+    await superworker.ledger.cycles.hold('c1', second.id);
+    putSignal(root, 'c1', second.id, 'completed');
+    // A boundary entry written through the plugin's own command surface: it is on disk, and the plan does not read it.
     await instruction(
-      ['add', '--text', 'stop after three nodes', '--scope', 'global', '--target', 'boundary', '--stop-after-nodes', '3'],
+      ['add', '--text', 'stop after two nodes', '--scope', 'global', '--target', 'boundary', '--stop-after-nodes', '2'],
       { root },
     );
+    const listed = JSON.parse(String(await instruction(['list', '--all', '--json'], { root }))) as Array<{
+      target: string;
+      stop_after_nodes?: number;
+    }>;
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!.target).toBe('boundary');
+    expect(listed[0]!.stop_after_nodes).toBe(2);
     const carried = await open(root).conductor.next({ after: second.id });
     expect(actionOf(carried)).toBe('open_node');
     if (carried.action === 'open_node') expect(carried.node_id).toBe(next.id);

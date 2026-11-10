@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type {
   CycleRecord,
   HandoffRecord,
-  InstructionLedger,
-  InstructionRecord,
   IssueLedger,
   IssueRecord,
   NodeRecord,
@@ -49,26 +47,6 @@ const cycle: CycleRecord = {
   policies: { when_shelved: 'stop', parallel: 2, spawner: 'dsh' },
 };
 
-const instruction: InstructionRecord = {
-  id: 'i-0001',
-  text: 'audit temp products only go into .tmp/',
-  scope: 'global',
-  target: 'stage',
-  state: 'live',
-  cycle: null,
-  node: null,
-  said_by: 'owner',
-  at: '2026-01-01T00:00:00Z',
-  resolved_at: null,
-  note: null,
-  stop_after_nodes: 3,
-};
-
-const instructionLedger: InstructionLedger = {
-  instructions: [instruction],
-  removed: [{ id: 'i-0002', at: '2026-01-01T00:00:00Z' }],
-};
-
 const issue: IssueRecord = {
   id: 'demo-untitled',
   severity: 'P2',
@@ -105,7 +83,7 @@ const sessionNote: SessionNoteRecord = {
   run: [{ session: 'sess_abc', host: 'dsh', at: null, source: 'ledger' }],
 };
 
-describe('key sets of the six frozen record kinds', () => {
+describe('key sets of the five frozen record kinds', () => {
   it('node (a value in the nodes table of ideas.json)', () => {
     expect(Object.keys(node).sort()).toEqual([
       'approved_at', 'completed_at', 'created_at', 'dependencies', 'description',
@@ -118,14 +96,6 @@ describe('key sets of the six frozen record kinds', () => {
     ]);
     expect(Object.keys(cycle.holding[0]!).sort()).toEqual(['id', 'since']);
     expect(Object.keys(cycle.path[0]!).sort()).toEqual(['ended_at', 'node', 'result', 'started_at']);
-  });
-  it('instruction (an entry in the instructions table of instructions.json)', () => {
-    expect(Object.keys(instruction).sort()).toEqual([
-      'at', 'cycle', 'id', 'node', 'note', 'resolved_at', 'said_by', 'scope',
-      'state', 'stop_after_nodes', 'target', 'text',
-    ]);
-    expect(Object.keys(instructionLedger).sort()).toEqual(['instructions', 'removed']);
-    expect(Object.keys(instructionLedger.removed![0]!).sort()).toEqual(['at', 'id']);
   });
   it('issue (a value in the issues table of issues.json)', () => {
     expect(Object.keys(issue).sort()).toEqual([
@@ -157,11 +127,6 @@ describe('frozen value vocabularies', () => {
     expect(['active', 'inactive']).toContain(cycle.status);
     expect(['completed', 'failed', 'stopped']).toContain(cycle.path[0]!.result);
     expect(['completed', 'failed', 'stopped']).toContain(handoff.status);
-  });
-  it('scope, target and state of an instruction', () => {
-    expect(['global', 'cycle', 'node']).toContain(instruction.scope);
-    expect(['stage', 'boundary']).toContain(instruction.target);
-    expect(['live', 'withdrawn']).toContain(instruction.state);
   });
   it('severity, decision, source and state of an issue', () => {
     expect(['P0', 'P1', 'P2', 'P3']).toContain(issue.severity);

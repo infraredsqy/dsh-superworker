@@ -5,17 +5,16 @@ import type { ConductorTarget } from './conductor';
 import { createCyclesNamespace, cycleHoldingIds, cyclePolicy } from './cycles';
 import { createDagNamespace } from './dag';
 import { isExistingPath } from './fs-helpers';
-import { entryScope, visibleInstructionRows } from './instruct';
 import { assertLedgerInitialized } from './initledger';
 import { atomicWriteBytes, exclusiveCreateBytes, EOL } from './jsonio';
 import { launchPromptPath, nodeRunDocPath, nodeSpecPath, recordPaths } from './paths';
 import type { RecordPaths } from './paths';
-import { planNext, promptTextOf, pyList, short, stringCellOf } from './planner';
+import { planNext, promptTextOf, pyList, short } from './planner';
 import { loadPlugins, pluginsDirOf } from './plugins/scan';
 import { declaredKnobSpecs, readingsOf } from './plugins/tables';
 import type { PluginAssembly } from './plugins/assembly';
 import type { PluginFolder } from './plugins/types';
-import type { CycleRecord, InstructionRecord, NodeRecord } from './types';
+import type { CycleRecord, NodeRecord } from './types';
 
 /**
  * Dispatch preparation: the first half of `conductor.dispatch` — the material for one run, all of it
@@ -24,20 +23,18 @@ import type { CycleRecord, InstructionRecord, NodeRecord } from './types';
  * - **The prompt**: what dispatch hands to the session is one line of invocation
  *   (`/sw-conduct <node id> [pipeline]`, spelled byte for byte). Nothing comes after that line, and
  *   nothing may be padded in front of it: the node's mode, title and spec path are read by the session
- *   itself from the node record, the closing command and the ticket shape belong to the skill being
- *   called, and the standing instructions are read by the session itself with `instruction list` —
- *   none of that is in the prompt. It lands in the matching
+ *   itself from the node record, and the closing command and the ticket shape belong to the skill being
+ *   called — none of that is in the prompt. It lands in the matching
  *   `<record>/meta/launch/<line>/<node>/prompt.txt`, atomic write, whole file overwritten (idempotent).
  * - **The run doc**: this round's run document, landing in the node directory
  *   (`<record>/nodes/<node>/run.md`). Its sections follow the run.md reading — "what was done",
  *   "self-decisions", "known unresolved", "verified facts" are the four fixed sections; this
  *   preparation step fills in "verified facts" (the node's mode/weight/tags, the spec's location and
- *   its `method:` line, this line's status/tags/policies/holding, three settings readings, and the
- *   instructions in force that are visible from the current position), and the other three sections
- *   are left for this round's session to write. Every word comes from records and the spec, nothing is
- *   improvised; the first preparation sets the document up by exclusive creation and later ones
- *   leave it alone (once written it belongs to the session), and a repeated preparation does not
- *   produce a second one.
+ *   its `method:` line, this line's status/tags/policies/holding, and three settings readings), and the
+ *   other three sections are left for this round's session to write. Every word comes from records and
+ *   the spec, nothing is improvised; the first preparation sets the document up by exclusive creation
+ *   and later ones leave it alone (once written it belongs to the session), and a repeated preparation
+ *   does not produce a second one.
  * - **The handoff template**: what this line wants, and which verdict words there are. The fields and
  *   verdict words follow the fixed shape (`handoff --form` prints: `deliverable` / `acceptance` /
  *   `touched`, verdicts `completed | failed | stopped`); nothing here prints a command line (this
@@ -101,24 +98,6 @@ function textBytes(text: string): Uint8Array {
 /** How one settings reading looks to a person: nobody set it, so it is written as null, honestly. */
 function shown(value: ConfigValue | null): string {
   return value === null ? 'null' : String(value);
-}
-
-/** The binding word of an instruction: global; `cycle <line>`; `node <eight-digit short id>`. */
-function scopeWord(entry: InstructionRecord): string {
-  const scope = entryScope(entry);
-  if (scope === 'cycle') return `cycle ${typeof entry.cycle === 'string' ? entry.cycle : '?'}`;
-  if (scope === 'node') return `node ${typeof entry.node === 'string' ? short(entry.node) : '?'}`;
-  return 'global';
-}
-
-/** One instruction in the run doc's "verified facts": its text followed by the binding and (if any) the stopping boundary. */
-function instructionLine(entry: InstructionRecord, index: number): string {
-  const words = [scopeWord(entry)];
-  if (entry.target === 'boundary') words.push('boundary');
-  if (typeof entry.stop_after_nodes === 'number') {
-    words.push(`stop_after_nodes=${entry.stop_after_nodes}`);
-  }
-  return `  ${index + 1}. ${stringCellOf((entry as { text?: unknown }).text)} (${words.join(', ')})`;
 }
 
 /**
@@ -212,14 +191,13 @@ function buildRunDoc(input: {
   readonly nodeId: string;
   readonly specPath: string;
   readonly method: string | null;
-  readonly instructions: readonly InstructionRecord[];
   readonly knobs: {
     readonly test_tier: ConfigValue | null;
     readonly worktree_mode: ConfigValue | null;
     readonly max_agents: ConfigValue | null;
   };
 }): string {
-  const { cycle, node, nodeId, specPath, method, instructions, knobs } = input;
+  const { cycle, node, nodeId, specPath, method, knobs } = input;
   const title = typeof node?.title === 'string' ? node.title : '';
   const mode = typeof node?.mode === 'string' ? node.mode : 'auto';
   const weight = node?.weight ?? 'standard';
@@ -254,8 +232,6 @@ function buildRunDoc(input: {
     `- test_tier=${shown(knobs.test_tier)}`,
     `- worktree_mode=${shown(knobs.worktree_mode)}`,
     `- max_agents=${shown(knobs.max_agents)}`,
-    instructions.length > 0 ? '- User instructions in effect:' : '- User instructions in effect: (none)',
-    ...instructions.map(instructionLine),
   ];
   return `${lines.join('\n')}\n`;
 }
@@ -315,7 +291,6 @@ export async function prepareDispatch(
       nodeId: entry.node_id,
       specPath,
       method,
-      instructions: await visibleInstructionRows(root, { node: entry.node_id }),
       knobs: {
         test_tier: (await config.get('test_tier')).value,
         worktree_mode: (await config.get('worktree_mode')).value,

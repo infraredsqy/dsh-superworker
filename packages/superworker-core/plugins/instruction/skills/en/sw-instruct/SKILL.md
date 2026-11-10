@@ -33,7 +33,9 @@ instruction add --text "<the user's own words>" --scope node --node <id>
   bind, the tool refuses the call
 - A working run reads the list once when it starts: what you record midway is unseen by the run
   already in flight, and takes effect from the next one
-- Words about "how far it runs, when it stops" (stop after three) → `--stop-after-nodes 3` plus
-  `--target boundary`: the stop logic reads only the entries in the boundary column, and without
-  it the tool will not stop
+- Words about "how far it runs, when it stops" (stop after three) do not belong to this list:
+  they are the line's own policy key, written with `cycle policy <line> stop_after_nodes 3`. It can
+  only add a stop point to that line — the node's own `mode` still speaks first (`checkpoint` stops
+  just the same) — and `off` takes the count away. Entries in this list no longer take part in
+  stopping, and recording one here will not stop anything
 - Once it is recorded, read the entry's id and scope back to the user

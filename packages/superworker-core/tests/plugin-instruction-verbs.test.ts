@@ -4,21 +4,34 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { main as instruction } from '../plugins/instruction/tools/commands.mjs';
 import { UsageError } from '../plugins/instruction/tools/storage.mjs';
-import { visibleInstructionRows } from '../src/instruct';
 import { atomicWriteJson, jsonOptionsForRecord } from '../src/jsonio';
 import { open } from '../src/open';
-import type { InstructionRecord } from '../src/types';
 
 /**
- * The `instruction` command surface, now this plugin folder's own (`plugins/instruction/`): register,
+ * The `instruction` command surface, this plugin folder's own (`plugins/instruction/`): register,
  * list, archive, revive, take away, plus visibility as a pure deduction.
  *
  * What is pinned is the criterion, not the implementation: the visibility matrix (scope x binding
  * state x position), the add / resolve / revive round trip, tombstones hidden but kept, ids never
- * issued twice, the account's whole-file read-modify-write, the init gate, and — because the engine's
- * own reading of the same record has to agree with the plugin's — the two visibility readings side by
- * side. Nothing here pins the internal order of reads and writes.
+ * issued twice, the account's whole-file read-modify-write and the init gate. The record belongs to
+ * this folder, so its shape is spelled here rather than taken from the engine's exports.
  */
+
+/** The record's shape as this folder writes and reads it (the plugin owns the type now). */
+interface InstructionRecord {
+  id: string;
+  text: string;
+  scope: string;
+  target: string;
+  state: string;
+  cycle: string | null;
+  node: string | null;
+  said_by: string;
+  at: string;
+  resolved_at: string | null;
+  note: string | null;
+  stop_after_nodes?: number;
+}
 
 let root: string;
 let superworker: ReturnType<typeof open>;
@@ -299,20 +312,6 @@ describe('the visibility matrix: scope x binding state x position', () => {
     } else if (spot === 'full book') rows = await idsOf(['list', '--all', '--json']);
     else rows = await idsOf(['list', '--json']);
     expect(rows.includes(ids[key]!)).toBe(seen);
-  });
-
-  it('the plugin and the engine read the same record the same way: the two visibility readings agree', async () => {
-    const { nodeA, nodeB } = await plantScenario();
-    const sorted = (rows: Array<{ id: string }>): string[] => rows.map((row) => row.id).sort();
-    expect(await idsOf(['list', '--json']).then((rows) => rows.sort())).toEqual(
-      sorted(await visibleInstructionRows(root)),
-    );
-    expect(await idsOf(['list', '--json', '--node', nodeB]).then((rows) => rows.sort())).toEqual(
-      sorted(await visibleInstructionRows(root, { node: nodeB })),
-    );
-    expect(await idsOf(['list', '--json', '--node', nodeA]).then((rows) => rows.sort())).toEqual(
-      sorted(await visibleInstructionRows(root, { node: nodeA })),
-    );
   });
 
   it('a tombstone is hidden but kept: the body is gone from disk while removed keeps the id and the stamp', async () => {

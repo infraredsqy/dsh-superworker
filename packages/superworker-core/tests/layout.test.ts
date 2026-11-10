@@ -15,7 +15,7 @@ import { join } from 'node:path';
 /** Directory layout: every write target comes from a constant or a function in `src/paths.ts`. */
 
 describe('.superworker directory layout', () => {
-  it('record files and the four records sit in place; the issue pool lives under issues/', () => {
+  it('record files sit in place; the issue pool lives under issues/', () => {
     const root = join('some', 'project');
     const paths = recordPaths(root);
     expect(paths.root).toBe(root);
@@ -23,7 +23,6 @@ describe('.superworker directory layout', () => {
     expect(RECORD_DIR_NAME).toBe('.superworker');
     expect(paths.stateJson).toBe(join(root, '.superworker', 'state.json'));
     expect(paths.ideasJson).toBe(join(root, '.superworker', 'ideas.json'));
-    expect(paths.instructionsJson).toBe(join(root, '.superworker', 'instructions.json'));
     expect(paths.issuesJson).toBe(join(root, '.superworker', 'issues', 'issues.json'));
   });
 

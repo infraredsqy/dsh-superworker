@@ -4,17 +4,16 @@ import { envHomeDir } from './env.ts';
 import { RecordError } from './errors.ts';
 
 /**
- * The `.superworker` directory layout: the record directory, the four records, the signals directory, node
- * directories, metadata and session files.
+ * The `.superworker` directory layout: the record directory, the records this engine keeps, the signals
+ * directory, node directories, metadata and session files.
  *
  * Every write location is given by the constants and functions here; no arbitrarily spelled path
- * string is accepted as a location. Item by item (the record directory, the four records, and the
- * separate locations of session files and the issue pool):
+ * string is accepted as a location. Item by item (the record directory, the records this engine owns, and
+ * the separate locations of session files and the issue pool):
  *
  *   <root>/.superworker/                        record directory
  *     state.json                         lines (the `cycles` table)
  *     ideas.json                         nodes (the `nodes` table)
- *     instructions.json                  instructions
  *     issues/issues.json                 issue pool (the `issues` table; kept in the issues/ subdirectory)
  *     config.json                        project-layer settings (init lays down an empty object; the machine layer is `<home>/.superworker/config.json`)
  *     signals/<line>/<node>.json         handoff tickets
@@ -31,13 +30,12 @@ import { RecordError } from './errors.ts';
 export const RECORD_DIR_NAME = '.superworker';
 
 /**
- * The three record file names and the handoff tickets' directory name: `recordPaths` builds every location from
+ * The record file names and the handoff tickets' directory name: `recordPaths` builds every location from
  * these, and the merge driver recognises a record by the same names (a second spelling of them is a second
  * landing table, which is exactly what the driver must not have).
  */
 export const STATE_FILE_NAME = 'state.json';
 export const IDEAS_FILE_NAME = 'ideas.json';
-export const INSTRUCTIONS_FILE_NAME = 'instructions.json';
 export const SIGNALS_DIR_NAME = 'signals';
 
 /** Every location of one record tree. `root` is the project root open received, kept as it is. */
@@ -46,7 +44,6 @@ export interface RecordPaths {
   readonly recordDir: string;
   readonly stateJson: string;
   readonly ideasJson: string;
-  readonly instructionsJson: string;
   readonly issuesJson: string;
   /** Project-layer settings: `<record>/config.json` (init lays down an empty object). */
   readonly configJson: string;
@@ -70,7 +67,6 @@ export function recordPaths(projectRoot: string): RecordPaths {
     recordDir,
     stateJson: join(recordDir, STATE_FILE_NAME),
     ideasJson: join(recordDir, IDEAS_FILE_NAME),
-    instructionsJson: join(recordDir, INSTRUCTIONS_FILE_NAME),
     issuesJson: join(recordDir, 'issues', 'issues.json'),
     configJson: join(recordDir, 'config.json'),
     signalsDir: join(recordDir, SIGNALS_DIR_NAME),

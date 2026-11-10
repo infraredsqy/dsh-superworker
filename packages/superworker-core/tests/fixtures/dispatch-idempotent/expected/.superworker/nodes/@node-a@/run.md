@@ -14,5 +14,3 @@
 - test_tier=full
 - worktree_mode=off
 - max_agents=3
-- User instructions in effect:
-  1. changes land only in the files assigned to this node (global)

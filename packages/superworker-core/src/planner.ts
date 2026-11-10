@@ -21,7 +21,6 @@ import {
   tagsOf,
   type NodeMap,
 } from './graph';
-import { instructionInScope, isLive } from './instruct';
 import { readJsonFile } from './jsonio';
 import {
   launchDir,
@@ -31,10 +30,10 @@ import {
   startedMarkerPath,
   type RecordPaths,
 } from './paths';
-import type { CycleRecord, InstructionRecord, NodeMode, NodeRecord } from './types';
+import type { CycleRecord, NodeMode, NodeRecord } from './types';
 
 /**
- * The planner layer: read the graph, the lines, the instructions and the dispatch pieces, and hand back "what
+ * The planner layer: read the graph, the lines and the dispatch pieces, and hand back "what
  * the next step is" — a plan, not one byte written.
  *
  * This module is the whole of planning, and its reading is:
@@ -50,9 +49,9 @@ import type { CycleRecord, InstructionRecord, NodeMode, NodeRecord } from './typ
  *   importance and its tie order), and this module only deletes rows by readiness, by the line's picking range
  *   and by another line's holdings — it never rewrites the scoring.
  * - **stopping has one place**: the node's own `mode` speaks (`checkpoint` stops at the close, `manual`'s gate
- *   is inside the session, `auto` opens the next one at the close), and a boundary instruction's
- *   `stop_after_nodes` can only tighten that rule. The line's own `when_shelved` decides whether the line goes
- *   on after "this node did not deliver".
+ *   is inside the session, `auto` opens the next one at the close), and the line's own `stop_after_nodes`
+ *   count can only tighten that rule — it adds a stop point, never takes one away. The line's own
+ *   `when_shelved` decides whether the line goes on after "this node did not deliver".
  * - **the bytes of a plan are fixed byte for byte**: the action bag's key order is construction order (the
  *   corpus compares directly against the output of `plan --json`), and the preview keeps the "mechanical steps not
  *   run yet" outside the action, leaving only one `settling` note — that is the preview rule: **when the
@@ -86,13 +85,6 @@ async function loadNodes(paths: RecordPaths): Promise<NodeMap> {
 /** The line account and its rosters: the `cycles` table of state.json, read through the engine's one reading of it. */
 async function loadCycles(paths: RecordPaths): Promise<CycleRecord[]> {
   return (await readStateLedger(paths)).cycles;
-}
-
-/** The instruction account: the `instructions` table of instructions.json, as it is on disk; visibility is computed when read. */
-async function loadInstructions(paths: RecordPaths): Promise<InstructionRecord[]> {
-  const data = await readRecord(paths.instructionsJson, 'instructions.json');
-  const rows = data?.instructions;
-  return Array.isArray(rows) ? (rows as InstructionRecord[]) : [];
 }
 
 /** One handoff ticket; absent or still `pending` both read as "no answer". */
@@ -441,24 +433,23 @@ function nodeRow(nodes: NodeMap, nodeId: string): NodeRecord & { id: string } {
 // ── the stopping criteria ────────────────────────────────────────────────────
 
 /**
- * (whether to stop, and why). **An instruction can only tighten the stopping rule, never loosen it.**
+ * (whether to stop, and why). **The line's own count can only tighten the stopping rule, never loosen it.**
  *
- * Whether a line goes on is decided only by this node's own `mode`, and the three gates each take one
+ * Whether a line goes on is decided first by this node's own `mode`, and the three gates each take one
  * position: `auto` has no human confirmation point (the close opens the next one itself), `manual`'s gate is
  * inside that node's session (the whole cell is the back-and-forth with the user, and `completed` is the user's
  * "done, go on", so the closing step adds no second gate), and `checkpoint`'s gate is at the closing step
  * itself (one round runs, then it stops once, and the next one opens only when a person says continue).
  *
+ * Only then does the line's own `stop_after_nodes` get its word: once this many of its nodes have closed, the
+ * line stops too. That count is the line policy's (`cycle policy <line> stop_after_nodes <n>`), it is read
+ * after the mode, and it can therefore add a stop point but never take the checkpoint gate away; absent, it
+ * adds nothing.
+ *
  * Closing this node's own run follows the same reading: `--continue` cannot pry it open, and `--stop` can only
  * tighten it further.
  */
-function stopCriterion(
-  instructions: readonly InstructionRecord[],
-  cycle: CycleRecord,
-  node: { id: string; mode?: unknown } | null,
-  dagNodes: NodeMap,
-  activeCycleIds: ReadonlySet<string>,
-): [boolean, string] {
+function stopCriterion(cycle: CycleRecord, node: { id: string; mode?: unknown } | null): [boolean, string] {
   const mode = normalizeMode(node?.mode);
   if (mode === 'checkpoint') {
     return [
@@ -467,27 +458,12 @@ function stopCriterion(
         'you say continue',
     ];
   }
-  for (const entry of instructions) {
-    if (!isLive(entry)) continue;
-    if ((entry.target ?? 'stage') !== 'boundary') continue;
-    if (
-      !instructionInScope(
-        entry,
-        dagNodes,
-        activeCycleIds,
-        String(cycle.id),
-        node === null ? null : node.id,
-      )
-    ) {
-      continue;
-    }
-    const cap = entry.stop_after_nodes;
-    if (typeof cap === 'number' && Number.isInteger(cap) && cap >= 0) {
-      // "stop after N nodes": this close is the N-th — by now all N are delivered.
-      const done = (Array.isArray(cycle.path) ? cycle.path.length : 0) + 1;
-      if (done >= cap) {
-        return [true, `instruction "${stringCellOf((entry as { text?: unknown }).text).slice(0, 40)}": stop after ${cap} nodes`];
-      }
+  const cap = cyclePolicy(cycle).stop_after_nodes;
+  if (typeof cap === 'number') {
+    // "stop after N nodes": this close is the N-th — by now all N are delivered.
+    const done = (Array.isArray(cycle.path) ? cycle.path.length : 0) + 1;
+    if (done >= cap) {
+      return [true, `cycle policy stop_after_nodes=${cap}: stop after ${cap} nodes`];
     }
   }
   return [false, ''];
@@ -496,7 +472,7 @@ function stopCriterion(
 /**
  * One cell read as a string, with "not there" reading as the empty string: a missing key and an empty
  * string mean the same thing on every read side. The one reader of such a cell — the planner's own
- * sentences, the run doc's instruction lines and the closing reason all come through it.
+ * sentences and the closing reason both come through it.
  */
 export function stringCellOf(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -765,15 +741,13 @@ function retryWait(cycle: CycleRecord, nodeId: string, holding: readonly string[
 interface LedgerView {
   nodes: NodeMap;
   cycles: CycleRecord[];
-  instructions: InstructionRecord[];
 }
 
-/** Read the three records on disk in one go (graph, lines, instructions; tickets are read per node when needed). */
+/** Read the two records on disk in one go (graph, lines; tickets are read per node when needed). */
 async function readLedger(paths: RecordPaths): Promise<LedgerView> {
   return {
     nodes: await loadNodes(paths),
     cycles: await loadCycles(paths),
-    instructions: await loadInstructions(paths),
   };
 }
 
@@ -835,13 +809,13 @@ export interface CloseSettlement {
 }
 
 /**
- * The settlement criteria of one close: read the graph and the instructions, and hand back "what the verdict
+ * The settlement criteria of one close: read the graph and the lines, and hand back "what the verdict
  * becomes, carry on or stop, who gets the slot, whether the line parks". The one set of criteria the read side
  * and the write side share (see `CloseSettlement`); not one byte is written here.
  *
  * `signal` is the ticket already read (a missing or still `pending` ticket never reaches here — that is the
  * caller's blocker: the plan answers wait and `conductor.settle` refuses). The criteria answer on their own:
- * what the close decides is the line's own state (`mode`, `when_shelved`, instructions), never a flag a
+ * what the close decides is the line's own state (`mode`, `when_shelved`, `stop_after_nodes`), never a flag a
  * caller carried in — a person who wants the line stopped stops it (the line's status), and one who wants a
  * particular node next claims it (`ledger.cycles.hold`).
  */
@@ -902,21 +876,12 @@ async function settleAnswers(
   }
 
   // ── the stopping criteria: the gates are exactly the two numbers above ────
-  const activeCycleIds = new Set(
-    view.cycles.filter((row) => row.status === 'active').map((row) => String(row.id)),
-  );
   let stopWhy = '';
   if (carryOn && (!several || filled.length === 0)) {
     // On a single-node line its close is its whole round: whatever follows on the graph goes through this gate
     // too. A multi-node line only asks when no slot could be filled: a slot that can be filled carries the line
     // on by itself.
-    const [mustStop, why] = stopCriterion(
-      view.instructions,
-      cycle,
-      nodeRow(nodes, nodeId),
-      nodes,
-      activeCycleIds,
-    );
+    const [mustStop, why] = stopCriterion(cycle, nodeRow(nodes, nodeId));
     if (mustStop) {
       decision = 'stop';
       stopWhy = why;

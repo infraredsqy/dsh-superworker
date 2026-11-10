@@ -96,7 +96,7 @@ argv 与退出码的搬运，一条合并规则都不在它里面。
 
 类型出口在 `src/index.ts` 里按命名空间逐项列出——记录类型、各命名空间的输入 / 选项 / 返回形状，
 外部调用方按名字 `import type` 就能拿到：`DagInfo`、`DagInfoEdge`、`DagInfoOptions`、
-`InstructionRecord`、`ConductorDispatchInput`、`SessionShow` 都在这张清单上。
+`CycleStanding`、`ConductorDispatchInput`、`SessionShow` 都在这张清单上。
 
 ## 旧目录与迁移
 
@@ -254,19 +254,10 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 `null`。读动词：不拿锁、不碰门槛、一个字节都不写。
 
 线自己的策略键：`when_shelved`（节点没交付被放下时停线还是继续）、`parallel`
-（同时认领几个节点，缺省 1）、`model`（这条线开的会话用哪条模型路由，一个
+（同时认领几个节点，缺省 1）、`stop_after_nodes`（这条线跑够几个节点就停，正整数，缺省不写＝
+没有这个停点；它只能加停、不能放宽节点自己的 `mode`）、`model`（这条线开的会话用哪条模型路由，一个
 `provider/model` 的词）；其余是插件声明的旋钮。线记录里残留别的键（别的实现写下的旧词那种）
 当未知键跳过：不抛、不拒读整条线，也不进入有效集。
-
-### 指令清单的读者
-
-指令清单（`.superworker/instructions.json`）归仓库自带的 `instruction` 插件所有：写、锁、
-五个动词（`instruction add` / `list` / `resolve` / `rm` / `revive`）与它自带的技能都在
-`plugins/instruction/` 里，句柄上没有这一组动作。引擎只保留两份读：派发准备把从这个位置读得见的
-条目落进提示词，规划读 boundary 条目的 `stop_after_nodes`（`src/instruct.ts` 的
-`visibleInstructionRows` / `instructionInScope`），两处都不写一个字节、不拿锁、不问 init 门槛。
-条目看不见的判据是纯推导（还在生效、绑定没失效），读侧与插件各有一份实现，靠语料与
-`tests/plugin-instruction-verbs.test.ts` 的对照用例钉住两边读法一致。
 
 ## superworker.config
 
@@ -400,7 +391,7 @@ id，写口认的是节点已有的那个目录。
 的就把线转 `inactive`。`close` 不交执行者（工具在 `RecordOpenOptions.executor` 缺席时的那个档），
 `advance` 交；两者都不结算——节点结束这件事归 `settle`。线的决定不从这里进：想停线是
 `ledger.cycles.setStatus(<线>, 'inactive')`，想点名下一个节点是 `ledger.cycles.hold`，判定用的策略
-住在线自己的记录里（节点的 `mode`、线的 `when_shelved`、边界指令的 `stop_after_nodes`），结算只读
+住在线自己的记录里（节点的 `mode`、线的 `when_shelved` 与 `stop_after_nodes`），结算只读
 它们。
 
 `prepare` 是派发准备的写侧、单独一个入口——它读同一份规划、只接受交回 `dispatch` 的那一份，把
@@ -461,7 +452,7 @@ stdout / stderr 是它在本进程里直接写的，调用方不必、也不能�
 
 ### 只读规划（`conductor.next`）
 
-`next` 读图、线、指令、交接单与派发记号，算出「下一步该干什么」，一个字节都不写：它不持锁、
+`next` 读图、线、交接单与派发记号，算出「下一步该干什么」，一个字节都不写：它不持锁、
 不认领、不写 prompt、不碰执行者。写侧是各自只做一件事的动作：`conductor.settle` 收这一单
 （判决进 path、认领放下、图落态、收尾插件缝跑完），`conductor.dispatch` 开一格自己的会话，
 `conductor.advance` 把认领、材料、会话按次序串成一步（宿主自己推线时用）。回答本身就是一份计划：
@@ -480,9 +471,9 @@ stdout / stderr 是它在本进程里直接写的，调用方不必、也不能�
   `ledger.dag.list` 与规划都从它取，规划只按就绪、这条线自己的选材范围（`tags`）与别的线的持有删行；
   一条线一次挑到 `parallel` 所容的槽位，被挡在外面的分开说明原因（标签藏了 / 别的线拿着），并列按
   图上已有的稳定次序。
-- **停手只有一处**：停手位由节点自己的 `mode` 定（`checkpoint` 收尾即停、`manual` 的闸在会话
-  里、`auto` 收尾就开下一个），边界指令的 `stop_after_nodes` 只能把停的规则收紧、不能放宽；
-  线自己的 `when_shelved` 决定节点没交付之后这条线走不走。
+- **停手只有一处**：停手位先由节点自己的 `mode` 定（`checkpoint` 收尾即停、`manual` 的闸在会话
+  里、`auto` 收尾就开下一个），线的 `stop_after_nodes` 只能在这之上再加一个停点、不能放宽（它的
+  计数只压在 mode 判过之后；不写就没有这个停点）；线自己的 `when_shelved` 决定节点没交付之后这条线走不走。
 - **计划交动作，不交写侧的命令**：收节点、落 prompt、钉下一个这些机械步留在动作身后，计划
   只把「还没跑」这件事说成 `settling`。
 
@@ -587,16 +578,18 @@ stdout / stderr 是它在本进程里直接写的，调用方不必、也不能�
 
 ## 冻结的记录类型
 
-六种记录的形状（类型、键名、取值词汇）在 `src/types.ts`，落点如下：
+五种记录的形状（类型、键名、取值词汇）在 `src/types.ts`，落点如下：
 
 | 记录 | 落点 |
 | --- | --- |
 | 节点 | ideas.json 的 `nodes` 表值 |
 | 线 | state.json 的 `cycles` 表项 |
-| 指令 | instructions.json 的 `instructions` 表项 |
 | 问题 | issues.json 的 `issues` 表值 |
 | 交接单 | signals/&lt;线&gt;/&lt;节点&gt;.json（整个文件就是一条记录） |
 | 会话档 | meta/sessions/&lt;节点&gt;.json |
 
-时刻有两种拼写，都是 UTC 加字面 `Z`：微秒形用于节点与问题的时刻；秒形用于线、交接单、
-指令与会话档。
+指令清单是第六份记录，归仓库自带的 `instruction` 插件：形状、落点（该插件自己读写的
+`.superworker/instructions.json`）、它的锁与字节契约都在 `plugins/instruction/`，引擎不读也不写——
+引擎的源码树里没有这条记录的拼写，那个插件的装与卸不改变引擎的任何一格。
+
+时刻有两种拼写，都是 UTC 加字面 `Z`：微秒形用于节点与问题的时刻；秒形用于线、交接单与会话档。

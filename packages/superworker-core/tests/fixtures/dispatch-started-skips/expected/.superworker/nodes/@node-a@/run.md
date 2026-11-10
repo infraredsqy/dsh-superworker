@@ -14,4 +14,3 @@
 - test_tier=full
 - worktree_mode=off
 - max_agents=3
-- User instructions in effect: (none)

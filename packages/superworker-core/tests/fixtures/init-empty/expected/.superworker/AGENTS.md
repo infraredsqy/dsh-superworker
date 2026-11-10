@@ -3,7 +3,7 @@
 > This file (`.superworker/AGENTS.md`) must not exceed 100 lines.
 > This file is written and maintained by this tool at `init` time. **To change it, ask the user first** -- once they have said "go ahead", then touch it.
 
-This directory is the superworker pipeline's ledger: `ideas.json`, `state.json`, `instructions.json` and
+This directory is the superworker pipeline's ledger: `ideas.json`, `state.json` and
 `signals/` are the pipeline's records, and `nodes/<uuid>/` holds the spec and the deliverable of
 each slot (DAG node).
 

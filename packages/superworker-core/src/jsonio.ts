@@ -35,9 +35,8 @@ import {
 
 /**
  * The platform line ending. Only the text products a **person** reads follow the platform (the
- * dispatch prompt, the run doc, the `started` marker); everything a machine reads — the six
- * records and the four layout files — is LF on every platform, which `jsonBytes` writes as it
- * is.
+ * dispatch prompt, the run doc, the `started` marker); everything a machine reads — the records
+ * and the four layout files — is LF on every platform, which `jsonBytes` writes as it is.
  */
 export const EOL = process.platform === 'win32' ? '\r\n' : '\n';
 
@@ -52,17 +51,21 @@ export interface JsonBytesOptions {
   readonly sortKeys?: boolean;
 }
 
-/** The key-order reading of the six records: which record's writer sorts keys, checked one by one. */
+/** The key-order reading of the records this engine writes: which record's writer sorts keys, checked one by one. */
 export type RecordKind =
   | 'state'
   | 'ideas'
-  | 'instructions'
   | 'issues'
   | 'signal'
   | 'session-note';
 
-/** Give the key-order options of one record kind when landing: the issue pool and the graph sort keys, the rest keep construction order. */
-export function jsonOptionsForRecord(record: RecordKind): JsonBytesOptions {
+/**
+ * Give the key-order options of one record kind when landing: the issue pool and the graph sort keys, the
+ * rest keep construction order. A name outside this engine's own list keeps construction order too — the
+ * merge driver hands in the kind words of its own table (`src/ledgermerge/`), and the byte rule is one rule
+ * for every name.
+ */
+export function jsonOptionsForRecord(record: RecordKind | string): JsonBytesOptions {
   return record === 'ideas' || record === 'issues' ? { sortKeys: true } : {};
 }
 

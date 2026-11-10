@@ -62,7 +62,7 @@ import type { CyclePolicies, CycleRecord } from './types';
  * followed. `set` / `unset` refuse a layer the knob does not take, naming the layers it does take, and
  * `get` refuses the same way; `list` has no key to refuse, so it shows the chain up to the named layer — a
  * knob that does not take that layer is shown from the layer below it. The line-level policy keys
- * (parallel / when_shelved / model) live on the line record and are written by
+ * (parallel / when_shelved / stop_after_nodes / model) live on the line record and are written by
  * `ledger.cycles.setPolicy`; this module does not know them.
  *
  * Defaults: every setting the engine declares carries one — a literal, or a function of the project root

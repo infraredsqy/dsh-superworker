@@ -6,5 +6,4 @@
 # registered in each machine's git config (ledger.register).
 ideas.json merge=superworker
 state.json merge=superworker
-instructions.json merge=superworker
 signals/** merge=superworker

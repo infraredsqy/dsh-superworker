@@ -74,10 +74,16 @@ const VALID_CYCLE_STATUSES: readonly CycleStatus[] = ['active', 'inactive'];
 const VALID_NODE_RESULTS: readonly NodeResult[] = ['completed', 'failed', 'stopped'];
 const CYCLE_TAGS_VOCABULARY = ['writing', 'coding', 'art'] as const;
 
-/** The line's own three policy keys: they do not enter the settings list, and both reading and writing land only in the `policies` of the line record. */
+/** The line's own policy keys: they do not enter the settings list, and both reading and writing land only in the `policies` of the line record. */
 const LINE_POLICIES = {
   when_shelved: { kind: 'word', values: ['stop', 'continue'], default: 'stop' },
   parallel: { kind: 'integer', default: 1 },
+  /**
+   * The line's own stopping count: once this many of its nodes have closed, the plan stops. It has no
+   * default — an absent entry means "no count" — and it can only add a stop point on top of the node's
+   * own `mode`, never take one away.
+   */
+  stop_after_nodes: { kind: 'integer', default: null },
   model: { kind: 'text', default: null },
 } as const;
 
@@ -88,6 +94,7 @@ type PolicyTable = Record<string, PolicySpec>;
 const POLICY_TABLE: PolicyTable = {
   when_shelved: LINE_POLICIES.when_shelved,
   parallel: LINE_POLICIES.parallel,
+  stop_after_nodes: LINE_POLICIES.stop_after_nodes,
   model: LINE_POLICIES.model,
 };
 

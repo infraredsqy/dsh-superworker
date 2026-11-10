@@ -72,8 +72,8 @@ export function isRecognizableLegacyRecord(root: string): boolean {
 
 /**
  * Why a workspace cannot simply be migrated by a person running `migrate 0.1.0`: the five refusals,
- * each one a fact about the tree, and each one an invitation to consult an agent rather than an
- * instruction to edit something by hand. `absent` is not a refusal in that sense — it is the answer
+ * each one a fact about the tree, and each one an invitation to consult an agent rather than a
+ * direction to edit something by hand. `absent` is not a refusal in that sense — it is the answer
  * a root with no old directory gets, and the one an already-migrated workspace gets.
  */
 export type MigrationRefusal =

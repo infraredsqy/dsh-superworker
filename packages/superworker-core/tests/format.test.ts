@@ -122,11 +122,13 @@ describe('the bytes of one record on disk', () => {
     expect(asText(jsonBytes(value))).toBe(lines.join(eol));
   });
 
-  it('key order across the six record kinds: the pool and the graph sort their keys, the rest keep construction order', () => {
+  it('key order across the record kinds: the pool and the graph sort their keys, the rest keep construction order', () => {
     expect(jsonOptionsForRecord('ideas')).toEqual({ sortKeys: true });
     expect(jsonOptionsForRecord('issues')).toEqual({ sortKeys: true });
-    for (const record of ['state', 'instructions', 'signal', 'session-note'] as const) {
+    for (const record of ['state', 'signal', 'session-note'] as const) {
       expect(jsonOptionsForRecord(record)).toEqual({});
     }
+    // A name outside this engine's own list (the merge driver's kind words) keeps construction order too.
+    expect(jsonOptionsForRecord('a-kind-the-engine-does-not-own')).toEqual({});
   });
 });

@@ -14,10 +14,10 @@
 
 ## 记录
 
-六种记录（节点、线、指令、问题、交接单、会话档）在磁盘上的格式逐字节定死：形状与词汇以 `src/types.ts` 为准，落点以 `src/paths.ts` 为准。记录与四份布局文件在任何平台都写 LF；给人读的文本产物（提示词、运行稿）随平台换行尾。
+五种记录（节点、线、问题、交接单、会话档）在磁盘上的格式逐字节定死：形状与词汇以 `src/types.ts` 为准，落点以 `src/paths.ts` 为准。记录与四份布局文件在任何平台都写 LF；给人读的文本产物（提示词、运行稿）随平台换行尾。
 
-- 记录归一个模块所有，谁拥有谁写：节点、线、交接单、会话档归引擎，问题池归问题池插件，指令清单归 `instruction` 插件。引擎那几份走 `src/jsonio.ts`（读者与写者各一处，写是原子的）与 `src/ledgerlock.ts`（同进程与跨进程的写者互斥，持锁体内的再入放行）；可判定的错误码在 `src/errors.ts`。
-- 跨模块只守两条。**写者唯一**：同一个记录文件同一时刻只有一个写者，跨进程也一样——每种记录带自己的锁，池子的锁是 `.superworker/meta/issues.lock`、指令清单的是 `.superworker/meta/instructions.lock`，与项目锁不同名、也不共用一把。**字节格式一致**：同一种记录落在盘上的字节一致；两个实现不共用代码，靠一条字节契约测试钉住（`tests/issue-pool-bytes.test.ts`；指令清单那条靠语料：`tests/fixtures/instruction-*` 逐字节比它写出来的文件）。
+- 记录归一个模块所有，谁拥有谁写：节点、线、交接单、会话档归引擎，问题池归问题池插件，指令清单归 `instruction` 插件（它的形状、落点与字节契约都在那个文件夹里，引擎不读也不写）。引擎那几份走 `src/jsonio.ts`（读者与写者各一处，写是原子的）与 `src/ledgerlock.ts`（同进程与跨进程的写者互斥，持锁体内的再入放行）；可判定的错误码在 `src/errors.ts`。
+- 跨模块只守两条。**写者唯一**：同一个记录文件同一时刻只有一个写者，跨进程也一样——每种记录带自己的锁，池子的锁是 `.superworker/meta/issues.lock`、指令清单的是 `.superworker/meta/instructions.lock`，与项目锁不同名、也不共用一把。**字节格式一致**：同一种记录落在盘上的字节一致；两个实现不共用代码时靠一条字节契约测试钉住（`tests/issue-pool-bytes.test.ts`），指令清单是插件自己写的，那条契约在插件自己的语料里（`tests/fixtures/instruction-*` 逐字节比它写出来的文件）。
 - 任何一次操作不得同时持有两把锁（不嵌套）。
 - 节点目录 `.superworker/nodes/<id>/` 由 add 立起、remove 带走：add 只立目录、不立 spec.md（它的缺席就是「要求还没写」），run.md 由派发准备立起。
 - 并行档（`worktree_mode` 为 `fork`）：工作树 `.superworker/worktrees/<短 id>`、出口分支 `sw/<短 id>`；那几步 git 由 agent 自己敲，引擎不留那几步的记录、不做合回、也不替它写判决。

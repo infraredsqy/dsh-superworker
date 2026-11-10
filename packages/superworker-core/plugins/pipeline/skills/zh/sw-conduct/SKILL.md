@@ -102,7 +102,7 @@ tag 说清一个节点属于哪条线：`writing`（文案）、`coding`（代�
 ## 东西住哪一层
 
 - **工作区**：依赖图与它上面的维护节点判定、状态文件的写互斥——这些由工具管，你照本子里那几条命令走就行，不用为并发加任何东西。**代码的合流不归它**：每个节点的 worktree 与合回这几步你自己敲，工具只管记录与命名（见「并行：worktree」）
-- **线（cycle）**：`tags`（挑谁）、`when_shelved`、`parallel`（同时握几个节点、开几个会话）、两条维护阈值；写它们用 `cycle policy`，读它们用 `cycle current` 的 `Policy:` 行。线之间没有别的耦合：两条线并排跑，各自握各自的那几个节点
+- **线（cycle）**：`tags`（挑谁）、`when_shelved`、`parallel`（同时握几个节点、开几个会话）、`stop_after_nodes`（跑够几个节点就停）、两条维护阈值；写它们用 `cycle policy`，读它们用 `cycle current` 的 `Policy:` 行。线之间没有别的耦合：两条线并排跑，各自握各自的那几个节点
 - **节点**：mode、weight、tags、spec、报告集——随图与节点目录走，一个节点一处
 
 并发上限从外到内分三层：图上的依赖边（谁挡着谁）决定哪些节点**可以**并排；这条线的 `parallel`（`cycle current` 的 `Policy:` 行）决定这条线同时**握**几个节点；`config get max_agents`（见 [`shared/superworker/subagents.md`](shared/superworker/subagents.md)）决定这个会话同时**进行中**几个子 agent。第三层在最外面：握着的每一个节点都可能同时开着自己的孩子，它们加起来不许越过它。
@@ -136,9 +136,9 @@ advance --json
 
 已有 active cycle 时 `cycle start` 会被拒，`--force` 才放行——先想清楚为什么同时有两个。`--tags` **必给**：工具拒收没有它的调用；图里只有一条线也照样写。`--title` 只放用户原话，它进的是 cycle 的名字，不进任何 prompt。
 
-`advance` 那一条命令钉住这条线腾得出的节点（图排名的头几个，`parallel` 允许几个就钉几个）、把材料落盘（各自那份 prompt 与本轮 run 文档），再把手里这些格子交给执行者——每个格子开一个会话：有 opener 时由宿主当场把会话开出来，答案里带着它钉住与开出的那些；没有 opener 时开会话那一步只回一句 `spawn_error`、一个节点都不认领，并点名面板。两边都是**本趟到此结束**——下一棒由宿主开（面板那一格，或接力在 `turn/end` 上开），所以**别在这里等**：要么本会话直接收手，要么用 `[pipeline]` 调用行继续；宿主没有开着下一棒时，把 prompt 路径和它那一行交给用户。收手前告诉用户你会推到哪儿；全自动就说：「已进入全自动，会一直推到图里没有就绪节点、或某条指令说停。」
+`advance` 那一条命令钉住这条线腾得出的节点（图排名的头几个，`parallel` 允许几个就钉几个）、把材料落盘（各自那份 prompt 与本轮 run 文档），再把手里这些格子交给执行者——每个格子开一个会话：有 opener 时由宿主当场把会话开出来，答案里带着它钉住与开出的那些；没有 opener 时开会话那一步只回一句 `spawn_error`、一个节点都不认领，并点名面板。两边都是**本趟到此结束**——下一棒由宿主开（面板那一格，或接力在 `turn/end` 上开），所以**别在这里等**：要么本会话直接收手，要么用 `[pipeline]` 调用行继续；宿主没有开着下一棒时，把 prompt 路径和它那一行交给用户。收手前告诉用户你会推到哪儿；全自动就说：「已进入全自动，会一直推到图里没有就绪节点、或这条线跑够它的 `stop_after_nodes`。」
 
-**这条线跑多远，只看节点自己的 mode**：`checkpoint` 的节点收尾就停下交人；`manual` 的节点整个活在对话里，用户明确放行（「标成完成，继续」）之后线照 `auto` 一样接着走；`auto` 的节点干完自己开下一个。**停由计划拍板**：计划说停（`checkpoint`、没交付而 `when_shelved=stop`、或图里没有就绪节点了）而手里又没有活时，`advance` 自己把线转成 `inactive`；人用 `cycle status <cycle> active` 把它放回服务，它才会接着挑下一个节点（为什么放回服务只有人能写，见 `docs/conduct-state.md`「两个入口」）。
+**这条线跑多远，先看节点自己的 mode**：`checkpoint` 的节点收尾就停下交人；`manual` 的节点整个活在对话里，用户明确放行（「标成完成，继续」）之后线照 `auto` 一样接着走；`auto` 的节点干完自己开下一个。线的 `stop_after_nodes` 只在这之上再加一个停点（`cycle policy <cycle> stop_after_nodes <n>`，不写就没有），放宽不了 mode。**停由计划拍板**：计划说停（`checkpoint`、没交付而 `when_shelved=stop`、跑够了 `stop_after_nodes`、或图里没有就绪节点了）而手里又没有活时，`advance` 自己把线转成 `inactive`；人用 `cycle status <cycle> active` 把它放回服务，它才会接着挑下一个节点（为什么放回服务只有人能写，见 `docs/conduct-state.md`「两个入口」）。
 
 ## 准备
 
@@ -161,7 +161,7 @@ instruction list --project <项目根绝对路径>
 - **别读 `instructions.json`，跑命令**：那份文件里的内部字段会把注意力引到登记与标记上。
 - 加条目只有 `/sw-instruct` 一个入口——用户敲了由那个 skill 落笔；他没敲，随口说的话就不记，当轮本来就在上下文里。
 - 指令只有两态：生效中、已归档。`scope: global` 的照做即可，它一直在生效中，**不必核销**——条目还能不能读到，是每次现读现算的，不靠会话替它画句号。把一条指令归档只有用户能做，放回来也只有用户能做，会话别去动这笔记录。
-- **这条线自己的策略**（`when_shelved`、两条维护线、`model`）在 `cycle current` 的 `Policy:` 行里；写它用 `cycle policy <cycle> <键> <值>`，数值型那条用 `off` 取消。
+- **这条线自己的策略**（`when_shelved`、`parallel`、`stop_after_nodes`、`model`，与两条维护线）在 `cycle current` 的 `Policy:` 行里；写它用 `cycle policy <cycle> <键> <值>`，数值型那条用 `off` 取消。
 
 **2｜读**，一口气读完再动手：
 

@@ -115,6 +115,17 @@ describe('source tree guard', () => {
 });
 
 describe('one spelling per fact', () => {
+  it('the engine source tree does not spell the instruction record: that account belongs to its own plugin folder', () => {
+    // The one record this engine does not own: its plugin writes it under its own lock, its own verbs
+    // are the command surface, and the engine reads and writes nothing about it. One table in src still
+    // has to recognise the file it is called on — the merge driver's kind table — and that table lives
+    // in `src/ledgermerge/`; everything else in the source tree is silent.
+    const offenders = listFiles(join(repoRoot, 'src'))
+      .filter((file) => !/[\\/]ledgermerge[\\/]/.test(file))
+      .filter((file) => /instruct/i.test(readFileSync(file, 'utf8')));
+    expect(offenders).toEqual([]);
+  });
+
   it('the plugins layer does not spell the spec file name itself (the layout belongs to paths.ts)', () => {
     // `paths.nodeSpecPath` is the one home of that spelling; a reader or writer of the node's requirements
     // takes the location from it, so the path an offer is told about and the file the text lands on cannot

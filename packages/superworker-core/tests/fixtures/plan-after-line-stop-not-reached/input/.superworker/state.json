@@ -10,19 +10,15 @@
           "since": "@t1@"
         }
       ],
-      "path": [
-        {
-          "node": "@node-d@",
-          "started_at": "@t2@",
-          "ended_at": "@t3@",
-          "result": "completed"
-        }
-      ],
+      "path": [],
       "created_at": "@t1@",
       "updated_at": "@t2@",
       "tags": [
         "writing"
-      ]
+      ],
+      "policies": {
+        "stop_after_nodes": 3
+      }
     }
   ]
 }

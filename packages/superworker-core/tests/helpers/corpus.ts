@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { vi } from 'vitest';
-import { jsonBytes, jsonOptionsForRecord, type RecordKind } from '../../src/jsonio';
+import { jsonBytes, jsonOptionsForRecord } from '../../src/jsonio';
 import { createConfigNamespace } from '../../src/config';
 import { createConductorNamespace } from '../../src/conductor';
 import { SimulatedExecutor } from '../../src/executor';
@@ -362,8 +362,8 @@ function detokenize(capture: string, maps: TokenMaps, root: string): string {
   return text;
 }
 
-/** Where the key-order convention of each of the six record kinds lands; a path it cannot match is not a record file. */
-function recordKindOf(relPath: string): RecordKind | null {
+/** Where the key-order convention of each record kind lands; a path it cannot match is not a record file. Kinds are plain names here: a case's input may carry a record this engine no longer writes. */
+function recordKindOf(relPath: string): string | null {
   const path = relPath.split('\\').join('/');
   if (path === '.superworker/ideas.json') return 'ideas';
   if (path === '.superworker/state.json') return 'state';
@@ -378,7 +378,7 @@ function recordKindOf(relPath: string): RecordKind | null {
  * Records with seconds-form stamps: cycles, instructions, handoffs and session notes; the graph and
  * the issue pool use the micro form.
  */
-function usesSecondsStamp(kind: RecordKind): boolean {
+function usesSecondsStamp(kind: string): boolean {
   return kind !== 'ideas' && kind !== 'issues';
 }
 
