@@ -112,9 +112,11 @@ function relayOn(): boolean {
 /**
  * The executor seam one dispatch runs through: the native opener, with every
  * session it mints remembered in this relay's table the moment it exists —
- * before its opening round can settle. An open does not return until that round
- * does, so a registration on the return would always lose the round's own
- * turn-end event, and the relay would never hear a session it opened itself.
+ * at the mint, not at the dispatch's return. Both are close together now that
+ * an open answers as soon as the session is out, and the mint is still the
+ * right place: the first instruction goes in after that point, so a turn that
+ * ends early can reach this host's event bus before any caller has read the
+ * dispatch's answer, and a registration made on the answer would lose it.
  *
  * The words layer's tool opens sessions through this same seam, which is why it
  * is exported: a cell opened from a tool call is as real to the plan — and to

@@ -38,8 +38,10 @@ export interface OpenedSession {
  * The interface has `dispatch` as its only method — the engine itself has no entry that starts a
  * process or opens a session; the executor can only be injected from outside through
  * `RecordOpenOptions.executor`. Dispatch hands the node to a session, and the promise ends when that
- * session is **open**: the node's result is not here — the worker files a ticket, and `close`
- * settles it.
+ * session is **open** — and nowhere later: the node's result is not here, the round's progress is
+ * not here, and how long that round takes is no part of this answer. The worker files a ticket and
+ * `close` settles it; an executor that waits that ticket out would be answering a question the
+ * line already has a verb for.
  */
 export interface Executor {
   dispatch(request: DispatchRequest): Promise<OpenedSession>;

@@ -20,22 +20,28 @@
  *    workspace, or refuses the attach after the session is minted, leaves the
  *    session open cwd-only with one log line instead of failing an open that
  *    already has a live session in it — arm the session's `superworker` tool,
- *    arm the opening round's listeners, hand the prompt over as the first
- *    instruction, and note the session through the engine's writer — this side
- *    only names the entry;
- * 4. settle the opening round: hosts whose agents expose the wait interface
- *    get `whenIdle()`; older ones get the idle notification plus the
- *    turn-end events, resolved together.
+ *    hand the prompt over as the first instruction, and note the session
+ *    through the engine's writer — this side only names the entry.
+ *
+ * That is the whole answer: the session, minted, holding its first instruction,
+ * with its note on disk. The round the session then runs is its own business —
+ * this file arms nothing to watch it and waits for no part of it. An open
+ * answers "the session is out" or the reason no session could be opened (a
+ * missing prompt, a refused create, a session that cannot be minted); how the
+ * node's work goes is the worker's ticket and the line's close, never this
+ * call's answer. The wait cannot be folded in either: a session asked to do a
+ * node's work runs its first round for as long as that work takes, and a round
+ * that stops to ask a person runs for as long as the person takes. Whoever
+ * wants to watch a session watches it — the caller's `onOpened`, the relay's
+ * turn-end trigger — and a dispatch that waited would be answering a question
+ * the engine never asked it.
  *
  * Step 3 touches the workspace (the session log's directory and the note
  * file) and runs inside a per-workspace queue, so two opens aimed at one
  * workspace create their sessions strictly one after another and their notes
- * never interleave mid-write. The listeners are armed before the first
- * instruction goes in: a loop that finishes its round instantly must not
- * outrun its own settlement. The settlement wait — and the skill placement's
- * session-side diagnostic, which is one catalog read and can never fail the
- * open — run outside the queue: a slow first round or a slow catalog read must
- * not hold the next open of the same workspace hostage.
+ * never interleave mid-write. The skill placement's session-side diagnostic —
+ * one catalog read, which can never fail the open — runs outside that queue: a
+ * slow catalog read must not hold the next open of the same workspace hostage.
  *
  * The engine's own executor seam ({@link executorOf}) lives here too, beside the
  * open it drives: a dispatch's opener is this file and nothing else, and the
@@ -46,8 +52,8 @@
  * file as well ({@link openConsultSession}): it shares the sides above — the
  * session-side probe, the standing preset, the workspace attach, the tool arm —
  * and drops the record-facing halves (no launch prompt to read, no note to
- * write, no round to settle), because a workspace whose records sit only in the
- * older layer has none of the three to offer.
+ * write), because a workspace whose records sit only in the older layer has
+ * neither to offer.
  */
 import { randomUUID } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
@@ -83,8 +89,6 @@ export type SessionOpenOutcome =
 
 /** Options an in-process caller may hand an open; over the wire the open runs to its own end. */
 export interface SessionOpenOptions {
-  /** Stops the settlement wait; the session and its note stay whatever this decides. */
-  readonly signal?: AbortSignal
   /**
    * The model route this session opens with (`provider/model`, as the engine carries it): the
    * dispatch's own name comes down here, and the engine has already resolved the call > line policy >
@@ -94,9 +98,8 @@ export interface SessionOpenOptions {
   /**
    * Runs once the session is minted and alive, before its first instruction
    * goes in — the earliest point a caller can start watching it, ahead of
-   * every event the opening round will emit (the round may settle before this
-   * open returns, so a watcher that registers on the return never sees the
-   * round's own turn end). Best effort: a throwing hook does not fail the open.
+   * every event the round will emit. Best effort: a throwing hook does not
+   * fail the open.
    */
   readonly onOpened?: (session: string) => void
   /**
@@ -195,6 +198,10 @@ function openFailure(reason: string): { ok: false; code: RecordRefusalCode; deta
  * hands the reason back as the dispatch's own refusal detail. A caller that wants to watch the
  * sessions this seam opens hands `onOpened` in; the open calls it the moment a session is minted.
  *
+ * The promise ends when the session is out — minted, holding its first instruction, noted — and
+ * not one step further: the round's course is the worker's ticket and the line's close, so this
+ * seam has no answer about it to give.
+ *
  * A request that carries `dryRun` is a drill: the call is answered with a receipt that says so and
  * nothing is opened here — no agent, no note. The receipt carries no session id, which is also what
  * keeps a watcher's table from treating a rehearsal as one of its own live sessions.
@@ -228,7 +235,8 @@ export function executorOf(
 }
 
 /**
- * Open the session that works one node, and settle its opening round.
+ * Open the session that works one node: the session exists, its first
+ * instruction is in, and its note names it — nothing after that.
  *
  * The plan's launch prompt (`<launch>/<line>/<node>/<file>`) is the first
  * instruction, read verbatim out of the record store; the note naming the
@@ -254,7 +262,9 @@ export async function openNodeSession(
    * whatever letters the caller used. */
   const root = await canonicalWorkspaceRoot(workspaceRoot)
 
-  const signal = options?.signal ?? new AbortController().signal
+  /* The prompt read takes a signal, and nothing here is cancellable: an open is a handful of local
+   * steps, and the answer is the session, so there is no stretch worth aborting. */
+  const signal = new AbortController().signal
   const scope: SuperworkerScope = { sessionId, workspaceRoot: root }
   let prompt: string
   try {
@@ -285,11 +295,10 @@ export async function openNodeSession(
     mount = (agentCtx) => presets.mount(agentCtx, id)
   }
 
-  /* The workspace-touching stretch, queued: create the session under the root, join it to that one workspace, arm the round's listeners, hand the prompt over, then note the session while the line still holds. */
-  let settlement: Settlement
+  /* The workspace-touching stretch, queued: create the session under the root, join it to that one workspace, arm the tool, hand the prompt over, then note the session. */
   let agent: Agent
   try {
-    const lane = await inLine(root, async () => {
+    agent = await inLine(root, async () => {
       const handle = await side.create({
         sessionId: opened,
         meta: { cwd: root, ...(standing === undefined ? {} : { agentPreset: standing.id }) },
@@ -313,7 +322,6 @@ export async function openNodeSession(
          * live session nobody wrote down. */
         reportUnattached(ctx, `the session opened for ${cycle}/${node}`, root, messageOf(error))
       }
-      const armed = armSettlement(ctx, handle.agent, opened)
       /* Arm the session's own tool before the first instruction goes in: the wake's event
        * paths cannot see a dispatched session — `agent/pre-step` carries no agent in its
        * payload, and the pipeline skills are not model-invocable, so no skill-tool load can
@@ -326,26 +334,19 @@ export async function openNodeSession(
         executorOf: options?.openerOf ?? ((id: SessionId, at: string) => executorOf(ctx, id, at)),
       })
       /* The caller's earliest watch point: the session exists and its first instruction has
-       * not gone in — registration here lands ahead of every event the opening round emits. */
+       * not gone in — registration here lands ahead of every event the round emits. */
       try {
         options?.onOpened?.(opened)
       } catch {
         /* A caller's registration problem is not this open's failure. */
       }
-      try {
-        handle.agent.followup(createUserMessage({
-          content: [{ type: 'text', text: prompt }],
-          source: { kind: 'user' },
-        }))
-        await noteOpenedSession(root, node, opened)
-      } catch (error) {
-        armed.drop()
-        throw error
-      }
-      return { armed, agent: handle.agent }
+      handle.agent.followup(createUserMessage({
+        content: [{ type: 'text', text: prompt }],
+        source: { kind: 'user' },
+      }))
+      await noteOpenedSession(root, node, opened)
+      return handle.agent
     })
-    settlement = lane.armed
-    agent = lane.agent
   } catch (error) {
     /* The session may be out already and the note missing: say so plainly instead of letting the next open run a second session on this cell. */
     return openFailure(messageOf(error))
@@ -356,22 +357,11 @@ export async function openNodeSession(
    * root (rank 100/200 — DSH's own per-workspace override, outside this node's judgement) gets a name
    * and both places in one log line rather than passing silently. One catalog read is real IO: held
    * inside the queue it would block the next open of this workspace for as long as the catalog takes,
-   * and it cannot fail the open (the check hands back a code, the report writes a line), so nothing
-   * downstream waits on it. This diagnostic is not an acceptance reading anyone can point at — the
-   * session's own catalog is. */
+   * and it cannot fail the open (the check hands back a code, the report writes a line). This
+   * diagnostic is not an acceptance reading anyone can point at — the session's own catalog is. */
   const skills = skillHostOf(ctx)
   reportSkillView(skills, await confirmSkillsForWorkspace(skills, root, agent))
 
-  try {
-    await settlement.wait(signal)
-  } catch (error) {
-    settlement.drop()
-    /* The wait ended without a settled round: the session is open and its note is on disk, but
-     * this open cannot vouch for the round. The refusal names the cell — line and node — because
-     * this sentence reaches a reader through the panel's {detail}, and a session id is an address
-     * for navigation, not a word a reader is shown. */
-    return openFailure(`${cycle}/${node} is open but its opening round was not seen to settle: ${messageOf(error)}`)
-  }
   return { ok: true, session: opened }
 }
 
@@ -387,10 +377,10 @@ export async function openNodeSession(
  * the queue around the create/attach stretch, and the tool arm — the last one being the point of
  * the whole open, because the wake's event paths cannot see a session this host minted, and
  * without the tool the consult session would have no way to reach `migrate` and `doctor`. Dropped:
- * a workspace whose records sit only in the older layer has no launch cell to read a prompt from,
- * no node to hang a note on, and no plan waiting on the opening round, so none of the three
- * happens, and the open answers as soon as the first instruction has gone in — the person follows
- * the session in DSH's own session view, the way they would one they opened by hand.
+ * a workspace whose records sit only in the older layer has no launch cell to read a prompt from
+ * and no node to hang a note on, so neither happens, and the open answers as soon as the consult
+ * sentence has gone in — the person follows the session in DSH's own session view, the way they
+ * would one they opened by hand.
  *
  * An empty `workspaceRoot` follows the boundary's own convention — the calling session's own
  * workspace — so an in-process caller needs no root of its own.
@@ -438,7 +428,7 @@ export async function openConsultSession(
 
   /* The workspace-touching stretch, queued: create the session under the root, join it to that
    * one workspace, arm the tool, hand the consult sentence over. No note follows — there is no
-   * node to name — and no settlement wait: the round is the person's to watch. */
+   * node to name — and nothing waits for the round: it is the person's to watch. */
   try {
     await inLine(root, async () => {
       const handle = await side.create({
@@ -481,95 +471,3 @@ export async function openConsultSession(
   return { ok: true, session: opened }
 }
 
-/** The opening round's wait, once it is armed. */
-interface Settlement {
-  /** Wait the opening round out; the signal cuts the wait short. */
-  wait(signal: AbortSignal): Promise<void>
-  /** Take the listeners back down: the open failed before its round, or the wait already answered. */
-  drop(): void
-}
-
-/**
- * Arm the opening round's listeners before the first instruction goes in —
- * a loop that finishes its round instantly settles while the listeners are
- * already on, not after they would have been missed. The wait adapts to the
- * host in front of us: agents that carry the wait interface answer through
- * `whenIdle()`; hosts whose agents lack it answer through the idle
- * notification (`agent/status` flipping to `idle`) together with the
- * turn-end events (`session/event` carrying `turn/end`) — both must be seen.
- * A session torn down before its first round answers nothing further: there
- * is no round left to settle.
- */
-function armSettlement(ctx: Context, agent: Agent, sessionId: SessionId): Settlement {
-  let turnEnded = false
-  let idle = false
-  let met = false
-  let detached = false
-  let wake: (() => void) | undefined
-  const offs: (() => void)[] = []
-  const detach = (): void => {
-    if (detached) return
-    detached = true
-    for (const off of offs) off()
-  }
-  const answer = (): void => {
-    met = true
-    detach()
-    const release = wake
-    wake = undefined
-    release?.()
-  }
-  offs.push(ctx.on('agent/status', (payload) => {
-    if (payload.agent !== agent) return
-    idle = payload.status === 'idle'
-    if (turnEnded && idle) answer()
-  }))
-  offs.push(ctx.on('session/event', (session, event) => {
-    if (session.id !== sessionId) return
-    if (event.type === 'turn/end') {
-      turnEnded = true
-      if (idle) answer()
-    }
-  }))
-  offs.push(ctx.on('agent/disposed', (payload) => {
-    if (payload.agent === agent) answer()
-  }))
-  return {
-    wait(signal) {
-      /* The wait interface, when the host carries it, is the whole answer: the fallback listeners stand down unused. */
-      if (typeof agent.whenIdle === 'function') {
-        detach()
-        return raceAbort(agent.whenIdle(), signal)
-      }
-      /* The round may have settled while the listeners were the only ones watching: the answer is already in. */
-      if (met) return Promise.resolve()
-      return raceAbort(new Promise<void>((resolve) => { wake = resolve }), signal)
-    },
-    drop: detach,
-  }
-}
-
-/**
- * Run one wait against the caller's signal: the wait's own answer wins, the
- * signal's rejection cuts in. The signal rejects with its own reason, so a
- * cancelled wait reads as a cancelled wait. A signal that already fired
- * rejects on the spot — the abort event never replays for a late listener.
- */
-function raceAbort<T>(wait: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason)
-  return new Promise<T>((resolve, reject) => {
-    let done = false
-    const onAbort = (): void => settleWith(() => reject(signal.reason))
-    const settleWith = (run: () => void): void => {
-      if (done) return
-      done = true
-      signal.removeEventListener('abort', onAbort)
-      run()
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-    wait.then(
-      (value) => settleWith(() => resolve(value)),
-      (error) => settleWith(() => reject(error)),
-    )
-  })
-}

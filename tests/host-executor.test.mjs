@@ -4,9 +4,9 @@
  * registry, the workspace files port, the event bus), so the cases here judge the flow, not a
  * deployment: the session is created under the workspace root and attached to that workspace when
  * the host carries one, the plan's launch prompt is the first instruction verbatim, the note is
- * written by the engine's writer, the two host versions settle differently and both settle, a
- * missing agent registry is refused with the piece named, and two opens aimed at one workspace
- * create their sessions one after another.
+ * written by the engine's writer, the open answers as soon as the session is out and never waits
+ * for its round, a missing agent registry is refused with the piece named, and two opens aimed at
+ * one workspace create their sessions one after another.
  *
  * The dispatch seam is judged here too: a request carrying `dryRun` answers a drill receipt and
  * opens nothing at all, while the same request without it still opens one session.
@@ -25,6 +25,7 @@ import { join } from 'node:path'
 import { canonicalWorkspaceRoot, executorOf, openNodeSession } from '../src/host/executor.ts'
 import { TOOL_NAME } from '../src/host/tool.ts'
 import { pinHome } from './helpers/env.mjs'
+import { clearPlacement, placeOneSkill } from './helpers/skill-placement.mjs'
 import { until, flush } from './helpers/wait.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
 import { fakeWorkspaceFiles } from './helpers/workspace-files-port.mjs'
@@ -106,18 +107,18 @@ function createDoors(count = 2) {
 }
 
 /**
- * The session-side stand-in: every create is recorded (options, the messages handed over, its
- * `whenIdle` release), and each create may be held on a gate so a test controls when it lands.
- * `idleRefusal` makes the wait interface's own answer a rejection whenever consulted — the
- * rejection is handled from the moment it is minted, so the case carries no timing.
+ * The session-side stand-in: every create is recorded (options, the messages handed over), and each
+ * create may be held on a gate so a test controls when it lands. An agent that carries a wait
+ * interface records that it was asked: the open must never consult it, so a case can read the
+ * absence rather than trust it.
  */
-function fakeAgents({ withWhenIdle = true, gate, idleRefusal } = {}) {
+function fakeAgents({ gate, asksWait } = {}) {
   const created = []
   return {
     created,
     registry: {
       create(options) {
-        const record = { options, followups: [], registered: [], sequence: [], whenIdle: defer() }
+        const record = { options, followups: [], registered: [], sequence: [], waitAsked: 0 }
         created.push(record)
         const agent = {
           id: options.sessionId,
@@ -135,11 +136,15 @@ function fakeAgents({ withWhenIdle = true, gate, idleRefusal } = {}) {
             record.sequence.push('followup')
             record.followups.push(message)
           },
-          ...(idleRefusal !== undefined
-            ? { whenIdle: () => Promise.reject(idleRefusal) }
-            : withWhenIdle
-              ? { whenIdle: () => record.whenIdle.promise }
-              : {}),
+          ...(asksWait === true
+            ? {
+                whenIdle: () => {
+                  record.waitAsked += 1
+                  /* A round that never ends: a wait consulted here would hold the case's answer forever. */
+                  return new Promise(() => {})
+                },
+              }
+            : {}),
         }
         record.agent = agent
         const held = gate?.(record, created.length - 1) ?? Promise.resolve()
@@ -200,7 +205,6 @@ test('Grouping and the first instruction: the session is created under the works
   const rigging = rig()
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
-  rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const record = rigging.agents.created[0]
@@ -231,7 +235,6 @@ test('Grouping and attach: with a workspace service, the opened session attaches
   const rigging = rig({ workspaceRegistry })
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
-  rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   assert.deepEqual(created, [realpathSync(rigging.root)], 'the service is asked for that workspace by root')
@@ -250,7 +253,6 @@ test('Grouping and attach: with no workspace service it still opens, leaving one
   }
   const pending = openNodeSession(ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
-  rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   assert.equal(lines.length, 1, `one line: ${lines.join(' / ')}`)
@@ -282,7 +284,6 @@ test('Grouping and attach: the session is already open when the host refuses the
   }
   const pending = openNodeSession(ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
-  rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
 
   assert.equal(outcome.ok, true, 'the session is already inside: a failed attach is no reason to fail this leg')
@@ -315,7 +316,6 @@ test('Canonical spelling: a session opened through another spelling gets the rea
     assert.notEqual(alias, real, 'this case needs two different spellings')
     const pending = openNodeSession(rigging.ctx, 's1', alias, rigging.cycle, rigging.node)
     await opened(rigging.agents.created)
-    rigging.agents.created[0].whenIdle.resolve()
     const outcome = await pending
     assert.equal(outcome.ok, true, JSON.stringify(outcome))
     assert.equal(
@@ -347,11 +347,9 @@ test('Canonical spelling: two spellings of one root queue on one line, and the s
     await flush()
     assert.equal(rigging.agents.created.length, 1, 'two spellings are one root: the second is still queued, not in create')
     doors.release(0)
-    rigging.agents.created[0].whenIdle.resolve()
     await bounded(doors.arrived(1), 'the first seat is done, so the second enters create')
     assert.equal(rigging.agents.created.length, 2, 'the line frees up, so the second enters create')
     doors.release(1)
-    rigging.agents.created[1].whenIdle.resolve()
     const outcomes = await bounded(Promise.all([first, second]), 'both opens settle')
     for (const outcome of outcomes) assert.equal(outcome.ok, true, JSON.stringify(outcome))
   } finally {
@@ -379,7 +377,6 @@ test('The note is written by the opener: one more run entry, the other entries l
   writeFileSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n1.json'), JSON.stringify(before))
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
-  rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const note = noteOnDisk(rigging.root, 'n1')
@@ -399,7 +396,6 @@ test('An unreadable note is no roadblock: the bad page is replaced with one that
   writeFileSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n1.json'), '{broken')
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
-  rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const note = noteOnDisk(rigging.root, 'n1')
@@ -408,75 +404,42 @@ test('An unreadable note is no roadblock: the bad page is replaced with one that
   assert.equal(note.run[0].session, rigging.agents.created[0].options.sessionId)
 })
 
-test('Settling, wait-interface version: it only counts once `whenIdle` answers', async () => {
-  const rigging = rig({ withWhenIdle: true })
-  const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
-  await opened(rigging.agents.created)
-  assert.equal(rigging.agents.created.length, 1, 'the queued step reaches create first')
-  rigging.agents.created[0].whenIdle.resolve()
-  const outcome = await pending
+test('The open ends where the session begins: the answer arrives with the first instruction in, and no wait is consulted', async () => {
+  /* The stand-in's wait interface never answers: an open that consulted it would hold this case forever. */
+  const rigging = rig({ asksWait: true })
+  const outcome = await bounded(
+    openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node),
+    'the open answers without its round',
+  )
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   assert.equal(outcome.session, rigging.agents.created[0].options.sessionId)
-})
-
-test('Settling, wait-interface version: the waiter aborts while the session is out there; the refusal names the cell and carries no session id', async () => {
-  const rigging = rig({ withWhenIdle: true })
-  const stop = new AbortController()
-  const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node, { signal: stop.signal })
-  await opened(rigging.agents.created)
-  stop.abort(new Error('caller gave up'))
-  const outcome = await pending
-  assert.equal(outcome.ok, false)
-  assert.equal(outcome.code, 'open-failed')
-  const detail = outcome.detail ?? ''
-  assert.ok(detail.includes(`${rigging.cycle}/${rigging.node}`), 'the refusal names the cell: cycle/node')
+  assert.equal(rigging.agents.created[0].waitAsked, 0, 'the round is the session\'s business: no wait interface is consulted')
+  assert.equal(rigging.agents.created[0].followups.length, 1, 'the first instruction went in before the answer')
   assert.ok(
-    !detail.includes(rigging.agents.created[0].options.sessionId),
-    'the session id stays in outcome\'s own field; naming is left to the cell',
+    existsSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n1.json')),
+    'the note is on disk before the answer',
   )
-  assert.ok(detail.includes('caller gave up'))
-  assert.ok(existsSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n1.json')), 'the note has landed: the session is out there, so the paper must have it')
-  rigging.agents.created[0].whenIdle.resolve()
 })
 
-test('Settling, wait-interface version: the wait interface throws, the refusal carries the reason, the note is already on disk', async () => {
-  const rigging = rig({ idleRefusal: new Error('wait interface blew up') })
+test('The answer is the session and nothing about the work: no field reports how the round went', async () => {
+  const rigging = rig()
   const outcome = await openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
-  assert.equal(outcome.ok, false)
-  assert.equal(outcome.code, 'open-failed')
-  assert.ok((outcome.detail ?? '').includes('wait interface blew up'), 'the refusal carries the words the wait interface threw')
-  assert.ok(
-    !(outcome.detail ?? '').includes(rigging.agents.created[0].options.sessionId),
-    'the session id stays in outcome\'s own field; naming is left to the cell',
+  assert.deepEqual(
+    Object.keys(outcome).sort(),
+    ['ok', 'session'],
+    'an open that grew a round reading would be answering the line\'s own question',
   )
-  assert.ok(existsSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n1.json')), 'the session is out there: the note is on disk')
-})
-
-test('Settling, old-host version: turn end plus an idle notice, and it answers only once both are seen', async () => {
-  const rigging = rig({ withWhenIdle: false })
-  const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
-  await opened(rigging.agents.created)
+  /* The session's own events arrive after that answer: they are the relay's business, not this call's. */
   const agent = rigging.agents.created[0].agent
-  const session = { id: rigging.agents.created[0].options.sessionId }
-  /* The idle notice comes first: the turn is not over, so it does not answer. */
   rigging.events.emit('agent/status', { agent, status: 'idle' })
+  rigging.events.emit(
+    'session/event',
+    { id: rigging.agents.created[0].options.sessionId },
+    { type: 'turn/end', turn: 1, reason: { kind: 'completed' } },
+  )
+  rigging.events.emit('agent/disposed', { agent })
   await flush()
-  /* Another session's turn ends: it does not answer. */
-  rigging.events.emit('session/event', { id: 'session-other' }, { type: 'turn/end', turn: 1, reason: { kind: 'completed' } })
-  await flush()
-  /* This session's own turn ends: both are in, so it answers. */
-  rigging.events.emit('session/event', session, { type: 'turn/end', turn: 1, reason: { kind: 'completed' } })
-  const outcome = await pending
-  assert.equal(outcome.ok, true, JSON.stringify(outcome))
-})
-
-test('Settling, old-host version: the session is disposed before its turn ends, and it still lets go', async () => {
-  const rigging = rig({ withWhenIdle: false })
-  const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
-  await opened(rigging.agents.created)
-  rigging.events.emit('agent/disposed', { agent: rigging.agents.created[0].agent })
-  const outcome = await pending
-  assert.equal(outcome.ok, true, JSON.stringify(outcome))
+  assert.equal(outcome.session, rigging.agents.created[0].options.sessionId)
 })
 
 test('One line per workspace: two opens go strictly one after another, and both open', async () => {
@@ -493,11 +456,9 @@ test('One line per workspace: two opens go strictly one after another, and both 
   await flush()
   assert.equal(agents.created.length, 1, 'only one seat on the line is in create: the other is still queued')
   doors.release(0)
-  agents.created[0].whenIdle.resolve()
   await bounded(doors.arrived(1), 'the first seat is done, so the second enters create')
   assert.equal(agents.created.length, 2, 'the line frees up, so the second enters create')
   doors.release(1)
-  agents.created[1].whenIdle.resolve()
   const outcomes = await bounded(Promise.all([first, second]), 'both opens settle')
   for (const outcome of outcomes) assert.equal(outcome.ok, true, JSON.stringify(outcome))
   assert.notEqual(agents.created[0].options.sessionId, agents.created[1].options.sessionId, 'each session has its own id')
@@ -520,13 +481,12 @@ test('One line per workspace: one rejection does not poison the next, and the se
   const two = openNodeSession(ctx, 's1', root, 'c1', 'n2')
   await opened(agents.created, 2)
   assert.equal(agents.created.length, 2, 'the line is still alive: the second enters create as usual')
-  agents.created[1].whenIdle.resolve()
   const outcome = await two
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   assert.ok(existsSync(join(root, '.superworker', 'meta', 'sessions', 'n2.json')), 'the second note lands as usual')
 })
 
-test('Different workspaces do not queue: settling only comes up once both sides are in create', async () => {
+test('Different workspaces do not queue: each line runs on its own', async () => {
   mkdirSync(join(tmpdir(), 'superworker-executor-'), { recursive: true })
   const rootA = mkdtempSync(join(tmpdir(), 'superworker-executor-', 'ws-a-'))
   const rootB = mkdtempSync(join(tmpdir(), 'superworker-executor-', 'ws-b-'))
@@ -541,7 +501,6 @@ test('Different workspaces do not queue: settling only comes up once both sides 
   assert.equal(agents.created.length, 2, 'each line runs on its own: both sides are in create')
   holds[0].resolve()
   holds[1].resolve()
-  for (const record of agents.created) record.whenIdle.resolve()
   assert.equal((await one).ok, true)
   assert.equal((await two).ok, true)
 })
@@ -577,7 +536,6 @@ test('The deployment carries a default model selection: the new session opens wi
   const rigging = rig({ defaultModel: { currentSelection: () => ({ provider: 'deepseek', model: 'chat' }) } })
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
-  rigging.agents.created[0].whenIdle.resolve()
   await pending
   assert.deepEqual(rigging.agents.created[0].options.agentOptions, { provider: 'deepseek', model: 'chat' })
 })
@@ -586,7 +544,6 @@ test('No default model selection in the deployment: no agentOptions, the loop\'s
   const rigging = rig()
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
-  rigging.agents.created[0].whenIdle.resolve()
   await pending
   assert.equal(rigging.agents.created[0].options.agentOptions, undefined)
 })
@@ -602,7 +559,6 @@ test('Composition: with a preset roster on the host, the session composes agains
   const rigging = rig({ agentPresets })
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
-  rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const record = rigging.agents.created[0]
@@ -616,7 +572,6 @@ test('Composition: with no preset roster it still opens, carrying no setup and w
   const rigging = rig()
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
-  rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const record = rigging.agents.created[0]
@@ -647,7 +602,6 @@ test('Wake: the opened session gets the superworker tool before the first instru
   const rigging = rig()
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
-  rigging.agents.created[0].whenIdle.resolve()
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const record = rigging.agents.created[0]
@@ -663,25 +617,22 @@ test('Wake: a session with no tools surface still opens as usual (the wake stays
   let made
   const bareAgents = {
     create(options) {
-      const record = { options, followups: [], whenIdle: defer() }
+      const record = { options, followups: [] }
       made = record
       const agent = {
         id: options.sessionId,
         status: 'idle',
         ctx: {},
         followup(message) { record.followups.push(message) },
-        whenIdle: () => record.whenIdle.promise,
       }
       record.agent = agent
       return Promise.resolve({ agent, dispose: async () => {} })
     },
   }
   const { ctx } = context({ files: { [promptPath('c1', 'n1')]: PROMPT }, agents: bareAgents, sessions: {} })
-  const pending = openNodeSession(ctx, 's1', root, 'c1', 'n1')
-  await until(() => made !== undefined, 'the bare agent enters create')
-  made.whenIdle.resolve()
-  const outcome = await pending
+  const outcome = await openNodeSession(ctx, 's1', root, 'c1', 'n1')
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
+  assert.equal(made.followups.length, 1, 'the bare agent still gets its first instruction')
 })
 
 /* ---- the dispatch seam's drill switch ---- */
@@ -709,7 +660,6 @@ test('The dispatch seam\'s drill switch: without dryRun it opens a session as us
   const pending = executor.dispatch({ cycle: rigging.cycle, node: rigging.node, prompt: PROMPT })
   await opened(rigging.agents.created)
   assert.equal(rigging.agents.created.length, 1, 'an ordinary dispatch enters create as usual')
-  rigging.agents.created[0].whenIdle.resolve()
   const receipt = await pending
   assert.equal(receipt.host, 'dsh')
   assert.equal(receipt.sessionId, rigging.agents.created[0].options.sessionId)
@@ -725,27 +675,6 @@ test('The dispatch seam\'s drill switch: without dryRun it opens a session as us
  * cases run — the premise is gone, through no fault of the opener. So each of the three checks the
  * premise first and skips itself with that reason when it does not hold; the default tier (one
  * child process per file) never sees it trip. */
-
-/** One placement record plus the two files it names, in the temp home these cases read. */
-function placeOneSkill(name) {
-  const root = join(pinned.home, 'skills')
-  const ours = join(root, name, 'SKILL.md')
-  mkdirSync(join(root, name), { recursive: true })
-  writeFileSync(ours, `---\nname: ${name}\ndescription: placed by the plugin\n---\n\n# ${name}\n`, 'utf8')
-  mkdirSync(join(pinned.home, 'superworker'), { recursive: true })
-  writeFileSync(
-    join(pinned.home, 'superworker', 'skills.json'),
-    JSON.stringify({ version: 1, root, skills: [{ name, dir: name, files: [`${name}/SKILL.md`] }] }),
-    'utf8',
-  )
-  return ours
-}
-
-/** Take the record back off the temp home, so the next case starts with this line having placed nothing. */
-function clearPlacement() {
-  rmSync(join(pinned.home, 'superworker'), { recursive: true, force: true })
-  rmSync(join(pinned.home, 'skills'), { recursive: true, force: true })
-}
 
 /** The host context with a skill catalog that answers one fixed view, and a logger that keeps its lines. The workspace layer is present and quiet, so the only line these cases read is the diagnostic's own. */
 function rigWithCatalog(rigging, view) {
@@ -778,7 +707,7 @@ test('Session-side diagnostic: when a same-named copy under the project root out
     return
   }
   const name = 'sw-issue-repair'
-  const ours = placeOneSkill(name)
+  const ours = placeOneSkill(pinned.home, name)
   const rigging = rig()
   const projectCopy = join(rigging.root, '.dsh', 'skills', name, 'SKILL.md')
   try {
@@ -790,7 +719,6 @@ test('Session-side diagnostic: when a same-named copy under the project root out
     })
     const pending = openNodeSession(ctx, 's1', rigging.root, rigging.cycle, rigging.node)
     await opened(rigging.agents.created)
-    rigging.agents.created[0].whenIdle.resolve()
     const outcome = await pending
 
     assert.equal(outcome.ok, true, 'the shadow line must not fail the open')
@@ -801,7 +729,7 @@ test('Session-side diagnostic: when a same-named copy under the project root out
     assert.ok(lines[0].includes(ours), 'the line does not name where this plugin placed it')
     assert.ok(lines[0].includes(projectCopy), 'the line does not name the shadowing copy')
   } finally {
-    clearPlacement()
+    clearPlacement(pinned.home)
   }
 })
 
@@ -811,7 +739,7 @@ test('Session-side diagnostic: when this copy wins its own name in the session v
     return
   }
   const name = 'sw-issue-repair'
-  const ours = placeOneSkill(name)
+  const ours = placeOneSkill(pinned.home, name)
   const rigging = rig()
   try {
     const { ctx, lines } = rigWithCatalog(rigging, () => [
@@ -819,7 +747,6 @@ test('Session-side diagnostic: when this copy wins its own name in the session v
     ])
     const pending = openNodeSession(ctx, 's1', rigging.root, rigging.cycle, rigging.node)
     await opened(rigging.agents.created)
-    rigging.agents.created[0].whenIdle.resolve()
     const outcome = await pending
 
     assert.equal(outcome.ok, true)
@@ -827,7 +754,7 @@ test('Session-side diagnostic: when this copy wins its own name in the session v
     assert.match(lines[0], /^info: plugin skills checked/u)
     assert.match(lines[0], /\(diagnostic only\)$/u, 'the line does not say (diagnostic only), so a reader takes it for a verdict')
   } finally {
-    clearPlacement()
+    clearPlacement(pinned.home)
   }
 })
 
@@ -843,7 +770,7 @@ test('The catalog diagnostic is off the queue: with the catalog never answering,
     return
   }
   const name = 'sw-issue-repair'
-  placeOneSkill(name)
+  placeOneSkill(pinned.home, name)
   try {
     const rigging = rig({ files: { [promptPath('c1', 'n2')]: '/sw-conduct n2 [pipeline]\n' } })
     let releaseCatalog
@@ -870,19 +797,17 @@ test('The catalog diagnostic is off the queue: with the catalog never answering,
       return outcome
     })
     await opened(rigging.agents.created)
-    rigging.agents.created[0].whenIdle.resolve()
-    /* The first open is back in the queue waiting on that one catalog read: the second open of the same root must enter create while it waits. */
+    /* The first open is waiting on that one catalog read, outside the queue: the second open of the same root must enter create while it waits. */
     const second = openNodeSession(ctx, 's1', rigging.root, 'c1', 'n2')
     await opened(rigging.agents.created, 2)
     assert.equal(rigging.agents.created.length, 2, 'the catalog diagnostic is off the queue: the next open of the same root still enters create')
-    assert.equal(firstSettled, false, 'the first open still waits on the catalog read — the stretch the old shape plugged the queue with')
-    rigging.agents.created[1].whenIdle.resolve()
+    assert.equal(firstSettled, false, 'the first open still waits on the catalog read — the stretch the queue must not hold')
     releaseCatalog()
     const one = await first
     const two = await second
     assert.equal(one.ok, true, JSON.stringify(one))
     assert.equal(two.ok, true, JSON.stringify(two))
   } finally {
-    clearPlacement()
+    clearPlacement(pinned.home)
   }
 })

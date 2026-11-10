@@ -7,7 +7,8 @@
  * session side, and the `started` claim must be on disk before the answer
  * comes back. The cases here judge the guarantees, not the engine: the claim
  * lands with the dispatch, two concurrent dispatches for one cell open one
- * session, a tracked session's turn end fires the relay only when the plan
+ * session, a session is remembered at its mint — before any turn of its can
+ * end — a tracked session's turn end fires the relay only when the plan
  * says `dispatch`, the switch turns the trigger off and is read live, and the
  * gateway's button endpoint leaves the same marks as the relay.
  *
@@ -25,6 +26,7 @@ import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
 import { PANEL_PREF_FIELDS } from '../src/host/settings-fields.ts'
 import { pinHome } from './helpers/env.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
+import { clearPlacement, placeOneSkill } from './helpers/skill-placement.mjs'
 import { drainFor, until } from './helpers/wait.mjs'
 import { absentError, readPage } from './helpers/workspace-files-port.mjs'
 
@@ -69,8 +71,8 @@ async function settleClose(root, closed, next) {
 /** The negative wait behind the `wait` assertions: the shared drain (see `helpers/wait.mjs`) — it only ever disproves. */
 const drain = () => drainFor()
 
-/** The session-side stand-in: every create is recorded; each agent settles its opening round on the spot. With `idleGate`, the opening round's settlement waits for the gate — the in-flight shape a long first round produces. */
-function fakeAgents({ idleGate } = {}) {
+/** The session-side stand-in: every create is recorded and its messages kept. */
+function fakeAgents() {
   const created = []
   return {
     created,
@@ -82,7 +84,6 @@ function fakeAgents({ idleGate } = {}) {
           sessionId: options.sessionId,
           status: 'idle',
           followup(message) { record.followups.push(message) },
-          whenIdle: idleGate ? () => idleGate : () => Promise.resolve(),
         }
         record.agent = agent
         return Promise.resolve({ agent, dispose: async () => {} })
@@ -130,8 +131,8 @@ function fsPort(root, seen) {
   }
 }
 
-/** The host context stand-in: the real record directory behind the port, the live session header naming it, an event bus, a logger the relay's refusals land on, and the settings surface the switch is read from (the object is shared, so a flip is seen live). `seen` collects every workspace root the port was read through. */
-function context({ root, agents, config, seen } = {}) {
+/** The host context stand-in: the real record directory behind the port, the live session header naming it, an event bus, a logger the relay's refusals land on, and the settings surface the switch is read from (the object is shared, so a flip is seen live). `seen` collects every workspace root the port was read through. `skills` is the catalog the opener reads back, when a case needs to hold an open past its mint. */
+function context({ root, agents, config, seen, skills } = {}) {
   return fakeContext({
     port: fsPort(root, seen),
     sessionCwd: root,
@@ -139,7 +140,7 @@ function context({ root, agents, config, seen } = {}) {
     config,
     bus: true,
     logger: true,
-    services: { sessions: {}, agents: agents.registry },
+    services: { sessions: {}, agents: agents.registry, ...(skills === undefined ? {} : { skills }) },
   })
 }
 
@@ -312,29 +313,54 @@ test('Both notices arrive: the turn end already opened the next leg, and the sam
   }
 })
 
-test('Registered before the turn ends: while this leg is in flight its turn/end must already reach the relay (long first round)', async () => {
+test('Registered at the mint: a turn/end that arrives before this leg has answered still reaches the relay', async (t) => {
+  /* The open answers as soon as the session is out, so the stretch a case can hold it in is the one
+   * between the mint and that answer — here the placement catalog the opener reads back, which is
+   * the shape any real IO in that stretch has. */
+  if (process.env.DSH_HOME !== pinned.home) {
+    t.skip(`needs process isolation: DSH_HOME was overwritten in the shared process by another test file's pin (now points at ${process.env.DSH_HOME}, not this file's ${pinned.home})`)
+    return
+  }
+  const name = 'sw-issue-repair'
+  placeOneSkill(pinned.home, name)
   const root = rigRecordRoot(['n-1'])
-  let releaseIdle
-  const idleGate = new Promise((give) => { releaseIdle = give })
-  const agents = fakeAgents({ idleGate })
-  const { ctx, events, warnings } = context({ root, agents })
+  let releaseCatalog
+  const catalogGate = new Promise((give) => { releaseCatalog = give })
+  let readStarted
+  const readReached = new Promise((give) => { readStarted = give })
+  const agents = fakeAgents()
+  const { ctx, events, warnings } = context({
+    root,
+    agents,
+    skills: {
+      async list() {
+        readStarted()
+        await catalogGate
+        return []
+      },
+    },
+  })
   const installOff = installRelay(ctx)
   try {
-    /* The first leg is in flight: the first instruction is in, the turn is held on the gate — dispatch has not returned yet. */
     const pending = dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
+    /* The session is minted and its first instruction is in: this leg has not answered yet, and it
+     * will not until the catalog read below is let through. */
     await until(
       () => agents.created.length >= 1 && agents.created[0].followups.length === 1,
       'the first instruction is in',
       warnings,
     )
+    await readReached
     const sid = agents.created[0].options.sessionId
 
-    /* The close lands while this leg is in flight and the turn end arrives: tracked must be registered by now, or the relay cannot open the next leg. */
+    /* The close lands while this leg is in flight and the turn end arrives: the session must be in
+     * the tracking table by now, or the relay cannot open the next leg. */
     await settleClose(root, 'n-1', 'n-2')
     events.emit('session/event', { id: sid }, { type: 'turn/end' })
 
-    /* The next leg queues behind this one (a process-level serial chain); release the turn, this leg returns, and the relay leg lands only then. */
-    releaseIdle()
+    /* The next leg queues behind this one (a process-level serial chain); release the read, this leg
+     * answers, and the relay leg lands only then. */
+    releaseCatalog()
     const first = await pending
     assert.equal(first.ok, true, JSON.stringify(first))
     await until(
@@ -345,6 +371,7 @@ test('Registered before the turn ends: while this leg is in flight its turn/end 
     assert.ok(existsSync(claimPath(root, 'c-1', 'n-2')), 'the next leg\'s claim lands with the dispatch')
   } finally {
     installOff()
+    clearPlacement(pinned.home)
     rmSync(root, { recursive: true, force: true })
   }
 })
