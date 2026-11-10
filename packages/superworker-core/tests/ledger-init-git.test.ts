@@ -7,6 +7,7 @@ import type { GitResult, GitRunner } from '../src/git';
 import { mergeDriverCommand } from '../src/initledger';
 import { open } from '../src/open';
 import { git, gitRunner as realGit } from './helpers/git-runner';
+import { SLOW } from './helpers/slow';
 
 /**
  * init / register with git: the three attachments.
@@ -70,7 +71,7 @@ function checkoutAnswers(args: readonly string[]): GitResult | undefined {
   return undefined;
 }
 
-describe('ledger.init in a real checkout', () => {
+describe.skipIf(!SLOW)('ledger.init in a real checkout', () => {
   it('the exclude line goes in, the driver is registered through git config, and .superworker is given a repository of its own', async () => {
     await git(root, 'init', '-b', 'master');
     const report = await open(root).ledger.init({ git: realGit });
@@ -243,7 +244,7 @@ describe('what is asked of git, and what happens when it will not answer', () =>
       .toEqual(['/.superworker/']);
   });
 
-  it('the exclude rewrite leaves every line it does not own byte for byte, CRLF included', async () => {
+  it.skipIf(!SLOW)('the exclude rewrite leaves every line it does not own byte for byte, CRLF included', async () => {
     await git(root, 'init', '-b', 'master');
     const excludePath = join(root, '.git', 'info', 'exclude');
 
@@ -264,7 +265,7 @@ describe('what is asked of git, and what happens when it will not answer', () =>
     );
   });
 
-  it('valid UTF-8 round-trips: a lone CR, a CRLF line and a CJK line come back byte for byte', async () => {
+  it.skipIf(!SLOW)('valid UTF-8 round-trips: a lone CR, a CRLF line and a CJK line come back byte for byte', async () => {
     // Every other line is left exactly as it was, ending included: a lone `\r` is an ending, not a
     // byte to normalize, and non-ASCII text that *is* valid UTF-8 is written back as the same bytes.
     await git(root, 'init', '-b', 'master');
@@ -276,7 +277,7 @@ describe('what is asked of git, and what happens when it will not answer', () =>
     );
   });
 
-  it('bytes that are not valid UTF-8 fail the reading, and the file is left byte for byte', async () => {
+  it.skipIf(!SLOW)('bytes that are not valid UTF-8 fail the reading, and the file is left byte for byte', async () => {
     // A hand-edited file from a Chinese Windows box: `# 保留` in cp936, then another project's
     // ASCII line. A lenient decode would replace those four bytes with U+FFFD and the write would
     // put the damaged text back; bytes this engine cannot re-encode are bytes it must not rewrite.

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 // The surface under test is the plugin folder's own implementation (the very files the host loads
 // by path), plus the worker fixture that runs it in a second process.
 import { withPoolLock, poolLockPath } from '../plugins/issue/tools/storage.mjs';
+import { SLOW } from './helpers/slow';
 
 /**
  * The pool's one-writer rule **across processes**.
@@ -96,7 +97,7 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe('two processes writing one pool', () => {
+describe.skipIf(!SLOW)('two processes writing one pool', () => {
   it('a write held through its read → write window makes the other process wait: both issues are in the pool', async () => {
     const holder = startWorker(['slow', root, 'slow', '600']);
     await holder.whenOutput('HELD');

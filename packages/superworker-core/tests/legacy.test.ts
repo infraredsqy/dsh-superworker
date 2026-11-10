@@ -15,6 +15,7 @@ import { RECORD_DIR_NAME } from '../src/paths';
 import { open } from '../src/open';
 import type { GitRunner } from '../src/git';
 import { git, gitRunner as realGit } from './helpers/git-runner';
+import { SLOW } from './helpers/slow';
 
 /**
  * The one module that still knows the old record directory, read as the three questions it answers
@@ -120,7 +121,7 @@ describe('migrationPreconditions: the one reading of "may this workspace\'s reco
     expect(await migrationPreconditions(root)).toEqual({ ready: false, refusal: 'both-present' });
   });
 
-  it('the project git tracks the old directory: tracked-by-git, asked through the injected runner', async () => {
+  it.skipIf(!SLOW)('the project git tracks the old directory: tracked-by-git, asked through the injected runner', async () => {
     // Renaming a tracked directory would half-remove it from the repository's history, so the
     // precondition is asked of git itself — here with the real one, `git ls-files` naming the tree.
     await git(root, 'init', '-b', 'master');

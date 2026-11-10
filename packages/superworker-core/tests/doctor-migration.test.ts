@@ -6,6 +6,7 @@ import { open } from '../src/open';
 import { RECORD_DIR_NAME } from '../src/paths';
 import { LEGACY_DIR_NAME, legacyRecordDir } from '../src/legacy';
 import { git, gitRunner as realGit } from './helpers/git-runner';
+import { SLOW } from './helpers/slow';
 
 /**
  * The two migration cells of doctor, read through `conductor.doctor` the way the other doctor
@@ -112,7 +113,7 @@ describe('the record-directory cell: only a recognizable old directory gets one'
     expect(check.detail).toContain('consult an agent');
   });
 
-  it('the old directory tracked by the project git: the cell says so, still green, agent to consult', async () => {
+  it.skipIf(!SLOW)('the old directory tracked by the project git: the cell says so, still green, agent to consult', async () => {
     // The precondition is asked of git itself: this tree is really tracked (`git add -f` through
     // the ignores), and the refusal — not a red cell — is what a tracked old directory earns,
     // because only a person may take it out of history.
@@ -133,7 +134,7 @@ describe('the record-directory cell: only a recognizable old directory gets one'
   });
 });
 
-describe('the record-tracked cell: the one red cell, about the new directory only', () => {
+describe.skipIf(!SLOW)('the record-tracked cell: the one red cell, about the new directory only', () => {
   it('the project git tracks .superworker: red, naming the directory and an agent to consult', async () => {
     // The state init refuses outright: the records are in the index, and no word can take them out.
     await git(root, 'init', '-b', 'master');

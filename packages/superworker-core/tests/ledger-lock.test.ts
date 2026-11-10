@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { isRecordError, type RecordError } from '../src/errors.ts';
 import { withLedgerLock } from '../src/ledgerlock.ts';
 import { ledgerLockPath, recordPaths, type RecordPaths } from '../src/paths.ts';
+import { SLOW } from './helpers/slow';
 
 /**
  * The cross-process lock: while held, the lock file exists and is empty; released, it is gone.
@@ -181,7 +182,7 @@ describe('in-process lock invariants', () => {
   });
 });
 
-describe.skipIf(!workerLoadsTs)('cross-process lock behaviour', () => {
+describe.skipIf(!workerLoadsTs || !SLOW)('cross-process lock behaviour', () => {
   it('two writers on one record at once: one waits, one writes, and the record is always whole', async () => {
     const paths = tempPaths();
     const lock = ledgerLockPath(paths);
