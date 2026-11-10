@@ -60,8 +60,15 @@ const GITIGNORE_BODY = [
 ].join('\n');
 
 /**
- * `.superworker/.gitattributes`: the line endings of these files are ours, and records merge entry-wise
- * rather than line by line.
+ * `.superworker/.gitattributes`: the line endings of these files are ours, and every record under the directory
+ * merges entry-wise rather than line by line.
+ *
+ * The record line is a pattern, not a list of names: a record the driver is handed is recognised by its own shape
+ * (the four it names, then the anonymous one-collection-of-`id`-entries rule), so a record that changes hands — one
+ * did, from the engine to a plugin — keeps merging without this file being edited again. The one file that steps out
+ * is the layout's own settings: `config.json` is one setting, not a table of entries. Handed to the driver it is
+ * none of the four records and not the anonymous one-collection shape either, so the driver rejects it (exit 2, not
+ * a byte written); `-merge` steps it out here instead, and git leaves the two settings to a person.
  */
 const GITATTRIBUTES_BODY = [
   '# The line endings of these files are ours: every record is written with LF, and no machine\'s',
@@ -69,10 +76,11 @@ const GITATTRIBUTES_BODY = [
   '** -text',
   '',
   '# Records merge entry-wise, not line by line; the driver is sw-merge-ledger, and that command is',
-  "# registered in each machine's git config (ledger.register).",
-  'ideas.json merge=superworker',
-  'state.json merge=superworker',
-  'signals/** merge=superworker',
+  '# registered in each machine\'s git config (ledger.register). Every JSON under this directory is a',
+  '# record and goes to the driver -- the settings file is one setting, not a table of entries, so it',
+  '# steps out of that line explicitly.',
+  '*.json merge=superworker',
+  'config.json -merge',
   '',
 ].join('\n');
 

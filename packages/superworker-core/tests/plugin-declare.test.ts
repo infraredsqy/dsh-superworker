@@ -194,6 +194,26 @@ const CASES: readonly Case[] = [
     }),
     expect: 'takes keep_name as true or false',
   },
+  {
+    name: 'a merge strategy the driver does not implement (the cell stops at declaration time)',
+    decl: closeInsertDecl({ merge: { strategy: 'three-way-lines' } }),
+    expect: 'merge strategy "three-way-lines"',
+  },
+  {
+    name: 'a merge cell that names no strategy',
+    decl: closeInsertDecl({ merge: {} }),
+    expect: 'merge names no strategy',
+  },
+  {
+    name: 'a merge cell that is not an object',
+    decl: closeInsertDecl({ merge: 'by-entry' }),
+    expect: 'merge must be an object',
+  },
+  {
+    name: 'unknown key inside the merge cell',
+    decl: closeInsertDecl({ merge: { strategy: 'by-entry', on_conflict: 'theirs' } }),
+    expect: 'unknown key(s) "on_conflict"',
+  },
 ];
 
 async function folderOf(lab: PluginLab, name: string, decl: unknown, files: Record<string, string>, omitImpl: boolean) {
@@ -225,6 +245,36 @@ describe('closed-set declaration checks: each class turns red', () => {
       expect(folderProblems(folder)).toEqual([]);
       expect(declarationProblems(folder)).toEqual([]);
       expect(usable(folder)).toBe(true);
+    } finally {
+      lab.cleanup();
+    }
+  });
+
+  it('a merge strategy the driver implements is legal, and a strategy it does not names the ones it does', async () => {
+    const lab = makeLab('superworker-plugin-declare-');
+    try {
+      const folder = await folderOf(
+        lab,
+        'probe',
+        closeInsertDecl({ merge: { strategy: 'by-entry' } }),
+        {},
+        false,
+      );
+      expect(declarationProblems(folder)).toEqual([]);
+      expect(usable(folder)).toBe(true);
+
+      const refused = await folderOf(
+        lab,
+        'probe',
+        closeInsertDecl({ merge: { strategy: 'three-way-lines' } }),
+        {},
+        false,
+      );
+      // The line a person who wrote a rule the driver does not have needs: what is missing, and what is there.
+      expect(declarationProblems(refused).join('\n')).toContain(
+        'merge strategy "three-way-lines": the driver does not implement that rule yet',
+      );
+      expect(declarationProblems(refused).join('\n')).toContain('[by-entry]');
     } finally {
       lab.cleanup();
     }

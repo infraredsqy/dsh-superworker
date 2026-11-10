@@ -35,17 +35,21 @@ const GITIGNORE = [
   '',
 ].join('\n');
 
-/** The expected bytes of `.superworker/.gitattributes`: the line endings are ours, and records merge by record. */
+/**
+ * The expected bytes of `.superworker/.gitattributes`: the line endings are ours, every JSON under the directory
+ * is a record and goes to the driver, and the layout's own settings file steps out of that line by name.
+ */
 const GITATTRIBUTES = [
   "# The line endings of these files are ours: every record is written with LF, and no machine's",
   '# core.autocrlf has any business rewriting that.',
   '** -text',
   '',
   '# Records merge entry-wise, not line by line; the driver is sw-merge-ledger, and that command is',
-  "# registered in each machine's git config (ledger.register).",
-  'ideas.json merge=superworker',
-  'state.json merge=superworker',
-  'signals/** merge=superworker',
+  "# registered in each machine's git config (ledger.register). Every JSON under this directory is a",
+  '# record and goes to the driver -- the settings file is one setting, not a table of entries, so it',
+  '# steps out of that line explicitly.',
+  '*.json merge=superworker',
+  'config.json -merge',
   '',
 ].join('\n');
 
@@ -194,18 +198,23 @@ describe('ledger.init: the bottom line holds in an environment without git', () 
     expect(readFileSync(join(recordDir, '.gitattributes'), 'utf8')).toBe(GITATTRIBUTES);
   });
 
-  it('a record this engine no longer owns is swept out of the layout: re-running init drops its merge line and the note naming it', async () => {
-    // A project init-ed while the engine still laid that record down carries the old bytes: the layout
-    // is repaired whenever the bytes differ, so the next run takes the line and the note out.
+  it('a layout written by an older generation is swept out: re-running init drops the per-name merge lines and the note naming that record', async () => {
+    // A project init-ed while the layout still named records one by one carries the old bytes: the layout is
+    // repaired whenever the bytes differ, so the next run puts the pattern line back and takes the per-name lines
+    // (and the note naming that record) out.
     const superworker = open(root);
     await superworker.ledger.init();
     const recordDir = join(root, '.superworker');
-    const staleLine = 'instructions.json merge=superworker\n';
-    writeFileSync(
-      join(recordDir, '.gitattributes'),
-      GITATTRIBUTES.replace('signals/**', `${staleLine}signals/**`),
-      'utf8',
+    const olderGeneration = GITATTRIBUTES.replace(
+      '*.json merge=superworker',
+      [
+        'ideas.json merge=superworker',
+        'state.json merge=superworker',
+        'instructions.json merge=superworker',
+        'signals/** merge=superworker',
+      ].join('\n'),
     );
+    writeFileSync(join(recordDir, '.gitattributes'), olderGeneration, 'utf8');
     writeFileSync(join(recordDir, 'AGENTS.md'), 'a note: instructions.json is a record here\n', 'utf8');
     const swept = await superworker.ledger.init();
     expect(swept.written.sort()).toEqual(['.gitattributes', 'AGENTS.md']);

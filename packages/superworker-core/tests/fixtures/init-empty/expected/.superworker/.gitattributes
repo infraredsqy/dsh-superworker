@@ -3,7 +3,8 @@
 ** -text
 
 # Records merge entry-wise, not line by line; the driver is sw-merge-ledger, and that command is
-# registered in each machine's git config (ledger.register).
-ideas.json merge=superworker
-state.json merge=superworker
-signals/** merge=superworker
+# registered in each machine's git config (ledger.register). Every JSON under this directory is a
+# record and goes to the driver -- the settings file is one setting, not a table of entries, so it
+# steps out of that line explicitly.
+*.json merge=superworker
+config.json -merge

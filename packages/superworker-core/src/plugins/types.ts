@@ -17,6 +17,10 @@ import type { NodeRecord } from '../types';
  * - the seam has only two timings: the close insertion and the dispatch block. A timing the runtime never asks
  *   about is not in the vocabulary at all — the vocabulary and the table above are one set, not two, so no
  *   declaration passes the check on a cell that can never fire.
+ * - **the merge strategy is the driver's word, and only its word**: a declaration may name one of the rules the
+ *   merge driver implements (`MERGE_STRATEGIES`), and a strategy nothing implements is a declaration problem. The
+ *   cell stops at declaration time on purpose: a merge is one process call with no plugin loaded, so the driver
+ *   merges the record with the rule it has (see `src/ledgermerge/`).
  */
 
 /** The kind of a declared knob cell: the same four as the settings chain, plugins add no kind. */
@@ -50,6 +54,7 @@ export const DECLARATION_KEYS: readonly string[] = [
   'knobs',
   'readings',
   'metrics',
+  'merge',
 ];
 
 /** The closed set of keys of a knob cell (an unknown key is refused). `default` is on the list and is always stated: `null` is the one spelling for "no factory value". */
@@ -63,6 +68,15 @@ export const METRIC_CELL_KEYS: readonly string[] = ['line', 'tag', 'method'];
 
 /** The closed set of keys of a source cell: a claimed source names the implementation function that computes this number. */
 export const SOURCE_CELL_KEYS: readonly string[] = ['by'];
+
+/**
+ * The closed set of keys of the merge cell: the strategy this plugin's own record needs when two machines' records
+ * are brought back together. The vocabulary is the driver's, not this layer's: `MERGE_STRATEGIES` in
+ * `src/ledgermerge/generic.ts` lists the rules that driver implements, and a declaration may name one of those and
+ * nothing else — a strategy nothing implements is refused at declaration time, because at merge time there is no
+ * plugin context to run it in.
+ */
+export const MERGE_CELL_KEYS: readonly string[] = ['strategy'];
 
 /** The closed set of keys of a command cell: the one line printed by `--help`, and whether the command word travels with argv. */
 export const COMMAND_CELL_KEYS: readonly string[] = ['summary', 'keep_name'];
@@ -119,6 +133,7 @@ export interface PluginDeclaration {
   readonly knobs?: unknown;
   readonly readings?: unknown;
   readonly metrics?: unknown;
+  readonly merge?: unknown;
 }
 
 /** One cell of the load scan: a plugin folder, whose folder name is its identity. When the declaration cannot be read, decl is null and problems says why. */

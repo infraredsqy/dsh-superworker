@@ -3,9 +3,9 @@
  * entry-by-entry walk of one table, the union rules of append-style records, and the two questions "which record is
  * this" and "how does a decision get said out loud".
  *
- * Nothing here knows the fields of any one record; the four engines beside it are the ones that recognise fields.
- * The one table of the four records (`RECORD_KINDS`) lives here, so "which record is this", "what is it called"
- * and "where does it land" are read from one row each, not spelled out again in every arm that asks.
+ * Nothing here knows the fields of any one record; the engines beside it are the ones that recognise fields.
+ * The one table of every record the driver handles (`RECORD_KINDS`) lives here, so "which record is this", "what is
+ * it called" and "where does it land" are read from one row each, not spelled out again in every arm that asks.
  *
  * The decision reading (fixed point by point):
  *
@@ -35,29 +35,47 @@ export const KIND_STATE = 'state';
 export const KIND_INSTRUCTIONS = 'instructions';
 export const KIND_SIGNAL = 'signal';
 
-/** A file other than these four records is never touched by the driver. */
+/**
+ * The fifth kind, and the one rule it carries: a record nobody named, recognised by the one shape the driver
+ * can merge without knowing whose record it is — one collection key, every entry carrying its own `id` — joined
+ * on that id.
+ *
+ * The word is also the merge strategy a plugin may state in its declaration (`plugins/types.ts`): the two are
+ * one rule seen from two sides, so the declaration vocabulary reads this constant instead of spelling it again.
+ */
+export const KIND_BY_ENTRY = 'by-entry';
+
+/**
+ * The merge strategies this driver implements, in the order they are named to a person. A plugin declaration
+ * may name one of these and nothing else; a strategy that is not here is one the driver has no rule for.
+ */
+export const MERGE_STRATEGIES: readonly string[] = [KIND_BY_ENTRY];
+
+/** A file the driver touches is one of the four records it names, or a record recognised by the shape below. */
 export type MergeKind =
   | typeof KIND_IDEAS
   | typeof KIND_STATE
   | typeof KIND_INSTRUCTIONS
-  | typeof KIND_SIGNAL;
+  | typeof KIND_SIGNAL
+  | typeof KIND_BY_ENTRY;
 
 /**
  * One record kind, whole: what it is called, the file it lands in, the table it carries, how one of its entries is
  * named on a conflict line, and how its own content is recognised when no file name is there.
  *
  * Every arm that asks "which record is this" reads this table: a fifth record is a row here (plus its engine in the
- * driver's dispatch, which cannot sit in this table — the engines read this file).
+ * driver's dispatch, which cannot sit in this table — the engines read this file). The last row is not a record
+ * anybody names: it is the fallback, a shape the driver can merge without knowing who wrote it.
  */
 export interface RecordKindRow {
   readonly kind: MergeKind;
-  /** The file name this record lands under (the engine's layout names two of them; the instruction account's is this folder's own constant), or null for the one record kept in a directory of its own. */
+  /** The file name this record lands under (the engine's layout names two of them; the instruction account's is this folder's own constant), or null for a record with no fixed file (the handoff tickets, and the shape-recognised fallback). */
   readonly fileName: string | null;
-  /** The collection key this record carries, or null for the one record that is a single entry. */
+  /** The collection key this record carries, or null for a record that is a single entry (a ticket) or whose collection key is only known once its content is read (the fallback). */
   readonly collectionKey: string | null;
   /** How one table row of this record is named on a conflict line. */
   readonly entryLabel: (key: string) => string;
-  /** How this record's content recognises itself: a table by its collection key, a ticket by "a status, and nothing collected underneath". */
+  /** How this record's content recognises itself: a table by its collection key, a ticket by "a status, and nothing collected underneath", the fallback by "one collection key, every entry with its own id". */
   readonly shapedLike: (data: Record<string, unknown>) => boolean;
 }
 
@@ -89,6 +107,13 @@ export const RECORD_KINDS: ReadonlyArray<RecordKindRow> = [
     collectionKey: null,
     entryLabel: () => 'note',
     shapedLike: (data) => Boolean(data['status']) && ('timestamp' in data || 'outputs' in data),
+  },
+  {
+    kind: KIND_BY_ENTRY,
+    fileName: null,
+    collectionKey: null,
+    entryLabel: (key) => `entry ${key}`,
+    shapedLike: (data) => entryTableKey(data) !== null,
   },
 ];
 
@@ -171,11 +196,13 @@ export function kindOf(name: string | null | undefined): MergeKind | null {
  * The record's own shape, for the occasions when there is no file name to recognise.
  *
  * Under git there often is no name: `%O`/`%A`/`%B` are its temporary files. The three collection files each carry
- * that collection key, so they cannot be mistaken; a handoff ticket is the one record that "has a status and no
- * collection underneath". Everything else is refused, not guessed.
+ * that collection key, so they cannot be mistaken; a handoff ticket is the record that "has a status and no
+ * collection underneath"; and the last row is the shape the driver can merge without knowing whose record it is
+ * (one collection key of `id`-carrying entries, see `entryTableKey`). Everything else is refused, not guessed.
  *
  * The tables are asked first: a collection key is a stronger signature than a ticket's own shape, so a ticket-shaped
- * side does not name a record that another side says is a table.
+ * side does not name a record that another side says is a table. The fallback is asked last of all: a shape somebody
+ * else's own row recognises is never merged as an anonymous table.
  */
 export function kindFromShape(...sides: unknown[]): MergeKind | null {
   for (const data of sides) {
@@ -193,6 +220,92 @@ export function kindFromShape(...sides: unknown[]): MergeKind | null {
   return null;
 }
 
+/**
+ * The one collection key of a record the four named kinds do not recognise, or null when its shape is not the one
+ * this driver merges anonymously.
+ *
+ * The shape: a JSON object with one key holding a **collection of entries, and every entry carrying its own `id`**
+ * (a non-empty string). Either spelling of a collection is this shape — a list of entries, or a table keyed by the
+ * id that each entry repeats under it (the issue pool is laid down as a table). That is as far as the driver can
+ * see: which table it is, what an entry means and whether a missing entry was deleted are all things only the
+ * record's owner knows, and this rule asks about none of them (see `entries.ts`).
+ *
+ * One collection does not read as this shape when its table key is not the `id` the entry carries: the file then
+ * names one row twice and differently, and the driver cannot tell which of the two its owner addresses rows by.
+ *
+ * Two collections do not read as this shape either (which table would the record be?), and neither does an empty
+ * one (nothing in the file says what it is): the driver refuses those, it does not guess.
+ */
+export function entryTableKey(data: unknown): string | null {
+  if (!isRecord(data)) return null;
+  let found: string | null = null;
+  for (const [key, value] of Object.entries(data)) {
+    if (!isEntryTable(value)) continue;
+    if (found !== null) return null;
+    found = key;
+  }
+  return found;
+}
+
+/**
+ * The collection key the three sides of one merge agree on, and what each of them named on its own.
+ *
+ * `entryTableKey` reads **one** side, and one side is not enough once the three disagree: a file where this side's
+ * table is `items` and the other side's is `rows` states two identities for its one record, and there is no basis
+ * for picking either name. Picking this side's would carry the other side's whole table over as an ordinary field,
+ * leaving a merged record that is neither side's shape and that this driver would refuse the next time it saw it;
+ * picking the other's would drop this side's entries. So a disagreement is not a merge at all: it reads as a shape
+ * the driver does not recognise, and it is refused like every other one — the names each side gave are said out
+ * loud, and nothing is guessed.
+ *
+ * A side that names no single collection (its own file has two, or none, or the collection is empty) takes no part
+ * in the comparison: only the names actually given have to be one name.
+ */
+export interface EntryShapeReading {
+  /** The one collection key every side that names one agrees on; null when no side names one, or two names were given. */
+  readonly key: string | null;
+  /** What each side names on its own (null: that side gives no single collection). */
+  readonly base: string | null;
+  readonly ours: string | null;
+  readonly theirs: string | null;
+}
+
+export function entryShapeOf(base: unknown, ours: unknown, theirs: unknown): EntryShapeReading {
+  const reading: EntryShapeReading = {
+    key: null,
+    base: entryTableKey(base),
+    ours: entryTableKey(ours),
+    theirs: entryTableKey(theirs),
+  };
+  const named = [...new Set([reading.base, reading.ours, reading.theirs])].filter(
+    (key): key is string => key !== null,
+  );
+  return { ...reading, key: named.length === 1 ? named[0]! : null };
+}
+
+/** The `id` one entry carries (a non-empty string), or null when it carries none this driver could join on. */
+export function entryIdOf(entry: unknown): string | null {
+  if (!isRecord(entry)) return null;
+  const id = entry['id'];
+  return typeof id === 'string' && id !== '' ? id : null;
+}
+
+/**
+ * Whether one field is a collection of entries that each carry their own `id`: a list, or a table keyed by that id.
+ *
+ * A table key repeats the entry's own `id`, so the two are one identity said twice. When they disagree the file
+ * states two identities for one row; keying the merged result by the entry's `id` would then rename a row of a
+ * record the driver does not own, so that shape is not this one at all and is refused with the rest.
+ */
+function isEntryTable(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.length > 0 && value.every((entry) => entryIdOf(entry) !== null);
+  }
+  if (!isRecord(value)) return false;
+  const rows = Object.entries(value);
+  return rows.length > 0 && rows.every(([key, entry]) => entryIdOf(entry) === key);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  how a decision gets said out loud
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -207,6 +320,16 @@ export class MergeReport {
   constructor(kind: MergeKind, path: string) {
     this.kind = kind;
     this.path = displayPath(path);
+  }
+
+  /**
+   * The record's own file name, taken off the path git gave. The named records answer with the name the kind
+   * table holds; a record recognised by its shape alone has none, and a conflict line still has to say which file
+   * a person should open.
+   */
+  get name(): string {
+    const parts = this.path.split('/');
+    return parts[parts.length - 1] ?? '?';
   }
 
   decide(what: string): void {
@@ -473,13 +596,10 @@ export interface CollectionSlot {
   readonly asList?: boolean;
 }
 
-/**
- * One record file as a whole: every table it carries is walked entry by entry, the remaining fields follow the
- * ordinary rules, and `after` is what still has to be checked once the whole result is there (the graph's dangling
- * dependencies).
- *
- * The file's name on a conflict line comes from the kind table (`kindRow(report.kind).fileName`): the record already
- * says which kind it is, so no caller spells the name a second time.
+/*
+ * The file's name on a conflict line comes from the kind table (`kindRow(report.kind).fileName`) for the records it
+ * names; a record recognised by shape alone falls back to the file git named, so no caller spells the name a second
+ * time.
  */
 export interface MergeCollectionOptions {
   readonly slots: readonly CollectionSlot[];
@@ -498,7 +618,7 @@ export function mergeCollection(
   report: MergeReport,
   options: MergeCollectionOptions,
 ): Record<string, unknown> {
-  const label = kindRow(report.kind).fileName ?? '?';
+  const label = kindRow(report.kind).fileName ?? report.name;
   const out: Record<string, unknown> = {};
   for (const field of keyOrder(ours, theirs)) {
     const slot = options.slots.find((each) => each.key === field);

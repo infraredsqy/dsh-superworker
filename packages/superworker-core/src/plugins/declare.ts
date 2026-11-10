@@ -25,11 +25,13 @@ import {
   CORE_READING_SOURCES,
   DECLARATION_KEYS,
   KNOB_CELL_KEYS,
+  MERGE_CELL_KEYS,
   METRIC_CELL_KEYS,
   READING_CELL_KEYS,
   SOURCE_CELL_KEYS,
   TIMING_ACTION_CELLS,
 } from './types';
+import { MERGE_STRATEGIES } from '../ledgermerge/generic';
 import { CHAIN_LAYERS } from '../config';
 
 /**
@@ -295,6 +297,32 @@ export function declarationProblems(folder: PluginFolder): string[] {
     } else if (cell.kind !== 'switch') {
       out.push(`plugin ${JSON.stringify(name)}: switches on ${JSON.stringify(enable)}, whose kind is ` +
         `${JSON.stringify(cell.kind ?? null)}; only a switch names on/off`);
+    }
+  }
+
+  // The merge cell: which rule the driver applies to this plugin's own record. Only the rules the driver really
+  // implements are nameable -- a strategy written here is the driver's promise, and the driver cannot be handed
+  // plugin code at merge time (a merge is one process call). So a name outside the list is a declaration problem
+  // that says the rule is not there yet, and the plugin takes no part until the cell is right.
+  const merge = record.merge;
+  if (merge !== undefined && merge !== null) {
+    const cell = cellOf(merge);
+    if (cell === null) {
+      out.push(`plugin ${JSON.stringify(name)}: merge must be an object ` +
+        `(${MERGE_CELL_KEYS.join(', ')}) naming a strategy, one of [${MERGE_STRATEGIES.join(', ')}]`);
+    } else {
+      out.push(...unknownKeyProblems(`plugin ${JSON.stringify(name)}: merge`, cell, MERGE_CELL_KEYS));
+      const strategy = cell.strategy;
+      if (strategy === undefined || strategy === null || strategy === '') {
+        out.push(`plugin ${JSON.stringify(name)}: merge names no strategy -- this core implements ` +
+          `[${MERGE_STRATEGIES.join(', ')}]`);
+      } else if (typeof strategy !== 'string' || !MERGE_STRATEGIES.includes(strategy)) {
+        // The one sentence a person who wrote a strategy the driver does not have needs: the rule is not spelled
+        // wrong, the driver simply has no rule by that name yet, and here is what it does have.
+        out.push(`plugin ${JSON.stringify(name)}: merge strategy ${JSON.stringify(strategy)}: the driver does not ` +
+          `implement that rule yet -- it implements [${MERGE_STRATEGIES.join(', ')}], and a merge is one process ` +
+          'call with no plugin loaded, so no declaration can add one');
+      }
     }
   }
 

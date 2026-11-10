@@ -12,5 +12,8 @@
   "files": [
     "tools/commands.mjs",
     "tools/storage.mjs"
-  ]
+  ],
+  "merge": {
+    "strategy": "by-entry"
+  }
 }

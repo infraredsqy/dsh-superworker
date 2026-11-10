@@ -18,8 +18,12 @@
  * ---------------------------------------------------
  * Under git `<ours>` is often git's own temporary file, whose name cannot be recognised, so the driver
  * configuration passes `%P` (the path in the repository) as the fourth argument. When the name cannot be
- * recognised the shape decides: the three that carry a `nodes` / `cycles` / `instructions` collection key, or a
- * handoff ticket ("it has a status, and no collection underneath"). A file recognised by neither is refused.
+ * recognised the shape decides: the three that carry a `nodes` / `cycles` / `instructions` collection key, a
+ * handoff ticket ("it has a status, and no collection underneath"), and — last of all — a record nobody named
+ * ("one collection key, every entry carrying its own `id`"), which the anonymous entry-wise rule merges
+ * (`entries.ts`). That last shape is read across the three sides: they have to name the same collection key, since
+ * two names would make the driver pick one side's spelling and carry the other side's table over — a disagreement
+ * is refused with the rest. A file recognised by none of them is refused.
  *
  * Where the record tree is: git says so, the driver does not assume
  * -----------------------------------------------------------------
@@ -52,16 +56,19 @@ import {
   EXIT_CONFLICT,
   EXIT_OK,
   EXIT_USAGE,
+  KIND_BY_ENTRY,
   KIND_IDEAS,
   KIND_INSTRUCTIONS,
   KIND_SIGNAL,
   KIND_STATE,
   MergeReport,
   type MergeKind,
+  entryShapeOf,
   isRecord,
   kindFromShape,
   kindOf,
 } from './generic';
+import { mergeEntryRecord } from './entries';
 import { mergeIdeas } from './ideas';
 import { mergeInstructions } from './instructions';
 import { mergeSignal } from './signal';
@@ -182,6 +189,24 @@ export async function runMergeDriver(
       );
       return EXIT_USAGE;
     }
+    // The anonymous shape is one collection key, and the sides of a merge have to name that same key: a side whose
+    // table is `items` in a file whose other side calls it `rows` states two identities for one record, and neither
+    // name can be picked (this one's name would carry the other side's table over as an ordinary field and leave a
+    // record this driver no longer recognises; the other's would drop this side's entries). So the shape is read
+    // across the sides before an engine is picked, and a disagreement gets the answer every unrecognised shape gets.
+    if (kind === KIND_BY_ENTRY) {
+      const shape = entryShapeOf(base?.value ?? null, oursValue, theirsValue);
+      if (shape.key === null) {
+        const says = (side: string, key: string | null): string =>
+          key === null ? `${side} names no single collection` : `${side} names "${key}"`;
+        io.stderr(
+          `merge-ledger [${report.path}]: the sides do not name one collection -- ` +
+            `${says('base', shape.base)}, ${says('ours', shape.ours)}, ${says('theirs', shape.theirs)}: a record ` +
+            'that gives its table two names is not the shape this driver merges, so not a byte is written\n',
+        );
+        return EXIT_USAGE;
+      }
+    }
     merged = mergeByKind(kind, base?.value ?? null, oursValue, theirsValue, report);
   } else {
     // Only one side has the file: that whole side is the result, and there is nothing to compare.
@@ -278,6 +303,7 @@ const ENGINES: Record<MergeKind, Engine> = {
   [KIND_STATE]: mergeState,
   [KIND_INSTRUCTIONS]: mergeInstructions,
   [KIND_SIGNAL]: mergeSignal,
+  [KIND_BY_ENTRY]: mergeEntryRecord,
 };
 
 /** Hand the record kind to its engine. */

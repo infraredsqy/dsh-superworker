@@ -148,7 +148,7 @@ advance --json
 
 **0｜同步**：先看 `.superworker/` 档——`git ls-files .superworker` 有输出就是提交档，`git pull --rebase` 一次把另一台机器的图、结论与提交一并拿下来再读。本地档分两发拉：`git pull --rebase` 拉代码，`.superworker/.git` 在的时候再 `git -C .superworker pull --rebase` 拉记录那一份。`git remote` 一个都没有的项目没有上游，pull 与 push 那一次提交整套跳过；`.superworker/` 自成仓库但它没有远端时，记录那一次提交同样跳过。**两条命令都从项目根跑**——`git -C .superworker` 里的 `.superworker` 是相对 cwd 的，而 fork 档收尾时 cwd 落在 worktree 里，那里的 `.superworker/` 要么是陈旧检出、要么压根不存在。
 
-撞车分两种：`.superworker/` 下那几份文件（图 / cycle / 指令 / 交接单）撞了由合并驱动自动合；驱动报冲突、或代码文件撞了就停手交用户，别自己乱合——撞在 rebase 半路就先 `git rebase --abort` 把工作区还原再报（记录那一次提交撞了就 `git -C .superworker rebase --abort`）。被本地未提交的改动挡住，多半是上一个会话的提交还没落地——重跑一次，仍失败停下问用户。
+撞车先看撞的是什么：`.superworker/` 树下的记录 JSON 都交给合并驱动——图 / cycle / 指令 / 交接单按各自的领域判据合，认不出名字的记录只要有一个集合键、键下每项带自己的 `id`，就按条目求并（问题池 `.superworker/issues/issues.json` 也在内）；布局那份设置文件 `config.json` 显式退出这条线，交给 git 自己处理，两侧都改过就是一处二进制式冲突，这一侧的字节原样留着由人判。驱动报冲突、或代码文件撞了就停手交用户，别自己乱合——撞在 rebase 半路就先 `git rebase --abort` 把工作区还原再报（记录那一次提交撞了就 `git -C .superworker rebase --abort`）。被本地未提交的改动挡住，多半是上一个会话的提交还没落地——重跑一次，仍失败停下问用户。
 
 **1｜约束查询**：约束随每轮上下文到达，不必开工先跑；要核对时再跑一次。
 

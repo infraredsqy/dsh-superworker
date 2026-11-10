@@ -260,13 +260,17 @@ commands run from the project root** — the `.superworker` inside `git -C .supe
 fork-mode close the cwd sits in the worktree, where that `.superworker/` is either a stale checkout or not
 there at all.
 
-A collision comes in two kinds: the few files under `.superworker/` (graph / cycle / instructions / the
-note) are merged automatically by the merge driver; when the driver reports a conflict, or a
-code file collides, stop and hand it to the user — do not merge by hand. When the collision is
-halfway through a rebase, first `git rebase --abort` to put the workspace back and then report
-(for the ledger commit's collision, `git -C .superworker rebase --abort`). Being blocked by uncommitted
-local changes usually means the previous session's commit has not landed — re-run once, and when
-it still fails, stop and ask the user.
+What collided decides who handles it: every record JSON under `.superworker/` goes to the merge
+driver — the graph / cycle / instructions / the note merge under their own domain rules, and a
+record nobody named merges entry by entry when it is one collection key whose entries each carry
+their own `id` (the issue pool, `.superworker/issues/issues.json`, is one of those records); the
+layout's own settings file, `config.json`, steps out of that line and stays with git, so a setting
+both sides changed is a binary-style conflict that keeps this side's bytes for a person to judge.
+When the driver reports a conflict, or a code file collides, stop and hand it to the user — do not
+merge by hand. When the collision is halfway through a rebase, first `git rebase --abort` to put
+the workspace back and then report (for the ledger commit's collision, `git -C .superworker rebase
+--abort`). Being blocked by uncommitted local changes usually means the previous session's commit
+has not landed — re-run once, and when it still fails, stop and ask the user.
 
 **1 | Instruction lookup**: the constraints in force arrive with every turn's context, so there is
 nothing to run first; run it once more when you need to check.

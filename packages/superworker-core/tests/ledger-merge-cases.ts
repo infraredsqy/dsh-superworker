@@ -4,12 +4,13 @@
  * exactly, and the test side compares byte for byte.
  *
  * The data was collected by running `git merge` in a temp git repo: the three sides are laid into
- * one repo, the merge runs once, and the output is copied down. Test time starts no process and
- * reads nothing from outside the repo.
+ * one repo, the merge runs once, and the output is copied down — which for a record merged by the
+ * driver's own shape rule is the bytes the driver hands git (`issues-table-merge` was taken that
+ * way, not retyped). Test time starts no process and reads nothing from outside the repo.
  */
 
-/** The kind of a record; `null` means the file cannot be recognised, and the driver should refuse to take it. */
-export type LedgerMergeKind = 'ideas' | 'state' | 'instructions' | 'signal';
+/** The kind a record is read as; `null` means the file cannot be recognised, and the driver should refuse to take it. */
+export type LedgerMergeKind = 'ideas' | 'state' | 'instructions' | 'signal' | 'by-entry';
 
 export interface LedgerMergeCase {
   readonly name: string;
@@ -107,13 +108,13 @@ export const LEDGER_MERGE_CASES: readonly LedgerMergeCase[] = [
     expectMerged: "{\n  \"cycle\": \"superworker-core\",\n  \"node\": \"aaaaaaaa-1111-4111-8111-111111111111\",\n  \"status\": \"failed\",\n  \"summary\": \"pending rerun\",\n  \"outputs\": {\n    \"notes\": [\n      \"one entry\"\n    ]\n  },\n  \"timestamp\": \"2026-02-01T01:00:00Z\"\n}",
   },
   {
-    name: "issues-refused",
-    kind: null,
+    name: "issues-table-merge",
+    kind: "by-entry",
     path: ".superworker/issues/issues.json",
     base: "{\n  \"version\": 1,\n  \"issues\": {}\n}",
     ours: "{\n  \"version\": 1,\n  \"issues\": {\n    \"aaaaaaaa-1111-4111-8111-111111111111\": {\n      \"id\": \"aaaaaaaa-1111-4111-8111-111111111111\",\n      \"severity\": \"P2\",\n      \"module\": \"core\",\n      \"title\": \"title changed on the A side\",\n      \"decision\": \"autofix\",\n      \"source\": \"scan\",\n      \"status\": \"open\",\n      \"discovered\": \"2026-02-01T00:00:00.000000Z\",\n      \"updated_at\": \"2026-02-01T01:00:00.000000Z\",\n      \"check_count\": 1,\n      \"files\": [],\n      \"functions\": [],\n      \"description\": \"\",\n      \"suggestion\": \"\",\n      \"reason\": null,\n      \"plan_path\": null\n    }\n  }\n}",
     theirs: "{\n  \"version\": 1,\n  \"issues\": {}\n}",
-    expectCode: 2,
-    expectMerged: null,
+    expectCode: 0,
+    expectMerged: "{\n  \"version\": 1,\n  \"issues\": {\n    \"aaaaaaaa-1111-4111-8111-111111111111\": {\n      \"id\": \"aaaaaaaa-1111-4111-8111-111111111111\",\n      \"severity\": \"P2\",\n      \"module\": \"core\",\n      \"title\": \"title changed on the A side\",\n      \"decision\": \"autofix\",\n      \"source\": \"scan\",\n      \"status\": \"open\",\n      \"discovered\": \"2026-02-01T00:00:00.000000Z\",\n      \"updated_at\": \"2026-02-01T01:00:00.000000Z\",\n      \"check_count\": 1,\n      \"files\": [],\n      \"functions\": [],\n      \"description\": \"\",\n      \"suggestion\": \"\",\n      \"reason\": null,\n      \"plan_path\": null\n    }\n  }\n}",
   },
 ];

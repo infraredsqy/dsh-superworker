@@ -98,6 +98,39 @@ describe('ledger.init in a real checkout', () => {
     expect(existsSync(join(root, '.superworker', '.git'))).toBe(true);
   });
 
+  it('git itself sends every record under the directory to the driver, and steps the settings file out of that line', async () => {
+    await git(root, 'init', '-b', 'master');
+    await open(root).ledger.init({ git: realGit });
+    const recordDir = join(root, '.superworker');
+    // The reading a merge really takes: git resolves the attribute for each path it is about to merge. The records
+    // are laid down by whatever writes them (the instruction account belongs to a plugin, the tickets to the
+    // pipeline), so three of these paths do not exist here — the attribute is a rule about the tree, not about a
+    // file being there.
+    const asked = [
+      'ideas.json',
+      'state.json',
+      'instructions.json',
+      'signals/line/node.json',
+      'issues/issues.json',
+      'config.json',
+      'AGENTS.md',
+    ];
+    const said = (await git(recordDir, 'check-attr', 'merge', '--', ...asked))
+      .split('\n')
+      .filter((line) => line !== '');
+    expect(said).toEqual([
+      'ideas.json: merge: superworker',
+      'state.json: merge: superworker',
+      'instructions.json: merge: superworker',
+      'signals/line/node.json: merge: superworker',
+      'issues/issues.json: merge: superworker',
+      // One setting, not a table of entries: git's own answer is what keeps two changed settings out of the driver.
+      'config.json: merge: unset',
+      // Nothing else under the directory is a record.
+      'AGENTS.md: merge: unspecified',
+    ]);
+  });
+
   it('idempotent: a second run changes neither .superworker, nor the exclude file, nor git config', async () => {
     await git(root, 'init', '-b', 'master');
     const superworker = open(root);

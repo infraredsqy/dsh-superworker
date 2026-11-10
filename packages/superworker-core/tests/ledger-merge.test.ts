@@ -1205,3 +1205,282 @@ describe('the writing half of the driver: the record lock and the default landin
     }
   }, 5000);
 });
+
+/**
+ * A record the driver can name none of: all it has is the shape — one collection key, every entry carrying its own
+ * `id` — and the one rule that shape supports, joining the entries on that id (`src/ledgermerge/entries.ts`, and
+ * `docs/merge.md` for the rule's own words in prose).
+ *
+ * The real case is a plugin's own record: the driver has never heard of the plugin, and a merge is one process call
+ * with no plugin loaded, so the shape is the whole of what it can be given. Nothing here pins how a named record
+ * merges — those four keep their own domain rules.
+ */
+describe('a record nobody named: one collection of id-carrying entries, joined on the id', () => {
+  /** One such record: the collection under `items`, plus whatever other fields the record carries. */
+  function anonymous(
+    entries: readonly unknown[],
+    extra: Record<string, unknown> = {},
+  ): string {
+    return JSON.stringify({ ...extra, items: entries }, null, 2);
+  }
+
+  /** The same record with the collection laid down as a table keyed by the id each entry carries. */
+  function keyed(rows: readonly Record<string, unknown>[], extra: Record<string, unknown> = {}): string {
+    const table = Object.fromEntries(rows.map((row) => [String(row['id']), row]));
+    return JSON.stringify({ ...extra, items: table }, null, 2);
+  }
+
+  /** The merged record as the driver left it in `%A`. */
+  function mergedOf(bytes: Buffer): { readonly items: { id: string }[]; readonly [key: string]: unknown } {
+    return JSON.parse(bytes.toString('utf8')) as { items: { id: string }[] };
+  }
+
+  it('each side adds two entries of its own: the union holds all of them, and the shared entry stands once', async () => {
+    const shared = { id: 'shared', text: 'the same sentence on both machines' };
+    const oursText = anonymous(
+      [shared, { id: 'ours-1', text: 'added on this side' }, { id: 'ours-2', text: 'added here too' }],
+      { version: 2 },
+    );
+    const theirsText = anonymous(
+      [shared, { id: 'theirs-1', text: 'added on the other side' }, { id: 'theirs-2', text: 'added there too' }],
+      { version: 2 },
+    );
+    const run1 = await run({
+      base: anonymous([shared], { version: 1 }),
+      ours: oursText,
+      theirs: theirsText,
+    });
+    expect(run1.code).toBe(0);
+    // This side's order, then the entries only the other side has: five rows, the shared one once.
+    expect(mergedOf(run1.oursBytes).items.map((entry) => entry.id)).toEqual([
+      'shared',
+      'ours-1',
+      'ours-2',
+      'theirs-1',
+      'theirs-2',
+    ]);
+    // A field beside the collection follows the ordinary rule: both sides wrote 2, so 2 it is.
+    expect(mergedOf(run1.oursBytes)['version']).toBe(2);
+    // The record writer's own bytes: two-space indent, LF everywhere, and no trailing newline.
+    const landed = run1.oursBytes.toString('utf8');
+    expect(landed).not.toContain('\r');
+    expect(landed.endsWith('}')).toBe(true);
+  });
+
+  it('both sides added the same entry with the same content: one row, and no word about it', async () => {
+    const one = { id: 'shared', text: 'both machines wrote this exact entry' };
+    const run1 = await run({ base: anonymous([]), ours: anonymous([one]), theirs: anonymous([one]) });
+    expect(run1.code).toBe(0);
+    expect(run1.stderr).toBe('');
+    expect(mergedOf(run1.oursBytes).items).toEqual([one]);
+  });
+
+  it('the same id with two different values: a conflict per field, naming the record, the entry and both sides', async () => {
+    const base = anonymous([{ id: 'shared', text: 'a placeholder sentence', state: 'open' }]);
+    const oursText = anonymous([
+      { id: 'shared', text: 'the framing must stay under eighty columns', state: 'running' },
+    ]);
+    const theirsText = anonymous([{ id: 'shared', text: 'keep every line short', state: 'closed' }]);
+    const run1 = await run({
+      base,
+      ours: oursText,
+      theirs: theirsText,
+      path: '.superworker/notes.json',
+    });
+    expect(run1.code).toBe(1);
+    // Which record, which entry, which field, and what each side says.
+    expect(run1.stderr).toContain('merge-ledger: conflict [.superworker/notes.json] entry shared field text:');
+    expect(run1.stderr).toContain('ours="the framing must stay under eighty columns"');
+    expect(run1.stderr).toContain('theirs="keep every line short"');
+    expect(run1.stderr).toContain('] entry shared field state:');
+    expect(run1.stderr).toContain('2 places need a human decision');
+    // Not a byte of the record moved.
+    expect(run1.oursBytes.equals(bytesOf(oursText))).toBe(true);
+  });
+
+  it('an entry only one side holds stays in the result: this rule has no deletion to propagate', async () => {
+    const kept = { id: 'kept', text: 'the other machine still holds this one' };
+    const run1 = await run({ base: anonymous([kept]), ours: anonymous([]), theirs: anonymous([kept]) });
+    expect(run1.code).toBe(0);
+    expect(mergedOf(run1.oursBytes).items.map((entry) => entry.id)).toEqual(['kept']);
+  });
+
+  it('a table keyed by id is the same shape: the entries join on the id each one carries, and the table stays a table', async () => {
+    // The issue pool lays its entries down this way (the id repeated as the table key), so the two spellings of one
+    // collection read alike — the identity is the entry's own `id` either way. `issues-table-merge` in the collected
+    // cases above holds the pool's own file to this rule.
+    const shared = { id: 'shared', title: 'the same row on both machines' };
+    const oursText = keyed(
+      [shared, { id: 'ours-1', title: 'added on this side' }],
+      { version: 2 },
+    );
+    const theirsText = keyed(
+      [shared, { id: 'theirs-1', title: 'added on the other side' }],
+      { version: 2 },
+    );
+    const run1 = await run({ base: keyed([shared]), ours: oursText, theirs: theirsText });
+    expect(run1.code).toBe(0);
+    const merged = JSON.parse(run1.oursBytes.toString('utf8')) as {
+      version: number;
+      items: Record<string, { id: string }>;
+    };
+    // This rule does not reshape a record it does not own: the collection goes back as the table it was.
+    expect(Array.isArray(merged.items)).toBe(false);
+    expect(Object.keys(merged.items)).toEqual(['shared', 'ours-1', 'theirs-1']);
+    // A field beside the collection follows the ordinary rule: both sides wrote 2, so 2 it is.
+    expect(merged.version).toBe(2);
+  });
+
+  it('a table keyed by id: the same id with different content on the two sides is a conflict per field', async () => {
+    const row = (title: string) => ({ id: 'shared', title });
+    const base = keyed([row('a placeholder title')]);
+    const oursText = keyed([row('the title this side wrote')]);
+    const theirsText = keyed([row('the title the other side wrote')]);
+    const run1 = await run({
+      base,
+      ours: oursText,
+      theirs: theirsText,
+      path: '.superworker/notes.json',
+    });
+    expect(run1.code).toBe(1);
+    // Which record, which entry, which field, and what each side says.
+    expect(run1.stderr).toContain('merge-ledger: conflict [.superworker/notes.json] entry shared field title:');
+    expect(run1.stderr).toContain('ours="the title this side wrote"');
+    expect(run1.stderr).toContain('theirs="the title the other side wrote"');
+    expect(run1.stderr).toContain('1 places need a human decision');
+    expect(run1.oursBytes.equals(bytesOf(oursText))).toBe(true);
+  });
+
+  it('a table whose key is not the id its entry carries: one row under two names, refused rather than guessed', async () => {
+    // The file says the row is `row-a` and the row says it is `row-b`. Joining on either one would rename a row of
+    // a record the driver does not own, so the shape is not the one it merges, and it is left alone.
+    const twoNames = JSON.stringify(
+      { items: { 'row-a': { id: 'row-b', title: 'which name addresses this row?' } } },
+      null,
+      2,
+    );
+    const run1 = await run({ base: twoNames, ours: twoNames, theirs: twoNames });
+    expect(run1.code).toBe(2);
+    expect(run1.stderr).toContain('this is not a ledger file this driver handles');
+    expect(run1.oursBytes.equals(bytesOf(twoNames))).toBe(true);
+  });
+
+  it('entries with no id of their own: not this shape, so refused rather than guessed at', async () => {
+    const nameless = anonymous([{ name: 'no id here', text: 'nobody can say which row this is' }]);
+    const run1 = await run({ base: nameless, ours: nameless, theirs: nameless });
+    expect(run1.code).toBe(2);
+    expect(run1.stderr).toContain('this is not a ledger file this driver handles');
+    expect(run1.oursBytes.equals(bytesOf(nameless))).toBe(true);
+  });
+
+  it('two collections in one file: which table would the record be? refused', async () => {
+    const twoTables = JSON.stringify(
+      { first: [{ id: 'a' }], second: [{ id: 'b' }] },
+      null,
+      2,
+    );
+    const run1 = await run({ base: twoTables, ours: twoTables, theirs: twoTables });
+    expect(run1.code).toBe(2);
+    expect(run1.oursBytes.equals(bytesOf(twoTables))).toBe(true);
+  });
+
+  it('the sides name two different collection keys: one record, two identities, refused rather than half-merged', async () => {
+    // Each side calls its table something else — a plugin's schema change, or one hand-written refactor. Picking
+    // either name is a guess with a loss: this side's name would carry the other side's whole table over as an
+    // ordinary field and leave a record this driver no longer recognises, the other's would drop this side's
+    // entries. So the file is not the one shape the rule merges, and it is refused with the rest.
+    const oursText = JSON.stringify({ items: [{ id: 'a', text: 'this side kept the key' }] }, null, 2);
+    const theirsText = JSON.stringify({ rows: [{ id: 'b', text: 'the other side renamed it' }] }, null, 2);
+    const run1 = await run({
+      base: JSON.stringify({ items: [] }, null, 2),
+      ours: oursText,
+      theirs: theirsText,
+      path: '.superworker/notes.json',
+    });
+    expect(run1.code).toBe(2);
+    // The refusal names what each side said, so a person knows which side is the odd one out.
+    expect(run1.stderr).toContain('ours names "items"');
+    expect(run1.stderr).toContain('theirs names "rows"');
+    expect(run1.stderr).toContain('not a byte is written');
+    expect(run1.oursBytes.equals(bytesOf(oursText))).toBe(true);
+
+    // The common ancestor's name counts as well: a table only base calls `rows` is a third identity, not one.
+    const baseNamed = await run({
+      base: JSON.stringify({ rows: [{ id: 'b', text: 'the name base knew' }] }, null, 2),
+      ours: oursText,
+      theirs: oursText,
+      path: '.superworker/notes.json',
+    });
+    expect(baseNamed.code).toBe(2);
+    expect(baseNamed.stderr).toContain('base names "rows"');
+    expect(baseNamed.stderr).toContain('ours names "items"');
+    expect(baseNamed.oursBytes.equals(bytesOf(oursText))).toBe(true);
+  });
+
+  it('into a record tree that was never init-ed: the usage error stands, and not a byte is written', async () => {
+    // The fallback merges a shape and never judges a position: a `.superworker` that `init` never set up stays
+    // "no record tree here" (exit 2), so a record recognised by its shape cannot carry a merge into a tree nobody
+    // prepared.
+    const bare = mkdtempSync(join(tmpdir(), 'superworker-merge-anonymous-uninit-'));
+    try {
+      mkdirSync(join(bare, '.superworker'), { recursive: true });
+      writeFileSync(join(bare, '.superworker', 'notes.json'), anonymous([]));
+      const sides = join(bare, 'sides');
+      mkdirSync(sides, { recursive: true });
+      const paths = {
+        base: join(sides, 'base'),
+        ours: join(sides, 'ours'),
+        theirs: join(sides, 'theirs'),
+      };
+      const oursText = anonymous([{ id: 'ours-1', text: 'added on this side' }]);
+      writeFileSync(paths.base, anonymous([]));
+      writeFileSync(paths.ours, oursText);
+      writeFileSync(paths.theirs, anonymous([{ id: 'theirs-1', text: 'added on the other side' }]));
+      const before = process.cwd();
+      process.chdir(bare);
+      let code = -1;
+      let said = '';
+      try {
+        code = await runMergeDriver(
+          { ...paths, path: '.superworker/notes.json' },
+          {
+            stdout: () => {},
+            stderr: (text) => {
+              said += text;
+            },
+          },
+        );
+      } finally {
+        process.chdir(before);
+      }
+      expect(code).toBe(2);
+      expect(said).toContain('no .superworker sits at');
+      expect(readFileSync(paths.ours, 'utf8')).toBe(oursText);
+      expect(readFileSync(join(bare, '.superworker', 'notes.json'), 'utf8')).toBe(anonymous([]));
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  }, 5000);
+});
+
+/**
+ * The layout's own settings file: `.superworker/config.json` is one setting, not a table of entries, so the record
+ * tree's `.gitattributes` steps it out of the driver's line by name (`docs/merge.md`). This case holds the driver's
+ * half of that: handed the file anyway, it refuses instead of merging two settings as one entry's two values.
+ */
+describe('the settings file is not the driver\'s to merge', () => {
+  it('both sides changed one setting: refused (exit 2), and not a byte written', async () => {
+    const base = JSON.stringify({ session_host_override: 'on' }, null, 2);
+    const oursText = JSON.stringify({ session_host_override: 'on', worktree_mode: 'fork' }, null, 2);
+    const theirsText = JSON.stringify({ session_host_override: 'on', worktree_mode: 'off' }, null, 2);
+    const run1 = await run({
+      base,
+      ours: oursText,
+      theirs: theirsText,
+      path: '.superworker/config.json',
+    });
+    expect(run1.code).toBe(2);
+    expect(run1.stderr).toContain('this is not a ledger file this driver handles');
+    expect(run1.oursBytes.equals(bytesOf(oursText))).toBe(true);
+  });
+});
