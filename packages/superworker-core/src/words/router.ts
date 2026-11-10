@@ -83,11 +83,6 @@ const HANDLERS: Record<string, VerbHandler> = {
   'config set': verbs.configSetVerb,
   'config unset': verbs.configUnsetVerb,
   'config list': verbs.configListVerb,
-  'instruction add': verbs.instructionAddVerb,
-  'instruction list': verbs.instructionListVerb,
-  'instruction resolve': verbs.instructionResolveVerb,
-  'instruction rm': verbs.instructionRmVerb,
-  'instruction revive': verbs.instructionReviveVerb,
   'session show': verbs.sessionShowVerb,
   'session list': verbs.sessionListVerb,
 } satisfies Record<string, VerbHandler>;

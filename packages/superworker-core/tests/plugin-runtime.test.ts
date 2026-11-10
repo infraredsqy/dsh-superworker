@@ -423,12 +423,16 @@ describe('the listing side of doctor: one block per installed plugin, all of it 
       expect(detail).toContain('      methods: superworker-poll-repair');
       expect(detail).toContain('      sources: poll_pool (computed by pool_weight())');
       expect(detail).toContain('      commands: poll');
+      // The skills the folder ships are its own reading (a folder convention, not a declaration cell):
+      // one item per method, with the languages it comes in.
+      expect(detail).toContain('      skills: superworker-poll-repair (en)');
       // The plugin that declares none of those prints nothing under its name: no empty `knobs:` / `tags:`
       // line, and no item borrowed from the neighbour's block.
       const block = detail.slice(detail.indexOf('  · bare'), detail.indexOf('  · lister'));
       expect(block).not.toContain('knobs:');
       expect(block).not.toContain('tags:');
       expect(block).not.toContain('commands:');
+      expect(block).not.toContain('skills:');
       expect(report.ok).toBe(true);
     } finally {
       lab.cleanup();

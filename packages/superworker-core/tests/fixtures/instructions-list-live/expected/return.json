@@ -1,41 +1,8 @@
-[
-  {
-    "id": "i-0001",
-    "text": "global constraint",
-    "scope": "global",
-    "target": "stage",
-    "state": "live",
-    "cycle": null,
-    "node": null,
-    "said_by": "user",
-    "at": "@t1@",
-    "resolved_at": null,
-    "note": null
-  },
-  {
-    "id": "i-0002",
-    "text": "line constraint",
-    "scope": "cycle",
-    "target": "boundary",
-    "state": "live",
-    "cycle": "main",
-    "node": "@node-a@",
-    "said_by": "user",
-    "at": "@t2@",
-    "resolved_at": null,
-    "note": null
-  },
-  {
-    "id": "i-0003",
-    "text": "node constraint",
-    "scope": "node",
-    "target": "stage",
-    "state": "live",
-    "cycle": "main",
-    "node": "@node-a@",
-    "said_by": "user",
-    "at": "@t3@",
-    "resolved_at": null,
-    "note": null
-  }
-]
+{
+  "word": "instruction",
+  "plugin": "instruction",
+  "ran": true,
+  "text": "● i-0001  [global/visible while working]  global constraint\n● i-0002  [cycle/read only when closing out]  line constraint\n● i-0003  [node/visible while working]  node constraint",
+  "code": null,
+  "error": null
+}

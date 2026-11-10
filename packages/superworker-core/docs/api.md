@@ -17,7 +17,7 @@
   `locations` 是这个根那份记录树的落点（`RecordLocations { paths; signal; launchPrompt }`）：
   谁要把一个落点印出来就问它。`.superworker` 的拼法收在 `paths.ts` 的 `RECORD_DIR_NAME`；改名前的旧目录拼法全树只剩
   `legacy.ts` 一处——这个名字总得落在某个地方，不收进一个模块就会落到每个模块，要认得旧目录的那几个读法都问它取事实。
-- `superworker.ledger.dag`、`superworker.ledger.cycles`、`superworker.ledger.instructions`、`superworker.config` 各自的动词、
+- `superworker.ledger.dag`、`superworker.ledger.cycles`、`superworker.config` 各自的动词、
   `ledger.init` / `ledger.register` / `ledger.cleanTemp`、`superworker.sessions` 与
   `conductor.next` / `conductor.close` / `conductor.advance` / `conductor.settle` / `conductor.settlePreview` /
   `conductor.dispatch` / `conductor.dispatchPreview` / `conductor.doctor` / `conductor.handoff` /
@@ -34,7 +34,6 @@
 COMMANDS
 CONSULT_PROMPT
 GROUPS
-INSTRUCTION_SCOPES
 LEGACY_DIR_NAME
 LONG_RESULT_LIMIT
 PLUGIN_SKILL_FILE
@@ -44,10 +43,6 @@ answer
 describe
 hasLegacyRecord
 helpText
-instructionAddLine
-instructionArchiveLine
-instructionRemoveLine
-instructionReviveLine
 isRecognizableLegacyRecord
 legacyRecordDir
 loadPlugins
@@ -62,7 +57,7 @@ topHelp
 usageError
 ```
 
-`PLUGIN_SKILL_FILE` 是技能文件名（`SKILL.md`）；`SimulatedExecutor` 是执行者接缝；`open` 是句柄入口；`INSTRUCTION_SCOPES` 是指令能绑的 scope 词表（命令表里 `--scope` 的选项读的就是这一份），`instruction*Line` 是面板那几个动作到词面那一行的构造（`archive` 就是 `instruction resolve --state withdrawn`）。`LEGACY_DIR_NAME` / `legacyRecordDir` / `hasLegacyRecord` / `isRecognizableLegacyRecord` / `migrationPreconditions` / `CONSULT_PROMPT` 是旧目录那一问的六个词，见下面「旧目录与迁移」。
+`PLUGIN_SKILL_FILE` 是技能文件名（`SKILL.md`）；`SimulatedExecutor` 是执行者接缝；`open` 是句柄入口。`LEGACY_DIR_NAME` / `legacyRecordDir` / `hasLegacyRecord` / `isRecognizableLegacyRecord` / `migrationPreconditions` / `CONSULT_PROMPT` 是旧目录那一问的六个词，见下面「旧目录与迁移」。
 `loadPlugins` / `skillFolders` / `skillProblems` 读的是插件自带技能——`loadPlugins` 装载插件目录，
 `skillFolders` 交出一个插件带的技能目录，`skillProblems` 说出它与声明对不上的两种情形（度量点名的
 方法没有技能、一个技能名被两个插件交出）。读的是同一个插件目录，判什么由调用方定：引擎只交结论，
@@ -101,7 +96,7 @@ argv 与退出码的搬运，一条合并规则都不在它里面。
 
 类型出口在 `src/index.ts` 里按命名空间逐项列出——记录类型、各命名空间的输入 / 选项 / 返回形状，
 外部调用方按名字 `import type` 就能拿到：`DagInfo`、`DagInfoEdge`、`DagInfoOptions`、
-`InstructionReaderRow`、`ConductorDispatchInput`、`SessionShow` 都在这张清单上。
+`InstructionRecord`、`ConductorDispatchInput`、`SessionShow` 都在这张清单上。
 
 ## 旧目录与迁移
 
@@ -263,32 +258,15 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 `provider/model` 的词）；其余是插件声明的旋钮。线记录里残留别的键（别的实现写下的旧词那种）
 当未知键跳过：不抛、不拒读整条线，也不进入有效集。
 
-### superworker.ledger.instructions
+### 指令清单的读者
 
-指令：用户指令通道，动词如下。
-
-| 动作 | 签名 | 一句话语义 |
-| --- | --- | --- |
-| `ledger.instructions.add` | `add(input)` | 登记一条指令；正文与范围必填，绑定随范围走 |
-| `ledger.instructions.list` | `list(filter?)` | 缺省读法给读者面；`all` / `live` / `scope` 给原始记录 |
-| `ledger.instructions.resolve` | `resolve(id, options?)` | 结清一条指令（落结清时刻；`{ note }` 给了就一并落在档案里） |
-| `ledger.instructions.revive` | `revive(id)` | 把已归档的指令重新生效 |
-| `ledger.instructions.remove` | `remove(id)` | 把指令摘走，留 id 与时刻的痕迹 |
-
-**`list` 有两种读法，一个动词。** 两种都按记录里的次序给，不排序：
-
-- **缺省读法（读者面）**：还在生效、且从读者当前位置能看见的那些，每行折成
-  `InstructionReaderRow`。`scope` 是读出来的范围词（认不得的词读 `global`）；`target` 是记录里的
-  词，记录没写时是 `null`；`reach` 是投递通道补上缺省后的那个词，只有 `stage` / `boundary` 两个。
-  引擎给词，不给句子——一句话怎么读是展现层的事。
-- **原始记录**：原样的记录行。`all` 连归档的一起给；`live` 只留还在生效的；`scope` 把清单收窄到
-  一个范围（`global` / `cycle` / `node`）。三者可以并给。
-- `node` 不是清单开关：它是「读者站在哪个节点」的定位词，缺省读法用它算可见性（两条线并排时它
-  同时钉住线）。
-
-`InstructionListFilter { all?; live?; scope?; node? }`。`resolve` 的选项是
-`InstructionResolveOptions { note? }`：给了这句就写在结清时刻旁边，没给时档案里原有的注释
-留原样。
+指令清单（`.superworker/instructions.json`）归仓库自带的 `instruction` 插件所有：写、锁、
+五个动词（`instruction add` / `list` / `resolve` / `rm` / `revive`）与它自带的技能都在
+`plugins/instruction/` 里，句柄上没有这一组动作。引擎只保留两份读：派发准备把从这个位置读得见的
+条目落进提示词，规划读 boundary 条目的 `stop_after_nodes`（`src/instruct.ts` 的
+`visibleInstructionRows` / `instructionInScope`），两处都不写一个字节、不拿锁、不问 init 门槛。
+条目看不见的判据是纯推导（还在生效、绑定没失效），读侧与插件各有一份实现，靠语料与
+`tests/plugin-instruction-verbs.test.ts` 的对照用例钉住两边读法一致。
 
 ## superworker.config
 
@@ -453,7 +431,8 @@ id，写口认的是节点已有的那个目录。
 `dispatch --dry-run`）；记录内的动作没有这个旗标——它们的预演是 `next`（收尾那半边是 `next` 的
 `after`）。
 `doctor` 两半都接：插件面是严格面——装上的插件先逐插件列一条（名字、摘要、旋钮、标签、
-方法、来源与命令，全从声明读出），再逐条列坏点；记录面四格——`init` 的四份布局
+方法、来源、命令，外加自带的技能——技能从插件文件夹里数出来，其余全从声明读出），再逐条列坏点；
+记录面四格——`init` 的四份布局
 齐不齐、图有没有环与悬空引用、线手里的节点还在不在图上，以及合并驱动的两个键在不在本项目
 的 git 配置里（这一格要一台 git：`doctor(options?)` 的 `options` 是
 `ConductorDoctorOptions { git?: GitRunner }`，与 `ledger.init` / `ledger.register` 一个形状；

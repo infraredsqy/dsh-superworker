@@ -5,7 +5,7 @@
 **硬边界由 `tests/guard.test.ts` 钉着**；口径见 [../docs/rules.md](../docs/rules.md)。
 
 - `open.ts` `index.ts` `ledger.ts` `types.ts` `node-runtime.d.ts` — 句柄的装配、四个命名空间、包的出口与冻结的记录类型（含 Node 内置面声明）
-- `dag.ts` `graph.ts` `cycles.ts` `instruct.ts` `planner.ts` `conductor.ts` `prepare.ts` — 记录动作面与推线：图、线、指令，只读规划、派发准备、收尾结算，以及交接单形状与插件命令词的路由
+- `dag.ts` `graph.ts` `cycles.ts` `instruct.ts` `planner.ts` `conductor.ts` `prepare.ts` — 记录动作面与推线：图、线、指令读侧（写归 `instruction` 插件），只读规划、派发准备、收尾结算，以及交接单形状与插件命令词的路由
 - `config.ts` `sessions.ts` `env.ts` `clock.ts` `tempclean.ts` — 设置解析链、会话档、运行期开关、时刻、临时清理
 - `paths.ts` `jsonio.ts` `ledgerlock.ts` `errors.ts` `fs-helpers.ts` — 记录 IO 底座：落点、读写、锁、错误码
 - `legacy.ts` `migrate.ts` — 旧记录目录唯一的事实来源（在不在、认不认得出、迁不迁得动）与把一份工作区的记录搬进 `.superworker` 的那个词；doctor 与 migrate 共用同一份前置判断

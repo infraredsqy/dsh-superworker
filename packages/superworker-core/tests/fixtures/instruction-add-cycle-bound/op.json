@@ -1,9 +1,10 @@
 {
-  "path": "ledger.instructions.add",
+  "path": "conductor.pluginCommand",
+  "plugins": ["instruction"],
   "args": [
     {
-      "text": "this line only runs coding nodes",
-      "scope": "cycle"
+      "word": "instruction",
+      "argv": ["add", "--scope", "cycle", "--text", "this line only runs coding nodes"]
     }
   ]
 }

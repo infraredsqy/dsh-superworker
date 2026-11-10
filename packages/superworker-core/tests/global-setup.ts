@@ -26,7 +26,7 @@ import { hashDirectory } from './helpers/hash-dir.ts';
  *   there would make the suite answer to the machine it runs on (a machine-wide setting is the kind
  *   that bites). An empty sandbox reads exactly like a machine that stores nothing, which is what
  *   every case here assumes. It goes away again at teardown.
- * - `SUPERWORKER_PLUGINS_DIR` is cleared and **not** pointed anywhere: the three plugins the repo carries
+ * - `SUPERWORKER_PLUGINS_DIR` is cleared and **not** pointed anywhere: the four plugins the repo carries
  *   (`plugins/`) travel with the tree and are what the plugin and doctor cases stand on, so hiding
  *   them would take those cases' premise away. A case that needs the switch sets it itself and puts
  *   it back.

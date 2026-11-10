@@ -21,7 +21,7 @@ import {
   instructionArchiveLine,
   instructionRemoveLine,
   instructionReviveLine,
-} from 'superworker-core'
+} from './instruction-lines.ts'
 import type { SuperworkerReading, SuperworkerReadOptions, SuperworkerRecords } from './contract.ts'
 import { openConsultSession, type SessionOpenOutcome } from './executor.ts'
 import type { RecordOutcome } from './failure.ts'
@@ -33,9 +33,8 @@ import { readClaims, readSessionNotes, type SuperworkerSessionsReading } from '.
 import { runWords } from './write.ts'
 
 /**
- * The scopes an instruction can bind to, as the engine spells them: this side keeps no list of its
- * own — a fourth scope lands in the engine's table and here at the same time, and the write path
- * below forwards the word instead of pre-judging it.
+ * The scopes an entry can bind to, as this side spells them (`instruction-lines.ts`): the word is
+ * forwarded to the plugin that owns the surface instead of being pre-judged here.
  */
 export type InstructionScope = (typeof INSTRUCTION_SCOPES)[number]
 
@@ -140,12 +139,12 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * Record an instruction: the user's words are copied verbatim, with the
    * scope named.
    *
-   * The line itself is the engine's to spell (`instructionAddLine`): the scope
-   * vocabulary, the switch order, and the refusal of a scope outside it are all
-   * facts about that call, so this side forwards the words and reports the
-   * engine's own code. Which cycle or node the scope binds to is the panel's
-   * call: pass it when named, otherwise the words layer resolves it from the
-   * records.
+   * The line is this side's to spell (`instructionAddLine`): the plugin that
+   * owns the `instruction` surface ships with this package and imports nothing
+   * from the engine, so the scope vocabulary and the four panel-to-line
+   * translations live in `instruction-lines.ts` next to this path. This side
+   * forwards the words and reports the words layer's own code; the plugin's
+   * `--scope` choices are still the authority on the vocabulary.
    *
    * The parameter list stays on one line with no trailing comma: the gateway
    * splits method parameters from source, same reason as `read` above.

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { open } from '../src/open';
 
 /**
- * The surface exists: the four namespaces carry every frozen method, none missing and none extra.
+ * The surface exists: the handle's namespaces carry every frozen method, none missing and none extra.
  * The names come from the frozen surface in docs/api.md; renaming goes through the conductor and
  * does not quietly happen here.
  */
@@ -15,7 +15,6 @@ const CYCLE_METHODS = [
   'create', 'start', 'rename', 'setStatus', 'setPolicy', 'list', 'current',
   'show', 'policies', 'standing', 'holder', 'hold', 'close', 'retry',
 ];
-const INSTRUCTION_METHODS = ['add', 'list', 'resolve', 'revive', 'remove'];
 const CONFIG_METHODS = ['get', 'set', 'unset', 'list', 'keys'];
 const SESSION_METHODS = ['list', 'show', 'note'];
 const CONDUCTOR_METHODS = [
@@ -35,9 +34,9 @@ describe('the handle open() hands back', () => {
 });
 
 describe('superworker.ledger', () => {
-  it('init / register / migrate / cleanTemp / dag / cycles / instructions are all there', () => {
+  it('init / register / migrate / cleanTemp / dag / cycles are all there', () => {
     expect(Object.keys(superworker.ledger).sort())
-      .toEqual(['cleanTemp', 'cycles', 'dag', 'init', 'instructions', 'migrate', 'register']);
+      .toEqual(['cleanTemp', 'cycles', 'dag', 'init', 'migrate', 'register']);
     expect(typeof superworker.ledger.init).toBe('function');
     expect(typeof superworker.ledger.register).toBe('function');
     expect(typeof superworker.ledger.migrate).toBe('function');
@@ -48,9 +47,6 @@ describe('superworker.ledger', () => {
   });
   it('cycles has all fourteen verbs', () => {
     expect(Object.keys(superworker.ledger.cycles).sort()).toEqual([...CYCLE_METHODS].sort());
-  });
-  it('instructions has all five verbs', () => {
-    expect(Object.keys(superworker.ledger.instructions).sort()).toEqual([...INSTRUCTION_METHODS].sort());
   });
 });
 

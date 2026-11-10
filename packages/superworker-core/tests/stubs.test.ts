@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { open } from '../src/open';
 
 /**
- * No stub left on the surface: all sixty-one verbs across the seven namespaces are methods, and
+ * No stub left on the surface: all fifty-six verbs across the six namespaces are methods, and
  * the source tree has no "not implemented yet" path either.
  * The probe handle's root is a made-up address; the assertions here touch only methods and source
  * text, and nothing lands on disk.
@@ -17,7 +17,6 @@ const SURFACE: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
   ['ledger', superworker.ledger as unknown as Record<string, unknown>],
   ['ledger.dag', superworker.ledger.dag as unknown as Record<string, unknown>],
   ['ledger.cycles', superworker.ledger.cycles as unknown as Record<string, unknown>],
-  ['ledger.instructions', superworker.ledger.instructions as unknown as Record<string, unknown>],
   ['config', superworker.config as unknown as Record<string, unknown>],
   ['sessions', superworker.sessions as unknown as Record<string, unknown>],
   ['conductor', superworker.conductor as unknown as Record<string, unknown>],
@@ -35,14 +34,14 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
 }
 
 describe('verbs on the handle', () => {
-  it('seven namespaces, sixty-one verbs, none missing', () => {
+  it('six namespaces, fifty-six verbs, none missing', () => {
     let count = 0;
     for (const [, ns] of SURFACE) {
       for (const value of Object.values(ns)) {
         if (typeof value === 'function') count += 1;
       }
     }
-    expect(count).toBe(4 + 16 + 14 + 5 + 5 + 3 + 14);
+    expect(count).toBe(4 + 16 + 14 + 5 + 3 + 14);
   });
 
   it("each level's verb names match the frozen surface", () => {
@@ -65,7 +64,6 @@ describe('verbs on the handle', () => {
         'close', 'create', 'current', 'hold', 'holder', 'list', 'policies', 'rename', 'retry',
         'setPolicy', 'setStatus', 'show', 'standing', 'start',
       ].sort(),
-      'ledger.instructions': ['add', 'list', 'remove', 'resolve', 'revive'].sort(),
       config: ['get', 'keys', 'list', 'set', 'unset'].sort(),
       sessions: ['list', 'note', 'show'],
       conductor: [

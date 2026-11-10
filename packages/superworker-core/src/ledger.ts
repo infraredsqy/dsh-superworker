@@ -1,6 +1,5 @@
 import { createCyclesNamespace } from './cycles';
 import { createDagNamespace } from './dag';
-import { createInstructionsNamespace } from './instruct';
 import { initLedger, registerLedger } from './initledger';
 import type { InitReport, LedgerInitOptions, LedgerRegisterOptions } from './initledger';
 import { migrateLedger } from './migrate';
@@ -11,9 +10,6 @@ import type { CleanTempOptions, CleanTempReport } from './tempclean';
 import type {
   CycleRecord,
   CycleStatus,
-  InstructionRecord,
-  InstructionScope,
-  InstructionTarget,
   MicroTimestamp,
   NodeMode,
   NodeRecord,
@@ -331,76 +327,6 @@ export interface CyclesNamespace {
   retry(id: string, node?: string, options?: { drop?: boolean; summary?: string }): Promise<CycleRecord>;
 }
 
-// ── instructions ─────────────────────────────────────────────────────────────
-
-/** Register one instruction: the text and the scope are required, the binding follows the scope. */
-export interface InstructionAddInput {
-  text: string;
-  scope: InstructionScope;
-  target?: InstructionTarget;
-  /** The binding when scope is cycle / node. */
-  cycle?: string;
-  node?: string;
-  said_by?: string;
-  note?: string;
-  /** Lapses after this many nodes have closed the line. */
-  stop_after_nodes?: number;
-}
-
-/** The filter of `list`: the reader-facing view by default, the raw account when one of the three account switches is given. */
-export interface InstructionListFilter {
-  /** Account view: the whole account, archived entries included. */
-  all?: boolean;
-  /** Account view: only the entries whose state is live. */
-  live?: boolean;
-  /** Account view narrowed to one scope. */
-  scope?: InstructionScope;
-  /** The node the reader stands on: with two lines side by side it is what pins the line down too. */
-  node?: string;
-}
-
-/**
- * What a resolve leaves beside the state and the moment: the note the owner put on the archive. An
- * entry already carrying one is not cleared by resolving without a note — only a note that is
- * actually given is written.
- */
-export interface InstructionResolveOptions {
-  note?: string;
-}
-
-/**
- * One row of the reader-facing view: what the instruction says, where it can be seen from, and how it
- * is delivered — ids and bookkeeping stay on the account.
- *
- * `scope` is the scope as read (an unrecognised word reads global); `target` is the word the record
- * carries, `null` when it carries none; `reach` is the same delivery channel with the read side's
- * default filled in, always `stage` or `boundary`. The engine gives the words, never a sentence: how
- * a reach reads to a person is the presentation layer's business.
- */
-export interface InstructionReaderRow {
-  id: string;
-  text: string;
-  scope: InstructionScope;
-  target: InstructionTarget | null;
-  reach: InstructionTarget;
-}
-
-/** The instructions namespace: the user instruction channel, these five verbs. */
-export interface InstructionsNamespace {
-  add(input: InstructionAddInput): Promise<InstructionRecord>;
-  /**
-   * The default view is the reader-facing one: the live entries visible from where the reader stands,
-   * in account order, each folded to `InstructionReaderRow`. The account views (`all` / `live` /
-   * `scope`) hand back the raw rows, also in account order.
-   */
-  list(filter?: InstructionListFilter): Promise<InstructionReaderRow[] | InstructionRecord[]>;
-  /** Resolve one instruction (lands resolved_at, and the note when one is given). */
-  resolve(id: string, options?: InstructionResolveOptions): Promise<InstructionRecord>;
-  /** Put an archived instruction back in force. */
-  revive(id: string): Promise<InstructionRecord>;
-  /** Take the instruction off the records (leaving a trace of the id and the timestamp). */
-  remove(id: string): Promise<void>;
-}
 
 // ── ledger: the record directory and the three sub-namespaces ────────────────
 
@@ -419,7 +345,7 @@ export type {
   MigrationReport,
 } from './migrate';
 
-/** The record directory (`.superworker/`) namespace: init, register, migrate, and the graph, cycles and instructions sub-spaces. */
+/** The record directory (`.superworker/`) namespace: init, register, migrate, and the graph and cycles sub-spaces. */
 export interface LedgerNamespace {
   /**
    * Set up the `.superworker/` record directory for a project and hand back what it did: the layout files
@@ -446,14 +372,13 @@ export interface LedgerNamespace {
   cleanTemp(options?: CleanTempOptions): Promise<CleanTempReport>;
   readonly dag: DagNamespace;
   readonly cycles: CyclesNamespace;
-  readonly instructions: InstructionsNamespace;
 }
 
 // ── assembly ─────────────────────────────────────────────────────────────────
 
 /**
  * Assemble the ledger namespace: init, register, migrate, the temp sweep and the three blocks of
- * graph, lines and instructions (the locations come from the caller's project root).
+ * graph and lines (the locations come from the caller's project root).
  */
 export function createLedgerNamespace(root: string): LedgerNamespace {
   return {
@@ -463,6 +388,5 @@ export function createLedgerNamespace(root: string): LedgerNamespace {
     cleanTemp: (cleanOptions) => cleanTemp(recordPaths(root), cleanOptions),
     dag: createDagNamespace(root),
     cycles: createCyclesNamespace(root),
-    instructions: createInstructionsNamespace(root),
   };
 }

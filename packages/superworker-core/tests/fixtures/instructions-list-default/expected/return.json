@@ -1,23 +1,8 @@
-[
-  {
-    "id": "i-0001",
-    "text": "global constraint",
-    "scope": "global",
-    "target": "stage",
-    "reach": "stage"
-  },
-  {
-    "id": "i-0002",
-    "text": "line constraint",
-    "scope": "cycle",
-    "target": "boundary",
-    "reach": "boundary"
-  },
-  {
-    "id": "i-0003",
-    "text": "node constraint",
-    "scope": "node",
-    "target": "stage",
-    "reach": "stage"
-  }
-]
+{
+  "word": "instruction",
+  "plugin": "instruction",
+  "ran": true,
+  "text": "This project has 3 instruction(s) visible from this step:\n\n1. global constraint\n   visibility: global (counts anywhere)\n   reach: every node\n\n2. line constraint\n   visibility: for this run (it stops counting once this run ends)\n   reach: read only at the close\n\n3. node constraint\n   visibility: this node only (it stops counting once this node is done)\n   reach: every node\n\n",
+  "code": null,
+  "error": null
+}

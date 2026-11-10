@@ -18,6 +18,7 @@ import {
   shadowedKnobs,
   verifyPlugins,
 } from './plugins/registry';
+import { skillNamesOf } from './plugins/skills';
 import type { DispatchRequest, Executor, OpenedSession } from './executor';
 import { envModel, envSpawnDryRun } from './env';
 import { RecordError } from './errors';
@@ -1186,7 +1187,7 @@ export function createConductorNamespace(
           // sources and commands — all read off the declaration), then every bad spot one by one, then the
           // freshness line: what is loaded stays loaded, so whoever changed a plugin can read here why the
           // change is not in force yet.
-          detail: [pluginDetail, ...pluginListing(folders), ...problems, ...(gaps.length === 0
+          detail: [pluginDetail, ...pluginListing(folders, skillNamesOf), ...problems, ...(gaps.length === 0
             ? []
             : ['', 'rehearsal (a --dry-run skips these, one WARNING line each):', ...gaps]), PLUGIN_LOAD_NOTE].join('\n'),
         },

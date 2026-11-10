@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { NextPlan } from '../src/conductor';
 import { open } from '../src/open';
+import { main as instruction } from '../plugins/instruction/tools/commands.mjs';
 import { replayCase } from './helpers/corpus';
 import { hashDirectory } from './helpers/hash-dir.ts';
 
@@ -248,25 +249,24 @@ describe('planning: when to stop', () => {
     await superworker.ledger.dag.setStatus(first.id, 'completed');
     await superworker.ledger.cycles.hold('c1', second.id);
     putSignal(root, 'c1', second.id, 'completed');
-    const cap = await superworker.ledger.instructions.add({
-      text: 'stop after two nodes',
-      scope: 'global',
-      target: 'boundary',
-      stop_after_nodes: 2,
-    });
+    // The account belongs to the instruction plugin now: its own command surface is what writes the
+    // record, and the planner reads the cap off that same record.
+    const cap = await instruction(
+      ['add', '--text', 'stop after two nodes', '--scope', 'global', '--target', 'boundary', '--stop-after-nodes', '2'],
+      { root },
+    );
+    void cap;
     const stopped = await open(root).conductor.next({ after: second.id });
     expect(actionOf(stopped)).toBe('stop_pipeline');
     if (stopped.action === 'stop_pipeline') {
       expect(stopped.reason).toBe('instruction "stop after two nodes": stop after 2 nodes');
     }
     // The same instruction relaxed to 3: the count has not been reached, so the cycle picks the next one.
-    await superworker.ledger.instructions.remove(cap.id);
-    await superworker.ledger.instructions.add({
-      text: 'stop after three nodes',
-      scope: 'global',
-      target: 'boundary',
-      stop_after_nodes: 3,
-    });
+    await instruction(['rm', 'i-0001'], { root });
+    await instruction(
+      ['add', '--text', 'stop after three nodes', '--scope', 'global', '--target', 'boundary', '--stop-after-nodes', '3'],
+      { root },
+    );
     const carried = await open(root).conductor.next({ after: second.id });
     expect(actionOf(carried)).toBe('open_node');
     if (carried.action === 'open_node') expect(carried.node_id).toBe(next.id);

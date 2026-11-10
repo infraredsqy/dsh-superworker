@@ -1,6 +1,10 @@
 {
-  "path": "ledger.instructions.resolve",
+  "path": "conductor.pluginCommand",
+  "plugins": ["instruction"],
   "args": [
-    "i-0001"
+    {
+      "word": "instruction",
+      "argv": ["resolve", "i-0001", "--state", "withdrawn"]
+    }
   ]
 }

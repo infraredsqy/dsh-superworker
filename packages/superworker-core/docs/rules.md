@@ -16,8 +16,8 @@
 
 六种记录（节点、线、指令、问题、交接单、会话档）在磁盘上的格式逐字节定死：形状与词汇以 `src/types.ts` 为准，落点以 `src/paths.ts` 为准。记录与四份布局文件在任何平台都写 LF；给人读的文本产物（提示词、运行稿）随平台换行尾。
 
-- 记录归一个模块所有，谁拥有谁写：节点、线、指令、交接单、会话档归引擎，问题池归问题池插件。引擎那几份走 `src/jsonio.ts`（读者与写者各一处，写是原子的）与 `src/ledgerlock.ts`（同进程与跨进程的写者互斥，持锁体内的再入放行）；可判定的错误码在 `src/errors.ts`。
-- 跨模块只守两条。**写者唯一**：同一个记录文件同一时刻只有一个写者，跨进程也一样——每种记录带自己的锁，池子的锁是 `.superworker/meta/issues.lock`，与项目锁不同名、也不共用一把。**字节格式一致**：同一种记录落在盘上的字节一致；两个实现不共用代码，靠一条字节契约测试钉住（`tests/issue-pool-bytes.test.ts`）。
+- 记录归一个模块所有，谁拥有谁写：节点、线、交接单、会话档归引擎，问题池归问题池插件，指令清单归 `instruction` 插件。引擎那几份走 `src/jsonio.ts`（读者与写者各一处，写是原子的）与 `src/ledgerlock.ts`（同进程与跨进程的写者互斥，持锁体内的再入放行）；可判定的错误码在 `src/errors.ts`。
+- 跨模块只守两条。**写者唯一**：同一个记录文件同一时刻只有一个写者，跨进程也一样——每种记录带自己的锁，池子的锁是 `.superworker/meta/issues.lock`、指令清单的是 `.superworker/meta/instructions.lock`，与项目锁不同名、也不共用一把。**字节格式一致**：同一种记录落在盘上的字节一致；两个实现不共用代码，靠一条字节契约测试钉住（`tests/issue-pool-bytes.test.ts`；指令清单那条靠语料：`tests/fixtures/instruction-*` 逐字节比它写出来的文件）。
 - 任何一次操作不得同时持有两把锁（不嵌套）。
 - 节点目录 `.superworker/nodes/<id>/` 由 add 立起、remove 带走：add 只立目录、不立 spec.md（它的缺席就是「要求还没写」），run.md 由派发准备立起。
 - 并行档（`worktree_mode` 为 `fork`）：工作树 `.superworker/worktrees/<短 id>`、出口分支 `sw/<短 id>`；那几步 git 由 agent 自己敲，引擎不留那几步的记录、不做合回、也不替它写判决。
@@ -50,7 +50,7 @@
 
 ## 语料与测试
 
-- 黄金语料一个用例一个目录（`tests/fixtures/<用例名>/`）：`input/` 是操作前的记录，`op.json` 是一次操作（参数按位展开、不经过 argv），`expected/` 是操作后的产物。`"expect": "return"` 的用例只比返回值，产物带当天日期的用例用 `"clock"` 钉死时钟。
+- 黄金语料一个用例一个目录（`tests/fixtures/<用例名>/`）：`input/` 是操作前的记录，`op.json` 是一次操作（参数按位展开、不经过 argv），`expected/` 是操作后的产物。`"expect": "return"` 的用例只比返回值，产物带当天日期的用例用 `"clock"` 钉死时钟。用例要把一份自带插件装进它的临时项目（走 `conductor.pluginCommand` 的用例就是这样）时，用 `op.json` 的 `plugins` 点名那个文件夹，铺台时从 `plugins/` 拷进去——不在 `input/` 里养第二份插件文件。
 - token 规则、比对尺子与生成侧入口都在 `tests/helpers/corpus.ts`：期望产物由它铺台生成，别手写。
 - 新增逻辑补测试，且只锁不变量：锁冻结面、锁记录词汇、锁哈希不变，不锁易变的实现细节。测试都放 `tests/`；引擎操作（读写 `.superworker` 记录）一律在临时目录做，完整套件前后仓库根 `.superworker` 的哈希不变。
 - 守卫只看源码树与包的形状：`.py` 文件、外部依赖、包根 `bin/`、进程入口与安装期脚本，命中即红。

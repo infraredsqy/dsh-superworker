@@ -1,9 +1,10 @@
 {
-  "path": "ledger.instructions.add",
+  "path": "conductor.pluginCommand",
+  "plugins": ["instruction"],
   "args": [
     {
-      "text": "read the spec of this node first, then start",
-      "scope": "global"
+      "word": "instruction",
+      "argv": ["add", "--scope", "global", "--text", "read the spec of this node first, then start"]
     }
   ]
 }

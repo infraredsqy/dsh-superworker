@@ -181,30 +181,40 @@ test('help layered on args: the tool\'s answer is byte-identical to the engine o
   }
 })
 
-test('Every write the panel can do has a word in the table', async () => {
-  const { COMMANDS, GROUPS } = await import('superworker-core')
-  // The panel's write endpoints, and the line each one runs (the gateway spells them).
-  const writes = [
+test('Every write the panel can do has a word the surface answers', async () => {
+  const { COMMANDS, GROUPS, open } = await import('superworker-core')
+  // The panel's write endpoints, and the line each one runs (the gateway spells them, this side).
+  // The four instruction writes run a word the shipped `instruction` plugin claims; the settings one
+  // runs a core word. Where a word comes from is the point: a panel write whose word nobody answers
+  // would be a button that fails on its first press.
+  const triggered = [
     ['addInstruction', ['instruction', 'add']],
     ['archiveInstruction', ['instruction', 'resolve']],
     ['reviveInstruction', ['instruction', 'revive']],
     ['removeInstruction', ['instruction', 'rm']],
-    ['setConfig', ['config', 'set']],
   ]
-  for (const [endpoint, argv] of writes) {
-    const [group, verb] = argv
-    const groupRow = GROUPS[group]
-    assert.ok(groupRow !== undefined, `${endpoint}: the table has no ${group} group`)
-    assert.ok(
-      (groupRow.commands ?? []).some((command) => command.word === verb),
-      `${endpoint}: the ${group} group has no ${verb} word`,
-    )
-    assert.ok(COMMANDS[`${group} ${verb}`] !== undefined, `${endpoint}: the leaf line ${group} ${verb} is not in the table`)
+  const pluginWords = (
+    await open('\\\\tmp\\superworker-tool-words', { pluginsDir: shippedPluginsDir() }).conductor.pluginCommands()
+  ).map((entry) => entry.name)
+  for (const [endpoint, argv] of triggered) {
+    const word = argv[0]
+    assert.ok(pluginWords.includes(word), `${endpoint}: no installed plugin claims ${word} (installed: ${pluginWords.join(', ')})`)
+    assert.equal(GROUPS[word], undefined, `${endpoint}: the core table carries ${word} too — the core would win and the plugin never route`)
+    assert.equal(COMMANDS[`${word} add`], undefined, `${endpoint}: the core table still carries ${word}'s verbs`)
   }
+  // A core word is still a core word: the settings write has a row in the table.
+  const [group, verb] = ['config', 'set']
+  const groupRow = GROUPS[group]
+  assert.ok(groupRow !== undefined, 'setConfig: the table has no config group')
+  assert.ok(
+    (groupRow.commands ?? []).some((command) => command.word === verb),
+    'setConfig: the config group has no set word',
+  )
+  assert.ok(COMMANDS[`${group} ${verb}`] !== undefined, `setConfig: the leaf line ${group} ${verb} is not in the table`)
   // The gateway really walks those five endpoints — the mapping above answers for the
   // class's own write surface, checked here by name.
   const { SuperworkerRecordsGateway } = await import('../src/host/gateway.ts')
-  for (const [endpoint] of writes) {
+  for (const endpoint of ['addInstruction', 'archiveInstruction', 'reviveInstruction', 'removeInstruction', 'setConfig']) {
     assert.equal(typeof SuperworkerRecordsGateway.prototype[endpoint], 'function', `${endpoint} is on the gateway`)
   }
 })

@@ -1,6 +1,10 @@
 {
-  "path": "ledger.instructions.revive",
+  "path": "conductor.pluginCommand",
+  "plugins": ["instruction"],
   "args": [
-    "i-0001"
+    {
+      "word": "instruction",
+      "argv": ["revive", "i-0001"]
+    }
   ]
 }

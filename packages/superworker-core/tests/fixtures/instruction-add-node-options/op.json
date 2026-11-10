@@ -1,14 +1,19 @@
 {
-  "path": "ledger.instructions.add",
+  "path": "conductor.pluginCommand",
+  "plugins": ["instruction"],
   "args": [
     {
-      "text": "clear the open questions before wrapping up",
-      "scope": "node",
-      "node": "@node-b@",
-      "target": "boundary",
-      "said_by": "owner",
-      "note": "read it aloud at every wrap-up",
-      "stop_after_nodes": 2
+      "word": "instruction",
+      "argv": [
+        "add",
+        "--scope", "node",
+        "--node", "@node-b@",
+        "--target", "boundary",
+        "--said-by", "owner",
+        "--note", "read it aloud at every wrap-up",
+        "--stop-after-nodes", "2",
+        "--text", "clear the open questions before wrapping up"
+      ]
     }
   ]
 }

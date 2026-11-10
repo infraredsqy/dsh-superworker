@@ -8,8 +8,8 @@
 - `helpers/` — 共享替身与语料重放器：铺台、token 规则与比对尺子都在 `corpus.ts`
 - `guard.test.ts` — 硬边界与包的形状守卫
 - `api-docs.test.ts` `surface.test.ts` — `docs/api.md` 与包出口、冻结面对拍
-- `dag-*` `cycles-commands` `instructions-commands` `records` `record-io` `format` — 记录与它的动作面
+- `dag-*` `cycles-commands` `records` `record-io` `format` — 记录与它的动作面；指令清单那组在 `plugin-instruction-*`（归属与动词都在插件里）
 - `ledger-*` `layout` `atomic-write` `superworker-dir-hash` `merge-ledger-bin` — 立起记录目录、布局、写入底座与合并驱动的进程入口
 - `conductor-*` `config` `sessions` `env-switches` `clock` `tempclean` `handle-additions` `doctor-*` — 推线、设置、会话、运行期开关、时刻、清理与体检
 - `executor` `git-seam` `fs-helpers` `handle-home` `stubs` `global-setup` — 几条接缝（含句柄的机器层）、替身与全库的前后哈希守卫
-- `plugin-*` — 插件框架，外加自带的三个插件
+- `plugin-*` — 插件框架，外加自带的四份插件

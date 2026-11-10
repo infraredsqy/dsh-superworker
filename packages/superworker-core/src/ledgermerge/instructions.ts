@@ -4,8 +4,9 @@
  * A record indexed by `id`, with the merged result written back as a list; the record also carries `removed`, the
  * tombstone table (an `id` plus a timestamp, no text). What this engine adds on top of the generic walk:
  *
- * - entries propagate deletions like the graph does: one side takes the entry off (`ledger.instructions.remove`) and
- *   the other leaves it alone, so it is gone. One side takes it off and the other edited it is the graph's
+ * - entries propagate deletions like the graph does: one side takes the entry off (`instruction rm`, the verb the
+ *   `instruction` plugin owns) and the other leaves it alone, so it is gone. One side takes it off and the other
+ *   edited it is the graph's
  *   "delete vs edit" shape: a conflict, judged by a person.
  * - removal traces are unioned by `id` — nobody takes one back, and they are the evidence that keeps two machines
  *   from minting the same id when they pull from each other. Two machines each removing the same instruction differ

@@ -20,7 +20,7 @@ const docs = readFileSync(fileURLToPath(new URL('../docs/api.md', import.meta.ur
 /** The verb rows of the document's tables: a first-column cell spelled `<namespace>.<verb>` (`ledger.init`, `conductor.next`, `config.get` …). */
 function documentedVerbs(): string[] {
   const found = new Set<string>();
-  const row = /^\|\s*`((?:ledger(?:\.(?:dag|cycles|instructions))?|config|sessions|conductor)\.[A-Za-z]\w*)`\s*\|/gm;
+  const row = /^\|\s*`((?:ledger(?:\.(?:dag|cycles))?|config|sessions|conductor)\.[A-Za-z]\w*)`\s*\|/gm;
   for (const match of docs.matchAll(row)) found.add(match[1]!);
   return [...found].sort();
 }
@@ -35,7 +35,6 @@ function handleVerbs(): string[] {
   const groups: ReadonlyArray<readonly [string, object]> = [
     ['ledger.dag', superworker.ledger.dag],
     ['ledger.cycles', superworker.ledger.cycles],
-    ['ledger.instructions', superworker.ledger.instructions],
     ['config', superworker.config],
     ['sessions', superworker.sessions],
     ['conductor', superworker.conductor],

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { vi } from 'vitest';
 import { jsonBytes, jsonOptionsForRecord, type RecordKind } from '../../src/jsonio';
 import { createConfigNamespace } from '../../src/config';
@@ -74,6 +75,14 @@ export interface CorpusOp {
    * literally and the case stays green on any day. Unset means the real clock.
    */
   readonly clock?: string;
+  /**
+   * The plugin folders this case's project has installed, by folder name, copied out of the shipped
+   * set (`plugins/`) when the case is staged. A case that writes a record some plugin owns (`the
+   * instruction account`, the issue pool) passes a word of that plugin's surface through
+   * `conductor.pluginCommand`, so the temp project has to carry that plugin: this is how it says
+   * which one, without a second copy of the plugin's files living in `fixtures/`.
+   */
+  readonly plugins?: readonly string[];
 }
 
 /**
@@ -460,6 +469,9 @@ interface StagedCase {
   readonly maps: TokenMaps;
 }
 
+/** The shipped plugin set a case can install into its temp project (`op.plugins`). */
+const SHIPPED_PLUGINS = fileURLToPath(new URL('../../plugins/', import.meta.url));
+
 /**
  * The staging shared by case replay and expectation generation: temporary project root → (non-init
  * cases pass the init gate first) → lay down the materialised input → hand the scene to the caller.
@@ -514,6 +526,11 @@ async function withStagedCase<T>(
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, text, 'utf8');
     }
+    // The plugin folders this case's project has installed: copied out of the shipped set as they
+    // are (nothing is generated, and the case's `input/` carries no second copy of a plugin's files).
+    for (const name of op.plugins ?? []) {
+      cpSync(join(SHIPPED_PLUGINS, name), join(root, 'plugins', name), { recursive: true });
+    }
     // The clock pin covers the operation and the comparison of its products: a case that records the
     // current date in a product declares one, so its expectation can hold that date literally.
     const pin = op.clock === undefined ? null : parseClockPin(op.clock);
@@ -560,10 +577,11 @@ export async function replayCase(caseDir: string, run?: CorpusRunner): Promise<R
     // The config and conductor namespaces close "home" into the temporary project root
     // (<root>/_home): machine-wide reads and writes never touch the real machine's ~/.superworker, and the
     // generation side uses the same convention (SUPERWORKER_HOME_DIR=<sandbox>/_home).
-    // The conductor's plugin directory uses the default (<root>/plugins) and is provided by the
-    // case's input/ as needed; the dispatch green-light path hands over a simulated executor that
-    // opens a session and comes back with a receipt (the replay locks product bytes only, and the
-    // session a receipt names does not enter the comparison).
+    // The conductor's plugin directory uses the default (<root>/plugins); the cases that pass one of a
+    // shipped plugin's words through `pluginCommand` name that plugin in `op.plugins`, which staging
+    // copies into the temp project (a plugin is installed, not linked). The dispatch green-light path
+    // hands over a simulated executor that opens a session and comes back with a receipt (the replay
+    // locks product bytes only, and the session a receipt names does not enter the comparison).
     const home = join(root, '_home');
     const superworker = {
       ...open(root),

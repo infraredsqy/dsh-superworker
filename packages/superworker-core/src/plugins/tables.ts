@@ -154,7 +154,10 @@ function knobLine(name: string, spec: KnobSpec): string {
  * list, so it is not printed here either, and a name an earlier folder already holds is not printed twice
  * (the first folder keeps it, exactly as the merged table and the routing table do).
  */
-export function pluginListing(folders: readonly PluginFolder[]): string[] {
+export function pluginListing(
+  folders: readonly PluginFolder[],
+  skillsOf: (folder: PluginFolder) => readonly string[],
+): string[] {
   const out: string[] = [];
   const held = new Set<string>();
   for (const folder of folders) {
@@ -182,6 +185,8 @@ export function pluginListing(folders: readonly PluginFolder[]): string[] {
     }
     const commands = commandsOf(folder);
     if (commands.length > 0) out.push(`      commands: ${commands.join(', ')}`);
+    const skills = skillsOf(folder);
+    if (skills.length > 0) out.push(`      skills: ${skills.join(', ')}`);
   }
   return out;
 }

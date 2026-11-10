@@ -221,9 +221,9 @@ dsh plugin --profile <名> remove dsh-superworker
 ```
 
 面板那一行从 profile 的 `dsh.profile.bundles` 里消失；再装上同一个 `.tgz` 就回到新的这份。技能那一半也由发布件供给：`issue` 与 `test-audit` 两个插件带的四条
-（`sw-issue-scan` / `sw-issue-repair` / `sw-issue-discuss` / `sw-test-audit`），加上 `pipeline` 插件带的三条核心技能
-（`sw-conduct` / `sw-route` / `sw-instruct`，每份把它正文指向的 `shared/superworker/` 单页带在自己目录里）。
-都落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的同哈希，根序 rank 400）。派发的第一行
+（`sw-issue-scan` / `sw-issue-repair` / `sw-issue-discuss` / `sw-test-audit`），加上 `pipeline` 插件带的两条核心技能
+（`sw-conduct` / `sw-route`，每份把它正文指向的 `shared/superworker/` 单页带在自己目录里）与 `instruction` 插件带的一条
+（`sw-instruct`）。都落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的同哈希，根序 rank 400）。派发的第一行
 `/sw-conduct <节点 id>` 因此在干净机器上也读得到；DSH 自己的 `~\.agents\skills` 是 rank 500 的那一根，
 同一个名字在它面前读的是 `$DSH_HOME/skills` 这一份。
 

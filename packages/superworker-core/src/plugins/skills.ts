@@ -36,6 +36,21 @@ export function skillFolders(folder: PluginFolder): PluginSkillFolder[] {
   return out;
 }
 
+/**
+ * The skills one plugin ships, one line per method: the method name and the languages it comes in
+ * (`sw-conduct (en, zh)`). The doctor's listing prints these, so a plugin's block says what text it
+ * brings along, not only which command words and knobs it claims.
+ */
+export function skillNamesOf(folder: PluginFolder): string[] {
+  const byMethod = new Map<string, string[]>();
+  for (const skill of skillFolders(folder)) {
+    const langs = byMethod.get(skill.method) ?? [];
+    langs.push(skill.lang);
+    byMethod.set(skill.method, langs);
+  }
+  return [...byMethod.keys()].sort(byName).map((method) => `${method} (${byMethod.get(method)!.sort(byName).join(', ')})`);
+}
+
 /** The two ways skills and declarations disagree: a method a metric names has no skill in its own folder; or one skill name is shipped by two plugins. */
 export function skillProblems(folders: readonly PluginFolder[]): string[] {
   const out: string[] = [];

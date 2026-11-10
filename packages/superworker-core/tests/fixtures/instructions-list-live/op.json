@@ -1,8 +1,10 @@
 {
-  "path": "ledger.instructions.list",
+  "path": "conductor.pluginCommand",
+  "plugins": ["instruction"],
   "args": [
     {
-      "live": true
+      "word": "instruction",
+      "argv": ["list", "--live"]
     }
   ],
   "expect": "return"

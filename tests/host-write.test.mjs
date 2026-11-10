@@ -18,10 +18,12 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { answer, open } from 'superworker-core'
 import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
+import { readReading } from '../src/host/records.ts'
 import { shippedPluginsDir } from '../src/host/skill-paths.ts'
 import { pinHome } from './helpers/env.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
 import { configOnDisk, project as throwaway } from './helpers/superworker-project.mjs'
+import { fakeWorkspaceFiles } from './helpers/workspace-files-port.mjs'
 
 /* One machine layer for this file. The global settings layer lives in the home directory, and
  * `SUPERWORKER_HOME_DIR` is the engine's own switch for it: a test may not read the developer's own home. */
@@ -173,6 +175,46 @@ test('Removing one: the sentence goes with the record, and the tail back is REMO
     assert.match(outcome.text, new RegExp(`REMOVED ${id}$`, 'u'))
     assert.equal(instructionSaying(stage.root, 'delete this one'), undefined, 'removing leaves no sentence')
     assert.deepEqual(instructionsOnDisk(stage.root), [], 'not one entry is left in the record')
+  } finally {
+    stage.done()
+  }
+})
+
+test('The panel\'s instructions column follows the writes: add, archive, revive and delete each move what the read shows', async () => {
+  const stage = await project()
+  try {
+    const gateway = new SuperworkerRecordsGateway(context(stage.root))
+    /* The reading the panel draws takes the record through the workspace-file port; this case feeds
+     * that same port from the files the writes just landed, so what it asserts is the panel's own
+     * path from a write to the cells it shows — not a second reader of instructions.json. */
+    const readingNow = async () => {
+      const files = {}
+      for (const rel of ['.superworker/ideas.json', '.superworker/state.json', '.superworker/instructions.json']) {
+        try {
+          files[rel] = readFileSync(join(stage.root, ...rel.split('/')), 'utf8')
+        } catch {
+          /* absent is a reading of its own; the source cell says so */
+        }
+      }
+      const port = fakeWorkspaceFiles(files, { tier: 500 })
+      return readReading(port, { sessionId: 's1', workspaceRoot: stage.root }, new AbortController().signal)
+    }
+    const entryIn = (reading) => reading.instructions.find((row) => row.text === 'the panel follows this one')
+
+    const added = await gateway.addInstruction('s1', '', 'the panel follows this one', 'global', '', '')
+    assert.equal(added.ok, true, added.detail)
+    const shown = entryIn(await readingNow())
+    assert.ok(shown, 'the added sentence is in the reading')
+    assert.equal(shown.state, 'live')
+
+    await gateway.archiveInstruction('s1', '', shown.id)
+    assert.equal(entryIn(await readingNow()).state, 'withdrawn', 'archiving moves the reading with no second write')
+
+    await gateway.reviveInstruction('s1', '', shown.id)
+    assert.equal(entryIn(await readingNow()).state, 'live', 'reviving moves it back')
+
+    await gateway.removeInstruction('s1', '', shown.id)
+    assert.equal(entryIn(await readingNow()), undefined, 'the deleted sentence is gone from the reading, not shown as archived')
   } finally {
     stage.done()
   }

@@ -1,6 +1,10 @@
 {
-  "path": "ledger.instructions.remove",
+  "path": "conductor.pluginCommand",
+  "plugins": ["instruction"],
   "args": [
-    "i-0001"
+    {
+      "word": "instruction",
+      "argv": ["rm", "i-0001"]
+    }
   ]
 }
