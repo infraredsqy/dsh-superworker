@@ -55,6 +55,9 @@ export function buildConfig(z: Schemastery): Schema<Record<string, unknown>> {
     [PANEL_PREF_FIELDS.autoRelay]: live(
       z.boolean().default(PANEL_PREF_DEFAULTS.autoRelay),
     ),
+    [PANEL_PREF_FIELDS.injectInstructions]: live(
+      z.boolean().default(PANEL_PREF_DEFAULTS.injectInstructions),
+    ),
   })
 }
 

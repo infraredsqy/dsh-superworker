@@ -22,6 +22,7 @@ export const PANEL_PREF_FIELDS = {
   showArchived: 'showArchived',
   showOtherStates: 'showOtherStates',
   autoRelay: 'autoRelay',
+  injectInstructions: 'injectInstructions',
 } as const
 
 /** Lower bound of the wire column width on the detail's left. */
@@ -45,7 +46,10 @@ export const VIEW_IDS: readonly ViewId[] = ['map', 'detail', 'notes', 'issue', '
  * both still get a factory default here.
  *
  * The relay switch defaults to on: whether a round is opened by hand or by
- * the relay should not depend on a row nobody has touched.
+ * the relay should not depend on a row nobody has touched. The injection
+ * switch defaults to on for the same reason — a workspace that holds standing
+ * constraints carries them without anyone visiting the settings page first,
+ * and the row is there for the one who wants silence.
  */
 export const PANEL_PREF_DEFAULTS = {
   sideWidth: SIDE_DEFAULT,
@@ -53,4 +57,5 @@ export const PANEL_PREF_DEFAULTS = {
   showArchived: false,
   showOtherStates: false,
   autoRelay: true,
+  injectInstructions: true,
 } as const

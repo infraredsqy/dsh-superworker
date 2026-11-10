@@ -7,7 +7,7 @@
  * settings service arrives (no change means no subscriber wake-up — `useSyncExternalStore`
  * depends on it; breaking that means the panel re-renders forever).
  *
- * A second set asks `buildConfig` directly: all four fields present in the host schema, each
+ * A second set asks `buildConfig` directly: every field present in the host schema, each
  * marked volatile, and the factory defaults and bounds matching the field table's numbers. A
  * field missing the volatile mark simply never appears on the settings page, with no error
  * either — so a stand-in that records every call stands in for schemastery to press that
@@ -68,8 +68,9 @@ test('a fully written settings document reads as those panel values', () => {
     showArchived: true,
     showOtherStates: true,
     autoRelay: false,
+    injectInstructions: false,
   })
-  assert.deepEqual(prefs, { sideWidth: 200, tab: 'detail', archived: true, otherStates: true, autoRelay: false })
+  assert.deepEqual(prefs, { sideWidth: 200, tab: 'detail', archived: true, otherStates: true, autoRelay: false, injectInstructions: false })
 })
 
 test('sections that cannot be read fall back to the factory ones, the rest read through', () => {
@@ -84,12 +85,16 @@ test('sections that cannot be read fall back to the factory ones, the rest read 
   )
   assert.deepEqual(
     prefsFromSection({ defaultTab: 'issue', showArchived: 1, showOtherStates: 0 }),
-    { sideWidth: DEFAULT_PREFS.sideWidth, tab: 'issue', archived: false, otherStates: false, autoRelay: true },
+    { sideWidth: DEFAULT_PREFS.sideWidth, tab: 'issue', archived: false, otherStates: false, autoRelay: true, injectInstructions: true },
   )
   /* The relay switch reads `false` when the document says false; a value that is not a boolean
      (an older document, a hand edit) falls back to the factory default, which is on. */
   assert.deepEqual(prefsFromSection({ autoRelay: true }).autoRelay, true)
   assert.deepEqual(prefsFromSection({ autoRelay: 'no' }).autoRelay, true)
+  /* The injection switch has the same shape and the same default: an older document that never
+     named it keeps carrying the instructions, and a value nobody can read reads as on. */
+  assert.deepEqual(prefsFromSection({ injectInstructions: false }).injectInstructions, false)
+  assert.deepEqual(prefsFromSection({ injectInstructions: 'off' }).injectInstructions, true)
   /* A field this version no longer has (`infoLevel`, the old cards-per-column tier) is dead weight
    * in an old document: it reads as nothing rather than as a bad value. */
   assert.deepEqual(prefsFromSection({ infoLevel: 'lean' }), DEFAULT_PREFS)
@@ -138,7 +143,7 @@ test('once the form is attached the reading is that section, revision and all', 
   const source = createPrefsSource()
   source.attach(form)
   const snapshot = source.getSnapshot()
-  assert.deepEqual(snapshot.prefs, { sideWidth: 300, tab: 'issue', archived: true, otherStates: false, autoRelay: true })
+  assert.deepEqual(snapshot.prefs, { sideWidth: 300, tab: 'issue', archived: true, otherStates: false, autoRelay: true, injectInstructions: true })
   assert.equal(snapshot.status, 'ready')
   assert.equal(snapshot.revision, 1)
   assert.equal(snapshot.writable, true)
@@ -273,7 +278,7 @@ function fakeSchemastery() {
   }
 }
 
-test('the host schema: all four fields are there, each marked volatile', () => {
+test('the host schema: every field is there, each marked volatile', () => {
   const z = fakeSchemastery()
   const schema = buildConfig(z)
   assert.deepEqual(Object.keys(schema.dict), Object.values(PANEL_PREF_FIELDS))
@@ -318,6 +323,14 @@ test('the host schema: kinds, factory defaults and bounds are the field table\'s
     extra: {},
   })
   assert.equal(PANEL_PREF_DEFAULTS.autoRelay, true)
+  /* The injection switch is the second one that defaults to on, for the same reason: nobody has to
+   * visit the settings page before a workspace's standing constraints start being carried. */
+  assert.deepEqual(read(PANEL_PREF_FIELDS.injectInstructions), {
+    kind: 'boolean',
+    defaults: [PANEL_PREF_DEFAULTS.injectInstructions],
+    extra: {},
+  })
+  assert.equal(PANEL_PREF_DEFAULTS.injectInstructions, true)
 })
 
 test('prefs no longer carries POLICY_KEYS: no second policy-key list on the panel side', async () => {

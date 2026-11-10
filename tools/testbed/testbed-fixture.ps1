@@ -10,7 +10,9 @@
 
 # Create a synthetic workspace directory (with a small countable record) and its session logs, and
 # write the manifest to <Root>\logs\fixture.json.
-# Parameters: -WorkspaceName / -SessionCount add a second workspace and session; -EmptyWorkspaceName adds a session-less workspace.
+# Parameters: -WorkspaceName / -SessionCount add a second workspace and session; -EmptyWorkspaceName adds a session-less workspace;
+# -LinkedWorktree makes the workspace the main tree of a real git repo and puts the session's cwd in a checkout of it
+# (the workspace row then reports the checkout as `path` and the main tree as `mainPath`).
 function New-TestbedFixture {
   param(
     [Parameter(Mandatory=$true)][string]$Root,
@@ -18,6 +20,7 @@ function New-TestbedFixture {
     [string]$WorkspaceName = 'workspace-alpha',
     [int]$SessionCount = 1,
     [string]$EmptyWorkspaceName = '',
+    [switch]$LinkedWorktree,
     [string]$NodeExe = 'node'
   )
   $testbedHome = Join-Path $Root 'home'
@@ -36,6 +39,23 @@ function New-TestbedFixture {
   $wsDir = Join-Path $Root ('workspaces\' + $WorkspaceName)
   if (-not (Test-Path -LiteralPath $wsDir)) { New-Item -ItemType Directory -Force -Path $wsDir | Out-Null }
   $wsPath = Get-CanonicalPath -Path $wsDir -NodeExe $NodeExe
+
+  # The linked-worktree form: the workspace directory becomes the main tree of a real git repo, and the
+  # session's working directory is a checkout of it. That checkout carries no `.superworker` of its own
+  # — the record stays in the main tree — which is the shape a node's fork-mode session has, and the
+  # shape the injection's project-root resolution has to lead back from. The main tree is reported as
+  # `mainPath` so a probe can seed the record where it really lives.
+  $sessionCwd = $wsPath
+  if ($LinkedWorktree) {
+    $null = Invoke-TestbedGit -Cwd $wsDir -Arguments @('init', '-b', 'main')
+    $null = Invoke-TestbedGit -Cwd $wsDir -Arguments @('config', 'core.autocrlf', 'false')
+    Write-TextFile -Path (Join-Path $wsDir 'seed.md') -Text "# seed`n"
+    $null = Invoke-TestbedGit -Cwd $wsDir -Arguments @('add', '-A')
+    $null = Invoke-TestbedGit -Cwd $wsDir -Arguments @('commit', '-m', 'seed', '--no-gpg-sign')
+    $wtDir = Join-Path $Root ('workspaces\' + $WorkspaceName + '-wt')
+    $null = Invoke-TestbedGit -Cwd $wsDir -Arguments @('worktree', 'add', $wtDir, '-b', 'sw-linked')
+    $sessionCwd = Get-CanonicalPath -Path $wtDir -NodeExe $NodeExe
+  }
 
   $records = [ordered]@{
     kind = 'panel-records'
@@ -64,7 +84,7 @@ function New-TestbedFixture {
 
   for ($i = 1; $i -le $SessionCount; $i++) {
     $sid = [guid]::NewGuid().ToString()
-    $projectKey = Get-ProjectKey -Cwd $wsPath
+    $projectKey = Get-ProjectKey -Cwd $sessionCwd
     $sessionDir = Join-Path (Join-Path $sessions $projectKey) (Get-EncodedSegment -Raw $sid)
     $logPath = Join-Path $sessionDir 'session.v4.jsonl'
     $createdMs = $epochMs + $i
@@ -73,7 +93,7 @@ function New-TestbedFixture {
     # side allows; one extra key and the whole session is dropped.
     $header = '{"type":"session","version":4,"id":' + (ConvertTo-JsonString $sid) +
       ',"createdAt":' + $createdMs +
-      ',"cwd":' + (ConvertTo-JsonString $wsPath) +
+      ',"cwd":' + (ConvertTo-JsonString $sessionCwd) +
       ',"isSeeded":false,"delegationDepth":0}'
     # Session body: one minimal pair of turn/start + turn/end. seq must match line order (from 0, no gaps).
     $event0 = '{"type":"turn/start","seq":0,"time":' + ($createdMs + 1) + ',"data":{"turn":1}}'
@@ -84,7 +104,7 @@ function New-TestbedFixture {
     $sessionRows.Add([ordered]@{
       sessionId = $sid
       workspaceId = $wsId
-      workspacePath = $wsPath
+      workspacePath = $sessionCwd
       logPath = $logPath
       projectDir = $projectKey
       eventCount = 2
@@ -94,11 +114,13 @@ function New-TestbedFixture {
   $workspaces.Add([ordered]@{
     workspaceId = $wsId
     name = $WorkspaceName
-    path = $wsPath
+    path = $sessionCwd
     title = 'Synthetic Workspace Alpha'
     sessionIds = @($wsSessionIds.ToArray())
     empty = $false
     recordsPath = (Join-Path $wsDir 'panel-records.json')
+    linkedWorktree = [bool]$LinkedWorktree
+    mainPath = $wsPath
   })
 
   if ($EmptyWorkspaceName.Length -gt 0) {

@@ -67,6 +67,8 @@ export const en: Readonly<Record<WordKey, string>> = {
   'settings.other-states.desc': 'Also lists acknowledged, rejected, and resolved issues.',
   'settings.auto-relay.label': 'Open the next round after a session settles',
   'settings.auto-relay.desc': 'When on, the next round opens by itself once a line’s session settles and the plan says dispatch; when off, the line waits and a person dispatches.',
+  'settings.inject.label': 'Carry the instructions in force into the session context',
+  'settings.inject.desc': 'When on, every step of a session carries the instructions in force in its workspace — the same words `instruction list` prints there. When off, not one byte is injected.',
   'settings.unavailable': 'DSH does not expose {ns} as a settings namespace yet, so changes here are not saved.',
 
   /* ── Words shared across the panes ────────────────────────────────────────────────────────── */

@@ -735,6 +735,7 @@ function Invoke-TestbedProvision {
     [Parameter(Mandatory = $true)][string]$Workspace,
     [Parameter(Mandatory = $true)][int]$SessionCount,
     [string]$EmptyWorkspace = '',
+    [switch]$LinkedWorktree,
     [Parameter(Mandatory = $true)][string]$DshCmd,
     [Parameter(Mandatory = $true)][string]$NodeExe
   )
@@ -747,7 +748,7 @@ function Invoke-TestbedProvision {
 
   $profileDir = New-TestbedProfile -TestbedHome $testbedHome -Profile $Profile -DshCmd $DshCmd
   $manifest = New-TestbedFixture -Root $Root -Profile $Profile -WorkspaceName $Workspace `
-    -SessionCount $SessionCount -EmptyWorkspaceName $EmptyWorkspace -NodeExe $NodeExe
+    -SessionCount $SessionCount -EmptyWorkspaceName $EmptyWorkspace -LinkedWorktree:$LinkedWorktree -NodeExe $NodeExe
 
   # Validate the header first, then the manifest: an invalid header makes that session vanish silently, so it must be caught here.
   foreach ($session in $manifest.sessions) {

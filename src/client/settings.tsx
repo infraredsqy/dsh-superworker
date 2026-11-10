@@ -4,8 +4,9 @@
  * This section lives in DSH's own settings panel, not in the same tree as the main panel, so it
  * cannot reach the sheets bundled into `.superworker-page` at build time — it carries its own stylesheet,
  * class names all use the `superworker-settings-` prefix, and colors use only DSH's theme tokens. The page holds
- * only the panel's two display switches, and it reads the same settings form as the panel, so
- * flipping a switch changes the panel on the spot.
+ * only the panel's four switches -- archived, other states, auto relay, and the injection of the
+ * instructions in force -- and it reads the same settings form as the panel, so flipping a switch
+ * changes the panel (or that injection) on the spot.
  */
 import * as React from 'react'
 import { PANEL_PREF_FIELDS } from '../host/settings-fields.ts'
@@ -177,6 +178,22 @@ function SettingsPage(props: SettingsSectionProps): React.ReactElement {
             aria-checked={prefs.autoRelay}
             aria-label={t('settings.auto-relay.label')}
             onClick={() => write(PANEL_PREF_FIELDS.autoRelay, !prefs.autoRelay)}
+          >
+            <span className="superworker-settings-swthumb" />
+          </button>
+        )}
+      />
+      <Row
+        label={t('settings.inject.label')}
+        desc={t('settings.inject.desc')}
+        control={(
+          <button
+            type="button"
+            className="superworker-settings-switch"
+            role="switch"
+            aria-checked={prefs.injectInstructions}
+            aria-label={t('settings.inject.label')}
+            onClick={() => write(PANEL_PREF_FIELDS.injectInstructions, !prefs.injectInstructions)}
           >
             <span className="superworker-settings-swthumb" />
           </button>

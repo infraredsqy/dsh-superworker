@@ -45,6 +45,8 @@ export interface PanelPrefs {
   readonly archived: boolean
   /** Whether the issues view also puts the three handled states back on the page. */
   readonly otherStates: boolean
+  /** Whether the host carries the constraints in force into every session step as runtime context. */
+  readonly injectInstructions: boolean
   /** Whether the host opens the next round itself after a session settles and the plan says dispatch. */
   readonly autoRelay: boolean
 }
@@ -55,6 +57,7 @@ export const DEFAULT_PREFS: PanelPrefs = {
   archived: false,
   otherStates: false,
   autoRelay: PANEL_PREF_DEFAULTS.autoRelay,
+  injectInstructions: PANEL_PREF_DEFAULTS.injectInstructions,
 }
 
 export function clampSide(px: number): number {
@@ -74,12 +77,16 @@ export function prefsFromSection(section: unknown): PanelPrefs {
   const width = held[PANEL_PREF_FIELDS.sideWidth]
   const tab = held[PANEL_PREF_FIELDS.defaultTab]
   const relay = held[PANEL_PREF_FIELDS.autoRelay]
+  const inject = held[PANEL_PREF_FIELDS.injectInstructions]
   return {
     sideWidth: typeof width === 'number' && Number.isFinite(width) ? clampSide(width) : DEFAULT_PREFS.sideWidth,
     tab: VIEW_IDS.includes(tab as ViewId) ? (tab as ViewId) : DEFAULT_PREFS.tab,
     archived: held[PANEL_PREF_FIELDS.showArchived] === true,
     otherStates: held[PANEL_PREF_FIELDS.showOtherStates] === true,
     autoRelay: typeof relay === 'boolean' ? relay : DEFAULT_PREFS.autoRelay,
+    /* The one field whose default is "on": a workspace that holds standing constraints carries them
+     * without anyone visiting this page first, so an unreadable value reads as on. */
+    injectInstructions: typeof inject === 'boolean' ? inject : DEFAULT_PREFS.injectInstructions,
   }
 }
 
@@ -93,7 +100,7 @@ export interface PrefsWriteOp {
 /**
  * Write one change as the atomic action the settings service accepts.
  *
- * The path has a single segment, because all four fields in this section sit at the top level —
+ * The path has a single segment, because every field in this section sits at the top level —
  * the settings service decides by path whether a field is accepted, and one segment more or less
  * lands nowhere.
  */
@@ -181,6 +188,7 @@ function samePrefs(left: PanelPrefs, right: PanelPrefs): boolean {
     && left.archived === right.archived
     && left.otherStates === right.otherStates
     && left.autoRelay === right.autoRelay
+    && left.injectInstructions === right.injectInstructions
 }
 
 /**

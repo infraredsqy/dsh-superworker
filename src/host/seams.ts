@@ -3,8 +3,9 @@
  *
  * This half declares four services as inject requirements (`workspaceFiles`, `sessions`,
  * `sandboxPolicy`, `tools`); everything else it touches — the agent registry, the preset roster, the
- * workspace registry, the skills catalog, the default model, the logger, the event bus, the effect
- * seam — may or may not be mounted, so each is fetched structurally by name and anything answering
+ * workspace registry, the skills catalog, the default model, the prompt service (the runtime-context
+ * channel), the logger, the event bus, the effect seam — may or may not be mounted, so each is
+ * fetched structurally by name and anything answering
  * another shape counts as absent. That decision is made here, once per service: a module reads the
  * seam it needs and never spells `(ctx as {...})` itself, so a host shape change lands in one place
  * and a new optional service is one more function.
@@ -256,6 +257,45 @@ export function skillHostOf(ctx: Context): SkillHostContext {
   return {
     ...(skills === undefined ? {} : { skills: skills as unknown as SkillCatalogPort }),
     ...(logger === undefined ? {} : { logger }),
+  }
+}
+
+/**
+ * One dynamic runtime-context contribution, as DSH's prompt service takes it.
+ *
+ * The fields are the service's own; `text` may be a provider, and that provider is called
+ * synchronously at assembly and again at request admission (`refreshContext`), which is why the
+ * caller behind it reads a value it already holds rather than a file it would have to await.
+ */
+export interface PromptContextContribution {
+  readonly name: string
+  /** Where this contribution sits among the others: ascending, the service's own order numbers. */
+  readonly order: number
+  readonly text: string | ((context: unknown) => string)
+}
+
+/** The runtime-context half of the host's prompt service: one registration, one disposer. */
+export interface PromptContextPort {
+  context(contribution: PromptContextContribution): () => void
+}
+
+/**
+ * DSH's prompt service, when this host mounts one.
+ *
+ * The injection is an optional contribution: a deployment without the service (a headless
+ * composition, an older host) simply has no runtime context to add, and the rest of this half runs
+ * as it did. Fetched structurally like every other service in this file — the plugin never declares
+ * it as a requirement, so its absence cannot hold `apply` back.
+ */
+export function promptContextPortOf(ctx: Context): PromptContextPort | undefined {
+  const held = serviceOf(ctx, 'systemPrompt')
+  const register = memberOf(held, 'context')
+  if (held === undefined || register === undefined) return undefined
+  return {
+    context(contribution: PromptContextContribution): () => void {
+      const off = register.call(held, contribution)
+      return typeof off === 'function' ? (off as () => void) : () => undefined
+    },
   }
 }
 

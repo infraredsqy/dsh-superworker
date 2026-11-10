@@ -94,6 +94,38 @@ function Resolve-ApplicationExecutable {
   throw "cannot resolve an executable launcher named '$Name'"
 }
 
+# One git line for the fixtures: the fixed identity travels in the environment (nothing is written into
+# a temporary repo's own config), the working directory is always given, and a non-zero exit throws — an
+# unbuildable fixture would make every reading taken after it meaningless.
+function Invoke-TestbedGit {
+  param([Parameter(Mandatory=$true)][string]$Cwd, [Parameter(Mandatory=$true)][string[]]$Arguments)
+  $identity = @{
+    GIT_AUTHOR_NAME = 'superworker test'
+    GIT_AUTHOR_EMAIL = 'superworker-test@example.invalid'
+    GIT_COMMITTER_NAME = 'superworker test'
+    GIT_COMMITTER_EMAIL = 'superworker-test@example.invalid'
+    GIT_TERMINAL_PROMPT = '0'
+  }
+  $saved = @{}
+  foreach ($key in $identity.Keys) {
+    $saved[$key] = [Environment]::GetEnvironmentVariable($key)
+    [Environment]::SetEnvironmentVariable($key, [string]$identity[$key])
+  }
+  Push-Location -LiteralPath $Cwd
+  $previousEap = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = 'Continue'
+    $output = @(& git @Arguments 2>&1)
+    $code = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousEap
+    Pop-Location
+    foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key]) }
+  }
+  if ($code -ne 0) { throw ("git " + ($Arguments -join ' ') + " failed in $Cwd ($code): " + ($output -join ' ')) }
+  return ($output -join "`n")
+}
+
 # Write text: no BOM by default (JSON / JSONL parsers treat a BOM as corrupt data); line endings exactly as the caller's text.
 function Write-TextFile {
   param([Parameter(Mandatory=$true)][string]$Path, [Parameter(Mandatory=$true)][string]$Text)

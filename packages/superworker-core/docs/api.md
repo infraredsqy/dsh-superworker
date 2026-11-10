@@ -50,6 +50,7 @@ longResultPointerOf
 migrationPreconditions
 open
 parse
+projectRootOf
 skillFolders
 skillProblems
 specOf
@@ -88,7 +89,11 @@ migrate、合并驱动的进程交接）与其余词一样在词面的表上、�
 `commands` 现推，组动词只有一份）。`LONG_RESULT_LIMIT`（4000，按 UTF-8 字节计——与 `Buffer.byteLength` 同一把尺子，不是字符数）与
 `longResultPointerOf(stdout, word)` 是长结果的上限与指针，只在这一处定义：`dag list` / `dag search` /
 `session list` 三个词的应答超过上限时，投影层在尾部补指针问的下一句词，绝不静默截断；词面的打印
-不走它（印出的字节是它自己的契约）。
+不走它（印出的字节是它自己的契约）。`projectRootOf(named, start)` 是「这一行话落在哪个项目根上」
+那一问的唯一口径：`named` 给了就按它，否则按 `start`；linked worktree 的 checkout 根（`.git` 是文件、
+指向 `<主树>/.git/worktrees/<名>`）回溯到真有 `.superworker/` 的主树，其余（子目录、子模块、没有记录的
+主树）原样答它自己。宿主半身那道「这个会话的根上有没有记录」的存在性检查也问这一处，于是 worktree
+里跑的会话与它主树上的会话看到的是同一份指令记录。
 
 包另有一个进程入口 `sw-merge-ledger`（`package.json` 的 `bin` 里只有这一条，
 产物是 `dist/merge-ledger.mjs`）：git 的合并驱动只能靠进程叫，它是边界上唯一那个例外，做的是

@@ -1,8 +1,11 @@
 /**
  * Entry point of the host half's plugin: installs the `superworker` service on the
- * host, and arms the wake that registers the agent-facing `superworker` tool into the
+ * host, arms the wake that registers the agent-facing `superworker` tool into the
  * scope of exactly the agents with a reason to see it — a workspace holding a record
- * directory the pipeline recognizes, a pipeline skill load, or a `/sw-*` invocation.
+ * directory the pipeline recognizes, a pipeline skill load, or a `/sw-*` invocation —
+ * and carries the constraints in force in a session's workspace into that session's
+ * runtime context, one step at a time (`instruction-context.ts`; an optional
+ * contribution, off when no prompt service is mounted or the switch says so).
  *
  * It holds no data and caches nothing: every call resolves the workspace root
  * from the session identity on the spot. A process gateway is not in `inject`
@@ -25,6 +28,7 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-session'
 import { Config } from './config.ts'
 import { SuperworkerRecordsGateway } from './gateway.ts'
+import { installInstructionContext } from './instruction-context.ts'
 import { installSkillsWhenReady } from './skills/place.ts'
 import { installRelay, trackedExecutorOf } from './relay.ts'
 import { effectOf } from './seams.ts'
@@ -99,5 +103,10 @@ export function apply(ctx: Context, config?: unknown): unknown {
   const own = effectOf(ctx)
   own?.(() => relayOff, 'dsh-superworker: dispatch relay')
   own?.(() => wakeOff, 'dsh-superworker: tool wake')
+  /* The injection: the standing constraints in force in a session's workspace, carried into every
+   * step as runtime context. An optional contribution to the host's prompt service — a host without
+   * it registers nothing, and the switch in this line's settings can silence it entirely. */
+  const contextOff = installInstructionContext(ctx, config)
+  own?.(() => contextOff, 'dsh-superworker: instruction context')
   return installSkillsWhenReady(ctx)
 }

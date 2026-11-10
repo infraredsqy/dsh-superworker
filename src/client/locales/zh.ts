@@ -84,6 +84,8 @@ export const zh = {
   'settings.other-states.desc': '开启后，已承认、已驳回与已解决的问题一并列出。',
   'settings.auto-relay.label': '收尾后自动开下一棒',
   'settings.auto-relay.desc': '开启后，一条线的会话收尾、计划说派发时，下一棒自己开出来；关掉就停在等待，由人补棒。',
+  'settings.inject.label': '会话上下文里带上当前生效的指令',
+  'settings.inject.desc': '开启后，会话每一轮都带上本工作区当前生效的指令——与在那里跑一次 `instruction list` 逐字相同；关掉则一个字节都不注入。',
   'settings.unavailable': 'DSH 还没把 {ns} 暴露成设置命名空间，这里的改动不会保存。',
 
   /* ── Words shared across the panes ────────────────────────────────────────────────────────── */

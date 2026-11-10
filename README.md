@@ -12,7 +12,9 @@ writes from the panel go back to the same place.
 
 In a session the pipeline is also reachable as the agent-facing `superworker` tool: it answers the
 pipeline's words in place. A session whose workspace holds a `.superworker/` record sees the tool from its
-first step; anywhere else it appears only after one of the `sw-*` skills loads — until then that
+first step, and carries the instructions in force into every step as runtime context — the same text
+`instruction list` prints for that workspace, which for a git worktree is its main tree's listing.
+Anywhere else the tool appears only after one of the `sw-*` skills loads — until then that
 session's request header stays exactly as it would be without this plugin.
 
 ## Status
@@ -49,7 +51,8 @@ ignored. The version policy and the third route (installing from git) live in
 - a **Superworker** entry in the Web UI sidebar: views over the record — the map, details,
   instructions, the issue pool, and the panel's own settings
 - a **Superworker settings** section in the DSH settings: whether archived instructions show,
-  whether closed issues show
+  whether closed issues show, whether a settled line opens its next round by itself, and whether the
+  instructions in force are carried into the session context
 - to verify an install: `dsh --profile <name> --dump-config`, and look for the
   `# == dsh-superworker` section
 
