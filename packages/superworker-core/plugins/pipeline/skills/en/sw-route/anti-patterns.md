@@ -116,3 +116,21 @@ integration / acceptance after everything is done" show up in the graph
 
 **Correction signal**: the user says "this node does not need building", "I will try this one
 myself"
+
+## `route-reads-a-landed-line-as-a-started-node` — reading a landed line as a node at work
+
+**Symptom**: after `cycle start` / `cycle status <line> active` the agent reports "the line is
+open", "the first node is pinned, a bare /sw-conduct will pick it up", and reads the `Node:` lines
+in `cycle current` as a node running; no session was opened, and the user's "start this node" got
+only half an answer
+
+**Correction signal**: the user asks "did it run", "who is running"
+
+## `route-hands-over-a-command-without-pipeline` — the handed-over line dropped `[pipeline]`
+
+**Symptom**: the report ends with `/sw-conduct <node id>`, `[pipeline]` missing; the user runs it,
+that one node is done, and no close, no commit and push and no next node follows — the line sits
+where it was, waiting
+
+**Correction signal**: that session stops after the one node, and `cycle current` still has the
+line where it was

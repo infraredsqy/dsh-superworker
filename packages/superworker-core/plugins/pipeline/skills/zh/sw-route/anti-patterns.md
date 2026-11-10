@@ -90,3 +90,15 @@
 **症状**：图里出现「与用户讨论 X 的设计」「全部做完之后实机测试／联调／验收」这类节点
 
 **纠正信号**：用户说「这个节点不用建」「这个我自己试就行」
+
+## `route-reads-a-landed-line-as-a-started-node` · 把落线读成节点在跑
+
+**症状**：`cycle start` / `cycle status <线> active` 之后，Agent 报告「线已开启」「第一枚节点已固定，裸 /sw-conduct 也会接它」，`cycle current` 的 `Node:` 行被当成节点正在跑；现场一个会话都没开，用户那句「开启这个节点」只落了半句
+
+**纠正信号**：用户说「它跑了吗」「谁在跑」
+
+## `route-hands-over-a-command-without-pipeline` · 起跑那一行漏掉 `[pipeline]`
+
+**症状**：报告末尾给的是 `/sw-conduct <节点 id>`，少了 `[pipeline]`；用户敲下去只做这一枚，收尾、提交推送与下一枚都不接，线停在原处等人
+
+**纠正信号**：那个会话干完这一枚就收了手，`cycle current` 里线还停在原处

@@ -162,7 +162,9 @@ now, some have to enter the graph and queue, and the queued ones have an order a
   dependency. A line in service whose tags cover the new node takes it; when no line can take it,
   lay the two roads out for him to pick — which parked line to put back
   (`cycle status <line> active`), or open a new one
-  (`cycle start <slug> --title "<the user's own words>" --tags <tags>`). **Only the user
+  (`cycle start <slug> --title "<the user's own words>" --tags <tags>`; when the node this round
+  names is the one that starts rather than the ranking's pick, open the line with `cycle create`
+  instead — see step 5). **Only the user
   decides whether a line comes back to service**; your pen is only his hand. The decision is
   settled here, and the close only executes it (see step 5)
 
@@ -345,13 +347,20 @@ easily: when it really happened, write it down.
 
 ### Step 5: close out
 
-To run it right now, the line was settled together with the nodes in step 3; here you only land
-it, then collect the commits:
+To run it right now, the line was settled together with the nodes in step 3; here two moves land —
+**landing the line** and **starting the node** — and then the commits. The two go in order: the
+landing writes records and opens no session; the start opens the sessions, and the node has been
+running from that moment on.
 
 1. **Land the line** (the user has nodded; you are only the hand that executes): putting a parked
    line back runs `cycle status <line> active`; opening a new one runs
-   `cycle start <slug> --title "<the user's own words>" --tags <tags>` — `--tags` is required,
-   and matches these nodes' tags
+   `cycle create <slug> --title "<the user's own words>" --tags <tags>` when the node the user
+   named is the one this round starts (the line alone, nothing pinned), and
+   `cycle start <slug> --title "<the user's own words>" --tags <tags>` otherwise (the line plus the
+   head of the ranking pinned, `--parallel` defaulting to 1). `--tags` is required, and matches
+   these nodes' tags. **What this step reads**: the `Node:` lines in `cycle current` and the
+   `STARTED:` line `cycle start` prints record which nodes the line holds; the sessions open at
+   step 4's start
 2. **Collect the commits**, in two shots:
    - **One commit for the graph, the spec and the cycle records** (`docs:`, with the description
      saying which node was added / changed): `.superworker/ideas.json`, `.superworker/state.json` and
@@ -362,14 +371,31 @@ it, then collect the commits:
 3. **Verify**: `plan --cycle <line> --json` (leave `--cycle` out when just one line is in service) — the
    answer has to point at a dispatchable node; when it does not, an empty ready set means going
    back to grow the graph, and a tag block or a gate is read out as its `reason` says — **never
-   hand over a line that cannot run**
-4. **Hand over the keys**: the report ends with one line the user can run by pressing enter —
-   `/sw-conduct <node id>`; when the line picks its own way through, a bare `/sw-conduct`. Once he
-   presses enter, that session should not have to ask "who am I, which line am I on"; while the
-   line is still parked, give no line at all and say the state as it is
+   hand over a line that cannot run**. The node named in the round also gets its own readiness
+   reading: `dag info <node id>` returning `todo` with every dependency `completed` is what lets it
+   open; any other state means it is not ready yet — say the state and wait for it
+4. **Start it** (the default; skip this step only when the user says "not yet"):
+   - no node named: `advance --json` — it pins the nodes this line has free slots for, lands each
+     one's prompt and hands the cells to the executor, which opens one session per cell; the landed
+     prompt is the one line `/sw-conduct <node id> [pipeline]`, and the tool composes `[pipeline]`
+   - the user named one node ("start this node", "open it now"): that one starts, with the ranking
+     left out of it — `hold <node id> --cycle <line>` pins it, then `dispatch <line>` opens its
+     session
+   - the line already holds another node (it is listed under `Node:` in `cycle current`): do not
+     `hold` a second one — `dispatch` opens every node in hand. Lay that fact before the user and
+     let him pick which one runs first
+   - `spawn_error` in the answer means this process has no opener: the session never opened and the
+     node is still waiting to run — take step 5, and report it as waiting
+5. **Hand over the keys** (only when step 4 opened no session): the report ends with one line the
+   user can run by pressing enter — `/sw-conduct <node id> [pipeline]`; when the line picks its own
+   way through, a bare `/sw-conduct` (it runs `advance`, and the host opens the session).
+   **`[pipeline]` stays on the line**: without it that line does this one node and stops — no
+   close, no commit and push, no next node. Once he presses enter, that session should not have to
+   ask "who am I, which line am I on"; while the line is still parked, give no line at all and say
+   the state as it is
 
-When he does not want to run it now: skip landing the line, collect the commits and report the
-topology as usual.
+When he does not want to run it now: land no line and start nothing, collect the commits and report
+the topology as usual.
 Give the user both shas along with the report — that commit is the trace of "do it now".
 
 ## Query mode
@@ -385,7 +411,9 @@ Distil the key information into the answer; do not dump the raw JSON.
 
 - **sw-route** (you): the graph is yours. Adding, changing and dropping nodes, connecting edges,
   querying the graph; writing the DAG, the spec and the project's settings (`config set`);
-  reading no code, running no node, changing no project code
+  reading no code, running no node, changing no project code. Landing the line and starting a node
+  (`advance`, or `hold` + `dispatch`) are yours to write down — a start only opens the
+  `/sw-conduct` session, and the work inside the node is sw-conduct's
 - Small things that do not need a graph entry (docs catching up with the state, a non-behavioural
   small change, a feasibility probe) go to a subagent, and you still do not touch a file's body
   yourself
