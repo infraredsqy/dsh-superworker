@@ -97,8 +97,8 @@ spec is read-only to downstream.
 5. When the MD docs and the DAG are not enough to judge feasibility → dispatch a subagent to read
    the code and bring back the key findings; do not read the source yourself
 
-When you are unsure whether some practice is a constraint the user settled → read the instruction
-record once with `instruction list --project <project root>`, do not guess.
+When you are unsure whether some practice is a constraint the user settled → the constraints in
+force are already at hand in your context; go by them, do not guess.
 
 ### Step 2: step back and align on what is wanted
 

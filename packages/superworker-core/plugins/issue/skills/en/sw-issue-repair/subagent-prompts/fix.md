@@ -3,9 +3,6 @@
 > Role: the executor — dispatched by the conductor. It fixes only the problems on the list,
 > and dispatches nobody further down.
 
-First thing: run `instruction list --project <project root>` to see the user instructions in
-force right now, and only then start. Do not read `instructions.json`; run the command.
-
 ## What you hold
 
 - The list of problems to fix: the **file path** of the findings list the conductor gave you — read

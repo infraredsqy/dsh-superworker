@@ -150,7 +150,7 @@ advance --json
 
 撞车分两种：`.superworker/` 下那几份文件（图 / cycle / 指令 / 交接单）撞了由合并驱动自动合；驱动报冲突、或代码文件撞了就停手交用户，别自己乱合——撞在 rebase 半路就先 `git rebase --abort` 把工作区还原再报（记录那一次提交撞了就 `git -C .superworker rebase --abort`）。被本地未提交的改动挡住，多半是上一个会话的提交还没落地——重跑一次，仍失败停下问用户。
 
-**1｜约束查询**：用户指令由每个会话自己读出来，prompt 里不带这一段。
+**1｜约束查询**：约束随每轮上下文到达，不必开工先跑；要核对时再跑一次。
 
 ```pwsh
 instruction list --project <项目根绝对路径>
@@ -158,7 +158,6 @@ instruction list --project <项目根绝对路径>
 
 - `--project` 给**项目根的绝对路径**，省掉它读的是当前目录。
 - 默认给的就是当前位置在范围内的那些（global，加上绑定到当前 cycle／节点的）。
-- **别读 `instructions.json`，跑命令**：那份文件里的内部字段会把注意力引到登记与标记上。
 - 加条目只有 `/sw-instruct` 一个入口——用户敲了由那个 skill 落笔；他没敲，随口说的话就不记，当轮本来就在上下文里。
 - 指令只有两态：生效中、已归档。`scope: global` 的照做即可，它一直在生效中，**不必核销**——条目还能不能读到，是每次现读现算的，不靠会话替它画句号。把一条指令归档只有用户能做，放回来也只有用户能做，会话别去动这笔记录。
 - **这条线自己的策略**（`when_shelved`、`parallel`、`stop_after_nodes`、`model`，与两条维护线）在 `cycle current` 的 `Policy:` 行里；写它用 `cycle policy <cycle> <键> <值>`，数值型那条用 `off` 取消。

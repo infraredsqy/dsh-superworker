@@ -268,8 +268,8 @@ halfway through a rebase, first `git rebase --abort` to put the workspace back a
 local changes usually means the previous session's commit has not landed — re-run once, and when
 it still fails, stop and ask the user.
 
-**1 | Instruction lookup**: each session reads the user's instructions out for itself; this
-passage does not go into a prompt.
+**1 | Instruction lookup**: the constraints in force arrive with every turn's context, so there is
+nothing to run first; run it once more when you need to check.
 
 ```pwsh
 instruction list --project <absolute path to the project root>
@@ -279,8 +279,6 @@ instruction list --project <absolute path to the project root>
   directory.
 - By default it gives the ones in scope where you are (global, plus those bound to the current
   cycle / node).
-- **Do not read `instructions.json`; run the command**: the internal fields in that file draw
-  attention to bookkeeping and markers.
 - Adding an entry has exactly one way in, `/sw-instruct` — when the user typed it, that skill
   writes it down; when they did not, something said in passing is not recorded, since it is
   already in this round's context.

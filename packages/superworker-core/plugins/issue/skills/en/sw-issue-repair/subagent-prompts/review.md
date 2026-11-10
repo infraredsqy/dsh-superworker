@@ -3,9 +3,6 @@
 > Role: the executor — dispatched by the conductor. It reads and reports only,
 > and dispatches nobody further down.
 
-First thing: run `instruction list --project <project root>` to see the user instructions in
-force right now, and only then start. Do not read `instructions.json`; run the command.
-
 ## What you hold
 
 - The node's spec.md: the absolute path the conductor gave you. Its goals, scope and completion

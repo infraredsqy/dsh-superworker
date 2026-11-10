@@ -3,9 +3,6 @@
 > Role: the executor — dispatched by the conductor. It dispatches nobody further down;
 > when the spec or a method skill asks you to hand out batches, stop and report.
 
-First thing: run `instruction list --project <project root>` to see the user instructions in
-force right now, and only then start. Do not read `instructions.json`; run the command.
-
 ## What you hold
 
 - The node's spec.md: the absolute path the conductor gave you. Its goals, scope and completion
