@@ -18,6 +18,7 @@ import { LEGACY_DIR_NAME, legacyRecordDir } from '../src/legacy';
 import { open } from '../src/open';
 import { RECORD_DIR_NAME, globalConfigPath } from '../src/paths';
 import { git, gitRunner as realGit } from './helpers/git-runner';
+import { SLOW } from './helpers/slow';
 
 /**
  * `migrate` end to end, on a workspace staged the way the 0.1.x generation left it (a real git
@@ -138,7 +139,7 @@ function hashTree(dir: string): string {
 }
 
 describe('the six steps, end to end on a real checkout', () => {
-  it('the tree moves, the exclude line and the attributes follow, the driver is re-registered, the machine layer is copied, the plan paths are rewritten', async () => {
+  it.skipIf(!SLOW)('the tree moves, the exclude line and the attributes follow, the driver is re-registered, the machine layer is copied, the plan paths are rewritten', async () => {
     const staged = await stageGeneration010({ home: true });
     const report = await open(staged.project).ledger.migrate('0.1.0', { git: realGit, homeDir: staged.home });
 
@@ -187,7 +188,7 @@ describe('the six steps, end to end on a real checkout', () => {
     expect(report.warnings).toEqual([]);
   });
 
-  it('a project deeper in the repository: the prefixed exclude line moves the same way', async () => {
+  it.skipIf(!SLOW)('a project deeper in the repository: the prefixed exclude line moves the same way', async () => {
     const staged = await stageGeneration010({ prefix: 'packages/app' });
     const report = await open(staged.project).ledger.migrate('0.1.0', { git: realGit });
     expect(report.exclude).toBe('written');
@@ -196,7 +197,7 @@ describe('the six steps, end to end on a real checkout', () => {
     expect(exclude).not.toContain(`/packages/app/${LEGACY_DIR_NAME}/`);
   });
 
-  it('the machine layer keeps what is already at the new home: skipped, both files keep their own bytes', async () => {
+  it.skipIf(!SLOW)('the machine layer keeps what is already at the new home: skipped, both files keep their own bytes', async () => {
     const staged = await stageGeneration010({ home: true });
     const target = globalConfigPath(staged.home);
     mkdirSync(dirname(target), { recursive: true });
@@ -233,7 +234,7 @@ describe('the six steps, end to end on a real checkout', () => {
 });
 
 describe('idempotence and the two quiet answers', () => {
-  it('a second run is empty work: not a byte moves anywhere', async () => {
+  it.skipIf(!SLOW)('a second run is empty work: not a byte moves anywhere', async () => {
     const staged = await stageGeneration010({ home: true });
     const superworker = open(staged.project);
     await superworker.ledger.migrate('0.1.0', { git: realGit, homeDir: staged.home });
@@ -264,7 +265,7 @@ describe('idempotence and the two quiet answers', () => {
     expect(existsSync(join(root, RECORD_DIR_NAME))).toBe(false);
   });
 
-  it('no generation named: the known generations come back and nothing is done', async () => {
+  it.skipIf(!SLOW)('no generation named: the known generations come back and nothing is done', async () => {
     const staged = await stageGeneration010();
     const excludeBefore = readFileSync(staged.excludePath, 'utf8');
 
@@ -279,7 +280,7 @@ describe('idempotence and the two quiet answers', () => {
     expect(readFileSync(staged.excludePath, 'utf8')).toBe(excludeBefore);
   });
 
-  it('an unknown generation: refused with the known ones named, and nothing moved', async () => {
+  it.skipIf(!SLOW)('an unknown generation: refused with the known ones named, and nothing moved', async () => {
     const staged = await stageGeneration010();
     const excludeBefore = readFileSync(staged.excludePath, 'utf8');
 
@@ -298,7 +299,7 @@ describe('idempotence and the two quiet answers', () => {
   });
 });
 
-describe('the five refusals: each names the fact that stopped the move, hands the job to an agent, and moves nothing', () => {
+describe.skipIf(!SLOW)('the five refusals: each names the fact that stopped the move, hands the job to an agent, and moves nothing', () => {
   /** Run the migration expecting the refusal named by `pattern`; the old tree stands, nothing moved. */
   async function expectRefusal(project: string, pattern: RegExp): Promise<string> {
     let caught: unknown;

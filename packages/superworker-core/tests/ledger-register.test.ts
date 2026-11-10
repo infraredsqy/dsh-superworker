@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mergeDriverCommand } from '../src/initledger';
 import { open } from '../src/open';
 import { git, gitRunner as realGit, makeRepo } from './helpers/git-runner';
+import { SLOW } from './helpers/slow';
 
 /**
  * `register` on its own: the two merge-driver keys go into this project's git config through git
@@ -31,7 +32,7 @@ afterEach(() => {
 });
 
 describe('ledger.register', () => {
-  it("writes the two keys into this project's git config and lays down no layout", async () => {
+  it.skipIf(!SLOW)("writes the two keys into this project's git config and lays down no layout", async () => {
     await git(root, 'init', '-b', 'master');
     await open(root).ledger.register({ git: realGit });
     expect((await git(root, 'config', '--local', '--get', 'merge.superworker.driver')).trim())
@@ -45,7 +46,7 @@ describe('ledger.register', () => {
     expect(existsSync(join(root, '.git'))).toBe(false);
   });
 
-  it('hands back the command now in force, and keeps a registration this machine already answers', async () => {
+  it.skipIf(!SLOW)('hands back the command now in force, and keeps a registration this machine already answers', async () => {
     await git(root, 'init', '-b', 'master');
     const written = await open(root).ledger.register({ git: realGit });
     expect(written).toBe(mergeDriverCommand());
@@ -59,7 +60,7 @@ describe('ledger.register', () => {
     expect((await git(root, 'config', '--local', '--get', 'merge.superworker.driver')).trim()).toBe(chosen);
   });
 
-  it('in a linked worktree the keys land in the common git config (git decides where, not the engine)', async () => {
+  it.skipIf(!SLOW)('in a linked worktree the keys land in the common git config (git decides where, not the engine)', async () => {
     await makeRepo(root);
     const worktree = join(mkdtempSync(join(tmpdir(), 'superworker-register-wt-')), 'tree');
     try {

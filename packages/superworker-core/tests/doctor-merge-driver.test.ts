@@ -6,6 +6,7 @@ import { createConductorNamespace } from '../src/conductor';
 import type { DoctorReport } from '../src/conductor';
 import type { GitResult, GitRunner } from '../src/git';
 import { git, gitRunner as realGit } from './helpers/git-runner';
+import { SLOW } from './helpers/slow';
 
 /**
  * The merge-driver cell of doctor: is the driver registered, and does this machine answer the
@@ -97,7 +98,7 @@ describe('the merge-driver cell', () => {
     expect(report.ok).toBe(true);
   });
 
-  it('the git slot belongs to the call, not the handle: one namespace says "not asked" first, then judges once a runner is handed in', async () => {
+  it.skipIf(!SLOW)('the git slot belongs to the call, not the handle: one namespace says "not asked" first, then judges once a runner is handed in', async () => {
     await git(root, 'init', '-b', 'master');
     const namespace = createConductorNamespace(root);
     const before = (await namespace.doctor()).checks.find((entry) => entry.name === 'merge-driver')!;
@@ -116,7 +117,7 @@ describe('the merge-driver cell', () => {
     expect(check.detail).toContain('not a git checkout');
   });
 
-  it('a checkout with no driver registered: red, naming both missing keys', async () => {
+  it.skipIf(!SLOW)('a checkout with no driver registered: red, naming both missing keys', async () => {
     await git(root, 'init', '-b', 'master');
     const check = (await doctorWithGit()).checks.find((entry) => entry.name === 'merge-driver')!;
     expect(check.ok).toBe(false);
@@ -125,7 +126,7 @@ describe('the merge-driver cell', () => {
     expect(check.detail).toContain('ledger.register');
   });
 
-  it('only merge.superworker.name registered: red, naming the driver key — the label is not the registration', async () => {
+  it.skipIf(!SLOW)('only merge.superworker.name registered: red, naming the driver key — the label is not the registration', async () => {
     await git(root, 'init', '-b', 'master');
     await git(root, 'config', '--local', 'merge.superworker.name', 'superworker ledger three-way merge');
     const check = (await doctorWithGit()).checks.find((entry) => entry.name === 'merge-driver')!;
@@ -134,7 +135,7 @@ describe('the merge-driver cell', () => {
     expect(check.detail).toContain('ledger.register');
   });
 
-  it('only merge.superworker.driver registered, in an absolute form this machine answers: green, and the incomplete pair is named', async () => {
+  it.skipIf(!SLOW)('only merge.superworker.driver registered, in an absolute form this machine answers: green, and the incomplete pair is named', async () => {
     // The state `ledger.register` half wrote, and a state git really does drive merges in: the
     // driver key alone. Reding it would call a working registration dead; passing it in silence
     // would hide that the pair is incomplete.
@@ -150,7 +151,7 @@ describe('the merge-driver cell', () => {
     expect(check.detail).not.toContain('not registered');
   });
 
-  it('registered in the absolute form and both quoted paths are files here: green, with the after-a-move advice said out loud', async () => {
+  it.skipIf(!SLOW)('registered in the absolute form and both quoted paths are files here: green, with the after-a-move advice said out loud', async () => {
     await git(root, 'init', '-b', 'master');
     await git(root, 'config', '--local', 'merge.superworker.name', 'superworker ledger three-way merge');
     // An absolute form whose interpreter and script both exist on this machine: the one form this
@@ -166,7 +167,7 @@ describe('the merge-driver cell', () => {
     expect(check.detail).not.toContain('works on this machine');
   });
 
-  it('registered in the absolute form but pointing at a moved checkout: red, with the re-register advice and not "it works"', async () => {
+  it.skipIf(!SLOW)('registered in the absolute form but pointing at a moved checkout: red, with the re-register advice and not "it works"', async () => {
     await git(root, 'init', '-b', 'master');
     await git(root, 'config', '--local', 'merge.superworker.name', 'superworker ledger three-way merge');
     const driver =

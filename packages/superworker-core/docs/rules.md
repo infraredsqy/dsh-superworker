@@ -67,3 +67,4 @@
 - `pnpm typecheck`——tsc --noEmit
 - `pnpm test`——vitest run
 - `pnpm build`——tsdown；Node 26+，用 pnpm 装依赖
+- 慢档：SW_SLOW=1 pnpm test——真 git 子进程与跨进程锁那几组只在这一档跑（快档里呈 skipped；Windows pwsh 用 $env:SW_SLOW='1'）

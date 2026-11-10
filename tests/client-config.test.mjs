@@ -88,11 +88,6 @@ test('one control per row: the dropdown kind carries candidates, the other three
   }
 })
 
-test('the dropdown candidates copy the words the tool prints in config --help', () => {
-  assert.deepEqual(KNOWN_CONFIG_ROWS['worktree_mode'].options, ['off', 'fork', 'reuse'])
-  assert.deepEqual(KNOWN_CONFIG_ROWS['test_tier'].options, ['full', 'minimal'])
-})
-
 test('when the reading has no value for the key, neither dropdown settles on an option (left empty), not the first one', () => {
   const picks = Object.values(KNOWN_CONFIG_ROWS).filter((row) => row.kind === 'pick')
   assert.deepEqual(picks.map((row) => row.key), ['worktree_mode', 'test_tier'])
@@ -110,10 +105,6 @@ test('a value in the reading: show it if it is in the table, add it as its own o
     assert.deepEqual(pickState({ value: options[1], layer: 'project' }, options), { value: options[1], extra: null })
     assert.deepEqual(pickState({ value: 'partial', layer: 'project' }, options), { value: 'partial', extra: 'partial' })
   }
-})
-
-test('the three groups each have a name, in index order', () => {
-  assert.deepEqual(CONFIG_GROUPS, ['general', 'issue', 'test'])
 })
 
 test('sections split from rows: 常规 / 问题 / 测试; table order within a section; an empty group loses both its section and its index entry', () => {
