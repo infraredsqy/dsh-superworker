@@ -14,3 +14,5 @@
 node_modules/
 # Design documents and design-side code; nothing in the project depends on this directory
 design/
+# Local-only workspace skills (DSH discovers them in this checkout; they never ship and never commit)
+/.dsh/
