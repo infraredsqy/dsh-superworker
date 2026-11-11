@@ -24,7 +24,10 @@ refuses to install or boot the plugin outside that range (`incompatible-version`
 exemption command). The range follows DSH's breaking line: any rc within 0.2.x is admitted, and it
 moves when DSH moves to 0.3.
 
-The `.superworker/` record it draws is early and moving fast: expect breaking changes in its shape.
+The `.superworker/` record it draws is at the same stage: still being worked out, with plenty left
+to refine, and it will keep moving as the design settles. Each change follows what running a real
+pipeline teaches, so the shape converges on what a pipeline actually needs — and feedback from a
+live pipeline is what steers the next one.
 
 ## Install
 
