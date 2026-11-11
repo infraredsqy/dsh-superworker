@@ -1,6 +1,6 @@
 {
   "name": "dsh-superworker",
-  "version": "0.1.1-rc.1",
+  "version": "0.1.1-rc.2",
   "description": "The `.superworker/` pipeline record as a work panel in DSH: the host half reads that record for the current session's workspace and hands it to the browser half",
   "license": "MIT",
   "author": "Infrareds <infraredsaw@gmail.com>",
