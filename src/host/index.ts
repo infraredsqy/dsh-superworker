@@ -71,15 +71,15 @@ export { SuperworkerRecordsGateway }
  * a filesystem action — and the catalog a session sees is read back later, as
  * one diagnostic line, where a workspace is known (`executor.ts`).
  *
- * The tool wake's listeners live here too: `installToolWake` watches the skill
- * tool's settled calls, the step proposals that carry a user `/sw-*` invocation, and
- * every step of a session whose workspace holds a record directory the pipeline
- * recognizes — the one it lays down today, or the older layer a workspace that has
- * not migrated yet still holds, which must reach `migrate` and `doctor` somehow,
- * and the tool is how — and registers the
- * agent-facing tool into the waking agent's own scope — never anywhere else, so a
- * session with no pipeline around it keeps the request header it would have had
- * without this plugin.
+ * The tool wake's listeners live here too: `installToolWake` registers the agent-facing
+ * tool into the proposing agent's own scope — never anywhere else — on every step, once per
+ * agent, and arms it when the `skill` tool settles a load or a user's `/sw-*` invocation rides
+ * a step proposal. What the tool's condition decides is whether a step sees it: a workspace
+ * holding a record directory the pipeline recognizes — the one it lays down today, or the older
+ * layer a workspace that has not migrated yet still holds, which must reach `migrate` and
+ * `doctor` somehow, and the tool is how — or an agent a skill has spoken for. A session with no
+ * pipeline around it is asked every step and keeps the request header it would have had without
+ * this plugin.
  *
  * @returns whatever the placement seam handed back, so a caller (or a test)
  * can wait for the attempt to settle.

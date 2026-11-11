@@ -130,6 +130,9 @@ function fakeAgents({ gate, asksWait } = {}) {
                 record.sequence.push('register')
                 return () => {}
               },
+              /* The gating half of the registry: without it a scope carries no registry this line
+               * registers into (see `toolsOf`), and the open's registration would not land. */
+              resolve: async () => ({}),
             },
           },
           followup(message) {

@@ -18,7 +18,7 @@ import { apply } from '../src/host/index.ts'
 import { executorOf } from '../src/host/executor.ts'
 import { shippedPluginsDir } from '../src/host/skill-paths.ts'
 import { toolDescriptionOf } from '../src/host/tool.ts'
-import { wakeAgent } from '../src/host/wake.ts'
+import { registerAgent } from '../src/host/wake.ts'
 import { fakeContext } from './helpers/host-context.mjs'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
@@ -39,11 +39,16 @@ function toolOver(workspaceRoot) {
   const agent = {
     id: 'agent-tool',
     ctx: {
-      tools: { register: (definition) => (registered.push(definition), () => undefined) },
+      /* A gating registry: `resolve` is what makes a `when` mean anything, so a scope without it
+       * carries no registry this line uses (see `toolsOf`). */
+      tools: {
+        register: (definition) => (registered.push(definition), () => undefined),
+        resolve: async () => ({}),
+      },
       effect: () => undefined,
     },
   }
-  wakeAgent(agent, { ctx, executorOf: (sessionId, root) => executorOf(ctx, sessionId, root) })
+  registerAgent(agent, { ctx, executorOf: (sessionId, root) => executorOf(ctx, sessionId, root) })
   assert.equal(registered.length, 1)
   return registered[0]
 }

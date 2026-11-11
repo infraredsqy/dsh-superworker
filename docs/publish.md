@@ -49,11 +49,12 @@ npm run build:products
 设置切换语言这一条就接不上了。
 
 `engines.dsh` 那段范围的出处是 `package.json`：宿主半身有一处**运行时的**外部依赖
-`@deepseek-ai/dsh-typert-protocol`（与 DSH 本体锁步同版本发布），只有换线才可能动它。所以线画在 DSH 的
-破坏边界上，不画在某个 rc 上——`>=0.2.1-rc.2 <0.3.0-0`：0.2.x 之内出到第几个 rc、第几个补丁号都放行，
-0.3 那条线连同它的 alpha 一起挡在外面。末尾那个 `-0` 不是笔误：DSH 判范围用的是
-`semver.satisfies(runtime, range, { includePrerelease: true })`，写成 `<0.3.0` 时 `0.3.0-alpha.1` 排在
-`0.3.0` 前面，照样会放进来。
+`@deepseek-ai/dsh-typert-protocol`（与 DSH 本体锁步同版本发布），只有换线才可能动它；而宿主半身
+**要有会问「这一步要不要它」的工具注册表**，那条下界因此落在这一机制的第一次出场处（具体那个号照
+`package.json`，这页不复述）。上界画在 DSH 的破坏边界上，不画在某个 rc 上——写成 `<0.3.0-0`：
+0.2.x 之内出到第几个 rc、第几个补丁号都放行，0.3 那条线连同它的 alpha 一起挡在外面。末尾那个
+`-0` 不是笔误：DSH 判范围用的是 `semver.satisfies(runtime, range, { includePrerelease: true })`，
+写成 `<0.3.0` 时 `0.3.0-alpha.1` 排在 `0.3.0` 前面，照样会放进来。
 
 包面那几条前提由 `tests/package-surface.test.mjs` 看着（`npm test` 跑）。改包面之后跑一遍。
 

@@ -40,9 +40,35 @@ export interface BusFace {
   on(event: string, listener: (...args: never[]) => unknown): unknown
 }
 
-/** A tool registry as an agent's own scope carries it: one `register`, answered with the off function. */
+/**
+ * One model step, as far as a tool's own condition reads it: the agent preparing the step. The
+ * registry hands the rest along too (the captured model selection, the preparation's abort
+ * signal); this half asks only about the agent, and the port stays narrow because it is this
+ * half's reading, not the host's contract.
+ */
+export interface ToolActivation {
+  readonly agent: object
+}
+
+/** What one registration hands the registry besides the definition: the step-time condition. */
+export interface ToolRegistrationOptions {
+  /** Asked once per step; `false` keeps the tool out of that step's declarations and dispatch. */
+  when(context: ToolActivation): boolean | Promise<boolean>
+}
+
+/**
+ * A tool registry as an agent's own scope carries it, when it gates: one `register` answered with
+ * the off function, and the per-step `resolve` that makes a condition mean anything.
+ *
+ * The `resolve` member is the capability line, read once here (0.2.1 hosts had a `register` that
+ * took one argument and honored no condition; a silent extra argument would have left the tool
+ * visible to every agent). A registry without `resolve` therefore reads as *absent* below, and the
+ * wake arms nothing rather than arming everyone: the stricter engine range is what keeps this line
+ * off such a host in the first place.
+ */
 export interface ToolRegistryPort<Definition> {
-  register(definition: Definition): () => void
+  register(definition: Definition, options?: ToolRegistrationOptions): () => void
+  resolve(context: ToolActivation): Promise<unknown>
 }
 
 /** The session identity one agent stands for (`agent.id`), when the object carries a non-empty string. */
@@ -66,6 +92,7 @@ export function toolsOf<Definition>(ctx: unknown): ToolRegistryPort<Definition> 
   const tools = (ctx as { tools?: unknown } | null | undefined)?.tools
   if (tools === null || typeof tools !== 'object') return undefined
   if (typeof (tools as { register?: unknown }).register !== 'function') return undefined
+  if (typeof (tools as { resolve?: unknown }).resolve !== 'function') return undefined
   return tools as ToolRegistryPort<Definition>
 }
 

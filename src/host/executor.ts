@@ -80,7 +80,7 @@ import {
 } from './seams.ts'
 import { noteOpenedSession } from './session-note.ts'
 import { confirmSkillsForWorkspace, reportSkillView } from './skills/view.ts'
-import { wakeAgent } from './wake.ts'
+import { registerAgent } from './wake.ts'
 
 /** What one open brought back: the session now working this node. The id is an address for the panel's navigation, not a word a reader is shown. */
 export type SessionOpenOutcome =
@@ -322,14 +322,15 @@ export async function openNodeSession(
          * live session nobody wrote down. */
         reportUnattached(ctx, `the session opened for ${cycle}/${node}`, root, messageOf(error))
       }
-      /* Arm the session's own tool before the first instruction goes in: the wake's event
-       * paths cannot see a dispatched session — `agent/pre-step` carries no agent in its
-       * payload, and the pipeline skills are not model-invocable, so no skill-tool load can
-       * ever carry them. The opener knows the agent it just minted, so it arms it here,
-       * before the first step's tool set resolves. The opener seam the tool may call back
-       * through is this file's own `executorOf`: a word the tool runs that opens a session
-       * lands on the same opener, watched by whoever handed `onOpened` in. */
-      wakeAgent(handle.agent, {
+      /* Register the session's own tool before the first instruction goes in: this host minted the
+       * agent, so this is the one place that knows it without waiting for a step proposal, and the
+       * registration has to be in the scope before the first step's tool set resolves. The wake's
+       * own event paths may see this session too — registering again is a no-op. Whether the tool
+       * is visible is the registration's condition, asked per step, and this session's workspace
+       * is what it reads. The opener seam the tool may call back through is this file's own
+       * `executorOf`: a word the tool runs that opens a session lands on the same opener, watched
+       * by whoever handed `onOpened` in. */
+      registerAgent(handle.agent, {
         ctx,
         executorOf: options?.openerOf ?? ((id: SessionId, at: string) => executorOf(ctx, id, at)),
       })
@@ -451,10 +452,12 @@ export async function openConsultSession(
          * here would leave a live session nobody wrote down. */
         reportUnattached(ctx, 'the consult session', root, messageOf(error))
       }
-      /* Arm the session's own tool before the first instruction goes in, exactly as the node open
-       * does: the wake's event paths cannot see a session this host minted, and this session has
-       * to reach `migrate` and `doctor` — that reach is the whole reason it exists. */
-      wakeAgent(handle.agent, {
+      /* Register the session's own tool before the first instruction goes in, exactly as the node
+       * open does: this host minted the agent, and the registration has to be in its scope before
+       * the first step's tool set resolves. This session has to reach `migrate` and `doctor` —
+       * that reach is the whole reason it exists — and the condition reads it out of the workspace
+       * the session is opened in. */
+      registerAgent(handle.agent, {
         ctx,
         executorOf: (id: SessionId, at: string) => executorOf(ctx, id, at),
       })

@@ -15,14 +15,19 @@ pipeline's words in place. A session whose workspace holds a `.superworker/` rec
 first step, and carries the instructions in force into every step as runtime context — the same text
 `instruction list` prints for that workspace, which for a git worktree is its main tree's listing.
 Anywhere else the tool appears only after one of the `sw-*` skills loads — until then that
-session's request header stays exactly as it would be without this plugin.
+session's request header stays exactly as it would be without this plugin. The record is read on
+every step, not once: a workspace that gains one mid-session carries the tool from the next step, and
+a session that leaves the workspace stops carrying it.
 
 ## Status
 
 Early, and tied to the DSH developer preview. The manifest declares an `engines.dsh` range, and DSH
 refuses to install or boot the plugin outside that range (`incompatible-version`, with an opt-in
-exemption command). The range follows DSH's breaking line: any rc within 0.2.x is admitted, and it
-moves when DSH moves to 0.3.
+exemption command). The range follows DSH's breaking line and starts where this line's own mechanism
+does: **0.2.2** is the first DSH whose tool registry asks a registration whether a given step should
+see it, and that answer is what keeps the tool out of every session without a pipeline. An older
+host honors no condition at all, so the tool would simply never appear there — those hosts are
+refused up front. Inside 0.2.x any later rc is admitted, and the range moves when DSH moves to 0.3.
 
 The `.superworker/` record it draws is at the same stage: still being worked out, with plenty left
 to refine, and it will keep moving as the design settles. Each change follows what running a real
