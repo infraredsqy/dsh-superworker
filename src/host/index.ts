@@ -1,11 +1,10 @@
 /**
  * Entry point of the host half's plugin: installs the `superworker` service on the
- * host, arms the wake that registers the agent-facing `superworker` tool into the
- * scope of exactly the agents with a reason to see it — a workspace holding a record
- * directory the pipeline recognizes, a pipeline skill load, or a `/sw-*` invocation —
- * and carries the constraints in force in a session's workspace into that session's
- * runtime context, one step at a time (`instruction-context.ts`; an optional
- * contribution, off when no prompt service is mounted or the switch says so).
+ * host, arms the wake that offers the agent-facing `superworker` tool to exactly the agents with a
+ * reason to see it — a workspace holding a record directory the pipeline recognizes, a pipeline
+ * skill load, or a `/sw-*` invocation — and carries the constraints in force in a session's
+ * workspace into that session's runtime context, one step at a time (`instruction-context.ts`; an
+ * optional contribution, off when no prompt service is mounted or the switch says so).
  *
  * It holds no data and caches nothing: every call resolves the workspace root
  * from the session identity on the spot. A process gateway is not in `inject`
@@ -72,14 +71,16 @@ export { SuperworkerRecordsGateway }
  * one diagnostic line, where a workspace is known (`executor.ts`).
  *
  * The tool wake's listeners live here too: `installToolWake` registers the agent-facing
- * tool into the proposing agent's own scope — never anywhere else — on every step, once per
- * agent, and arms it when the `skill` tool settles a load or a user's `/sw-*` invocation rides
- * a step proposal. What the tool's condition decides is whether a step sees it: a workspace
- * holding a record directory the pipeline recognizes — the one it lays down today, or the older
- * layer a workspace that has not migrated yet still holds, which must reach `migrate` and
- * `doctor` somehow, and the tool is how — or an agent a skill has spoken for. A session with no
- * pipeline around it is asked every step and keeps the request header it would have had without
- * this plugin.
+ * tool once, into this line's own context — the registry's global layer — with one condition the
+ * registry asks on every step. Nothing is registered per agent, so the first request of every
+ * session is judged like any other; a registration made inside a step proposal could only reach
+ * the step after it. The two triggers that speak for an agent are the `skill` tool settling a load
+ * and a user's `/sw-*` invocation being claimed for a step. What the tool's condition decides is
+ * whether a step sees it: a workspace holding a record directory the pipeline recognizes — the one
+ * it lays down today, or the older layer a workspace that has not migrated yet still holds, which
+ * must reach `migrate` and `doctor` somehow, and the tool is how — or an agent a trigger has
+ * spoken for. A session with no pipeline around it is asked every step and keeps the request
+ * header it would have had without this plugin.
  *
  * @returns whatever the placement seam handed back, so a caller (or a test)
  * can wait for the attempt to settle.

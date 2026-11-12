@@ -11,13 +11,16 @@ instructions, node details, the map of who owes whom, the issue pool — comes f
 writes from the panel go back to the same place.
 
 In a session the pipeline is also reachable as the agent-facing `superworker` tool: it answers the
-pipeline's words in place. A session whose workspace holds a `.superworker/` record sees the tool from its
-first step, and carries the instructions in force into every step as runtime context — the same text
-`instruction list` prints for that workspace, which for a git worktree is its main tree's listing.
-Anywhere else the tool appears only after one of the `sw-*` skills loads — until then that
-session's request header stays exactly as it would be without this plugin. The record is read on
-every step, not once: a workspace that gains one mid-session carries the tool from the next step, and
-a session that leaves the workspace stops carrying it.
+pipeline's words in place. The tool is registered once for the whole host, and the registry asks one
+condition on every step, so a session whose workspace holds a `.superworker/` record sees the tool
+from its first request, and carries the instructions in force into every step as runtime context —
+the same text `instruction list` prints for that workspace, which for a git worktree is its main
+tree's listing. Anywhere else the tool appears when one of the `sw-*` skills is loaded, or when a
+user invokes one: an `/sw-*` invocation is seen before that step is sent, so the request carrying
+the skill's instructions already carries the tool. Until then that session's request header stays
+exactly as it would be without this plugin. The record is read on every step, not once: a workspace
+that gains one mid-session carries the tool from the next step, and a session that leaves the
+workspace stops carrying it.
 
 ## Status
 

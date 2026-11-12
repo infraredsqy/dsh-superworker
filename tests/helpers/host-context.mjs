@@ -26,12 +26,15 @@ import { fakeWorkspaceFiles } from './workspace-files-port.mjs'
  * - `absent` — service name → message: asking for that service throws (a host exposing none);
  * - `config` — the settings surface, when the line has one;
  * - `bus` — an event bus with `on`/`emit` (returned as `events`);
+ * - `tools` — a gating tool registry on the context (`register` + `resolve`), with the entries it
+ *   holds as `tools.entries`; the host's own rule is the `resolve` this stand-in answers: every
+ *   entry whose condition admits the step, and every entry without one;
  * - `logger` — a `logger.warn` that collects its lines;
  * - `provide` / `effect` — collect what the plugin provides and the effects it installs;
  * - `sessions: false` — no live-session service on the context at all (the opener reaches the
  *   session store through `get('sessions')` instead).
  *
- * The result: `{ ctx, provided, asked, statCalls, warnings, events, effects }` — `asked` is the
+ * The result: `{ ctx, provided, asked, statCalls, warnings, events, effects, tools }` — `asked` is the
  * port's own call log; the rest are the readings the cases judge.
  */
 export function fakeContext({
@@ -46,6 +49,7 @@ export function fakeContext({
   absent = {},
   config,
   bus = false,
+  tools = false,
   logger = false,
   provide = false,
   effect = false,
@@ -99,6 +103,29 @@ export function fakeContext({
       return answered[name]
     },
   }
+  /* The host's registry in one stand-in: `register` collects `{ definition, when }`, and `resolve`
+   * applies the host's own rule — an entry with no condition is admitted, one whose condition says
+   * no is left out of the step. */
+  const registry = {
+    entries: [],
+    register(definition, options) {
+      const entry = { definition, when: options?.when }
+      registry.entries.push(entry)
+      return () => {
+        const at = registry.entries.indexOf(entry)
+        if (at >= 0) registry.entries.splice(at, 1)
+      }
+    },
+    async resolve(context) {
+      const visible = new Map()
+      for (const entry of registry.entries) {
+        if (entry.when !== undefined && !(await entry.when({ agent: context.agent }))) continue
+        visible.set(entry.definition.name, entry.definition)
+      }
+      return visible
+    },
+  }
+  if (tools) ctx.tools = registry
   if (bus) ctx.on = events.on
   if (logger) ctx.logger = { warn: (line) => warnings.push(line) }
   if (provide) ctx.provide = (service, value) => { provided[service] = value }
@@ -110,5 +137,5 @@ export function fakeContext({
     }
   }
 
-  return { ctx, provided, asked: heldPort.calls ?? [], statCalls, warnings, events, effects }
+  return { ctx, provided, asked: heldPort.calls ?? [], statCalls, warnings, events, effects, tools: tools ? registry : undefined }
 }

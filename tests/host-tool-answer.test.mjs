@@ -18,7 +18,7 @@ import { apply } from '../src/host/index.ts'
 import { executorOf } from '../src/host/executor.ts'
 import { shippedPluginsDir } from '../src/host/skill-paths.ts'
 import { toolDescriptionOf } from '../src/host/tool.ts'
-import { registerAgent } from '../src/host/wake.ts'
+import { installToolWake } from '../src/host/wake.ts'
 import { fakeContext } from './helpers/host-context.mjs'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
@@ -28,29 +28,17 @@ const shippedPlugins = join(repo, 'packages', 'superworker-core', 'plugins')
 const contextOver = (workspaceRoot) => fakeContext({
   sandboxRoot: workspaceRoot,
   bus: true,
+  tools: true,
   provide: true,
   effect: true,
 }).ctx
 
-/** The tool registered into a fresh agent's scope over the given workspace. */
+/** The tool the line registers over the given workspace: one global registration, condition and all. */
 function toolOver(workspaceRoot) {
   const ctx = contextOver(workspaceRoot)
-  const registered = []
-  const agent = {
-    id: 'agent-tool',
-    ctx: {
-      /* A gating registry: `resolve` is what makes a `when` mean anything, so a scope without it
-       * carries no registry this line uses (see `toolsOf`). */
-      tools: {
-        register: (definition) => (registered.push(definition), () => undefined),
-        resolve: async () => ({}),
-      },
-      effect: () => undefined,
-    },
-  }
-  registerAgent(agent, { ctx, executorOf: (sessionId, root) => executorOf(ctx, sessionId, root) })
-  assert.equal(registered.length, 1)
-  return registered[0]
+  installToolWake({ ctx, executorOf: (sessionId, root) => executorOf(ctx, sessionId, root) })
+  assert.equal(ctx.tools.entries.length, 1)
+  return ctx.tools.entries[0].definition
 }
 
 /** A temp superworker project with the given node titles on the graph. */

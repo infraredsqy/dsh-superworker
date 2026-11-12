@@ -2,25 +2,29 @@
  * The wake: putting the agent-facing `superworker` tool in front of exactly the agents that have a
  * reason to see it, and nowhere else.
  *
- * Registration and visibility are two different questions, and the host asks them at two different
- * times. Registration is per agent scope (`agent.ctx.tools.register`) and happens once: the step
- * proposal registers the tool into the agent that proposed the step, an idempotent no-op after the
- * first time, and an agent minted by this line's opener (`executor.ts`) is registered for directly,
- * because that session's first step may leave the proposal's event path behind. Visibility is the
- * registry's per-step question: the registration carries one condition, the registry asks it for
- * every step, and a step that answers `false` has neither the tool's declaration nor its dispatch.
+ * One registration, made once, in this plugin's own context — the registry's global layer — carrying
+ * one condition the registry asks on every step. Nothing is registered per agent, and nothing waits
+ * for a step proposal, because a step's tools are resolved before any per-step hook runs: a
+ * registration made inside `agent/pre-step` can only reach the step after it. A global registration
+ * exists before any agent does, so the first request of every session is judged by the condition
+ * like every other one.
  *
  * The condition is the same fact this line has always read, asked again every step: the workspace
  * holds a record directory the pipeline recognizes — the one it lays down today, or the older layer
  * a workspace that has not migrated yet still holds, which must reach `migrate` and `doctor` at all,
  * and the tool is how — or a trigger has spoken for this agent: the `skill` tool's settled call
- * result, or a user's `/sw-*` invocation in a step proposal. An agent with neither keeps exactly
- * the request header it would have without this plugin.
+ * result, or a user's `/sw-*` invocation. An agent with neither keeps exactly the request header it
+ * would have without this plugin.
  *
  * Registering unconditionally is safe *because* of the condition, and that is what the condition's
  * headless rule buys: asked per step, a record appearing mid-session arms the very next step and a
- * workspace the session walks out of takes the tool away. The old registration-time reading stuck
- * at whichever answer came first.
+ * workspace the session walks out of takes the tool away.
+ *
+ * The two triggers land at different points on purpose. A user's `/sw-*` invocation is claimed from
+ * the inbox *before* the step's tools are resolved, so it speaks for that very step: the request that
+ * carries the skill's instructions carries the tool as well. A skill the model loads through the
+ * `skill` tool can only speak for the next request, because that request has already gone out — and
+ * by the time the skill's answer comes back, the next request carries both.
  *
  * This module owns only that decision and its memory. The tool's face lives in `tool.ts`, the
  * record directory's one spelling comes from the contract (`RECORD_DIR`), the older layer's
@@ -33,7 +37,7 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { isRecognizableLegacyRecord } from 'superworker-core'
 import { RECORD_DIR } from './contract.ts'
-import { agentIdOf, agentScopeOf, busOf, effectOf, liveWorkspaceRootOf, toolsOf } from './seams.ts'
+import { agentIdOf, busOf, liveWorkspaceRootOf, toolsOf } from './seams.ts'
 import {
   SKILL_NAME_PREFIX,
   SKILL_TOOL_NAME,
@@ -43,19 +47,15 @@ import {
 } from './tool.ts'
 
 /**
- * The agents a trigger has spoken for: one skill was loaded, or a user typed `/sw-*`. A mark, not a
- * registration — the condition reads it, and the step's own registration is what puts the tool in
- * reach.
+ * The agents a trigger has spoken for: one skill was loaded, or a user typed `/sw-*`. A mark that
+ * the condition reads; nothing is registered for it.
  */
 const armed = /* @__PURE__*/ new WeakSet<object>()
 
-/** The agents this process has already registered the tool into: one agent, one registration. */
-const registered = /* @__PURE__*/ new WeakSet<object>()
-
 /**
- * Speak for one agent: it loaded a pipeline skill, or a user asked for one. From this step or the
- * next, the condition answers `true` for it. A mark only — registration belongs to the step
- * proposal, which runs ahead of every request that could carry the tool.
+ * Speak for one agent: it loaded a pipeline skill, or a user asked for one. From the step being
+ * prepared — or the next one, when the trigger settled too late to be seen — the condition answers
+ * `true` for it.
  */
 export function armAgent(agent: object): void {
   armed.add(agent)
@@ -126,57 +126,55 @@ export function offersTool(ctx: Context, agent: object | undefined): boolean {
   }
 }
 
-/**
- * Register the tool into one agent's own scope, once, with the condition above.
- *
- * Idempotent by the `registered` mark: the step proposal, the opener, and a second loaded skill can
- * all reach one agent, and the request header still carries the tool once. Best effort by contract:
- * an agent whose scope is already gone refuses the registration, and a host whose registry cannot
- * gate (no `resolve`, so `toolsOf` answers nothing) is left alone rather than handed a tool every
- * agent would then see — the wake answers quietly instead of throwing into its caller (a tool
- * pipeline or a step proposal, both of which must run on).
- *
- * The memory is one-way by design: a DSH agent's scope lives and dies with the agent, so an agent
- * remembered here never comes back to be armed again, and the entry leaves with the agent object
- * when the runtime collects it.
- */
-export function registerAgent(agent: object, host: SuperworkerToolHost): void {
-  if (registered.has(agent)) return
-  try {
-    const ctx = agentScopeOf(agent)
-    const registry = toolsOf<SuperworkerToolDefinition>(ctx)
-    if (registry === undefined) return
-    const dispose = registry.register(defineSuperworkerTool(host), {
-      /* The step's own agent is the one the condition judges; the agent this registration hangs on
-       * is the same object, so the pass-through cannot arm somebody else's request. */
-      when: (step) => offersTool(host.ctx, step.agent),
-    })
-    effectOf(ctx)?.(() => dispose, 'superworker: the superworker tool')
-    registered.add(agent)
-  } catch {
-    /* The scope is gone or the registration was refused: the agent is not there to arm.
-     * Nothing is remembered, so a later wake for a live agent still lands. */
-  }
-}
-
 /** Whether one settled tool call was this session loading a skill successfully. */
 function isSkillLoad(exec: { name?: unknown; agent?: unknown }, result: { isError?: unknown }): boolean {
   return exec.name === SKILL_TOOL_NAME && result.isError === false && typeof exec.agent === 'object' && exec.agent !== null
 }
 
 /**
- * Arm the wake: one listener on the skill tool's settled calls, one on the step proposals that
- * carry a user's `/sw-*` invocation, and one on every step, which is where the tool is registered
- * into the proposing agent's scope — ahead of the request that step assembles, so the condition is
- * already in place when the registry asks it. Both triggers only mark their agent; the proposal's
- * own registration is what puts the tool in reach, and the condition is what keeps it out of
- * everybody else's request. The returned disposer takes the listeners back (the line's own effect
- * collects it). A host without an event surface takes nothing — the panel keeps working, only the
- * wake is absent.
+ * Install the registration and the two triggers, and answer the one disposer that takes them back.
+ *
+ * The registration goes into this plugin's own context, which is what puts it in the registry's
+ * global layer: visible to every agent, admitted per step by the condition. A host whose registry
+ * cannot gate (no `resolve`, so `toolsOf` answers nothing) is left alone rather than handed a tool
+ * every agent would see — the wake answers quietly instead of throwing into its caller, which is
+ * the plugin's own apply. The listeners need an event surface; a host without one keeps the
+ * record-based half of the wake and loses only the two triggers.
  */
 export function installToolWake(host: SuperworkerToolHost): () => void {
+  const registry = toolsOf<SuperworkerToolDefinition>(host.ctx)
+  if (registry === undefined) return () => undefined
+  let disposeRegistration: () => void
+  try {
+    disposeRegistration = registry.register(defineSuperworkerTool(host), {
+      /* The step's own agent is the one the condition judges; a global registration serves every
+       * agent, so the question has to be asked of the step rather than of the registration. */
+      when: (step) => offersTool(host.ctx, step.agent),
+    })
+  } catch {
+    /* A registry that refuses the name (or unloads mid-registration) leaves the line without a
+     * tool rather than with a broken one: the panel keeps working, only the wake is absent. */
+    return () => undefined
+  }
   const bus = busOf(host.ctx)
-  if (bus === undefined) return () => undefined
+  if (bus === undefined) {
+    return () => {
+      if (typeof disposeRegistration === 'function') disposeRegistration()
+    }
+  }
+  /* Claimed *inside* the step proposal, before that step's tools are resolved: a `/sw-*` message
+   * therefore speaks for the request that carries the skill's instructions, not the one after. */
+  const offClaim = bus.on('agent/inbox/claimed', (payload: unknown) => {
+    try {
+      const held = payload as { agent?: unknown; message?: { source?: unknown } } | undefined
+      const agent = held?.agent
+      if (typeof agent !== 'object' || agent === null) return
+      if (isPipelineSkillSource(held?.message?.source)) armAgent(agent)
+    } catch {
+      /* A message shape this line cannot read is not a reason to fail someone else's step. */
+    }
+  })
+  /* A settled skill load speaks for the next request: this one has already gone out. */
   const offPost = bus.on('tools/post-execute', (exec: unknown, result: unknown, next: () => Promise<unknown>) => {
     const pending = next()
     if (isSkillLoad(exec as { name?: unknown; agent?: unknown }, (result ?? {}) as { isError?: unknown })) {
@@ -184,27 +182,9 @@ export function installToolWake(host: SuperworkerToolHost): () => void {
     }
     return pending
   })
-  const offStep = bus.on('agent/pre-step', (payload: unknown, next: () => Promise<unknown>) => {
-    /* The registration runs before the proposal settles: it lands in the scope this very step's
-     * tool set resolves against, and the condition it carries is asked by that resolution. */
-    const proposed = (payload as { agent?: unknown } | undefined)?.agent
-    const agent = typeof proposed === 'object' && proposed !== null ? proposed : undefined
-    if (agent !== undefined) registerAgent(agent, host)
-    const decision = next() as Promise<{ kind?: unknown; messages?: unknown } | undefined>
-    return decision.then((settled) => {
-      const messages = Array.isArray(settled?.messages) ? settled.messages : []
-      for (const message of messages) {
-        const source = (message as { source?: unknown } | undefined)?.source
-        if (!isPipelineSkillSource(source)) continue
-        /* The user asked in this step, so the mark lands before the same step resolves: a
-         * `/sw-*` proposal sees the tool immediately, not on the step after. */
-        if (agent !== undefined) armAgent(agent)
-      }
-      return settled
-    })
-  })
   return () => {
+    if (typeof offClaim === 'function') offClaim()
     if (typeof offPost === 'function') offPost()
-    if (typeof offStep === 'function') offStep()
+    disposeRegistration()
   }
 }

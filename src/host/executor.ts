@@ -80,7 +80,6 @@ import {
 } from './seams.ts'
 import { noteOpenedSession } from './session-note.ts'
 import { confirmSkillsForWorkspace, reportSkillView } from './skills/view.ts'
-import { registerAgent } from './wake.ts'
 
 /** What one open brought back: the session now working this node. The id is an address for the panel's navigation, not a word a reader is shown. */
 export type SessionOpenOutcome =
@@ -102,13 +101,6 @@ export interface SessionOpenOptions {
    * fail the open.
    */
   readonly onOpened?: (session: string) => void
-  /**
-   * The opener seam the session's own `superworker` tool opens through. A dispatched session arms its
-   * tool before its first step; when that tool opens a session of its own (`dag open`), the opener
-   * watches it the same way, so a caller passes its own seam here and the nesting keeps the watcher.
-   * Absent: this module's plain {@link executorOf}, unwatched.
-   */
-  readonly openerOf?: (sessionId: SessionId, workspaceRoot: string) => Executor
 }
 
 /**
@@ -220,12 +212,8 @@ export function executorOf(
         throw new Error('the dispatch request named no cell (cycle and node are both required here)')
       }
       if (request.dryRun === true) return { host: 'drill' }
-      /* The seam this opener hands its sessions own tools: this one, with the same watcher, so a
-       * session opened from a tool call is watched by whoever watched the session that called it. */
-      const openerOf = (id: SessionId, at: string) => executorOf(ctx, id, at, onOpened)
       const outcome = await openNodeSession(ctx, sessionId, workspaceRoot, cycle, node, {
         ...(onOpened === undefined ? {} : { onOpened }),
-        openerOf,
         ...(request.model === undefined ? {} : { model: request.model }),
       })
       if (!outcome.ok) throw new Error(outcome.detail ?? outcome.code)
@@ -322,20 +310,9 @@ export async function openNodeSession(
          * live session nobody wrote down. */
         reportUnattached(ctx, `the session opened for ${cycle}/${node}`, root, messageOf(error))
       }
-      /* Register the session's own tool before the first instruction goes in: this host minted the
-       * agent, so this is the one place that knows it without waiting for a step proposal, and the
-       * registration has to be in the scope before the first step's tool set resolves. The wake's
-       * own event paths may see this session too — registering again is a no-op. Whether the tool
-       * is visible is the registration's condition, asked per step, and this session's workspace
-       * is what it reads. The opener seam the tool may call back through is this file's own
-       * `executorOf`: a word the tool runs that opens a session lands on the same opener, watched
-       * by whoever handed `onOpened` in. */
-      registerAgent(handle.agent, {
-        ctx,
-        executorOf: options?.openerOf ?? ((id: SessionId, at: string) => executorOf(ctx, id, at)),
-      })
       /* The caller's earliest watch point: the session exists and its first instruction has
-       * not gone in — registration here lands ahead of every event the round emits. */
+       * not gone in. The session's tool is not this open's business — the wake registers it once,
+       * for every agent, and the condition reads this session's workspace from the step. */
       try {
         options?.onOpened?.(opened)
       } catch {
@@ -452,15 +429,8 @@ export async function openConsultSession(
          * here would leave a live session nobody wrote down. */
         reportUnattached(ctx, 'the consult session', root, messageOf(error))
       }
-      /* Register the session's own tool before the first instruction goes in, exactly as the node
-       * open does: this host minted the agent, and the registration has to be in its scope before
-       * the first step's tool set resolves. This session has to reach `migrate` and `doctor` —
-       * that reach is the whole reason it exists — and the condition reads it out of the workspace
-       * the session is opened in. */
-      registerAgent(handle.agent, {
-        ctx,
-        executorOf: (id: SessionId, at: string) => executorOf(ctx, id, at),
-      })
+      /* This session has to reach `migrate` and `doctor` — that reach is the whole reason it
+       * exists — and the condition reads it out of the workspace the session is opened in. */
       handle.agent.followup(createUserMessage({
         content: [{ type: 'text', text: CONSULT_PROMPT }],
         source: { kind: 'user' },

@@ -103,8 +103,7 @@ export interface SuperworkerToolValue {
  *
  * The opener arrives here rather than being imported from `executor.ts` on purpose: the opener
  * imports the wake, the wake imports this face, and a direct import would close that triangle. The
- * two callers that arm an agent (the plugin entry for the event triggers, the opener for a dispatched
- * session) each hand in the seam they already hold.
+ * one caller that registers the tool (the plugin entry) hands in the seam it already holds.
  */
 export interface SuperworkerToolHost {
   readonly ctx: Context

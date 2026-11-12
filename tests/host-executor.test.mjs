@@ -23,7 +23,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { canonicalWorkspaceRoot, executorOf, openNodeSession } from '../src/host/executor.ts'
-import { TOOL_NAME } from '../src/host/tool.ts'
 import { pinHome } from './helpers/env.mjs'
 import { clearPlacement, placeOneSkill } from './helpers/skill-placement.mjs'
 import { until, flush } from './helpers/wait.mjs'
@@ -130,8 +129,8 @@ function fakeAgents({ gate, asksWait } = {}) {
                 record.sequence.push('register')
                 return () => {}
               },
-              /* The gating half of the registry: without it a scope carries no registry this line
-               * registers into (see `toolsOf`), and the open's registration would not land. */
+              /* The gating half of the registry: kept so a case can prove the open never reaches for it — the
+               * tool is registered globally by the wake, not into this session's scope. */
               resolve: async () => ({}),
             },
           },
@@ -599,18 +598,17 @@ test('Composition: the preset resolve refuses, the open lands as open-failed wit
   )
 })
 
-/* ---- the session's own tool, armed by the opener ---- */
+/* ---- the open leaves the session's tools alone ---- */
 
-test('Wake: the opened session gets the superworker tool before the first instruction lands, exactly once', async () => {
+test('The opener does not register the tool: the wake registers once for the whole host, and the open only instructs', async () => {
   const rigging = rig()
   const pending = openNodeSession(rigging.ctx, 's1', rigging.root, rigging.cycle, rigging.node)
   await opened(rigging.agents.created)
   const outcome = await pending
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   const record = rigging.agents.created[0]
-  assert.equal(record.registered.length, 1, 'registered exactly once')
-  assert.equal(record.registered[0].name, TOOL_NAME, 'the registered one is the superworker tool')
-  assert.deepEqual(record.sequence, ['register', 'followup'], 'the tool enters the scope first, the first instruction after')
+  assert.equal(record.registered.length, 0, 'the session\'s tool is the wake\'s business, not the open\'s')
+  assert.deepEqual(record.sequence, ['followup'], 'the first instruction is what the open lands')
 })
 
 test('Wake: a session with no tools surface still opens as usual (the wake stays silent by contract)', async () => {

@@ -77,16 +77,10 @@ export function agentIdOf(agent: object): string | undefined {
   return typeof id === 'string' && id.length > 0 ? id : undefined
 }
 
-/** The scope one agent's own registrations hang on (`agent.ctx`), taken as an opaque value: its shape is the agent's. */
-export function agentScopeOf(agent: object): unknown {
-  return (agent as { ctx?: unknown }).ctx
-}
-
 /**
- * The tool registry one agent's scope carries, when it answers that shape. This is the agent's own
- * scope rather than the plugin context, which is why it is read from the agent (`agent.ctx`): a
- * session's tools live and die with the agent, and registering anywhere else would arm somebody else's
- * request.
+ * The tool registry this context carries, when it answers that shape. Called with the plugin's own
+ * context, which has no scope: the registration lands in the registry's global layer, visible to
+ * every agent and admitted per step by the registration's condition.
  */
 export function toolsOf<Definition>(ctx: unknown): ToolRegistryPort<Definition> | undefined {
   const tools = (ctx as { tools?: unknown } | null | undefined)?.tools
