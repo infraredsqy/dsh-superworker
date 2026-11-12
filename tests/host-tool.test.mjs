@@ -12,10 +12,12 @@
  *   registration this replaced could only land on the step after the one that proposed it.
  * - **asked every step**: a record that appears mid-session is carried by the very next step, and a
  *   session that walks out of the workspace stops carrying it.
- * - **the two triggers land where the host already knows**: an `/sw-*` claim happens inside the step
+ * - **the two triggers land where the host already knows**: a `/sw-*` claim happens inside the step
  *   proposal, before that step's tools are resolved, so it speaks for the request that carries the
- *   skill's instructions; a `skill` tool result settles after the request went out, so it speaks
- *   for the next one.
+ *   skill's instructions — and it is the *user's* message that carries the gesture, read out of its
+ *   text the same way the host's skill plugin reads it (the message naming the skill in its `source`
+ *   is the body that plugin injects later); a `skill` tool result settles after the request went
+ *   out, so it speaks for the next one.
  * - **total**: a reading that throws answers "no" instead of failing the step (`ToolActivationError`
  *   would take the whole step preparation down), and a registry that cannot gate is never handed a
  *   tool every agent would see.
@@ -81,8 +83,9 @@ async function firePostExecute(events, exec, result) {
 }
 
 /** Claim one message for a step: the loop does this before the step's tools are resolved. */
-function claimMessage(events, agent, source) {
-  events.emit('agent/inbox/claimed', { agent, message: { source }, turn: 1 })
+function claimMessage(events, agent, source, text) {
+  const message = text === undefined ? { source } : { source, content: [{ type: 'text', text }] }
+  events.emit('agent/inbox/claimed', { agent, message, turn: 1 })
 }
 
 test('One registration, made before any agent exists: the entry is in the registry the moment the line applies', () => {
@@ -101,7 +104,8 @@ test('Never declared: an unrelated tool call, a failed skill load, another skill
 
   await firePostExecute(events, { name: 'bash', agent }, { isError: false })
   await firePostExecute(events, { name: 'skill', agent }, { isError: true })
-  claimMessage(events, agent, { kind: 'skill-invocation', name: 'some-skill' })
+  claimMessage(events, agent, { kind: 'user' }, '/some-skill list')
+  claimMessage(events, agent, { kind: 'user' }, 'see /usr/bin and 5/8 for details')
 
   assert.deepEqual(await stepToolsOf(ctx, agent), [], 'no trigger spoke for this agent, so its request carries nothing')
 })
@@ -123,9 +127,16 @@ test('A user\'s /sw-* invocation is claimed before the step resolves, so the sam
   const { ctx, events } = context()
   apply(ctx)
 
+  /* The user's own message: an ordinary `user` message whose text carries the `/sw-*` gesture —
+   * the same token the host's skill plugin reads to decide to inject the skill's body. */
   const asked = agentOf('agent-sw')
-  claimMessage(events, asked, { kind: 'skill-invocation', name: 'sw-route' })
+  claimMessage(events, asked, { kind: 'user' }, '/sw-route 帮我把这个需求谈成一个节点')
   assert.deepEqual(await stepToolsOf(ctx, asked), [TOOL_NAME], 'the request that carries the skill\'s instructions carries the tool')
+
+  /* A host that names the skill in the source instead of the text is not missed either. */
+  const structured = agentOf('agent-structured')
+  claimMessage(events, structured, { kind: 'skill-invocation', name: 'sw-conduct' })
+  assert.deepEqual(await stepToolsOf(ctx, structured), [TOOL_NAME])
 
   const other = agentOf('agent-quiet')
   assert.deepEqual(await stepToolsOf(ctx, other), [], 'the mark is per agent, not per line')

@@ -22,9 +22,12 @@
  *
  * The two triggers land at different points on purpose. A user's `/sw-*` invocation is claimed from
  * the inbox *before* the step's tools are resolved, so it speaks for that very step: the request that
- * carries the skill's instructions carries the tool as well. A skill the model loads through the
- * `skill` tool can only speak for the next request, because that request has already gone out — and
- * by the time the skill's answer comes back, the next request carries both.
+ * carries the skill's instructions carries the tool as well. The message that carries the gesture is
+ * the user's own — the host's skill plugin reads the same `/name` token out of its text and injects
+ * the body later, inside the step proposal, which is too late to speak for the step that carries it.
+ * A skill the model loads through the `skill` tool can only speak for the next request, because that
+ * request has already gone out — and by the time the skill's answer comes back, the next request
+ * carries both.
  *
  * This module owns only that decision and its memory. The tool's face lives in `tool.ts`, the
  * record directory's one spelling comes from the contract (`RECORD_DIR`), the older layer's
@@ -61,11 +64,37 @@ export function armAgent(agent: object): void {
   armed.add(agent)
 }
 
+/**
+ * The `/name` gesture the host's own skill plugin reads out of a user's text — the same pattern,
+ * because this line has to recognize exactly the messages that plugin turns into a skill
+ * invocation. A user's `/sw-route` arrives as an ordinary `user` message carrying that text; the
+ * message that names the skill in its `source` is the body the skill plugin injects afterwards,
+ * inside the step proposal, which is too late to speak for the step that carries it.
+ */
+const SKILL_GESTURE = /(^|\s)\/([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s|$)/gu
+
 /** Whether a message source names one of this pipeline's own skills. */
 function isPipelineSkillSource(source: unknown): boolean {
   if (source === null || typeof source !== 'object') return false
   const held = source as { kind?: unknown; name?: unknown }
   return held.kind === 'skill-invocation' && typeof held.name === 'string' && held.name.startsWith(SKILL_NAME_PREFIX)
+}
+
+/** Whether one claimed message is a user asking for one of this pipeline's skills in their own words. */
+function userAskedForPipelineSkill(message: unknown): boolean {
+  if (message === null || typeof message !== 'object') return false
+  const held = message as { source?: { kind?: unknown }; content?: unknown }
+  if (held.source?.kind !== 'user') return false
+  const blocks = Array.isArray(held.content) ? held.content : []
+  for (const block of blocks) {
+    const typed = block as { type?: unknown; text?: unknown } | null
+    if (typed === null || typed.type !== 'text' || typeof typed.text !== 'string') continue
+    for (const match of typed.text.matchAll(SKILL_GESTURE)) {
+      const name = match[2]
+      if (typeof name === 'string' && name.startsWith(SKILL_NAME_PREFIX)) return true
+    }
+  }
+  return false
 }
 
 /**
@@ -163,13 +192,17 @@ export function installToolWake(host: SuperworkerToolHost): () => void {
     }
   }
   /* Claimed *inside* the step proposal, before that step's tools are resolved: a `/sw-*` message
-   * therefore speaks for the request that carries the skill's instructions, not the one after. */
+   * therefore speaks for the request that carries the skill's instructions, not the one after.
+   * The user's own message is the one that names the skill in its text (the host's skill plugin
+   * reads the same gesture and injects the body later); a claimed message whose `source` already
+   * names the skill is accepted too, so a host that delivers it that way is not missed. */
   const offClaim = bus.on('agent/inbox/claimed', (payload: unknown) => {
     try {
-      const held = payload as { agent?: unknown; message?: { source?: unknown } } | undefined
+      const held = payload as { agent?: unknown; message?: unknown } | undefined
       const agent = held?.agent
       if (typeof agent !== 'object' || agent === null) return
-      if (isPipelineSkillSource(held?.message?.source)) armAgent(agent)
+      const message = held?.message as { source?: unknown } | undefined
+      if (isPipelineSkillSource(message?.source) || userAskedForPipelineSkill(message)) armAgent(agent)
     } catch {
       /* A message shape this line cannot read is not a reason to fail someone else's step. */
     }
