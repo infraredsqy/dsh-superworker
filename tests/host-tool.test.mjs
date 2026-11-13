@@ -26,7 +26,8 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LEGACY_DIR_NAME, isRecognizableLegacyRecord } from 'superworker-core'
@@ -73,6 +74,37 @@ const agentOf = (id = 'agent-1') => ({ id })
 /** The tool names this step's request carries, asked through the host's own rule. */
 async function stepToolsOf(ctx, agent) {
   return [...(await ctx.tools.resolve({ agent })).keys()]
+}
+
+/**
+ * One git line in a directory, the conventions of the engine's own fixture runner: `cwd` always
+ * given, a fixed identity through the environment, a non-zero exit throws (an unbuildable fixture
+ * would make the case below assert about the wrong thing).
+ */
+function gitIn(cwd, ...args) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'git',
+      args,
+      {
+        cwd,
+        encoding: 'utf8',
+        windowsHide: true,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'superworker test',
+          GIT_AUTHOR_EMAIL: 'superworker-test@example.invalid',
+          GIT_COMMITTER_NAME: 'superworker test',
+          GIT_COMMITTER_EMAIL: 'superworker-test@example.invalid',
+          GIT_TERMINAL_PROMPT: '0',
+        },
+      },
+      (error, stdout, stderr) => {
+        if (error === null) resolve(stdout)
+        else reject(new Error(`git ${args.join(' ')} failed in ${cwd}: ${stderr || error.message}`))
+      },
+    )
+  })
 }
 
 /** Settle one tool call through every `tools/post-execute` listener the context holds. */
@@ -198,6 +230,47 @@ test('Fact wake, the old directory: an unmigrated workspace still carries the to
     assert.deepEqual(await stepToolsOf(ctx, agentOf()), [TOOL_NAME], 'an unmigrated workspace gets the tool, so it reaches migrate')
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('A session working in a linked worktree reads the record where it is: the main tree\'s, not the checkout\'s own empty root', async () => {
+  /* `fork` mode runs a node's work sessions in their own worktrees, and such a checkout carries no
+   * `.superworker/` of its own — the record stays in the main tree. The worktree here is made by git
+   * itself, so the `.git` pointer the resolution reads is the one git really writes. The gate has to
+   * resolve that pointer before looking, exactly as the assembly layer's record gate does; asked of
+   * the raw session root it answered "no" for every worktree session, and the tool never woke. */
+  const main = mkdtempSync(join(tmpdir(), 'superworker-tool-main-'))
+  const holder = mkdtempSync(join(tmpdir(), 'superworker-tool-wt-'))
+  const worktree = join(holder, 'tree')
+  try {
+    await gitIn(main, 'init', '-b', 'main')
+    await gitIn(main, 'config', 'core.autocrlf', 'false')
+    writeFileSync(join(main, 'seed.md'), '# seed\n', 'utf8')
+    await gitIn(main, 'add', '-A')
+    await gitIn(main, 'commit', '-m', 'seed', '--no-gpg-sign')
+    await gitIn(main, 'worktree', 'add', worktree, '-b', 'side')
+
+    /* The two facts the raw-root gate read: no record under the checkout, and a checkout this is. */
+    assert.equal(existsSync(join(worktree, '.superworker')), false, 'the checkout carries no record of its own')
+    assert.equal(statSync(join(worktree, '.git')).isFile(), true, 'git made this a linked worktree')
+
+    const { ctx } = context({ cwd: worktree })
+    apply(ctx)
+    const agent = agentOf()
+
+    assert.equal(hasPipelineRecord(main), false, 'the main tree holds no record yet either')
+    assert.equal(hasPipelineRecord(worktree), false, 'a checkout of a recordless main tree is no record')
+    assert.equal(offersTool(ctx, agent), false)
+    assert.deepEqual(await stepToolsOf(ctx, agent), [], 'and its request carries nothing')
+
+    mkdirSync(join(main, '.superworker'), { recursive: true })
+    assert.equal(hasPipelineRecord(main), true, 'the record is the main tree\'s own')
+    assert.equal(hasPipelineRecord(worktree), true, 'the checkout resolves to it instead of reading its own empty root')
+    assert.equal(offersTool(ctx, agent), true)
+    assert.deepEqual(await stepToolsOf(ctx, agent), [TOOL_NAME], 'so the worktree session gets the tool the main tree earns')
+  } finally {
+    rmSync(holder, { recursive: true, force: true })
+    rmSync(main, { recursive: true, force: true })
   }
 })
 

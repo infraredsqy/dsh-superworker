@@ -38,7 +38,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import { isRecognizableLegacyRecord } from 'superworker-core'
+import { isRecognizableLegacyRecord, projectRootOf } from 'superworker-core'
 import { RECORD_DIR } from './contract.ts'
 import { agentIdOf, busOf, liveWorkspaceRootOf, toolsOf } from './seams.ts'
 import {
@@ -100,17 +100,29 @@ function userAskedForPipelineSkill(message: unknown): boolean {
 /**
  * Whether this workspace carries a pipeline record — the fact that offers a session the tool.
  *
+ * **The root is resolved before anything is looked for.** The pipeline runs a node's work sessions
+ * in linked worktrees (`fork` mode), and such a checkout carries no `.superworker/` of its own: the
+ * account stays in the main tree, and the checkout's `.git` is the pointer git writes. Both readings
+ * below are therefore made at `projectRootOf(undefined, root)` — the same function the assembly
+ * layer's record gate asks (`instruction-context.ts`). Asked of the raw session root they answered
+ * "no" for every worktree session, so the tool never woke in exactly the sessions this line exists
+ * for. In a plain project root the resolution answers the root itself, so nothing changes there.
+ *
  * A record under today's name answers first. A workspace holding only the older layer counts
  * too, when the engine recognizes it as one the pipeline laid down, so an unmigrated workspace
- * reaches `migrate` and `doctor` at all — the tool is how it reaches them. An old directory the
- * engine does not recognize is somebody else's directory that shares a name: it counts as
- * nothing, and the workspace keeps the header it would have had without this plugin.
+ * reaches `migrate` and `doctor` at all — the tool is how it reaches them. That recognition runs at
+ * whatever root `projectRootOf` answered, and `projectRootOf` leads back to a main tree only when
+ * that tree holds today's `.superworker/`; a main tree carrying the older layer alone therefore
+ * leaves the reading at the checkout itself, which is where it stood before this fix too. An old
+ * directory the engine does not recognize is somebody else's directory that shares a name: it
+ * counts as nothing, and the workspace keeps the header it would have had without this plugin.
  */
 export function hasPipelineRecord(root: string | undefined): boolean {
   if (root === undefined) return false
   try {
-    if (existsSync(join(root, RECORD_DIR))) return true
-    return isRecognizableLegacyRecord(root)
+    const accountRoot = projectRootOf(undefined, root)
+    if (existsSync(join(accountRoot, RECORD_DIR))) return true
+    return isRecognizableLegacyRecord(accountRoot)
   } catch {
     /* An unreadable root is not a record: the session stays as it would be without us. */
     return false
