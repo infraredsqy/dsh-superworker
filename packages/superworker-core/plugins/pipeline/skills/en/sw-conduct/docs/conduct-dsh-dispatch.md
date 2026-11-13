@@ -27,9 +27,9 @@ node's `run` note. The session id is the host's own mint (`session-<uuid>`); it 
 navigation, and no reader needs to see it.
 
 **The prompt carries one invocation line** (`promptTextOf` in `prepare.ts`: `/sw-conduct <node id> [pipeline]`), and
-its bytes are that one line. Why nothing more is padded in: the node's title, the spec's path, the closing command
-and the user's instructions are all readable by the session itself; what gets padded in is a second copy of the same
-thing, and the older one.
+its bytes are that one line. Why nothing more is padded in: the node's title, the spec's path and the closing command
+are all readable by the session itself, and the user's instructions do not ride on this line — the host injects them
+with every round's context (nothing when nothing is visible, nothing while `injectInstructions` is off). What gets padded in is a second copy of the same thing, and the older one.
 
 ## 2. The engine and the disk, in order
 

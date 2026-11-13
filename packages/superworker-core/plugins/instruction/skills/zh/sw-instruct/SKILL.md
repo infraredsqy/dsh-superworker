@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # sw-instruct
 
-> 谁跑我：用户，只在 sw-route / sw-conduct 的会话里——只有它们读这份清单
+> 谁跑我：用户，只在 sw-route / sw-conduct 的会话里——这份清单由宿主随每轮上下文注入给它们（`injectInstructions` 关掉时不注入）
 > 我解决什么：把用户的一句话原话记进项目指令清单
 > 我派不派 subagent：不派
 

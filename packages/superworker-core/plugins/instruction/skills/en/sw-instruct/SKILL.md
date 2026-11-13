@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # sw-instruct
 
-> Who runs me: the user, only inside a sw-route / sw-conduct session — those are the only ones that read this list
+> Who runs me: the user, only inside a sw-route / sw-conduct session — the host injects this list into those with every round's context, unless `injectInstructions` is off
 > What I am for: record one sentence of the user's own words into the project instruction list
 > Do I dispatch subagents: no
 
