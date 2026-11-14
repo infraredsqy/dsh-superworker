@@ -48,8 +48,12 @@ async function specOf(window) {
  *
  * `record` is the port's filename → text dict (the four sources with something in each, when a case
  * wants a drawn panel); `workspaceRoot` is the root the session header hands the gateway.
+ * `useSessions` is the seat's session-list hook, `sessionsService` lands in the context as DSH's
+ * `sessions` service, `workspaces` is the workspace-list source — all three optional, all three
+ * forwarded the way the real seat forwards them. `rerender` re-renders the mounted panel with the
+ * same props, so a case that holds a mutable snapshot can move it and redraw.
  */
-export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session' }) {
+export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session', useSessions, sessionsService, workspaces }) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div></body></html>', {
     url: 'http://127.0.0.1/',
     pretendToBeVisual: true,
@@ -117,6 +121,7 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
     configForms: { get: () => form },
     uiWorkspace: { openSession: () => undefined },
   }
+  if (sessionsService !== undefined) services.sessions = sessionsService
   const ctx = {
     get: (name) => services[name],
     inject: (_names, callback) => callback(ctx),
@@ -153,9 +158,18 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
   }
 
   await act(async () => {
-    reactRoot.render(React.createElement(panel.Panel, { port, sessionId, prefs: panel.prefs }))
+    /* `windows` is the panel api's own forwarding face over the context's `sessions` service — the
+     * same object the slot's inject hands the real panel. */
+    reactRoot.render(React.createElement(panel.Panel, { port, sessionId, prefs: panel.prefs, useSessions, workspaces, windows: panel.windows }))
   })
   await settle()
+
+  const rerender = async () => {
+    await act(async () => {
+      reactRoot.render(React.createElement(panel.Panel, { port, sessionId, prefs: panel.prefs, useSessions, workspaces, windows: panel.windows }))
+    })
+    await settle()
+  }
 
   const unmount = async () => {
     await act(async () => { reactRoot.unmount() })
@@ -175,6 +189,7 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
     asked,
     consoleErrors,
     settle,
+    rerender,
     unmount,
     tabs: () => [...container.querySelectorAll('.superworker-tab')],
   }

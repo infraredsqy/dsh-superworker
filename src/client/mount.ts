@@ -235,7 +235,7 @@ function contribute(
     name: 'main',
     key: api.id,
     locale: LOCALE_NS,
-    inject: () => ({ port: api.port, prefs: api.prefs, locale: api.locale, openSession: nav.open, workspaces }),
+    inject: () => ({ port: api.port, prefs: api.prefs, locale: api.locale, openSession: nav.open, workspaces, windows: api.windows }),
   }, api.Panel)))
   return disposers
 }

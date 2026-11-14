@@ -3,10 +3,11 @@
  * readings and preferences, and the assembly of each pane.
  *
  * Each pane's own layout is its own document: the map `map.tsx` (with its layout engine in
- * `map-layout.ts`), detail `detail.tsx`, instruction book `notes.tsx`, project settings `config.tsx`,
- * and the issue pane `pool.tsx`; the modal is `delete-confirm.tsx`; the legacy-directory notice that
- * replaces the whole stage is `legacy.tsx`; the reading widgets shared by the map, detail, and
- * instruction book are in `marks.tsx`.
+ * `map-layout.ts`), the overview `overview.tsx` (with its layout in `overview-geom.ts` and the
+ * session-event windows in `session-events.ts`), detail `detail.tsx`, instruction book `notes.tsx`,
+ * project settings `config.tsx`, and the issue pane `pool.tsx`; the modal is `delete-confirm.tsx`;
+ * the legacy-directory notice that replaces the whole stage is `legacy.tsx`; the reading widgets
+ * shared by the map, detail, and instruction book are in `marks.tsx`.
  *
  * Not a single reading is computed here: the four records arrive through the port, and the pure
  * functions in `src/model` read them into the reading for this moment; this layer only draws it. The
@@ -15,8 +16,8 @@
  */
 import * as React from 'react'
 import type { SuperworkerReading } from '../host/contract.ts'
-import type { InstructionReading } from '../model/index.ts'
-import { everySourceIs, readProject, readSessions, strandedCycleOf } from '../model/index.ts'
+import type { InstructionReading, OverviewReading, OverviewSnapshot } from '../model/index.ts'
+import { everySourceIs, readOverview, readProject, readSessions, strandedCycleOf } from '../model/index.ts'
 import type { PrefField, PrefsSource, ViewId } from './prefs.ts'
 import { clampSide, DEFAULT_SOURCE, PANEL_PREF_FIELDS, VIEW_IDS, VIEW_WORDS } from './prefs.ts'
 import { useT } from './locale.ts'
@@ -27,6 +28,9 @@ import type { Load as LoadOf, Note } from './outcome.ts'
 import { writeToNote } from './outcome.ts'
 import type { PanelPort } from './data.ts'
 import { NO_WORKSPACES, workspaceOf, type WorkspaceSource } from './workspaces.ts'
+import { NO_WINDOWS, type SessionWindows } from './session-events.ts'
+import { READING_CAPACITY } from './overview-geom.ts'
+import { OverviewPane } from './overview.tsx'
 import { MapPane, type CardGo } from './map.tsx'
 import { ConfigPane } from './config.tsx'
 import { DeleteConfirm } from './delete-confirm.tsx'
@@ -52,6 +56,10 @@ export interface PanelProps {
   readonly knownSessions?: ReadonlySet<string> | undefined
   /** DSH's workspace list, the source of the selector at the top of the panel; without it no workspace is pickable and only this session's own workspace is read. */
   readonly workspaces?: WorkspaceSource | undefined
+  /** The session-list snapshot as the browser holds it this moment: the overview's windows and their liveness read straight off it. */
+  readonly sessions?: unknown
+  /** The session-event windows the overview's rows fold from; without it the windows draw their words alone. */
+  readonly windows?: SessionWindows | undefined
 }
 
 /** The notes when there is no session yet: no pane has anywhere to go. */
@@ -139,6 +147,10 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
      "gone". */
   const [claims, setClaims] = React.useState<Readonly<Record<string, string>>>(NO_CLAIMS)
   const [alive, setAlive] = React.useState<ReadonlySet<string> | null>(null)
+  /* The session-event windows behind the overview: one external store, read the same way every
+   * pushed state here is read. Absent, every window simply draws no rows. */
+  const windows = props.windows ?? NO_WINDOWS
+  const events = React.useSyncExternalStore(windows.subscribe, windows.getSnapshot, windows.getSnapshot)
   /* Which moment the read happened at: fixed on the fetch beat. Everything displays by it — the
    * reading already carries this moment; "now" is never fetched separately. */
   const [at, setAt] = React.useState<Date>(() => new Date())
@@ -182,14 +194,14 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
 
   /* Session notes, dispatch claims and the live-agent roster: the host half carries the record
      store's session side back verbatim, and the model layer reads "which session each cell should
-     go to" and "which cell is stranded" against it. The map has cards to click and the detail has
-     rows to judge, so the read happens on the passes either pane is visible; an unreadable one
-     draws as empty. The write-side verbs do touch this side — a dispatch lands the claim and the
-     note — so `tick` rides here too: a settled write re-reads the session side on the same beat
-     as the records, and a red cell or a card's click target moves with it rather than waiting
-     for the next page flip. */
+     go to" and "which cell is stranded" against it. The map has cards to click, the detail has
+     rows to judge, and the overview reads which node each window works — so the read happens on
+     the passes any of the three is visible; an unreadable one draws as empty. The write-side verbs
+     do touch this side — a dispatch lands the claim and the note — so `tick` rides here too: a
+     settled write re-reads the session side on the same beat as the records, and a red cell or a
+     card's click target moves with it rather than waiting for the next page flip. */
   React.useEffect(() => {
-    if (pickedNone || (tab !== 'map' && tab !== 'detail') || sessionId === undefined || sessionId.length === 0) {
+    if (pickedNone || (tab !== 'map' && tab !== 'detail' && tab !== 'overview') || sessionId === undefined || sessionId.length === 0) {
       setNotes(NO_NOTES)
       setClaims(NO_CLAIMS)
       setAlive(null)
@@ -268,6 +280,43 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
    * that says nothing. The invariant "the four sources are disjoint and together the whole" holds in
    * one place, the model layer; it is not re-derived here by summing column lengths. */
   const noNodes = project !== null && project.nodes.length === 0
+
+  /* Which node each session works, the notes' own reading turned the overview's way round: the
+   * notes name a session per node, a window's nameplate reads the node by its session. */
+  const nodeOf = React.useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const [node, session] of Object.entries(notes)) out[session] = node
+    return out
+  }, [notes])
+
+  /* The overview's reading at this beat: which windows from the session list the browser already
+   * holds, which rows from the event windows `windows` holds open, which nameplate material from
+   * the record. The rows ride a capacity — what the tallest feed could ever stand; whatever a
+   * smaller box cannot show is the pane's fade, not a scrollbar. */
+  const overview = React.useMemo((): OverviewReading | null => {
+    if (reading === null) return null
+    return readOverview({
+      sessions: (props.sessions ?? {}) as OverviewSnapshot,
+      events,
+      nodeOf,
+      nodes: reading.nodes,
+      capacity: READING_CAPACITY,
+    })
+  }, [reading, events, nodeOf, props.sessions])
+
+  /* The event windows the overview holds open are exactly the windows the reading names — the main
+   * conversation and the children still running — and only while the overview is the shown pane.
+   * Re-watching the same ids is nothing; the ids that left are released there. */
+  React.useEffect(() => {
+    if (tab !== 'overview' || overview === null) {
+      windows.watch([])
+      return
+    }
+    windows.watch(
+      [overview.main?.id, ...overview.children.map((one) => one.id)].filter((one) => one !== undefined),
+    )
+  }, [windows, overview, tab])
+  React.useEffect(() => () => windows.watch([]), [windows])
 
   /* Every write on the panel goes through this hand: put the sentence verbatim onto the note line,
    * and on success read again (`tick` moves, and the reading effect above re-runs). Returning
@@ -402,10 +451,11 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
         {/* The frame fills the footprint in every view — each pane scrolls what does not fit inside
             itself — and every pane inside it is a direct child, so its own `flex` does the sharing. */}
         <div className="superworker-frame is-fill" id="frame">
-          {/* The overview's pane stands empty on purpose: this cell only raises the tab and the stage
-              it owns — what the page draws is the next cell's work, and an empty pane beats a sentence
-              speaking for content that does not exist yet. */}
-          <PaneFrame id="overview" active={tab === 'overview'} noNodes={false} fill />
+          {/* The overview's pane draws the session's windows over one stage: the reading above
+              carries the windows and their rows, this cell only stands the pane under its tab. */}
+          <PaneFrame id="overview" active={tab === 'overview'} noNodes={false} fill>
+            {overview === null ? null : <OverviewPane reading={overview} at={at} />}
+          </PaneFrame>
 
           <MapPane
             active={tab === 'map'}

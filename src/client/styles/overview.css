@@ -1,0 +1,225 @@
+/* dsh-superworker · overview — the session's windows over one stage: the main conversation with its
+ * nameplate probing out of the frame, the running children in a column to its right, and the node
+ * rail in its lane on the left.
+ *
+ * This sheet holds no layout number of its own: where a window stands and how big it is are
+ * `overview-geom.ts`'s answer, written onto each box inline; the one row height arrives as
+ * `--superworker-orow-h` on the field, and the nameplate's probe as `--superworker-plate-out`.
+ * What lives here is tier, ink and motion, all on the tokens. The motions are four, each bound to
+ * one fact; only the breathing border loops by itself, and the global reduced-motion rule in
+ * `tokens.css` stills it with everything else. */
+
+/* ---- The stage ------------------------------------------------------------ */
+.superworker-page .superworker-overview {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The field the windows stand on; the boxes are inline. */
+.superworker-page .superworker-ofield {
+  position: absolute;
+}
+
+/* ---- The node rail -------------------------------------------------------- */
+/* One bar per running child, in the reading's order; the first is the lit one and a waiting child
+ * wears the warn ink. The lane it keeps is the geometry's (`RAIL_LANE`); the bars only fill it. */
+.superworker-page .superworker-orail {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 10px 0;
+}
+.superworker-page .superworker-orail b {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  corner-shape: round;
+  background: color-mix(in srgb, var(--superworker-ink-1) 26%, transparent);
+}
+.superworker-page .superworker-orail b.is-on {
+  background: var(--superworker-ink-1);
+}
+.superworker-page .superworker-orail b.is-need {
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 70%, transparent);
+}
+
+/* ---- A window ------------------------------------------------------------- */
+.superworker-page .superworker-opane {
+  position: absolute;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  overflow: visible;
+}
+.superworker-page .superworker-opane.is-wait {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 34%, transparent);
+}
+
+/* ---- The four motions ----------------------------------------------------- */
+/* Enter — the window set gained a window. */
+@keyframes superworker-opane-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.superworker-page .superworker-opane.is-enter {
+  animation: superworker-opane-in 0.26s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Leave — the set lost one. The pane fades where it stands; when the span has run, the page loses it. */
+@keyframes superworker-opane-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+}
+.superworker-page .superworker-opane.is-leave {
+  animation: superworker-opane-out 0.22s ease both;
+  pointer-events: none;
+}
+
+/* Fresh row — one window's newest row is not the row it was. */
+@keyframes superworker-orow-in {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.superworker-page .superworker-orow.is-fresh {
+  animation: superworker-orow-in 0.2s ease both;
+}
+
+/* Breathing border — the newest row is a dispatch row: work is out and being waited for. The one
+ * motion that loops by itself; being seen is its whole job. */
+@keyframes superworker-opane-breathe {
+  0%,
+  100% {
+    border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 26%, transparent);
+  }
+  50% {
+    border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 50%, transparent);
+  }
+}
+.superworker-page .superworker-opane.is-wait {
+  animation: superworker-opane-breathe 2.6s ease-in-out infinite;
+}
+
+/* ---- The main window's nameplate ------------------------------------------ */
+/* It hangs outside the frame, probing left; how far is the field's `--superworker-plate-out`, and
+ * the geometry stops the probe at the rail's lane. Nothing clips it. */
+.superworker-page .superworker-oplate {
+  position: absolute;
+  right: 76px;
+  left: calc(-1 * var(--superworker-plate-out, 32px));
+  top: 14px;
+  padding: 11px 15px 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
+}
+.superworker-page .superworker-oplate-t {
+  margin: 0;
+  font: var(--dsw-font-xs-13);
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+.superworker-page .superworker-oplate-m {
+  margin: 6px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font: var(--dsw-font-xxs-12);
+  line-height: 16px;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* ---- A child window's title line ------------------------------------------ */
+.superworker-page .superworker-ohead {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 8px;
+  height: 18px;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font: var(--dsw-font-xxs-12);
+  line-height: 18px;
+}
+.superworker-page .superworker-ohead-t {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+}
+.superworker-page .superworker-ohead-r {
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* ---- The feed -------------------------------------------------------------- */
+/* Bottom-justified, cut by the window's own height: what falls off the top fades, and no scrollbar
+ * ever appears. The row height is the field's `--superworker-orow-h` (`ROW_H` in the geometry). */
+.superworker-page .superworker-ofeed {
+  position: absolute;
+  left: 24px;
+  right: 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  font: var(--dsw-font-xs-13);
+  line-height: var(--superworker-orow-h, 24px);
+}
+.superworker-page .superworker-ofeed.is-fade {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, currentColor 14px);
+  mask-image: linear-gradient(to bottom, transparent 0, currentColor 14px);
+}
+.superworker-page .superworker-orow {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: var(--superworker-orow-h, 24px);
+  gap: 6px;
+  color: var(--superworker-ink-3);
+}
+.superworker-page .superworker-orow svg {
+  flex: none;
+  display: block;
+}
+.superworker-page .superworker-orow.is-dispatch,
+.superworker-page .superworker-orow:last-child {
+  color: var(--superworker-ink-2);
+}
+.superworker-page .superworker-orow.is-fail {
+  color: var(--dsw-alias-state-warn-primary);
+}
+.superworker-page .superworker-orow-t {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

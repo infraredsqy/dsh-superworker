@@ -189,6 +189,21 @@ export const en: Readonly<Record<WordKey, string>> = {
   /* ── The scope of an instruction ──────────────────────────────────────────────────────────── */
   'scope.node': 'This cell',
 
+  /* ── The overview ─────────────────────────────────────────────────────────────────────────── */
+  /* A window's own readings line and its rows' verbs. The two person-waiting modes reuse the gate
+   * words, so only the third mode needs a word of its own here. */
+  'overview.weight.light': 'light',
+  'overview.weight.standard': 'standard',
+  'overview.mode.auto': 'auto',
+  'overview.row.think': 'thinks',
+  'overview.row.read': 'reads',
+  'overview.row.write': 'writes',
+  'overview.row.run': 'runs',
+  'overview.row.output': 'says',
+  'overview.row.dispatch': 'dispatches',
+  'overview.row.fail': 'fails',
+  'overview.row.tool': 'calls',
+
   /* ── When an operation is refused ─────────────────────────────────────────────────────────── */
   /* The tool's own reason and the transport's own message are carried out verbatim: no lookup table
    * here owns another program's words. */

@@ -10,6 +10,7 @@ import { report } from './context.ts'
 import { injectAt } from './context.ts'
 import { createPanelPort, serviceAt, type PanelPort } from './data.ts'
 import { createLocalePort, LocaleProvider, localeOf, type LocaleService, type LocaleSource } from './locale.ts'
+import { createSessionWindows, type SessionWindows } from './session-events.ts'
 import { currentSessionOf, knownSessionsOf, sessionsSnapshotOf } from './sessions-view.ts'
 import { registerSeats, SEAT_WORD } from './mount.ts'
 import { SuperworkerPanel } from './panel.tsx'
@@ -63,6 +64,7 @@ export type { WorkspaceChoice, WorkspaceSnapshot, WorkspaceSource } from './work
 /** Markers of the two injected stylesheets in the document: neither should remain after unmount. */
 export { PANEL_STYLE_ID, SETTINGS_STYLE_ID } from './style-tags.ts'
 
+/** The panel's identity and service face: the port, preferences, language, session-event windows, and the panel itself. */
 export interface SuperworkerPanelApi {
   readonly id: string
   /** The panel's declared name, in the language in force when it is read. */
@@ -73,6 +75,8 @@ export interface SuperworkerPanelApi {
   readonly prefs: PrefsStore
   /** Where the words come from; the settings section is handed the same one, so both speak one language. */
   readonly locale: LocaleSource
+  /** The session-event windows the overview's rows fold from. */
+  readonly windows: SessionWindows
   /** The panel itself, passed directly as the second argument of `slots.register`. */
   readonly Panel: (props: PanelArgs) => React.ReactElement
 }
@@ -89,6 +93,8 @@ export interface PanelArgs {
   readonly openSession?: ((target: string) => void) | undefined
   /** DSH's workspace list: candidates for the selector at the top of the panel. Nothing is pickable without it. */
   readonly workspaces?: WorkspaceSource | undefined
+  /** The session-event windows behind the overview; absent, every window draws no rows. */
+  readonly windows?: SessionWindows | undefined
 }
 
 export function apply(ctx: unknown): void {
@@ -102,6 +108,9 @@ export function apply(ctx: unknown): void {
   injectAt(ctx, ['locale'], 'the locale layer did not attach', (owner) => {
     locale.attach((serviceAt(owner, 'locale') as LocaleService | undefined) ?? null)
   })
+  /* The overview's session-event windows: DSH's own session windows behind a narrow face, adopted
+   * whenever the service arrives. */
+  const windows = createSessionWindows(ctx)
   const api: SuperworkerPanelApi = {
     id: PANEL_ID,
     /* A getter rather than a captured string: the panel's name is read by whoever asks, which may be
@@ -113,6 +122,7 @@ export function apply(ctx: unknown): void {
     port,
     prefs,
     locale,
+    windows,
     Panel: Entry,
   }
   try {
@@ -135,7 +145,8 @@ export function apply(ctx: unknown): void {
  * It adds one thing over {@link SuperworkerPanel}: the center-column cell sits at the root scope and
  * does not inject `sessionId`, so this layer picks the current one from the `useSessions` snapshot;
  * when the seat passes a `sessionId` itself, that one wins. The same snapshot also yields a roster
- * the panel uses to check whether a record's session exists on this machine.
+ * the panel uses to check whether a record's session exists on this machine, and it is the
+ * overview's window list, handed down raw — the pushed state the overview reads its windows from.
  */
 function Entry(props: PanelArgs & { readonly useSessions?: unknown }): React.ReactElement {
   ensureStyle()
@@ -156,6 +167,8 @@ function Entry(props: PanelArgs & { readonly useSessions?: unknown }): React.Rea
       openSession: props.openSession,
       knownSessions,
       workspaces: props.workspaces,
+      sessions: snapshot,
+      windows: props.windows,
     }),
   )
 }

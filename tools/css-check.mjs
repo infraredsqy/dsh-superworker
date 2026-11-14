@@ -565,6 +565,15 @@ const MARKS = [
    * itself stands on is its ground — the amber tint under the sentence is 8%, so the
    * bar reads against that layer and the check can keep saying so. */
   { what: 'delete-this row · alert zone left edge', where: '.superworker-del-warn', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-2', tier: null },
+  /* The overview's own marks. The node rail's bars stand in a dense column read as mass — the
+   * lane's ground is the page's base, which nothing in the panel paints over — so the rail
+   * answers the dense floor, and the bar's ink is read as painted (the colour-mix's alpha
+   * composited over that ground). The warn family keeps the convention above: the theme's own
+   * hue, read for the record. */
+  { what: 'overview rail bar · an idle child', where: '.superworker-orail b', property: 'background', ink: 'color-mix(in srgb, var(--superworker-ink-1) 26%, transparent)', ground: '--dsw-alias-bg-base', tier: 'B' },
+  { what: 'overview rail bar · the lit child', where: '.superworker-orail b.is-on', property: 'background', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-base', tier: 'B' },
+  { what: 'overview rail bar · a child someone must move', where: '.superworker-orail b.is-need', property: 'background', ink: 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 70%, transparent)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'overview feed row · failed', where: '.superworker-orow.is-fail', property: 'color', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
   { what: 'the theme\'s own idle point (the basis of the 1.5 floor)', where: null, property: null, ink: 'var(--dsw-alias-state-idle-primary)', ground: '--dsw-alias-bg-base', tier: null },
 ]
 

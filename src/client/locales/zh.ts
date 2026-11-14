@@ -213,6 +213,22 @@ export const zh = {
   /* ── The scope of an instruction ──────────────────────────────────────────────────────────── */
   'scope.node': '这一格',
 
+  /* ── The overview ─────────────────────────────────────────────────────────────────────────── */
+  /* A window's own readings line and its rows' verbs. The two person-waiting modes reuse the gate
+   * words — the same fact said the same way on every view — so only the third mode needs a word of
+   * its own here. */
+  'overview.weight.light': '轻',
+  'overview.weight.standard': '标准',
+  'overview.mode.auto': '自动',
+  'overview.row.think': '思考',
+  'overview.row.read': '读取',
+  'overview.row.write': '写入',
+  'overview.row.run': '运行',
+  'overview.row.output': '输出',
+  'overview.row.dispatch': '派出',
+  'overview.row.fail': '失败',
+  'overview.row.tool': '调用',
+
   /* ── When an operation is refused ─────────────────────────────────────────────────────────── */
   /* Each code from `src/host/failure.ts` and `src/client/failure.ts` reads as one of these.
    *
