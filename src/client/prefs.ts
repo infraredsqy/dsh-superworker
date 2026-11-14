@@ -25,10 +25,11 @@ export { PANEL_PREF_DEFAULTS, PANEL_PREF_FIELDS, SIDE_DEFAULT, SIDE_MAX, SIDE_MI
 /** Which settings-document field the panel writes back to; the names are the document's keys. */
 export type PrefField = (typeof PANEL_PREF_FIELDS)[keyof typeof PANEL_PREF_FIELDS]
 
-/** What each of the five views is called, as a key rather than as a word: both the settings row and
+/** What each of the six views is called, as a key rather than as a word: both the settings row and
  * the tab row render it through the same translator, so the two cannot drift apart, and the word
  * itself can change language without either of them knowing. */
 export const VIEW_WORDS: Readonly<Record<ViewId, WordKey>> = {
+  overview: 'view.overview',
   map: 'view.map',
   detail: 'view.detail',
   notes: 'view.notes',

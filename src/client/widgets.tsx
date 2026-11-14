@@ -5,7 +5,7 @@
  * Each exists only once: the drag measurement differs in three places, but draggable + keyboard +
  * double-click-to-default is written down in one way; the modal's overlay, Escape, and focus all
  * come from one place, with each pane contributing only its body; and the pane shell's tab wiring
- * and "no record yet" sentence are stated once for the five views.
+ * and "no record yet" sentence are stated once for the six views.
  */
 import * as React from 'react'
 import { NOT_ENABLED_WORD } from './constants.ts'
@@ -16,7 +16,7 @@ import { useT } from './locale.ts'
  * the view id the tab row uses, and the "this workspace has no record yet" sentence in place of the
  * body.
  *
- * @param props - The view id (`map`, `detail`, `notes`, `issue`, `config` — the tab row's own ids),
+ * @param props - The view id (`overview`, `map`, `detail`, `notes`, `issue`, `config` — the tab row's own ids),
  *   whether the pane is the visible one, whether the workspace has no node record at all, what this
  *   pane's own sheet hangs on it beyond `superworker-pane`, whether it fills the frame's footprint, a region
  *   name for panes whose head is not their label, and the body.

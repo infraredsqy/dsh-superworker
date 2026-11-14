@@ -54,6 +54,7 @@ export const en: Readonly<Record<WordKey, string>> = {
   'issue.resolved': 'Resolved',
 
   /* ── The panel's own display controls ─────────────────────────────────────────────────────── */
+  'view.overview': 'Overview',
   'view.map': 'Map',
   'view.detail': 'Detail',
   'view.notes': 'Instructions',

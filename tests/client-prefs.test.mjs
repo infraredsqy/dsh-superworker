@@ -80,9 +80,12 @@ test('sections that cannot be read fall back to the factory ones, the rest read 
   assert.deepEqual(prefsFromSection({}), DEFAULT_PREFS)
   /* Stored records may still hold words written by older versions: unrecognized ones each fall back, the rest read through. */
   assert.deepEqual(
-    prefsFromSection({ defaultTab: 'overview', showArchived: 'yes', sideWidth: 'wide' }),
+    prefsFromSection({ defaultTab: 'cards', showArchived: 'yes', sideWidth: 'wide' }),
     DEFAULT_PREFS,
   )
+  /* The overview tab's own word reads back as itself: the tab exists in the view list, so a stored
+   * `overview` is recognized rather than silently downgraded to the map. */
+  assert.equal(prefsFromSection({ defaultTab: 'overview' }).tab, 'overview')
   assert.deepEqual(
     prefsFromSection({ defaultTab: 'issue', showArchived: 1, showOtherStates: 0 }),
     { sideWidth: DEFAULT_PREFS.sideWidth, tab: 'issue', archived: false, otherStates: false, autoRelay: true, injectInstructions: true },

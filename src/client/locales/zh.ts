@@ -67,6 +67,7 @@ export const zh = {
   'issue.resolved': '已解决',
 
   /* ── The panel's own display controls ─────────────────────────────────────────────────────── */
+  'view.overview': '总览',
   'view.map': '地图',
   'view.detail': '明细',
   'view.notes': '指令',

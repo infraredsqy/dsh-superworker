@@ -59,8 +59,8 @@ ignored. The version policy and the third route (installing from git) live in
 
 ## What you get
 
-- a **Superworker** entry in the Web UI sidebar: views over the record — the map, details,
-  instructions, the issue pool, and the panel's own settings
+- a **Superworker** entry in the Web UI sidebar: views over the record — the overview (an empty
+  pane), the map, details, instructions, the issue pool, and the panel's own settings
 - a **Superworker settings** section in the DSH settings: whether archived instructions show,
   whether closed issues show, whether a settled line opens its next round by itself, and whether the
   instructions in force are carried into the session context

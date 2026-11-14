@@ -1,5 +1,5 @@
 /**
- * The main panel's shell: the five-pane tab row, switching between views, the fetch lines for
+ * The main panel's shell: the six-pane tab row, switching between views, the fetch lines for
  * readings and preferences, and the assembly of each pane.
  *
  * Each pane's own layout is its own document: the map `map.tsx` (with its layout engine in
@@ -36,7 +36,7 @@ import { NotesPane } from './notes.tsx'
 import { IssuePool } from './pool.tsx'
 import { PaneFrame } from './widgets.tsx'
 
-/* The five views, in tab order: the ids are the settings document's own list (VIEW_IDS), so the
+/* The six views, in tab order: the ids are the settings document's own list (VIEW_IDS), so the
  * settings dropdown and the tab row cannot drift apart and neither knows the language. Every pane
  * fills the stage's footprint; the word on each tab is looked up when the tab row is drawn. */
 const VIEWS = VIEW_IDS
@@ -403,6 +403,11 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
         {/* The frame fills the footprint in every view — each pane scrolls what does not fit inside
             itself — and every pane inside it is a direct child, so its own `flex` does the sharing. */}
         <div className="superworker-frame is-fill" id="frame">
+          {/* The overview's pane stands empty on purpose: this cell only raises the tab and the stage
+              it owns — what the page draws is the next cell's work, and an empty pane beats a sentence
+              speaking for content that does not exist yet. */}
+          <PaneFrame id="overview" active={tab === 'overview'} noNodes={false} fill />
+
           <MapPane
             active={tab === 'map'}
             noNodes={noNodes}

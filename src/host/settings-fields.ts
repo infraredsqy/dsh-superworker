@@ -8,8 +8,8 @@
  * here.
  */
 
-/** Ids of the five views; a tab element is `tab-<id>` and its pane `pane-<id>`. */
-export type ViewId = 'map' | 'detail' | 'notes' | 'issue' | 'config'
+/** Ids of the six views; a tab element is `tab-<id>` and its pane `pane-<id>`. */
+export type ViewId = 'overview' | 'map' | 'detail' | 'notes' | 'issue' | 'config'
 
 /**
  * The names of the fields in this section: the host schema's keys, the paths
@@ -33,8 +33,8 @@ export const SIDE_MAX = 320
 /** The width before any dragging. */
 export const SIDE_DEFAULT = 176
 
-/** The five views, ordered as the row of tabs. */
-export const VIEW_IDS: readonly ViewId[] = ['map', 'detail', 'notes', 'issue', 'config']
+/** The six views, ordered as the row of tabs. */
+export const VIEW_IDS: readonly ViewId[] = ['overview', 'map', 'detail', 'notes', 'issue', 'config']
 
 /**
  * The shape before anything has been recorded.
