@@ -25,9 +25,8 @@ export { PANEL_PREF_DEFAULTS, PANEL_PREF_FIELDS, SIDE_DEFAULT, SIDE_MAX, SIDE_MI
 /** Which settings-document field the panel writes back to; the names are the document's keys. */
 export type PrefField = (typeof PANEL_PREF_FIELDS)[keyof typeof PANEL_PREF_FIELDS]
 
-/** What each of the six views is called, as a key rather than as a word: both the settings row and
- * the tab row render it through the same translator, so the two cannot drift apart, and the word
- * itself can change language without either of them knowing. */
+/** What each of the six views is called, as a key rather than as a word: the tab row renders it
+ * through the translator when it draws, so the word can change language without the row knowing. */
 export const VIEW_WORDS: Readonly<Record<ViewId, WordKey>> = {
   overview: 'view.overview',
   map: 'view.map',
@@ -40,7 +39,7 @@ export const VIEW_WORDS: Readonly<Record<ViewId, WordKey>> = {
 export interface PanelPrefs {
   /** Width of the line sidebar on the left of the detail view, in pixels. */
   readonly sideWidth: number
-  /** Which view the panel lands on when shown. */
+  /** Which view the panel lands on when shown: the one it was last left on, or the overview when nothing is recorded yet. */
   readonly tab: ViewId
   /** Whether the instructions view folds archived entries back into their sections. */
   readonly archived: boolean
@@ -54,7 +53,7 @@ export interface PanelPrefs {
 
 export const DEFAULT_PREFS: PanelPrefs = {
   sideWidth: PANEL_PREF_DEFAULTS.sideWidth,
-  tab: 'map',
+  tab: 'overview',
   archived: false,
   otherStates: false,
   autoRelay: PANEL_PREF_DEFAULTS.autoRelay,
@@ -76,7 +75,7 @@ export function clampSide(px: number): number {
 export function prefsFromSection(section: unknown): PanelPrefs {
   const held = (typeof section === 'object' && section !== null ? section : {}) as Readonly<Record<string, unknown>>
   const width = held[PANEL_PREF_FIELDS.sideWidth]
-  const tab = held[PANEL_PREF_FIELDS.defaultTab]
+  const tab = held[PANEL_PREF_FIELDS.lastTab]
   const relay = held[PANEL_PREF_FIELDS.autoRelay]
   const inject = held[PANEL_PREF_FIELDS.injectInstructions]
   return {

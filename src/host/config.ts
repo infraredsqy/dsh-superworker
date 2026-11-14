@@ -43,8 +43,8 @@ export function buildConfig(z: Schemastery): Schema<Record<string, unknown>> {
     [PANEL_PREF_FIELDS.sideWidth]: live(
       z.number().min(SIDE_MIN).max(SIDE_MAX).default(PANEL_PREF_DEFAULTS.sideWidth),
     ),
-    [PANEL_PREF_FIELDS.defaultTab]: live(
-      z.union(VIEW_IDS).default(PANEL_PREF_DEFAULTS.defaultTab),
+    [PANEL_PREF_FIELDS.lastTab]: live(
+      z.union(VIEW_IDS).default(PANEL_PREF_DEFAULTS.lastTab),
     ),
     [PANEL_PREF_FIELDS.showArchived]: live(
       z.boolean().default(PANEL_PREF_DEFAULTS.showArchived),

@@ -36,8 +36,7 @@ import { NotesPane } from './notes.tsx'
 import { IssuePool } from './pool.tsx'
 import { PaneFrame } from './widgets.tsx'
 
-/* The six views, in tab order: the ids are the settings document's own list (VIEW_IDS), so the
- * settings dropdown and the tab row cannot drift apart and neither knows the language. Every pane
+/* The six views, in tab order: the ids are the settings document's own list (VIEW_IDS). Every pane
  * fills the stage's footprint; the word on each tab is looked up when the tab row is drawn. */
 const VIEWS = VIEW_IDS
 
@@ -324,7 +323,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
 
   const pickView = React.useCallback((id: ViewId) => {
     setTab(id)
-    keep(PANEL_PREF_FIELDS.defaultTab, id)
+    keep(PANEL_PREF_FIELDS.lastTab, id)
   }, [keep])
 
   const pickOtherStates = React.useCallback((on: boolean) => {

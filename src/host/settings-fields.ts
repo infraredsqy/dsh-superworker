@@ -18,7 +18,7 @@ export type ViewId = 'overview' | 'map' | 'detail' | 'notes' | 'issue' | 'config
  */
 export const PANEL_PREF_FIELDS = {
   sideWidth: 'sideWidth',
-  defaultTab: 'defaultTab',
+  lastTab: 'lastTab',
   showArchived: 'showArchived',
   showOtherStates: 'showOtherStates',
   autoRelay: 'autoRelay',
@@ -40,10 +40,11 @@ export const VIEW_IDS: readonly ViewId[] = ['overview', 'map', 'detail', 'notes'
  * The shape before anything has been recorded.
  *
  * Two fields have no row in the settings page. The sidebar width is a
- * dragged value; the tab is the view the panel was last left on, which the
- * panel writes back on every switch — a row for it would read as a default and
- * then be overwritten by the next click. Both still live in this document, so
- * both still get a factory default here.
+ * dragged value; `lastTab` is the view the panel was last left on, which the
+ * panel writes back on every switch — it is the panel's memory of where it
+ * was, not a choice to offer (a row for it would be overwritten by the next
+ * click anyway). Both still live in this document, so both still get a
+ * factory default here.
  *
  * The relay switch defaults to on: whether a round is opened by hand or by
  * the relay should not depend on a row nobody has touched. The injection
@@ -53,7 +54,7 @@ export const VIEW_IDS: readonly ViewId[] = ['overview', 'map', 'detail', 'notes'
  */
 export const PANEL_PREF_DEFAULTS = {
   sideWidth: SIDE_DEFAULT,
-  defaultTab: 'map',
+  lastTab: 'overview',
   showArchived: false,
   showOtherStates: false,
   autoRelay: true,
