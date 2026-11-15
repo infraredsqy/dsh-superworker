@@ -201,6 +201,182 @@ test('a snapshot nothing can be read off: an empty reading, and no throw', () =>
   )
 })
 
+/* ---- which conversation is the main window -------------------------------
+ *
+ * The main window is the pipeline's own conversation, never the browser's. The
+ * record names the sessions this workspace's pipeline owns (the node notes'
+ * sessions); a session it never named belongs to something else, however open
+ * it is. DSH's `retainedBy.mainView` marker is a browser-side "who holds this
+ * open" count and decides nothing while the record side is in hand.
+ */
+
+/** A session the record names: its own liveness and last move, read off the list. */
+function pipelineRow(id, extra = {}) {
+  return { id, running: false, displayTitle: `pipeline ${id}`, updatedAt: '2026-01-01T00:00:00.000Z', ...extra }
+}
+
+test('the stale conversation DSH marks as its main view is not drawn: the record-named one is', () => {
+  /* The user's own scene: the browser still holds an unrelated old conversation open (it carries
+   * `retainedBy.mainView`), while the record names a different session as this pipeline's own. */
+  const stale = 'session-old'
+  const ours = 'session-pipeline'
+  const reading = readOverview({
+    sessions: snapshot([stale, ours, 'c-old', 'c-ours'], {
+      [stale]: mainRow(stale, { running: false, updatedAt: '2026-11-13T13:57:50.000Z' }),
+      [ours]: pipelineRow(ours, { running: true, updatedAt: '2026-11-15T16:00:00.000Z' }),
+      'c-old': childRow('c-old', stale),
+      'c-ours': childRow('c-ours', ours),
+    }),
+    pipelineSessions: [ours],
+    sessionId: 'session-elsewhere',
+    events: {
+      [stale]: [said(1, undefined, '一条旧会话的行')],
+      [ours]: [said(2, undefined, '这条管道自己的行')],
+      'c-old': [said(3, undefined, '旧会话的子窗')],
+      'c-ours': [said(4, undefined, '管道的子窗')],
+    },
+  })
+  assert.equal(reading.main.id, ours, `the main window is ${reading.main.id}, not the record-named session`)
+  assert.deepEqual(reading.children.map((w) => w.id), ['c-ours'], `the drawn children are ${reading.children.map((w) => w.id)}`)
+  assert.deepEqual(reading.main.rows.map((row) => row.full), ['这条管道自己的行'], "the main window's rows are not its own log")
+  assert.equal(reading.hiddenChildren, 0, 'the stale conversation was counted as a folded child')
+})
+
+test("the panel's own session wins among the record-named ones, running or not", () => {
+  const mine = 'session-mine'
+  const other = 'session-other'
+  const reading = readOverview({
+    sessions: snapshot([other, mine], {
+      [other]: pipelineRow(other, { running: true, updatedAt: '2026-11-15T20:00:00.000Z' }),
+      [mine]: pipelineRow(mine, { running: false, updatedAt: '2026-11-14T19:33:48.000Z' }),
+    }),
+    pipelineSessions: [other, mine],
+    sessionId: mine,
+    events: { [mine]: [said(1, undefined, '我自己的最后一句')], [other]: [said(2, undefined, '另一个会话的行')] },
+  })
+  assert.equal(reading.main.id, mine, `the main window is ${reading.main.id}, not the panel's own session`)
+  assert.deepEqual(reading.main.rows.map((row) => row.full), ['我自己的最后一句'])
+})
+
+test('several historical pipeline sessions and one still running: the running one is drawn', () => {
+  /* The machine's own state: every finished node left its session in the record. */
+  const historical = ['session-a', 'session-b', 'session-c', 'session-e']
+  const running = 'session-running'
+  const byId = { [running]: pipelineRow(running, { running: true, updatedAt: '2026-11-15T15:00:00.000Z' }) }
+  for (const id of historical) byId[id] = pipelineRow(id, { updatedAt: '2026-11-04T00:00:00.000Z' })
+  const reading = readOverview({
+    sessions: snapshot([...historical, running], byId),
+    pipelineSessions: [...historical, running],
+    sessionId: 'session-subagent',
+  })
+  assert.equal(reading.main.id, running, `the main window is ${reading.main.id}, not the one still running`)
+})
+
+test('none of the record-named sessions is running: the one that moved last is drawn', () => {
+  const older = 'session-older'
+  const newer = 'session-newer'
+  const reading = readOverview({
+    sessions: snapshot([older, newer], {
+      [older]: pipelineRow(older, { updatedAt: '2026-11-04T00:00:00.000Z' }),
+      [newer]: pipelineRow(newer, { updatedAt: '2026-11-15T02:00:00.000Z' }),
+    }),
+    pipelineSessions: [older, newer],
+  })
+  assert.equal(reading.main.id, newer, `the main window is ${reading.main.id}, not the one that moved last`)
+})
+
+test('a record-named session the list does not hold draws nothing: the stale main view is no stand-in', () => {
+  const stale = 'session-old'
+  const reading = readOverview({
+    sessions: snapshot([stale, 'c-old'], { [stale]: mainRow(stale), 'c-old': childRow('c-old', stale) }),
+    pipelineSessions: ['session-not-on-this-machine'],
+    sessionId: 'session-not-on-this-machine',
+  })
+  assert.equal(reading.main, null, 'a window was drawn for a session the list does not hold')
+  assert.deepEqual(reading.children, [], 'children were drawn off a session the list does not hold')
+})
+
+test('the record names no session at all: no window, rather than an unrelated conversation', () => {
+  const stale = 'session-old'
+  const reading = readOverview({
+    sessions: snapshot([stale, 'c-old'], {
+      [stale]: mainRow(stale, { running: true }),
+      'c-old': childRow('c-old', stale),
+    }),
+    pipelineSessions: [],
+    sessionId: 'session-subagent',
+    events: { [stale]: [said(1, undefined, '不该出现的行')] },
+  })
+  assert.deepEqual(reading, { main: null, children: [], hiddenChildren: 0 })
+})
+
+test('another conversation in the same workspace, and its children, are never drawn', () => {
+  const ours = 'session-pipeline'
+  const stranger = 'session-unrelated'
+  const reading = readOverview({
+    sessions: snapshot(['c1', ours, stranger, 'c-stranger'], {
+      [ours]: pipelineRow(ours, { running: true, updatedAt: '2026-11-15T15:00:00.000Z' }),
+      c1: childRow('c1', ours),
+      [stranger]: pipelineRow(stranger, { running: true, updatedAt: '2026-11-15T16:00:00.000Z' }),
+      'c-stranger': childRow('c-stranger', stranger),
+    }),
+    pipelineSessions: [ours],
+    sessionId: 'session-elsewhere',
+    events: {
+      'c-stranger': [said(1, undefined, '别人的子会话的行')],
+      c1: [said(2, undefined, '我的子会话的行')],
+    },
+  })
+  assert.equal(reading.main.id, ours)
+  assert.deepEqual(reading.children.map((w) => w.id), ['c1'], `the drawn children are ${reading.children.map((w) => w.id)}`)
+  assert.deepEqual(reading.children[0].rows.map((row) => row.full), ['我的子会话的行'])
+  assert.equal(reading.hiddenChildren, 0, 'a child of another conversation was counted as a folded window')
+})
+
+test("the main window's anchors are read off its own log, never the conversation beside it", () => {
+  const ours = 'session-pipeline'
+  const stale = 'session-old'
+  const reading = readOverview({
+    sessions: snapshot([stale, 'c-stale', ours, 'c-ours'], {
+      [stale]: mainRow(stale),
+      'c-stale': childRow('c-stale', stale),
+      [ours]: pipelineRow(ours, { running: true }),
+      'c-ours': childRow('c-ours', ours),
+    }),
+    pipelineSessions: [ours],
+    sessionId: 'session-elsewhere',
+    events: {
+      /* Both conversations dispatched, each with its own call id. */
+      [stale]: [
+        call(1, 'call-stale', 'subagent', { description: '旧会话派出去的', prompt: '…' }),
+        catalog(2, { version: 0, childId: 'c-stale', childCreatedAt: 2, mode: 'continuable', label: '旧会话派出去的' }),
+        result(3, 'call-stale', 'started subagent c-stale'),
+      ],
+      [ours]: [
+        call(4, 'call-ours', 'subagent', { description: '管道派出去的', prompt: '…' }),
+        catalog(5, { version: 0, childId: 'c-ours', childCreatedAt: 5, mode: 'continuable', label: '管道派出去的' }),
+        result(6, 'call-ours', 'started subagent c-ours'),
+      ],
+    },
+    nodeOf: { [ours]: 'n-ours', [stale]: 'n-stale' },
+    nodes: { 'n-ours': { title: '管道自己的节点', mode: 'auto' }, 'n-stale': { title: '旧会话的节点', mode: 'auto' } },
+  })
+  assert.equal(reading.main.title, '管道自己的节点', `the nameplate reads ${reading.main.title}`)
+  assert.deepEqual(reading.main.rows.map((row) => row.callId), ['call-ours'], "the main window's rows came from another conversation")
+  assert.equal(anchorOf(reading, 'c-ours'), 'call-ours', 'the child is not anchored to its own dispatch')
+  assert.equal(reading.children.length, 1, `the reading drew ${reading.children.length} children`)
+})
+
+test('a caller that says nothing about the pipeline keeps DSH\'s main view: the old reading stands', () => {
+  const reading = mainAlone()
+  assert.equal(reading.main.id, MAIN, 'the main view is no longer read when the caller says nothing')
+  const said_nothing = readOverview({
+    sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }),
+    events: { [MAIN]: [said(1, undefined, '一句话')] },
+  })
+  assert.deepEqual(said_nothing.main.rows.map((row) => row.full), ['一句话'])
+})
+
 /* ---- which rows ---------------------------------------------------------- */
 
 test('a failed tool call folds into a fail row, the reason whole', () => {

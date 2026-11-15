@@ -324,18 +324,24 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
 
   /* The overview's reading at this beat: which windows from the session list the browser already
    * holds, which rows from the event windows `windows` holds open, which nameplate material from
-   * the record. The rows ride a capacity — what the tallest feed could ever stand; whatever a
-   * smaller box cannot show is the pane's fade, not a scrollbar. */
+   * the record. Which conversation is the main window is decided by the pipeline's own record: the
+   * sessions its node notes name are the only ones this pane may draw, and this panel's own session
+   * wins among them. DSH's `retainedBy.mainView` is deliberately not trusted here — it marks
+   * whichever conversation the browser holds open, and an unrelated old one carrying it is exactly
+   * how a foreign conversation got drawn. The rows ride a capacity — what the tallest feed could
+   * ever stand; whatever a smaller box cannot show is the pane's fade, not a scrollbar. */
   const overview = React.useMemo((): OverviewReading | null => {
     if (reading === null) return null
     return readOverview({
       sessions: (props.sessions ?? {}) as OverviewSnapshot,
+      sessionId,
+      pipelineSessions: Object.values(notes),
       events,
       nodeOf,
       nodes: reading.nodes,
       capacity: READING_CAPACITY,
     })
-  }, [reading, events, nodeOf, props.sessions])
+  }, [reading, events, nodeOf, props.sessions, sessionId, notes])
 
   /* The event windows the overview holds open are exactly the windows the reading names — the main
    * conversation and the children still running — and only while the overview is the shown pane.

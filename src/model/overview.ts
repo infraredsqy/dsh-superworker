@@ -10,12 +10,21 @@
  * out is only the reading — which windows, which rows, what each row carries.
  * Sizes, positions, motion, pixels: none of that lives here.
  *
+ * Which conversation is the main window is the pipeline's own fact, not the
+ * window manager's: only a session this workspace's record names is ever drawn
+ * (`pipelineSessions`), and among those the panel's own session wins, then the
+ * one still running, then the one that moved last. DSH's `retainedBy.mainView`
+ * is a browser-side count of who holds a session open — a conversation the
+ * record never named can carry it, which is exactly how an unrelated old
+ * conversation once got drawn — so it is read only when the caller says
+ * nothing at all about which sessions this pipeline owns.
+ *
  * The snapshot's and the log's field spellings are DSH's own (`running`,
- * `parentId`, `retainedBy.mainView`, `tool/call`, …), read defensively: a
- * field that is not there reads as absent, and no default pretends to know it.
- * No "still running this round" projection folded out of logs is read either —
- * that word stops at its old value when a session dies mid-round, and the
- * list's own running bit is the authority.
+ * `parentId`, `updatedAt`, `tool/call`, …), read defensively: a field that is
+ * not there reads as absent, and no default pretends to know it. No "still
+ * running this round" projection folded out of logs is read either — that word
+ * stops at its old value when a session dies mid-round, and the list's own
+ * running bit is the authority.
  */
 import type { SuperworkerNode } from './records.ts'
 import { text } from './fields.ts'
@@ -24,20 +33,27 @@ import { text } from './fields.ts'
  * The window cap: more than this many children still running, and the overview
  * draws only the most recent ones. The cap counts the children alone — the
  * main window is the conversation this panel lives in, and it is one of the
- * windows whenever the list has it.
+ * windows whenever the record names it and the list has it.
  */
 const WINDOW_CAP = 5
 
 /** One row of the session-list snapshot, as far as this reading reads it. */
 export interface OverviewSessionRow {
   readonly id?: unknown
-  /** The list's running bit: the authoritative alive word for a child. */
+  /** The list's running bit: the authoritative alive word for a child, and the second thing the main window is chosen by. */
   readonly running?: unknown
   /** The parent's id: what makes a session one of the main session's children. */
   readonly parentId?: unknown
   /** The label the list itself spells: a window's title when it works no node. */
   readonly displayTitle?: unknown
-  /** Local ownership counts; `mainView` over zero marks the main view's session. */
+  /** When the list last moved this row: the last thing the main window is chosen by, the newest surviving. */
+  readonly updatedAt?: unknown
+  /**
+   * DSH's main-view count: who holds this session open in the browser. It is
+   * **not** a pipeline fact — a conversation this record never named can carry
+   * it — so it decides nothing while the caller says which sessions the
+   * pipeline owns ({@link OverviewInput.pipelineSessions}).
+   */
   readonly retainedBy?: { readonly mainView?: unknown }
 }
 
@@ -103,7 +119,13 @@ export interface OverviewWindow {
 
 /** The overview's reading at this snapshot. */
 export interface OverviewReading {
-  /** The main window: the conversation this panel lives in; absent when the list has none. */
+  /**
+   * The main window: the conversation this panel's pipeline owns — its own
+   * session when the record names it, else a named one still running, else the
+   * named one that moved last. Absent when the record names none of the list's
+   * sessions: the stage stays empty rather than showing a conversation the
+   * pipeline never mentioned.
+   */
   readonly main: OverviewWindow | null
   /** The children still running this round, oldest first: at most five, taken anew at every read. */
   readonly children: readonly OverviewWindow[]
@@ -123,6 +145,24 @@ export interface OverviewInput {
   readonly nodes?: Readonly<Record<string, SuperworkerNode>>
   /** How many rows a window has room for; the most recent are kept. Absent means no cut. */
   readonly capacity?: unknown
+  /**
+   * Every session this workspace's record names — the node notes' `run` /
+   * `discussion` entries. These are the **only** conversations the overview may
+   * draw as its main window: a session the pipeline never named belongs to
+   * something else, however open it is in the browser.
+   *
+   * Supplied as an empty array, the pipeline names nothing and no window is
+   * drawn — better an empty stage than an unrelated conversation. Absent
+   * altogether means the caller has no record side at all, and only then does
+   * DSH's own `retainedBy.mainView` marker decide (see {@link OverviewSessionRow.retainedBy}).
+   */
+  readonly pipelineSessions?: readonly unknown[] | undefined
+  /**
+   * Which session this panel itself belongs to (DSH's own `sessionId` prop).
+   * It is the main window whenever the record names it — the reader's own
+   * conversation is the one they expect to see, running or not.
+   */
+  readonly sessionId?: unknown
 }
 
 /** The drawn row each tool name folds into. A name outside the four sets is a tool this fold does not know, and folds as the neutral `tool`. */
@@ -168,18 +208,106 @@ function listedIds(snapshot: OverviewSnapshot): readonly string[] {
 }
 
 /**
- * The main view's session: the row whose `retainedBy.mainView` is over zero —
- * the list's own standard for "the one currently open", read the one way it is
- * read anywhere in this panel.
+ * DSH's own main-view marker: the row whose `retainedBy.mainView` is over zero.
+ *
+ * This is a browser-side count — who holds the session open right now — and
+ * says nothing about which conversation belongs to this workspace's pipeline.
+ * It is read in exactly one place: a caller that hands over no record side and
+ * no session of its own (see {@link OverviewInput.pipelineSessions}).
  */
-function mainIdOf(snapshot: OverviewSnapshot): string | undefined {
-  for (const row of Object.values(rowsOf(snapshot))) {
+function mainViewOf(rows: Readonly<Record<string, OverviewSessionRow>>): string | undefined {
+  for (const row of Object.values(rows)) {
     const count = asRecord(row?.retainedBy)?.mainView
     if (typeof count !== 'number' || count <= 0) continue
     const id = row?.id
     if (typeof id === 'string' && id.length > 0) return id
   }
   return undefined
+}
+
+/**
+ * The sessions the pipeline record names, or `undefined` when the caller said
+ * nothing at all (which is a different fact from "the record names none").
+ */
+function pipelineOf(input: OverviewInput): ReadonlySet<string> | undefined {
+  if (!Array.isArray(input.pipelineSessions)) return undefined
+  const named = new Set<string>()
+  for (const id of input.pipelineSessions) {
+    if (typeof id === 'string' && id.length > 0) named.add(id)
+  }
+  return named
+}
+
+/** When the list last moved a row: epoch milliseconds, 0 when it says nothing readable. */
+function movedAtOf(row: OverviewSessionRow | undefined): number {
+  const raw = row?.updatedAt
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  if (typeof raw === 'string' && raw.length > 0) {
+    const ms = Date.parse(raw)
+    if (!Number.isNaN(ms)) return ms
+  }
+  return 0
+}
+
+/**
+ * The newest of these sessions: the one whose row the list moved last, ties
+ * falling to the later arrival in the list's own order. Unwritten moments read
+ * as 0, so a list that carries none still answers with an arrival-order pick.
+ */
+function latestOf(
+  ids: readonly string[],
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+  order: readonly string[],
+): string | undefined {
+  let best: string | undefined
+  let bestMoment = Number.NEGATIVE_INFINITY
+  let bestAt = Number.NEGATIVE_INFINITY
+  for (const id of ids) {
+    const moment = movedAtOf(rows[id])
+    const at = order.indexOf(id)
+    if (best === undefined || moment > bestMoment || (moment === bestMoment && at > bestAt)) {
+      best = id
+      bestMoment = moment
+      bestAt = at
+    }
+  }
+  return best
+}
+
+/**
+ * Which conversation is the main window — the one rule, in the order it reads:
+ *
+ * 1. the panel's own session, when the record names it: the reader's own
+ *    conversation, running or not;
+ * 2. else a session the record names that the list still calls running (the
+ *    newest of them when several are);
+ * 3. else the one the record names that moved last;
+ * 4. else nothing — no window at all, rather than a conversation the pipeline
+ *    never mentioned.
+ *
+ * A named session the list does not hold is no window either, and it is never
+ * stood in for by one the pipeline does not name: an unknown is unknown.
+ *
+ * Only a caller that says nothing about the pipeline — no named set, no session
+ * of its own — falls back to DSH's `retainedBy.mainView` marker, which is the
+ * browser's own "who has this open" count and no reading of the record.
+ */
+function mainIdOf(
+  input: OverviewInput,
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+  order: readonly string[],
+): string | undefined {
+  const named = pipelineOf(input)
+  const self = text(input.sessionId)
+  if (named === undefined) {
+    if (self !== undefined) return rows[self] === undefined ? undefined : self
+    return mainViewOf(rows)
+  }
+  if (self !== undefined && named.has(self)) return rows[self] === undefined ? undefined : self
+  const candidates = [...named].filter((id) => rows[id] !== undefined)
+  const running = candidates.filter((id) => rows[id]?.running === true)
+  if (running.length > 0) return latestOf(running, rows, order)
+  return candidates.length > 0 ? latestOf(candidates, rows, order) : undefined
 }
 
 /**
@@ -481,28 +609,30 @@ function windowOf(
 /**
  * Read the overview's windows and rows off one snapshot.
  *
- * The main session in the list is one window — its being the list's main view
- * is the whole fact, running or not, because it is the conversation the reader
- * is in. A child counts as a window only while the list's running bit says it
- * is still running this round: ended it drops, called up again it is a window
- * again, and nothing is probed or pinned to hold it. Over five running
- * children the most recent five are taken — taken whole from whoever is alive
- * at that moment, never the first five pinned, never a gap filled at the end —
- * and the ones the five leave out are counted, not drawn: `hiddenChildren` is
- * how many running children the cap folded away.
- * A list without a main view makes no overview at all: the children hang from
- * the conversation this panel lives in, and without it there is nothing to
- * hang them on.
+ * The main window is the conversation this panel's pipeline owns
+ * ({@link mainIdOf}): its own session when the record names it, else a named
+ * session still running, else the named one that moved last — and no window at
+ * all when the record names none, or names only sessions the list does not
+ * hold. A child counts as a window only while the list's running bit says it is
+ * still running this round **and** its `parentId` is that main session: a
+ * session of another conversation, and any child of one, is never drawn here.
+ * Ended a child drops, called up again it is a window again, and nothing is
+ * probed or pinned to hold it. Over five running children the most recent five
+ * are taken — taken whole from whoever is alive at that moment, never the first
+ * five pinned, never a gap filled at the end — and the ones the five leave out
+ * are counted, not drawn: `hiddenChildren` is how many running children the cap
+ * folded away.
  *
  * Which call dispatched a child is read off the main session's own events, whole
  * — outside the row capacity, because a dispatch row falling off the top of the
  * feed is the fade's business and not the anchor's: the fact stays even when the
- * row that carries it is no longer drawn.
+ * row that carries it is no longer drawn. Its rows are that same session's
+ * events, so the window and its anchors can never be read off two conversations.
  */
 export function readOverview(input: OverviewInput): OverviewReading {
   const rows = rowsOf(input.sessions)
   const order = listedIds(input.sessions)
-  const mainId = mainIdOf(input.sessions)
+  const mainId = mainIdOf(input, rows, order)
   const nodeFor = (id: string): SuperworkerNode | undefined =>
     input.nodeOf === undefined ? undefined : input.nodes?.[input.nodeOf[id] ?? '']
   const main = mainId === undefined ? undefined : rows[mainId]

@@ -568,6 +568,69 @@ test('nothing folded away, no badge: five running children and three both draw n
   }
 })
 
+/** The same record, with the note naming the session this pipeline owns: the only main window it may draw. */
+const recordNaming = (session) => ({
+  ...record(),
+  '.superworker/meta/sessions/n0.json': json({ run: [{ session, at: '2026-01-09T00:00:00.000Z' }] }),
+})
+
+test('the built panel draws the conversation the record names, not the one DSH holds as its main view', { skip: bundleSkip }, async () => {
+  /* The user's own scene: an unrelated old conversation carries `retainedBy.mainView`, the record
+   * names a different session, and the panel is in neither of them (the seat's own fallback session
+   * is the mount's `render-check-session`). What must be drawn is the record's conversation. */
+  const service = fakeSessionsService()
+  service.set('session-old', [said('an unrelated old conversation.', 1000)])
+  service.set('session-pipeline', [said('this pipeline own words.', 2000)])
+  const snap = {
+    ids: ['session-old', 'session-pipeline'],
+    byId: {
+      'session-old': { id: 'session-old', running: false, retainedBy: { mainView: 1 }, displayTitle: 'the unrelated old conversation' },
+      'session-pipeline': { id: 'session-pipeline', running: true, updatedAt: '2026-11-15T16:00:00.000Z', displayTitle: 'the pipeline conversation' },
+    },
+  }
+  const mounted = await mountBuiltPanel({
+    record: recordNaming('session-pipeline'),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+
+  const main = container.querySelector('[data-window="session-pipeline"]')
+  assert.notEqual(main, null, 'the record-named conversation is not drawn')
+  assert.ok(main.className.includes('is-main'), 'the record-named conversation does not wear the main class')
+  assert.equal(main.querySelector('.superworker-oplate-t')?.textContent, 'the driven node', 'the nameplate does not read the node the note names')
+  assert.equal(container.querySelector('[data-window="session-old"]'), null, 'the conversation DSH holds as its main view was drawn')
+  assert.equal(main.querySelectorAll('.superworker-orow').length, 1, 'the main window does not draw its one row')
+  assert.ok((container.textContent ?? '').includes('this pipeline own words.'), "the main window's row is not its own conversation's")
+  assert.ok(!(container.textContent ?? '').includes('an unrelated old conversation.'), "another conversation's rows are on the page")
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the record names a session this machine does not hold: the panel draws no window rather than a stranger', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('session-old', [said('an unrelated old conversation.', 1000)])
+  const snap = {
+    ids: ['session-old'],
+    byId: { 'session-old': { id: 'session-old', running: true, retainedBy: { mainView: 1 }, displayTitle: 'the unrelated old conversation' } },
+  }
+  const mounted = await mountBuiltPanel({
+    record: recordNaming('session-gone'),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+
+  assert.equal(container.querySelectorAll('[data-window]').length, 0, 'a window was drawn for a conversation the record does not name')
+  assert.ok(!(container.textContent ?? '').includes('an unrelated old conversation.'), "another conversation's rows are on the page")
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
 test('self-looping motion lives in exactly two places here: the waiting border and the walking line', () => {
   const sheet = readFileSync(new URL('../src/client/styles/overview.css', import.meta.url), 'utf8')
   const rules = cssBlocks(stripComments(sheet), { descend: 'all' }).filter((block) => block.kind === 'rule')
