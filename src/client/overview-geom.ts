@@ -31,6 +31,8 @@
  *   window's right edge on that row's middle, across the ground between the two windows, into the
  *   child's left edge on its own middle. The tie is an identity — the row's own call id — so a row
  *   that is no longer on the screen leaves the child unlinked rather than pointed at a neighbour.
+ * - The windows the five-window cap folded away are counted, not drawn: three dots and the number
+ *   stand on the children column's own top edge. A count, never an eighth window.
  */
 
 /** One feed row's height; the feed's room is counted in these. */
@@ -313,4 +315,45 @@ export function layoutLink(input: {
     ? `M${fromX} ${fromY} H${midX} V${toY} H${toX}`
     : `M${fromX} ${fromY} H${midX - bend} Q${midX} ${fromY} ${midX} ${fromY + dir * bend} V${toY} H${toX}`
   return { d, fromX, fromY, toX, toY }
+}
+
+/** The badge above the children column: its three dots, then the count. Its width holds the dots and
+ * the widest count the cap can produce. */
+export const SPILL_W = 40
+
+/** The badge's own height, and the ground it keeps between itself and the column's top. */
+export const SPILL_H = 12
+export const SPILL_GAP = 10
+
+/** How many dots stand before the count, as the demo draws them. */
+export const SPILL_DOTS = 3
+
+/** The badge that counts the windows the cap folded away, in stage pixels. */
+export interface OverviewSpill {
+  readonly left: number
+  readonly top: number
+  readonly width: number
+  readonly height: number
+}
+
+/**
+ * Where the count of folded-away windows stands, or nothing when it has nothing to say.
+ *
+ * The badge stands on the children column's own top edge, its right edge on the column's right edge,
+ * in the ground above the column. With no window folded away, no column drawn, or no ground above the
+ * column — a stage so short that the badge would lie across the first window — it is not drawn at all.
+ */
+export function layoutSpill(input: {
+  /** The drawn children column, top first; empty when the column did not stand. */
+  readonly children: readonly OverviewBox[]
+  /** How many running children the cap folded away. */
+  readonly hiddenChildren: number
+}): OverviewSpill | undefined {
+  const { children, hiddenChildren } = input
+  const first = children[0]
+  if (hiddenChildren <= 0 || first === undefined) return undefined
+  const top = first.top - SPILL_GAP - SPILL_H
+  if (top < 0) return undefined
+  const right = first.left + first.width
+  return { left: right - SPILL_W, top, width: SPILL_W, height: SPILL_H }
 }

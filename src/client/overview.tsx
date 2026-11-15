@@ -26,8 +26,10 @@ import {
   MAIN_HEAD,
   RAIL_LEFT,
   ROW_H,
+  SPILL_DOTS,
   layoutLink,
   layoutOverview,
+  layoutSpill,
   railBarWidth,
   type OverviewBox,
   type OverviewLink,
@@ -256,6 +258,13 @@ export function OverviewPane(props: {
     [stage, mainRows, childRows],
   )
 
+  /* The windows the five-window cap folded away: counted above the column, and not drawn at all when
+   * there are none, when the column did not stand, or when the stage leaves no ground above it. */
+  const spill = React.useMemo(
+    () => layoutSpill({ children: placement.children, hiddenChildren: reading.hiddenChildren }),
+    [placement, reading.hiddenChildren],
+  )
+
   const currentIds = React.useMemo(
     () => new Set([reading.main?.id, ...reading.children.map((one) => one.id)].filter((one): one is string => one !== undefined)),
     [reading],
@@ -448,6 +457,19 @@ export function OverviewPane(props: {
             />
           )
         })}
+        {spill === undefined ? null : (
+          /* The count of windows the cap folded away: three dots and the number, on the column's own
+           * top edge. It says a fact the five windows cannot say about themselves, and it is a count,
+           * never a window. */
+          <div
+            className="superworker-ospill"
+            aria-hidden="true"
+            style={{ left: spill.left, top: spill.top, width: spill.width, height: spill.height }}
+          >
+            {Array.from({ length: SPILL_DOTS }, (_, dot) => <i key={dot} />)}
+            <span className="superworker-num">{`+${reading.hiddenChildren}`}</span>
+          </div>
+        )}
         {[...leaving].map((id) => {
           if (currentIds.has(id)) return null
           const box = boxesRef.current.get(id)

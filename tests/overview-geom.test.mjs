@@ -27,8 +27,11 @@ import {
   RAIL_LEFT,
   READING_CAPACITY,
   ROW_H,
+  SPILL_GAP,
+  SPILL_H,
   layoutLink,
   layoutOverview,
+  layoutSpill,
   railBarWidth,
 } from '../src/client/overview-geom.ts'
 
@@ -340,6 +343,44 @@ for (const width of [200, 256, 320]) {
     })
   }
 }
+
+/* ---- the count above the column ----------------------------------------- */
+
+test('the count stands on the column top, its right edge on the column right edge, clear of every window', () => {
+  const stage = STAGES[2]
+  const p = layoutOverview({ stage: { width: stage.width, height: stage.height }, mainRows: 6, childRows: rowsFor(5) })
+  assert.equal(p.children.length, 5, `the column drew ${p.children.length} of five children`)
+  const spill = layoutSpill({ children: p.children, hiddenChildren: 2 })
+  assert.notEqual(spill, undefined, 'the count was not drawn')
+  const columnTop = p.children[0].top
+  const columnRight = p.children[0].left + p.children[0].width
+  assert.equal(spill.left + spill.width, columnRight, `the count's right edge is ${spill.left + spill.width}, the column's is ${columnRight}`)
+  assert.equal(spill.top + spill.height, columnTop - SPILL_GAP, `the count does not keep its ground above the column: ${spill.top + spill.height}`)
+  assert.ok(spill.width > 0 && spill.height > 0, `the count has no box: ${spill.width}x${spill.height}`)
+  /* On the stage, and clear of every window — the main one included. */
+  assert.ok(spill.left >= 0 && spill.top >= 0, `the count starts off the stage: ${spill.left},${spill.top}`)
+  assert.ok(spill.left + spill.width <= stage.width, `the count runs off the stage's right: ${spill.left + spill.width}`)
+  assert.ok(spill.top + spill.height <= stage.height, `the count runs off the stage's bottom: ${spill.top + spill.height}`)
+  for (const box of [p.main, ...p.children]) {
+    const apart = spill.left + spill.width <= box.left
+      || box.left + box.width <= spill.left
+      || spill.top + spill.height <= box.top
+      || box.top + box.height <= spill.top
+    assert.ok(apart, `the count lies across a window at ${box.left},${box.top}`)
+  }
+})
+
+test('no count to say, no column to stand on, no ground above it: no badge', () => {
+  const p = layoutOverview({ stage: { width: 1440, height: 900 }, mainRows: 6, childRows: rowsFor(5) })
+  assert.equal(layoutSpill({ children: p.children, hiddenChildren: 0 }), undefined, 'a badge stood with nothing folded away')
+  assert.equal(layoutSpill({ children: [], hiddenChildren: 3 }), undefined, 'a badge stood with no column under it')
+  /* The column stood, but the stage gave it less than the badge needs above itself: drawing one there
+     would lay it across the first window. */
+  const short = layoutOverview({ stage: { width: 1024, height: 200 }, mainRows: 6, childRows: rowsFor(5) })
+  assert.ok(short.children.length > 0, 'the short stage drew no column at all')
+  assert.ok(short.children[0].top < SPILL_GAP + SPILL_H, `the short stage left ${short.children[0].top} above the column`)
+  assert.equal(layoutSpill({ children: short.children, hiddenChildren: 2 }), undefined, 'the badge lay across the first window')
+})
 
 test('the main window grows by exactly one row for one more row, and hugs its content while it fits', () => {
   const stage = STAGES[1]

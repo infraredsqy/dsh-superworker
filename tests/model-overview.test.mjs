@@ -137,6 +137,26 @@ test('six alive children: the latter five, the first not pinned', () => {
   assert.deepEqual(reading.children.map((w) => w.id), ['c-2', 'c-3', 'c-4', 'c-5', 'c-6'])
 })
 
+test('the cap counts what it folded away: six alive children draw five, and one is counted', () => {
+  const ids = ['c-1', 'c-2', 'c-3', 'c-4', 'c-5', 'c-6']
+  const byId = { [MAIN]: mainRow(MAIN), ...Object.fromEntries(ids.map((id) => [id, childRow(id, MAIN)])) }
+  const six = readOverview({ sessions: snapshot([MAIN, ...ids], byId) })
+  assert.equal(six.children.length, 5, `six alive children drew ${six.children.length} windows`)
+  /* Counted off the alive list, never off the five the cap kept: that one is already five, and a
+     count taken from it would always read 0. */
+  assert.equal(six.hiddenChildren, 1, `the count reads ${six.hiddenChildren} with six alive children`)
+
+  const seven = readOverview({
+    sessions: snapshot([MAIN, ...ids, 'c-7'], { ...byId, 'c-7': childRow('c-7', MAIN) }),
+  })
+  assert.equal(seven.children.length, 5, `seven alive children drew ${seven.children.length} windows`)
+  assert.equal(seven.hiddenChildren, 2, `the count reads ${seven.hiddenChildren} with seven alive children`)
+
+  /* Five or fewer: nothing is folded away, and the count is 0 — a number, not an absence. */
+  assert.equal(readOverview({ sessions: snapshot([MAIN, ...ids.slice(0, 5)], byId) }).hiddenChildren, 0, 'five alive children were counted as hidden')
+  assert.equal(mainAlone().hiddenChildren, 0, 'a window with no children counted hidden ones')
+})
+
 test('one child ends: the five are taken anew from those still alive, in arrival order', () => {
   const ids = ['c-1', 'c-2', 'c-3', 'c-4', 'c-5', 'c-6']
   const byId = {
@@ -169,15 +189,15 @@ test('no main view in the list: no overview at all, and nothing throws', () => {
     sessions: snapshot(['c-1'], { 'c-1': childRow('c-1', 'session-gone') }),
     events: { 'c-1': [said(1, undefined, 'hello')] },
   })
-  assert.deepEqual(reading, { main: null, children: [] })
+  assert.deepEqual(reading, { main: null, children: [], hiddenChildren: 0 })
 })
 
 test('a snapshot nothing can be read off: an empty reading, and no throw', () => {
-  assert.deepEqual(readOverview({ sessions: {} }), { main: null, children: [] })
-  assert.deepEqual(readOverview({ sessions: { ids: 'nonsense', byId: 5 } }), { main: null, children: [] })
+  assert.deepEqual(readOverview({ sessions: {} }), { main: null, children: [], hiddenChildren: 0 })
+  assert.deepEqual(readOverview({ sessions: { ids: 'nonsense', byId: 5 } }), { main: null, children: [], hiddenChildren: 0 })
   assert.deepEqual(
     readOverview({ sessions: snapshot(['x'], { x: { retainedBy: 'nonsense' } }) }),
-    { main: null, children: [] },
+    { main: null, children: [], hiddenChildren: 0 },
   )
 })
 

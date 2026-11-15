@@ -30,10 +30,9 @@
  * across the ground between the two windows, and into the child's left edge. The layer covers the
  * stage without standing in the pointer's way, and the windows are drawn over it.
  *
- * `is-live` says the child is running this round, and it is a still dash: a line that flowed would be
- * a second motion looping of its own accord, and this panel keeps exactly one (the breathing border
- * says someone is being waited for). Stillness costs the line nothing — the dash already reads as
- * "alive, not finished". */
+ * `is-live` says the child is running this round, and the dash walks toward it — the picture the
+ * reader asked for, so this panel now has two motions that loop by themselves: this one and the
+ * waiting border. A third one is a change to the design, and the sheet's own guard says so. */
 .superworker-page .superworker-olinks {
   position: absolute;
   inset: 0;
@@ -49,9 +48,50 @@
 }
 .superworker-page .superworker-olink.is-live {
   stroke-dasharray: 3 5;
+  animation: superworker-olink-flow 1.2s linear infinite;
+}
+/* The flow: the dashes walk toward the child the line reached. One keyframe, the same 16px the demo
+ * carries; the dash stays 3 5, so the line reads as moving without changing its density. */
+@keyframes superworker-olink-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+/* Reduced motion keeps the dash and drops only the walking: the line still says "alive", it just
+ * holds still. */
+@media (prefers-reduced-motion: reduce) {
+  .superworker-page .superworker-olink.is-live {
+    animation: none;
+  }
 }
 .superworker-page .superworker-olink-dot {
   fill: var(--superworker-ink-3);
+}
+
+/* ---- The windows the cap folded away -------------------------------------- */
+/* Three dots and a count, on the children column's own top edge: five windows stand, and everything
+ * the cap left out is said here as a number. The box is the geometry's; the count takes the same
+ * tabular figures every reading on this panel does. */
+.superworker-page .superworker-ospill {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  font: var(--dsw-font-xxxs-11);
+  line-height: 12px;
+  color: var(--superworker-ink-3);
+}
+.superworker-page .superworker-ospill i {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--superworker-ink-4);
+}
+.superworker-page .superworker-ospill .superworker-num {
+  margin-left: 2px;
 }
 
 /* ---- The node rail -------------------------------------------------------- */

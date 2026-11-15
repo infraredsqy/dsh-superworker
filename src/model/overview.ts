@@ -107,6 +107,8 @@ export interface OverviewReading {
   readonly main: OverviewWindow | null
   /** The children still running this round, oldest first: at most five, taken anew at every read. */
   readonly children: readonly OverviewWindow[]
+  /** How many running children the five-window cap folded away — a count, never a window: 0 is 0. */
+  readonly hiddenChildren: number
 }
 
 /** What the overview's reading reads. */
@@ -485,7 +487,9 @@ function windowOf(
  * is still running this round: ended it drops, called up again it is a window
  * again, and nothing is probed or pinned to hold it. Over five running
  * children the most recent five are taken — taken whole from whoever is alive
- * at that moment, never the first five pinned, never a gap filled at the end.
+ * at that moment, never the first five pinned, never a gap filled at the end —
+ * and the ones the five leave out are counted, not drawn: `hiddenChildren` is
+ * how many running children the cap folded away.
  * A list without a main view makes no overview at all: the children hang from
  * the conversation this panel lives in, and without it there is nothing to
  * hang them on.
@@ -503,15 +507,16 @@ export function readOverview(input: OverviewInput): OverviewReading {
     input.nodeOf === undefined ? undefined : input.nodes?.[input.nodeOf[id] ?? '']
   const main = mainId === undefined ? undefined : rows[mainId]
   const anchors = dispatchAnchorsOf(mainId === undefined ? undefined : input.events?.[mainId])
-  const children = mainId === undefined
+  /* The ones alive this round, before the cap takes its five: what the drawing does not show is
+     counted off this list, never off the capped one (that one is already five, or fewer). */
+  const alive = mainId === undefined
     ? []
-    : order
-      .filter((id) => {
-        if (id === mainId) return false
-        const row = rows[id]
-        return row !== undefined && row.parentId === mainId && row.running === true
-      })
-      .slice(-WINDOW_CAP)
+    : order.filter((id) => {
+      if (id === mainId) return false
+      const row = rows[id]
+      return row !== undefined && row.parentId === mainId && row.running === true
+    })
+  const children = alive.slice(-WINDOW_CAP)
   return {
     main:
       main === undefined || mainId === undefined
@@ -523,5 +528,6 @@ export function readOverview(input: OverviewInput): OverviewReading {
       const dispatchCallId = anchors.get(id)
       return dispatchCallId === undefined ? window : { ...window, dispatchCallId }
     }),
+    hiddenChildren: alive.length - children.length,
   }
 }

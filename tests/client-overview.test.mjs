@@ -27,6 +27,7 @@ import {
   ROW_H,
   layoutLink,
   layoutOverview,
+  layoutSpill,
 } from '../src/client/overview-geom.ts'
 import { bundleSkip, mountBuiltPanel } from './helpers/client-shell.mjs'
 
@@ -509,21 +510,92 @@ test('the column left the stage: an anchored child draws no window and no line',
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test('the link rules carry no motion: a still dash, with no flow coming back', () => {
-  const sheet = readFileSync(new URL('../src/client/styles/overview.css', import.meta.url), 'utf8')
-  const rules = cssBlocks(stripComments(sheet), { descend: 'all' })
-    .filter((block) => block.kind === 'rule' && block.prelude.includes('superworker-olink'))
-  assert.ok(rules.length > 0, 'the sheet declares no link rule at all')
-  /* The spec's one self-looping motion is the breathing border; the demo's flowing dash would be a
-     second one, so the link layer stays still and this guard says so. */
-  for (const rule of rules) {
-    assert.ok(!/animation/u.test(rule.body), `a link rule animates: ${rule.prelude} { ${rule.body.trim()} }`)
+test('six running children draw five windows and count the one folded away', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  const children = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'].map((id) => ({ id, running: true, title: `child ${id}` }))
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf(children)),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  /* Five child windows stand, so the reading's own count is what the badge has to say. */
+  const placement = layoutOverview({ stage: { width: 1024, height: 720 }, mainRows: 0, childRows: [0, 0, 0, 0, 0] })
+  const spill = layoutSpill({ children: placement.children, hiddenChildren: 1 })
+  assert.notEqual(spill, undefined, 'the geometry drew no badge for one folded window')
+
+  const badge = container.querySelector('.superworker-ospill')
+  assert.notEqual(badge, null, 'the folded window was counted nowhere on the page')
+  assert.equal(badge.textContent, '+1', `the badge reads "${badge.textContent}"`)
+  assert.equal(badge.querySelectorAll('i').length, 3, 'the badge does not carry its three dots')
+  assert.ok(badge.querySelector('.superworker-num') !== null, 'the count does not take the panel\'s figures')
+  assert.equal(badge.parentElement, container.querySelector('.superworker-ofield'), 'the badge does not hang off the field')
+  assert.equal(badge.style.left, `${spill.left}px`, `the badge stands at ${badge.style.left}, the geometry says ${spill.left}`)
+  assert.equal(badge.style.top, `${spill.top}px`, `the badge stands at ${badge.style.top}, the geometry says ${spill.top}`)
+
+  /* Its right edge is the drawn column's own right edge, and its ground is above the column's top. */
+  const first = container.querySelector('[data-window="c2"]')
+  assert.notEqual(first, null, 'the oldest live child of the five is not drawn')
+  const columnRight = Number.parseFloat(first.style.left) + Number.parseFloat(first.style.width)
+  const badgeRight = Number.parseFloat(badge.style.left) + Number.parseFloat(badge.style.width)
+  assert.equal(badgeRight, columnRight, `the badge's right edge is ${badgeRight}, the column's is ${columnRight}`)
+  assert.ok(
+    Number.parseFloat(badge.style.top) + Number.parseFloat(badge.style.height) < Number.parseFloat(first.style.top),
+    'the badge does not stand above the column',
+  )
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('nothing folded away, no badge: five running children and three both draw none', { skip: bundleSkip }, async () => {
+  for (const running of [5, 3]) {
+    const service = fakeSessionsService()
+    const children = Array.from({ length: running }, (_, i) => ({ id: `c${i + 1}`, running: true, title: `child ${i + 1}` }))
+    const mounted = await mountBuiltPanel({
+      record: record(),
+      sessionsService: service,
+      useSessions: (select) => select(snapshotOf(children)),
+    })
+    await stageAt(mounted, 1024, 720)
+    assert.ok(
+      container(mounted).querySelector('.superworker-ospill') === null,
+      `${running} running children drew a badge with nothing folded away`,
+    )
+    await mounted.unmount()
+    assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
   }
-  const live = rules.find((rule) => rule.prelude.includes('is-live'))
+})
+
+test('self-looping motion lives in exactly two places here: the waiting border and the walking line', () => {
+  const sheet = readFileSync(new URL('../src/client/styles/overview.css', import.meta.url), 'utf8')
+  const rules = cssBlocks(stripComments(sheet), { descend: 'all' }).filter((block) => block.kind === 'rule')
+  /* A loop is an animation that never ends. An enter, a fade or a row arriving fills once and stops;
+     a third looping motion is a change to the design, and this is where it reports itself. */
+  const looping = rules
+    .filter((rule) => /animation:[^;]*infinite/u.test(rule.body))
+    .map((rule) => rule.prelude)
+    .sort()
+  assert.deepEqual(
+    looping,
+    ['.superworker-page .superworker-olink.is-live', '.superworker-page .superworker-opane.is-wait'],
+    `the sheet loops in ${looping.length} places: ${looping.join(' | ')}`,
+  )
+  /* The walking line: the demo's own 16px walk, on the dash it draws. */
+  const live = rules.find((rule) => rule.prelude.includes('superworker-olink.is-live') && rule.at === '')
   assert.notEqual(live, undefined, "no rule dashes a running child's line")
-  assert.match(live.body, /stroke-dasharray:\s*3\s+5/u, "the line is not the demo's own still dash")
-  assert.ok(!/@keyframes[^{]*flow/u.test(sheet), "the demo's flow keyframe came back into the sheet")
-  assert.ok(!/stroke-dashoffset/u.test(sheet), 'the dash is being offset — that is a loop in disguise')
+  assert.match(live.body, /stroke-dasharray:\s*3\s+5/u, "the line is not the demo's dash")
+  assert.match(live.body, /animation:\s*superworker-olink-flow 1\.2s linear infinite/u, 'the line does not walk as the demo walks it')
+  assert.ok(
+    rules.some((rule) => rule.at === '@keyframes superworker-olink-flow' && /stroke-dashoffset:\s*-16/u.test(rule.body)),
+    "the flow is not the demo's own 16px walk",
+  )
+  /* Reduced motion stills the walking and keeps the dash: the line still says "alive". */
+  const reduced = rules.filter((rule) => rule.at.includes('prefers-reduced-motion') && rule.prelude.includes('superworker-olink'))
+  assert.equal(reduced.length, 1, `the reduced-motion block covers ${reduced.length} link rules`)
+  assert.match(reduced[0].body, /animation:\s*none/u, 'the line walks under reduced motion')
+  assert.ok(!/stroke-dasharray/u.test(reduced[0].body), 'the reduced-motion block takes the dash away')
 })
 
 function container(mounted) {
