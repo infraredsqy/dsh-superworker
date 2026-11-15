@@ -21,13 +21,16 @@ import { clock } from '../model/index.ts'
 import {
   CHILD_FOOT,
   CHILD_HEAD,
+  LINK_DOT_R,
   MAIN_FOOT,
   MAIN_HEAD,
   RAIL_LEFT,
   ROW_H,
+  layoutLink,
   layoutOverview,
   railBarWidth,
   type OverviewBox,
+  type OverviewLink,
   type StageSize,
 } from './overview-geom.ts'
 import { useT, type Translate } from './locale.ts'
@@ -350,6 +353,38 @@ export function OverviewPane(props: {
     windowsRef.current.set(one.id, one)
   })
 
+  /* The ties from a dispatch row to the window it opened: one per child the field draws, paired by
+   * the row's own call id — the reading hands the child that id and nothing is guessed from a
+   * neighbour. A pane on its way out keeps its tie for the breath it still stands, so the line
+   * leaves with the pane rather than a beat early. A child the reading cannot pair — no id, or an
+   * id whose row the feed no longer shows — draws nothing. */
+  const links = React.useMemo((): readonly { readonly id: string; readonly link: OverviewLink }[] => {
+    const main = reading.main
+    if (main === null) return []
+    const out: { readonly id: string; readonly link: OverviewLink }[] = []
+    const tie = (id: string, window: OverviewWindow | undefined, box: OverviewBox | undefined): void => {
+      if (window === undefined || box === undefined) return
+      const callId = window.dispatchCallId
+      if (callId === undefined) return
+      const rowIndex = main.rows.findIndex((row) => row.callId === callId)
+      if (rowIndex < 0) return
+      const link = layoutLink({
+        main: placement.main,
+        child: box,
+        rowIndex,
+        rowCount: main.rows.length,
+        gap: box.left - (placement.main.left + placement.main.width),
+      })
+      if (link !== undefined) out.push({ id, link })
+    }
+    reading.children.forEach((child, i) => tie(child.id, child, placement.children[i]))
+    for (const id of leaving) {
+      if (currentIds.has(id)) continue
+      tie(id, windowsRef.current.get(id), boxesRef.current.get(id))
+    }
+    return out
+  }, [reading, placement, leaving, currentIds])
+
   return (
     <div className="superworker-overview" ref={bodyRef}>
       {placement.railVisible ? (
@@ -366,14 +401,24 @@ export function OverviewPane(props: {
       <div
         className="superworker-ofield"
         style={{
-          left: placement.fieldLeft,
-          top: placement.fieldTop,
-          width: placement.fieldWidth,
-          height: placement.fieldHeight,
+          /* The field is the stage's own frame — the sheet lays it over the whole stage — and the
+           * boxes inside it are already in stage coordinates. Writing the field's own left/top here
+           * as well would add that offset a second time. */
           '--superworker-plate-out': `${placement.plateOut}px`,
           '--superworker-orow-h': `${ROW_H}px`,
         } as React.CSSProperties}
       >
+        {links.length === 0 ? null : (
+          /* Drawn first, so the windows stand over it: a line runs under the panes it ties. */
+          <svg className="superworker-olinks" aria-hidden="true">
+            {links.map(({ id, link }) => (
+              <g key={id}>
+                <path className="superworker-olink is-live" d={link.d} />
+                <circle className="superworker-olink-dot" cx={link.fromX} cy={link.fromY} r={LINK_DOT_R} />
+              </g>
+            ))}
+          </svg>
+        )}
         {reading.main === null ? null : (
           <WindowPane
             box={placement.main}

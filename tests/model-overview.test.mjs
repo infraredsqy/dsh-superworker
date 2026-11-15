@@ -49,16 +49,26 @@ function call(time, callId, name, args) {
   return { type: 'tool/call', time, data: { callId, name, arguments: JSON.stringify(args) } }
 }
 
-/** A tool result's event: the text it answers with, and the failure identity when it failed. */
-function result(time, callId, text, error) {
+/** A tool result's event: the text it answers with, the failure identity when it failed, and the v3 activation. */
+function result(time, callId, text, error, extra = {}) {
   return {
     type: 'tool/result',
     time,
     data: {
-      message: { toolCallId: callId, content: [{ type: 'text', text }] },
+      message: {
+        toolCallId: callId,
+        content: [{ type: 'text', text }],
+        ...(extra.isError === undefined ? {} : { isError: extra.isError }),
+      },
       ...(error === undefined ? {} : { error }),
+      ...(extra.meta === undefined ? {} : { meta: extra.meta }),
     },
   }
+}
+
+/** A subagent catalog entry: the parent's own discovery fact for one child. */
+function catalog(time, data) {
+  return { type: 'subagent/catalog', time, data }
 }
 
 const MAIN = 'session-main'
@@ -66,6 +76,25 @@ const MAIN = 'session-main'
 /** The plain scene: one main session, no children. */
 function mainAlone() {
   return readOverview({ sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }) })
+}
+
+/**
+ * The dispatch scene: the main session's own log, the children it started, and each
+ * child's own log. The children are running, so all of them draw a window.
+ */
+function dispatched(mainEvents, children, childEvents = {}, extra = {}) {
+  const byId = { [MAIN]: mainRow(MAIN) }
+  for (const id of children) byId[id] = childRow(id, MAIN)
+  return readOverview({
+    sessions: snapshot([MAIN, ...children], byId),
+    events: { [MAIN]: mainEvents, ...childEvents },
+    ...extra,
+  })
+}
+
+/** One child's dispatch anchor, as the reading carries it. */
+function anchorOf(reading, id) {
+  return reading.children.find((window) => window.id === id)?.dispatchCallId
 }
 
 /* ---- which windows ------------------------------------------------------- */
@@ -284,4 +313,185 @@ test("the window's start is the earliest moment its own events carry", () => {
     events: { 'c-1': [said(30, undefined, 'later'), call(10, 'call-1', 'bash', { command: 'ls' })] },
   })
   assert.deepEqual(reading.children[0].startedAt, new Date(10))
+})
+
+/* ---- which call dispatched which window ---------------------------------- */
+
+test('v0: the sentence names the child id, and the window keeps the call that started it', () => {
+  const reading = dispatched(
+    [
+      call(1, 'call-1', 'subagent', { description: '调研会话读取', prompt: '…' }),
+      catalog(2, { version: 0, childId: 'c-1', childCreatedAt: 2, mode: 'continuable', label: '调研会话读取' }),
+      result(3, 'call-1', 'started subagent c-1'),
+    ],
+    ['c-1'],
+  )
+  const row = reading.main.rows[0]
+  assert.equal(row.kind, 'dispatch')
+  assert.equal(row.text, '调研会话读取')
+  assert.equal(row.callId, 'call-1')
+  assert.equal(anchorOf(reading, 'c-1'), 'call-1')
+})
+
+test('v3: the activation name and the catalog name are the chain, and the sentence is never read', () => {
+  const reading = dispatched(
+    [
+      call(1, 'call-1', 'subagent', { description: '复审节点', prompt: '…', name: 'review-45567ffa' }),
+      catalog(2, {
+        version: 3,
+        childId: 'c-1',
+        childCreatedAt: 2,
+        mode: 'continuable',
+        label: '复审节点 45567ffa 第 1 轮',
+        name: 'review-45567ffa',
+      }),
+      /* The sentence says nothing about the child: only the activation's own name does. */
+      result(3, 'call-1', 'the words a v0 log would have spelled are absent here', undefined, {
+        meta: { kind: 'activation', name: 'review-45567ffa' },
+      }),
+    ],
+    ['c-1'],
+  )
+  assert.equal(reading.main.rows[0].callId, 'call-1')
+  assert.equal(anchorOf(reading, 'c-1'), 'call-1')
+})
+
+test('three concurrent dispatches: every window keeps the call that named it, not the catalogue beside it', () => {
+  /* The log's real interleaving: the three calls come back to back, and each catalogue and
+   * its result lands after some later call — the entry next to a call belongs to another one. */
+  const reading = dispatched(
+    [
+      call(10, 'call-a', 'subagent', { description: 'A 调研', prompt: '…' }),
+      call(11, 'call-b', 'subagent', { description: 'B 调研', prompt: '…' }),
+      call(12, 'call-c', 'subagent', { description: 'C 调研', prompt: '…' }),
+      catalog(13, { version: 0, childId: 'c-b', childCreatedAt: 13, mode: 'continuable', label: 'B 调研' }),
+      result(14, 'call-c', 'started subagent c-c'),
+      catalog(15, { version: 0, childId: 'c-c', childCreatedAt: 15, mode: 'continuable', label: 'C 调研' }),
+      result(16, 'call-a', 'started subagent c-a'),
+      catalog(17, { version: 0, childId: 'c-a', childCreatedAt: 17, mode: 'continuable', label: 'A 调研' }),
+      result(18, 'call-b', 'started subagent c-b'),
+    ],
+    ['c-a', 'c-b', 'c-c'],
+  )
+  assert.equal(anchorOf(reading, 'c-a'), 'call-a')
+  assert.equal(anchorOf(reading, 'c-b'), 'call-b')
+  assert.equal(anchorOf(reading, 'c-c'), 'call-c')
+})
+
+test('two children born in the same millisecond: each still keeps its own call', () => {
+  /* Every time in this scene is equal, so no reading of the clock can tell the two apart. */
+  const reading = dispatched(
+    [
+      call(100, 'call-a', 'subagent', { description: 'A 调研', prompt: '…' }),
+      call(100, 'call-b', 'subagent', { description: 'B 调研', prompt: '…' }),
+      catalog(100, { version: 0, childId: 'c-2', childCreatedAt: 100, mode: 'continuable', label: 'B 调研' }),
+      catalog(100, { version: 0, childId: 'c-1', childCreatedAt: 100, mode: 'continuable', label: 'A 调研' }),
+      result(100, 'call-a', 'started subagent c-1'),
+      result(100, 'call-b', 'started subagent c-2'),
+    ],
+    ['c-1', 'c-2'],
+  )
+  assert.equal(anchorOf(reading, 'c-1'), 'call-a')
+  assert.equal(anchorOf(reading, 'c-2'), 'call-b')
+})
+
+test('one call may stand behind two windows: a loop dispatch anchors every child it started', () => {
+  const reading = dispatched(
+    [
+      call(1, 'call-ralph', 'ralph', { objective: '把快档跑绿' }),
+      catalog(2, { version: 0, childId: 'c-1', childCreatedAt: 2, mode: 'one-shot', label: 'Ralph round 1' }),
+      catalog(3, { version: 0, childId: 'c-2', childCreatedAt: 3, mode: 'one-shot', label: 'Ralph round 2' }),
+      /* A loop answers once for each child it started. */
+      result(4, 'call-ralph', 'started subagent c-1'),
+      result(5, 'call-ralph', 'started subagent c-2'),
+    ],
+    ['c-1', 'c-2'],
+  )
+  assert.equal(anchorOf(reading, 'c-1'), 'call-ralph')
+  assert.equal(anchorOf(reading, 'c-2'), 'call-ralph')
+  assert.equal(reading.main.rows[0].callId, 'call-ralph')
+})
+
+test('subagent_continue names its child in the arguments, and needs no catalogue', () => {
+  const reading = dispatched(
+    [call(1, 'call-9', 'subagent_continue', { description: '续问上一轮的总览', sessionId: 'c-1' })],
+    ['c-1'],
+  )
+  const row = reading.main.rows[0]
+  assert.equal(row.kind, 'dispatch')
+  assert.equal(row.callId, 'call-9')
+  assert.equal(anchorOf(reading, 'c-1'), 'call-9')
+})
+
+test('a continuation that opens a fresh child anchors that child, not the session its arguments name', () => {
+  /* The log's real shape: the arguments name the session to continue (`c-old`), while the answer and
+   * the catalogue it wrote at that moment name the child the continuation opened (`c-new`). */
+  const reading = dispatched(
+    [
+      call(1, 'call-9', 'subagent_continue', { description: 'Recover M1 requirement context', sessionId: 'c-old' }),
+      catalog(2, {
+        version: 0,
+        childId: 'c-new',
+        childCreatedAt: 2,
+        mode: 'continuable',
+        label: 'Recover M1 requirement context',
+      }),
+      result(3, 'call-9', 'started continued subagent c-new'),
+    ],
+    ['c-old', 'c-new'],
+  )
+  assert.equal(anchorOf(reading, 'c-new'), 'call-9')
+  assert.equal('dispatchCallId' in reading.children.find((w) => w.id === 'c-old'), false)
+})
+
+test('a dispatch row cut by the window capacity still anchors its child, and no other row stands in', () => {
+  const reading = dispatched(
+    [
+      call(1, 'call-1', 'subagent', { description: '派出去做长活', prompt: '…' }),
+      catalog(2, { version: 0, childId: 'c-1', childCreatedAt: 2, mode: 'continuable', label: '派出去做长活' }),
+      result(3, 'call-1', 'started subagent c-1'),
+      said(4, undefined, 'c-1 已经接手'),
+      said(5, undefined, '继续等它回来'),
+    ],
+    ['c-1'],
+    {},
+    { capacity: 1 },
+  )
+  /* The anchor is a fact about the log, not about the drawing: the row carrying it fell off the
+   * top, so the main window has no line pointing at the child — and the reading must not borrow one. */
+  assert.equal(anchorOf(reading, 'c-1'), 'call-1')
+  assert.deepEqual(reading.main.rows.map((row) => row.text), ['继续等它回来'])
+  assert.deepEqual(reading.main.rows.map((row) => row.callId), [undefined])
+  assert.equal('dispatchCallId' in reading.main, false)
+})
+
+test('an unreadable dispatch anchors nothing: still in flight, or answered by a failure', () => {
+  const inFlight = dispatched(
+    [
+      call(1, 'call-1', 'subagent', { description: '派出去还没回来', prompt: '…' }),
+      catalog(2, { version: 0, childId: 'c-1', childCreatedAt: 2, mode: 'continuable', label: '派出去还没回来' }),
+    ],
+    ['c-1'],
+  )
+  assert.equal('dispatchCallId' in inFlight.children[0], false)
+
+  const failed = dispatched(
+    [
+      call(1, 'call-1', 'subagent', { description: '派出去了但失败了', prompt: '…' }),
+      catalog(2, { version: 0, childId: 'c-1', childCreatedAt: 2, mode: 'continuable', label: '派出去了但失败了' }),
+      result(3, 'call-1', '', { name: 'ToolFailure', code: 'dispatch-failed', reason: '子代理起不来' }),
+    ],
+    ['c-1'],
+  )
+  assert.equal('dispatchCallId' in failed.children[0], false)
+
+  const isError = dispatched(
+    [
+      call(1, 'call-1', 'subagent', { description: '结果是错的', prompt: '…' }),
+      catalog(2, { version: 0, childId: 'c-1', childCreatedAt: 2, mode: 'continuable', label: '结果是错的' }),
+      result(3, 'call-1', 'started subagent c-1', undefined, { isError: true }),
+    ],
+    ['c-1'],
+  )
+  assert.equal('dispatchCallId' in isError.children[0], false)
 })

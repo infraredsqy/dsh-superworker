@@ -74,6 +74,8 @@ export interface OverviewRow {
   readonly text: string
   /** The complete content the body was cut from. */
   readonly full: string
+  /** Which tool call this row folds: DSH's own `callId` carried out verbatim; a row that folds no call carries none. */
+  readonly callId?: string
 }
 
 /** One window on the overview. */
@@ -90,6 +92,13 @@ export interface OverviewWindow {
   readonly startedAt: Date | null
   /** The rows it draws: the most recent it has room for, in the order they happened. */
   readonly rows: readonly OverviewRow[]
+  /**
+   * Which call dispatched this window: the main window's row whose `callId` is
+   * this one is the anchor. Absent when no exact pairing is read off the log —
+   * never stood in for by a neighbour in the log, a moment, or a title. The
+   * field is either a call id or not there at all.
+   */
+  readonly dispatchCallId?: string
 }
 
 /** The overview's reading at this snapshot. */
@@ -243,8 +252,9 @@ function parseArguments(raw: unknown): Record<string, unknown> | undefined {
 }
 
 /**
- * One tool call folds into one row, named by the tool's own arguments. A run
- * tool's call id is kept: the result event answers by it, and only a run's
+ * One tool call folds into one row, named by the tool's own arguments. The
+ * call's own id rides the row verbatim — a result or a child's dispatch anchor
+ * answers by it — while a run's id is also kept aside, since only a run's
  * result is worth a row of its own.
  */
 function foldCall(
@@ -258,7 +268,12 @@ function foldCall(
   const callId = text(data?.callId)
   if (kind === 'run' && callId !== undefined) runCalls.add(callId)
   const subject = subjectOf(kind, name, parseArguments(data?.arguments))
-  rows.push({ kind, text: firstSentence(subject), full: subject })
+  rows.push({
+    kind,
+    text: firstSentence(subject),
+    full: subject,
+    ...(callId === undefined ? {} : { callId }),
+  })
 }
 
 /**
@@ -282,6 +297,115 @@ function foldResult(
   const callId = text(message?.toolCallId) ?? text(asRecord(message?.source)?.callId)
   if (callId === undefined || !runCalls.has(callId)) return
   pushRow(rows, 'run', contentTextOf(message))
+}
+
+/**
+ * What a v0 dispatch result spells before the child's token: `started subagent
+ * <token>` for a fresh child, `started continued subagent <token>` for one a
+ * continuation opened. In v0 the token is the child session's id.
+ */
+const ACTIVATION_MARKER = /^started (?:continued )?subagent (\S+)/
+
+/**
+ * The token one dispatch result names its child by: v3 writes it as the
+ * activation's own `name`, v0 writes it only into the sentence. Both are the
+ * same word — the child's name in v3, the child's id in v0 — and a result that
+ * spells neither names no child at all.
+ */
+function activationTokenOf(data: Record<string, unknown> | undefined): string | undefined {
+  const named = text(asRecord(data?.meta)?.name)
+  if (named !== undefined) return named
+  const spelled = contentTextOf(asRecord(data?.message))
+  if (spelled === undefined) return undefined
+  return ACTIVATION_MARKER.exec(spelled)?.[1]
+}
+
+/**
+ * Which call of the main session's own log dispatched which child window.
+ *
+ * The anchor is an identity, never an order. A dispatch call's result names the
+ * child it started (v3 by the activation's `name`, v0 by the id its sentence
+ * spells); the parent's own `subagent/catalog` carries that same token — `name`
+ * in v3, the entry's own `childId` in v0 — beside the child session's id, and
+ * that is the whole chain.
+ *
+ * `subagent_continue` is the one dispatch that also names a session in its own
+ * arguments, and that id is the session it was asked to continue — the child the
+ * call *opens* is a new one (a continuation writes a fresh `subagent/catalog` at
+ * its own moment, under an id the arguments never carry). So the chain decides
+ * first, and `arguments.sessionId` is read only when the answer names no child at
+ * all: that is the one case where the arguments are the only identity there is.
+ *
+ * Unread on purpose: a catalog's `label` (a synthesized title, not an identity)
+ * and any neighbour in the log (concurrent dispatches interleave their catalogs,
+ * so the entry next to a call belongs to whichever dispatch settled first). A
+ * dispatch still in flight, or one whose result failed, anchors nothing: an
+ * unknown anchor stays unknown rather than borrowing the nearest row.
+ *
+ * The map is child → call, so a call that started more than one child — a loop
+ * dispatch — anchors every child it named under its one call id.
+ */
+function dispatchAnchorsOf(events: readonly OverviewEvent[] | undefined): ReadonlyMap<string, string> {
+  const dispatches = new Set<string>()
+  const continued = new Map<string, string>()
+  const byName = new Map<string, string[]>()
+  const catalogued = new Set<string>()
+
+  for (const event of events ?? []) {
+    const type = text(event.type)
+    const data = asRecord(event.data)
+    if (type === 'tool/call') {
+      const name = text(data?.name)
+      if (name === undefined || !DISPATCH_TOOLS.has(name)) continue
+      const callId = text(data?.callId)
+      if (callId === undefined) continue
+      dispatches.add(callId)
+      if (name !== 'subagent_continue') continue
+      const childId = text(parseArguments(data?.arguments)?.sessionId)
+      if (childId !== undefined) continued.set(callId, childId)
+      continue
+    }
+    if (type !== 'subagent/catalog') continue
+    const childId = text(data?.childId)
+    if (childId === undefined) continue
+    catalogued.add(childId)
+    const name = text(data?.name)
+    if (name === undefined) continue
+    const named = byName.get(name)
+    if (named === undefined) byName.set(name, [childId])
+    else named.push(childId)
+  }
+
+  const tokens = new Map<string, Set<string>>()
+  for (const event of events ?? []) {
+    if (text(event.type) !== 'tool/result') continue
+    const data = asRecord(event.data)
+    const message = asRecord(data?.message)
+    const callId = text(message?.toolCallId) ?? text(asRecord(message?.source)?.callId)
+    if (callId === undefined || !dispatches.has(callId)) continue
+    if (asRecord(data?.error) !== undefined || message?.isError === true) continue
+    const token = activationTokenOf(data)
+    if (token === undefined) continue
+    const held = tokens.get(callId)
+    if (held === undefined) tokens.set(callId, new Set([token]))
+    else held.add(token)
+  }
+
+  const anchors = new Map<string, string>()
+  const chained = new Set<string>()
+  for (const [callId, held] of tokens) {
+    for (const token of held) {
+      for (const childId of byName.get(token) ?? (catalogued.has(token) ? [token] : [])) {
+        if (!anchors.has(childId)) anchors.set(childId, callId)
+        chained.add(callId)
+      }
+    }
+  }
+  for (const [callId, childId] of continued) {
+    if (chained.has(callId) || anchors.has(childId)) continue
+    anchors.set(childId, callId)
+  }
+  return anchors
 }
 
 function foldRows(events: readonly OverviewEvent[] | undefined): readonly OverviewRow[] {
@@ -365,6 +489,11 @@ function windowOf(
  * A list without a main view makes no overview at all: the children hang from
  * the conversation this panel lives in, and without it there is nothing to
  * hang them on.
+ *
+ * Which call dispatched a child is read off the main session's own events, whole
+ * — outside the row capacity, because a dispatch row falling off the top of the
+ * feed is the fade's business and not the anchor's: the fact stays even when the
+ * row that carries it is no longer drawn.
  */
 export function readOverview(input: OverviewInput): OverviewReading {
   const rows = rowsOf(input.sessions)
@@ -373,6 +502,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const nodeFor = (id: string): SuperworkerNode | undefined =>
     input.nodeOf === undefined ? undefined : input.nodes?.[input.nodeOf[id] ?? '']
   const main = mainId === undefined ? undefined : rows[mainId]
+  const anchors = dispatchAnchorsOf(mainId === undefined ? undefined : input.events?.[mainId])
   const children = mainId === undefined
     ? []
     : order
@@ -389,7 +519,9 @@ export function readOverview(input: OverviewInput): OverviewReading {
         : windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity),
     children: children.map((id) => {
       const row = rows[id] ?? { id }
-      return windowOf(id, row, nodeFor(id), input.events?.[id], input.capacity)
+      const window = windowOf(id, row, nodeFor(id), input.events?.[id], input.capacity)
+      const dispatchCallId = anchors.get(id)
+      return dispatchCallId === undefined ? window : { ...window, dispatchCallId }
     }),
   }
 }

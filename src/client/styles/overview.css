@@ -17,9 +17,41 @@
   overflow: hidden;
 }
 
-/* The field the windows stand on; the boxes are inline. */
+/* The stage's frame: it covers the stage whole, so a window's box — already stated in stage
+ * coordinates by `overview-geom.ts` — lands where the reading says without the offset being added a
+ * second time. Its own box is never inline; the panes inside it are. */
 .superworker-page .superworker-ofield {
   position: absolute;
+  inset: 0;
+}
+
+/* ---- The lines between windows -------------------------------------------- */
+/* One child, one line: out of the main window's right edge on the dispatch row that opened it,
+ * across the ground between the two windows, and into the child's left edge. The layer covers the
+ * stage without standing in the pointer's way, and the windows are drawn over it.
+ *
+ * `is-live` says the child is running this round, and it is a still dash: a line that flowed would be
+ * a second motion looping of its own accord, and this panel keeps exactly one (the breathing border
+ * says someone is being waited for). Stillness costs the line nothing — the dash already reads as
+ * "alive, not finished". */
+.superworker-page .superworker-olinks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.superworker-page .superworker-olink {
+  fill: none;
+  stroke: color-mix(in srgb, var(--dsw-alias-link) 62%, transparent);
+  stroke-width: 1;
+}
+.superworker-page .superworker-olink.is-live {
+  stroke-dasharray: 3 5;
+}
+.superworker-page .superworker-olink-dot {
+  fill: var(--superworker-ink-3);
 }
 
 /* ---- The node rail -------------------------------------------------------- */

@@ -17,9 +17,17 @@
  *
  * Needs `lib/client.js`; `npm test` builds it first. Run `node --test tests/client-overview.test.mjs`.
  */
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { READING_CAPACITY } from '../src/client/overview-geom.ts'
+import { cssBlocks, stripComments } from '../tools/lib/cssrules.mjs'
+import {
+  LINK_DOT_R,
+  READING_CAPACITY,
+  ROW_H,
+  layoutLink,
+  layoutOverview,
+} from '../src/client/overview-geom.ts'
 import { bundleSkip, mountBuiltPanel } from './helpers/client-shell.mjs'
 
 const json = (value) => JSON.stringify(value, null, 2) + '\n'
@@ -111,6 +119,20 @@ function fakeSessionsService() {
 const said = (text, time) => ({ type: 'assistant/message', time, data: { message: { content: [{ type: 'text', text }] } } })
 const dispatched = (text, time, callId) => ({ type: 'tool/call', time, data: { name: 'subagent', callId, arguments: JSON.stringify({ description: text }) } })
 const read = (path, time) => ({ type: 'tool/call', time, data: { name: 'read', callId: `r${time}`, arguments: JSON.stringify({ file_path: path }) } })
+/** The parent's own discovery fact for one child: what the anchor is chained through. */
+const catalogued = (childId, time) => ({ type: 'subagent/catalog', time, data: { version: 0, childId, childCreatedAt: time, mode: 'continuable', label: `child ${childId}` } })
+/** A dispatch's answer, naming the child it started: the other half of the chain. */
+const started = (callId, childId, time) => ({
+  type: 'tool/result',
+  time,
+  data: { message: { toolCallId: callId, content: [{ type: 'text', text: `started subagent ${childId}` }] } },
+})
+/** One dispatch, whole: the call, the catalogue it wrote, and the answer that names its child. */
+const dispatchRun = (childId, callId, text, time) => [
+  dispatched(text, time, callId),
+  catalogued(childId, time + 1),
+  started(callId, childId, time + 2),
+]
 
 /** The stage the pane measures: jsdom has no layout engine, so the box is pinned per case. */
 const stageAt = (mounted, width, height) => {
@@ -168,6 +190,50 @@ test('the overview draws the reading: the node nameplate on the main window, run
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
+test('the field is the stage frame at the origin, and every pane stands at the geometry\'s own coordinate', { skip: bundleSkip }, async () => {
+  /* The one convention the drawing owed the arithmetic: the boxes are stage coordinates already, so
+   * the field carries no offset of its own — a left/top on it as well would add the same offset a
+   * second time, which is how the whole group once slid right off the stage. */
+  const service = fakeSessionsService()
+  service.set('m1', [said('start.', 1000), dispatched('look for conflicts', 2000, 'd1')])
+  service.set('c1', [read('a.ts', 3000)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  /* The same inputs the pane measures and reads: one main window holding two rows, one child one row. */
+  const placement = layoutOverview({ stage: { width: 1024, height: 720 }, mainRows: 2, childRows: [1] })
+
+  const field = container.querySelector('.superworker-ofield')
+  assert.notEqual(field, null, 'the field is not drawn')
+  for (const side of ['left', 'top', 'width', 'height']) {
+    assert.equal(field.style[side], '', `the field carries an inline ${side}: the geometry's offset is written twice`)
+  }
+  const computed = mounted.window.getComputedStyle(field)
+  assert.equal(computed.position, 'absolute', 'the field is not an absolutely placed frame')
+  const coversStage = computed.inset === '0' || (computed.left === '0px' && computed.top === '0px')
+  assert.ok(coversStage, `the field does not sit on the stage's origin: inset ${computed.inset}, left ${computed.left}, top ${computed.top}`)
+
+  const main = container.querySelector('[data-window="m1"]')
+  const child = container.querySelector('[data-window="c1"]')
+  assert.equal(main.style.left, `${placement.main.left}px`, `the main window stands at ${main.style.left}, the geometry says ${placement.main.left}`)
+  assert.equal(main.style.top, `${placement.main.top}px`, `the main window stands at ${main.style.top}, the geometry says ${placement.main.top}`)
+  assert.equal(main.style.width, `${placement.main.width}px`, `the main window is ${main.style.width} wide, the geometry says ${placement.main.width}`)
+  assert.equal(main.style.height, `${placement.main.height}px`, `the main window is ${main.style.height} tall, the geometry says ${placement.main.height}`)
+  assert.equal(child.style.left, `${placement.children[0].left}px`, `the child stands at ${child.style.left}, the geometry says ${placement.children[0].left}`)
+  assert.equal(child.style.top, `${placement.children[0].top}px`, `the child stands at ${child.style.top}, the geometry says ${placement.children[0].top}`)
+  /* Both panes hang off the one field, which is the stage whole: the numbers are read against one
+   * frame, not against a frame that was itself moved. */
+  assert.equal(main.parentElement, field, 'the main window does not hang off the field')
+  assert.equal(child.parentElement, field, 'the child does not hang off the field')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
 test('enter: a window joining the set carries the mark', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
   let snap = snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])
@@ -192,6 +258,8 @@ test('enter: a window joining the set carries the mark', { skip: bundleSkip }, a
 
 test('leave: the pane fades where it stands, and after the span the page has lost it', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
+  /* Both children are anchored, so the leaving pane's own line says how the tie leaves with it. */
+  service.set('m1', [...dispatchRun('c1', 'd1', 'the first job', 100), ...dispatchRun('c3', 'd3', 'the leaving job', 200)])
   let snap = snapshotOf([
     { id: 'c1', running: true, title: 'the first child' },
     { id: 'c3', running: true, title: 'the leaving child' },
@@ -203,11 +271,14 @@ test('leave: the pane fades where it stands, and after the span the page has los
   })
   await stageAt(mounted, 1024, 720)
   assert.equal(container(mounted).querySelectorAll('.superworker-orail b').length, 2, 'two running children drew a node rail')
+  assert.equal(container(mounted).querySelectorAll('.superworker-olinks path').length, 2, 'two anchored children drew two lines')
   snap = snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])
   await mounted.rerender()
   const leaving = container(mounted).querySelector('[data-window="c3"]')
   assert.notEqual(leaving, null, 'the leaving pane left the page before its leave ran')
   assert.ok(leaving.className.includes('is-leave'), 'the leaving pane carries no leave mark')
+  /* The tie stands with the pane it ties: the line leaves when the pane does, not a beat early. */
+  assert.equal(container(mounted).querySelectorAll('.superworker-olinks path').length, 2, 'the leaving pane lost its line before it left')
   /* One running child left: the node rail is gone whole — a single window draws no rail. */
   assert.equal(container(mounted).querySelector('.superworker-orail'), null, 'the rail lingered on one child')
 
@@ -218,6 +289,7 @@ test('leave: the pane fades where it stands, and after the span the page has los
     await new Promise((resolve) => setTimeout(resolve, 340))
   })
   assert.equal(container(mounted).querySelector('[data-window="c3"]'), null, 'the page kept the pane past the leave span')
+  assert.equal(container(mounted).querySelectorAll('.superworker-olinks path').length, 1, 'the page kept the leaving child\'s line past the leave span')
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
@@ -323,6 +395,135 @@ test('breathing: the mark follows the newest row being a dispatch row', { skip: 
   assert.ok(!container(mounted).querySelector('[data-window="c1"]').className.includes('is-wait'), 'the window went on breathing after the newest row stopped being a dispatch')
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a dispatched child is tied to its own row: two children, two lines, each on its dispatch row', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [
+    said('start.', 100),
+    ...dispatchRun('c1', 'd1', 'the first job', 200),
+    ...dispatchRun('c2', 'd2', 'the second job', 300),
+  ])
+  service.set('c1', [read('a.ts', 400)])
+  service.set('c2', [read('b.ts', 500)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([
+      { id: 'c1', running: true, title: 'the first child' },
+      { id: 'c2', running: true, title: 'the second child' },
+    ])),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  /* The reading the pane has: an output row, then one dispatch row per child. */
+  const placement = layoutOverview({ stage: { width: 1024, height: 720 }, mainRows: 3, childRows: [1, 1] })
+  const gap = placement.children[0].left - (placement.main.left + placement.main.width)
+  const expected = placement.children.map((child, i) => layoutLink({ main: placement.main, child, rowIndex: i + 1, rowCount: 3, gap }))
+
+  const field = container.querySelector('.superworker-ofield')
+  const svg = container.querySelector('.superworker-olinks')
+  assert.notEqual(svg, null, 'two anchored children drew no line layer')
+  assert.equal(svg.parentElement, field, 'the lines do not hang off the field')
+  assert.equal(field.firstElementChild, svg, 'the line layer is not drawn under the windows')
+  const paths = [...svg.querySelectorAll('path')]
+  const dots = [...svg.querySelectorAll('circle')]
+  assert.equal(paths.length, 2, `the layer holds ${paths.length} of two lines`)
+  assert.equal(dots.length, 2, `the layer holds ${dots.length} of two dots`)
+  paths.forEach((path, i) => {
+    assert.ok(path.classList.contains('superworker-olink'), 'a line does not wear the line class')
+    assert.ok(path.classList.contains('is-live'), "a running child's line is not the dashed one")
+    assert.equal(path.getAttribute('d'), expected[i].d, `line ${i} does not follow the geometry: ${path.getAttribute('d')}`)
+    assert.equal(dots[i].getAttribute('cx'), `${expected[i].fromX}`, `dot ${i} is not at the line's start`)
+    assert.equal(dots[i].getAttribute('cy'), `${expected[i].fromY}`, `dot ${i} is not at the line's start`)
+    assert.equal(dots[i].getAttribute('r'), `${LINK_DOT_R}`, "the dot is not the demo's own")
+    /* Each line leaves on the middle of its own dispatch row, counted up from the pane's bottom:
+     * 190 − 0.5 − 20 − (2 − rowIndex) * 24 − 12. The dot itself is read back with that number. */
+    const rowMiddle = [133.5, 157.5][i]
+    assert.equal(expected[i].fromY, placement.main.top + rowMiddle, `line ${i} is not on its dispatch row`)
+    assert.equal(Number(dots[i].getAttribute('cy')), placement.main.top + rowMiddle, `dot ${i} stands at ${dots[i].getAttribute('cy')}, its row's middle is ${placement.main.top + rowMiddle}`)
+    assert.equal(expected[i].toX, placement.children[i].left, `line ${i} does not arrive on its own window`)
+  })
+  assert.notEqual(expected[0].fromY, expected[1].fromY, 'the two lines left the same row')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('no anchor, no line: a child whose dispatch never named it is drawn, and nothing ties it to a row', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  /* The call is still in flight: no catalogue, no answer naming a child — so no exact pairing. */
+  service.set('m1', [said('start.', 100), dispatched('a job still in flight', 200, 'd1')])
+  service.set('c1', [read('a.ts', 400)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  assert.notEqual(container.querySelector('[data-window="c1"]'), null, 'the running child is not drawn')
+  assert.ok(container.querySelector('.superworker-olinks') === null, 'a line was drawn to a row nothing names')
+  assert.equal(container.querySelectorAll('.superworker-olink').length, 0, 'a line was drawn to a row nothing names')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('an anchor whose row the feed no longer shows: the child stands alone, and no other row stands in', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  /* The dispatch row is the oldest of more rows than the reading keeps: it is cut off the top. */
+  const later = Array.from({ length: READING_CAPACITY + 1 }, (_, i) => said(`later ${i}.`, 300 + i))
+  service.set('m1', [...dispatchRun('c1', 'd1', 'the long job', 100), ...later])
+  service.set('c1', [read('a.ts', 400)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  assert.notEqual(container.querySelector('[data-window="c1"]'), null, 'the running child is not drawn')
+  assert.ok(container.querySelector('.superworker-olinks') === null, 'a line pointed at a row that is no longer on screen')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the column left the stage: an anchored child draws no window and no line', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('start.', 100), ...dispatchRun('c1', 'd1', 'the job', 200)])
+  service.set('c1', [read('a.ts', 400)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])),
+  })
+  /* The narrow stage: two windows cannot both keep their smallest sizes, so the column leaves. */
+  await stageAt(mounted, 640, 480)
+  const { container } = mounted
+  assert.ok(container.querySelector('[data-window="c1"]') === null, 'the column was drawn on the narrow stage')
+  assert.ok(container.querySelector('.superworker-olinks') === null, 'a line was drawn to a window that is not there')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the link rules carry no motion: a still dash, with no flow coming back', () => {
+  const sheet = readFileSync(new URL('../src/client/styles/overview.css', import.meta.url), 'utf8')
+  const rules = cssBlocks(stripComments(sheet), { descend: 'all' })
+    .filter((block) => block.kind === 'rule' && block.prelude.includes('superworker-olink'))
+  assert.ok(rules.length > 0, 'the sheet declares no link rule at all')
+  /* The spec's one self-looping motion is the breathing border; the demo's flowing dash would be a
+     second one, so the link layer stays still and this guard says so. */
+  for (const rule of rules) {
+    assert.ok(!/animation/u.test(rule.body), `a link rule animates: ${rule.prelude} { ${rule.body.trim()} }`)
+  }
+  const live = rules.find((rule) => rule.prelude.includes('is-live'))
+  assert.notEqual(live, undefined, "no rule dashes a running child's line")
+  assert.match(live.body, /stroke-dasharray:\s*3\s+5/u, "the line is not the demo's own still dash")
+  assert.ok(!/@keyframes[^{]*flow/u.test(sheet), "the demo's flow keyframe came back into the sheet")
+  assert.ok(!/stroke-dashoffset/u.test(sheet), 'the dash is being offset — that is a loop in disguise')
 })
 
 function container(mounted) {
