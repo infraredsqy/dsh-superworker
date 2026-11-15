@@ -18,13 +18,28 @@
  * @param writeLog - adds `writes` (every `mutate` recorded), `notify()` (wake subscribers without
  *   touching a byte — the "unchanged means no notification" path) and `bump()` (someone else moved
  *   the revision before this side read — the stale-fence path). The client-prefs tests' need.
+ * @param deferred - the write is a real round trip: `mutate` returns a promise that stands pending
+ *   until `land()` serves it, and the fence is judged when it is served, not when it is issued. That
+ *   is the ordering a case needs when it judges what the panel does *while* a write is in flight —
+ *   the panel's own echo of an earlier view landing after the reader has already picked a newer one
+ *   (the view-flash case). `land()` answers queued writes in issue order, all of them unless a
+ *   count is handed in, and `queued()` says how many stand unanswered now.
  */
-export function fakeSettingsForm(initial, { watchCount = false, writeLog = false } = {}) {
+export function fakeSettingsForm(initial, { watchCount = false, writeLog = false, deferred = false } = {}) {
   let value = { ...initial }
   let revision = 1
   let refuse = false
   const listeners = new Set()
   const writes = []
+  const waiting = []
+  /** Serve one write the way the settings service would: judge the fence, apply, bump, tell everyone. */
+  const serve = (ops, expected) => {
+    if (refuse || (expected !== undefined && expected !== revision)) return false
+    for (const op of ops) if (op.op === 'set') value = { ...value, [op.path[0]]: op.value }
+    revision += 1
+    for (const listener of [...listeners]) listener()
+    return true
+  }
   const form = {
     document: () => value,
     getSnapshot: () => ({ status: 'ready', value, base: undefined, user: undefined, revision, writable: true }),
@@ -34,11 +49,8 @@ export function fakeSettingsForm(initial, { watchCount = false, writeLog = false
     },
     mutate(ops, expected) {
       if (writeLog) writes.push({ ops, expected })
-      if (refuse || (expected !== undefined && expected !== revision)) return Promise.resolve(false)
-      for (const op of ops) if (op.op === 'set') value = { ...value, [op.path[0]]: op.value }
-      revision += 1
-      for (const listener of [...listeners]) listener()
-      return Promise.resolve(true)
+      if (!deferred) return Promise.resolve(serve(ops, expected))
+      return new Promise((resolve) => { waiting.push({ ops, expected, resolve }) })
     },
     /* This document refuses all writes: it backs the "no silence when both writes are voided" rule. */
     refuse: (on = true) => { refuse = on },
@@ -48,6 +60,18 @@ export function fakeSettingsForm(initial, { watchCount = false, writeLog = false
     form.writes = writes
     form.notify = () => { for (const listener of [...listeners]) listener() }
     form.bump = () => { revision += 1 }
+  }
+  if (deferred) {
+    form.queued = () => waiting.length
+    form.land = (count = waiting.length) => {
+      let landed = 0
+      for (; landed < count; landed += 1) {
+        const next = waiting.shift()
+        if (next === undefined) break
+        next.resolve(serve(next.ops, next.expected))
+      }
+      return landed
+    }
   }
   return form
 }

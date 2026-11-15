@@ -50,10 +50,13 @@ async function specOf(window) {
  * wants a drawn panel); `workspaceRoot` is the root the session header hands the gateway.
  * `useSessions` is the seat's session-list hook, `sessionsService` lands in the context as DSH's
  * `sessions` service, `workspaces` is the workspace-list source — all three optional, all three
- * forwarded the way the real seat forwards them. `rerender` re-renders the mounted panel with the
- * same props, so a case that holds a mutable snapshot can move it and redraw.
+ * forwarded the way the real seat forwards them. `settingsForm` replaces the stand-in settings
+ * document the boot attaches (a case that needs the write round trip held open passes one built with
+ * `deferred`); it comes back as `form`, so the case can answer what stands queued. `rerender`
+ * re-renders the mounted panel with the same props, so a case that holds a mutable snapshot can move
+ * it and redraw.
  */
-export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session', useSessions, sessionsService, workspaces }) {
+export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session', useSessions, sessionsService, workspaces, settingsForm }) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div></body></html>', {
     url: 'http://127.0.0.1/',
     pretendToBeVisual: true,
@@ -114,7 +117,7 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
   /* ---- boot the plugin the way the shell does ---- */
   const { ledger, slots } = fakeSlotRoster()
   const provided = {}
-  const form = fakeSettingsForm({}, { watchCount: true })
+  const form = settingsForm ?? fakeSettingsForm({}, { watchCount: true })
   const services = {
     'remote.superworker': remoteFace,
     slots,
@@ -186,6 +189,7 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
     provided,
     ledger,
     container,
+    form,
     asked,
     consoleErrors,
     settle,

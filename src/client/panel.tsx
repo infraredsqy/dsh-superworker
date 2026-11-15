@@ -78,11 +78,10 @@ type Load =
   | { readonly phase: 'no-session' }
 
 /**
- * The level the panel reads at this moment.
- *
- * It stands first on the settings document's value; once the reader changes it on the panel, the
- * changed one leads, and the settings value (flipped elsewhere, or a write landing) follows as soon
- * as a new value arrives.
+ * The level the panel reads at this moment, for a preference that also has a row on the settings
+ * page (the two switches and the dragged width): the document leads — the page can flip it while
+ * this screen stands — and the reader's change on this screen leads from the spot until the
+ * document's next value arrives.
  * @param stored - The value the settings document states at this moment.
  */
 function usePreference<T>(stored: T): [T, (next: T) => void] {
@@ -91,6 +90,37 @@ function usePreference<T>(stored: T): [T, (next: T) => void] {
     setLocal(stored)
   }, [stored])
   return [local, setLocal]
+}
+
+/**
+ * The view this screen is showing: the reader's pick, and nothing else.
+ *
+ * Which view to show has one authority — this screen. The remembered view in the settings document
+ * is a *seed*: it is read until the reader picks (the panel draws before the settings form is in
+ * hand, so the seed has to be able to arrive late), and from the first pick on the document is
+ * only where the pick is written. It is never read back over the screen.
+ *
+ * That one-way road is the whole point. A settings write is a round trip (host write → document
+ * push → read-back), and the panel's second click in a burst is fenced on a revision the earlier
+ * write already moved, so the earlier view's echo — and the read-back of the refused write — land
+ * *after* the reader has picked again. Adopting those, as a two-way mirror does, is what flipped
+ * the stage back to the view the reader had just left. Unlike the switches, the view has no row on
+ * the settings page: nothing but this screen writes it, so there is no change from elsewhere that
+ * this one-way road could miss.
+ * @param seeded - The remembered view the settings document states at this moment.
+ */
+function useView(seeded: ViewId): [ViewId, (next: ViewId) => void] {
+  const [held, setHeld] = React.useState<ViewId>(seeded)
+  /* Whether the reader has picked since this screen came up: after that the document is a sink. */
+  const picked = React.useRef(false)
+  React.useEffect(() => {
+    if (!picked.current) setHeld(seeded)
+  }, [seeded])
+  const pick = React.useCallback((next: ViewId) => {
+    picked.current = true
+    setHeld(next)
+  }, [])
+  return [held, pick]
 }
 
 export function SuperworkerPanel(props: PanelProps): React.ReactElement {
@@ -132,7 +162,10 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
   const store = props.prefs ?? DEFAULT_SOURCE
   const preferences = React.useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const stored = preferences.prefs
-  const [tab, setTab] = usePreference<ViewId>(stored.tab)
+  /* The view is the one preference that is this screen's own: the document seeds it, the picker
+   * leads it, and a write echo never moves it back (`useView`). The three below mirror settings
+   * rows the settings page also flips, so the document leads those. */
+  const [tab, setTab] = useView(stored.tab)
   const [sideWidth, setSideWidth] = usePreference<number>(stored.sideWidth)
   const [otherStates, setOtherStates] = usePreference<boolean>(stored.otherStates)
   /* This screen only reads the archived flag — the settings page is where it is flipped — but it
