@@ -38,6 +38,7 @@ LEGACY_DIR_NAME
 LONG_RESULT_LIMIT
 PLUGIN_SKILL_FILE
 RECORD_DIR_NAME
+SETUP_PROMPT
 SimulatedExecutor
 answer
 describe
@@ -59,6 +60,9 @@ usageError
 ```
 
 `PLUGIN_SKILL_FILE` 是技能文件名（`SKILL.md`）；`SimulatedExecutor` 是执行者接缝；`open` 是句柄入口。`LEGACY_DIR_NAME` / `legacyRecordDir` / `hasLegacyRecord` / `isRecognizableLegacyRecord` / `migrationPreconditions` / `CONSULT_PROMPT` 是旧目录那一问的六个词，见下面「旧目录与迁移」。
+`SETUP_PROMPT` 是面板空态按钮开新会话时交出的固定第一句：记录里认不出可画的会话时，让 agent 读这个
+工作区、按 `sw-route` 建图并加入第一个节点。写死的一句话，而不是从工作区拼出来的句子——拼句子会把
+「管道是什么」再拼一遍。
 `loadPlugins` / `skillFolders` / `skillProblems` 读的是插件自带技能——`loadPlugins` 装载插件目录，
 `skillFolders` 交出一个插件带的技能目录，`skillProblems` 说出它与声明对不上的两种情形（度量点名的
 方法没有技能、一个技能名被两个插件交出）。读的是同一个插件目录，判什么由调用方定：引擎只交结论，

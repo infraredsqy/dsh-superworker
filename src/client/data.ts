@@ -59,6 +59,8 @@ export interface PanelPort {
   openNodeSession(sessionId: string, workspaceRoot: string, cycle: string, node: string): Promise<Outcome>
   /** Hand a legacy record directory's migration to an agent: the host opens the session that does it. */
   consultMigration(sessionId: string, workspaceRoot: string): Promise<Outcome>
+  /** Hand this workspace's setup to an agent (read it, draw its first node): the host opens the session that does it. */
+  consultSetup(sessionId: string, workspaceRoot: string): Promise<Outcome>
 }
 
 /** What one endpoint call yields before the two branches are unfolded: the value, or why not. */
@@ -149,6 +151,7 @@ const REMOTE_PARAM_ORDER: Readonly<Record<string, readonly string[]>> = {
   setConfig: ['sessionId', 'workspaceRoot', 'key', 'value'],
   openNodeSession: ['sessionId', 'workspaceRoot', 'cycle', 'node'],
   consultMigration: ['sessionId', 'workspaceRoot'],
+  consultSetup: ['sessionId', 'workspaceRoot'],
 }
 
 /** The arguments this endpoint call receives: laid out per the parameter table; keys absent from it are dropped. */
@@ -165,6 +168,21 @@ type PortCall = <T>(
 /** A refusal in the shape a write hands back, without the `ok` tag the reading already carries. */
 function refused(failure: Failure): Outcome {
   return { ok: false, code: failure.code, ...(failure.detail !== undefined ? { detail: failure.detail } : {}) }
+}
+
+/**
+ * What one open session leaves on this side: nothing when a session is out, the host's own refusal
+ * when it is not.
+ *
+ * An open's answer is a *value* (`SessionOpenOutcome`), not an envelope failure, so its `ok` has to
+ * be unfolded here — reading only the envelope would report a refused open as a landed one and the
+ * panel's note line would stay silent about the reason. A landed open says nothing at all: the
+ * session appearing in DSH is the whole effect and its session id is a navigation address, never a
+ * word the panel shows.
+ */
+function openOutcome(answer: Answer<SessionOpenOutcome>): Outcome {
+  if (!answer.ok) return refused(answer.failure)
+  return answer.value.ok ? { ok: true, text: '' } : refused(answer.value)
 }
 
 /**
@@ -214,14 +232,20 @@ function portFromCall(source: PanelPort['source'], call: PortCall): PanelPort {
     async openNodeSession(sessionId, workspaceRoot, cycle, node) {
       const answer = await call<SessionOpenOutcome>('openNodeSession', { sessionId, workspaceRoot, cycle, node })
       /* The receipt's session id is an address for navigation, not a word the panel shows: a landed open says nothing on the note line, and the re-read that follows shows the session where it belongs. */
-      return answer.ok ? { ok: true, text: '' } : refused(answer.failure)
+      return openOutcome(answer)
     },
     async consultMigration(sessionId, workspaceRoot) {
       const answer = await call<SessionOpenOutcome>('consultMigration', { sessionId, workspaceRoot })
       /* The same silence as an opened node session: a landed consult renders nothing here — the
        * new session appearing in DSH is the whole effect, and the migration itself happens over
        * there, so a re-read could only repeat this panel's own notice. */
-      return answer.ok ? { ok: true, text: '' } : refused(answer.failure)
+      return openOutcome(answer)
+    },
+    async consultSetup(sessionId, workspaceRoot) {
+      const answer = await call<SessionOpenOutcome>('consultSetup', { sessionId, workspaceRoot })
+      /* And the same silence: the session that reads this workspace into its first node appears in
+       * DSH, which is the whole effect; the stage's own sentence would read the same on a re-read. */
+      return openOutcome(answer)
     },
   }
 }
@@ -269,7 +293,7 @@ function absentPort(): PanelPort {
     throw new RefusedError({ code: 'not-connected' })
   }
   const refusedWrite = async (): Promise<Outcome> => ({ ok: false, code: 'no-write-channel' })
-  return { source: 'none', read: missing, readSessions: missing, say: refusedWrite, write: refusedWrite, readConfig: missing, setConfig: refusedWrite, openNodeSession: refusedWrite, consultMigration: refusedWrite }
+  return { source: 'none', read: missing, readSessions: missing, say: refusedWrite, write: refusedWrite, readConfig: missing, setConfig: refusedWrite, openNodeSession: refusedWrite, consultMigration: refusedWrite, consultSetup: refusedWrite }
 }
 
 /**

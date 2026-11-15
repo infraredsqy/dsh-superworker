@@ -23,7 +23,7 @@ import {
   instructionReviveLine,
 } from './instruction-lines.ts'
 import type { SuperworkerReading, SuperworkerReadOptions, SuperworkerRecords } from './contract.ts'
-import { openConsultSession, type SessionOpenOutcome } from './executor.ts'
+import { openConsultSession, openSetupSession, type SessionOpenOutcome } from './executor.ts'
 import type { RecordOutcome } from './failure.ts'
 import { parseConfigList, type SuperworkerConfigReading } from './project-config.ts'
 import { dispatchCell } from './relay.ts'
@@ -51,6 +51,7 @@ const REMOTE_METHODS: readonly string[] = [
   'readSessions',
   'openNodeSession',
   'consultMigration',
+  'consultSetup',
 ]
 
 /**
@@ -306,6 +307,21 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    */
   async consultMigration(sessionId: SessionId, workspaceRoot: string): Promise<SessionOpenOutcome> {
     return openConsultSession(this.ctx, sessionId, workspaceRoot)
+  }
+
+  /**
+   * Open the consult session the overview's empty stage links to: one session of this host's own,
+   * at the named workspace, whose first instruction is the engine's fixed setup sentence. The
+   * panel only opens the door — what the session is asked to do is the engine's sentence, spelled
+   * in one place there so this half never carries a second copy of it. The open is the migration
+   * consult's own road with another sentence: same probes, same refusals, same silence when it
+   * lands.
+   *
+   * The parameter list stays on one line with no trailing comma, same reason as `read`.
+   * @param workspaceRoot - The workspace to open the session in, absolute; an empty string means this session's own root.
+   */
+  async consultSetup(sessionId: SessionId, workspaceRoot: string): Promise<SessionOpenOutcome> {
+    return openSetupSession(this.ctx, sessionId, workspaceRoot)
   }
 
   /**

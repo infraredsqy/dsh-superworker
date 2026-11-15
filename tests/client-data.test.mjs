@@ -18,7 +18,7 @@ import { createPanelPort } from '../src/client/data.ts'
 function fakeNamespace(answer = { ok: true, value: { workspaceRoot: 'C:\\ws' } }) {
   const calls = []
   const namespace = {}
-  for (const method of ['read', 'readSessions', 'addInstruction', 'archiveInstruction', 'reviveInstruction', 'removeInstruction', 'readConfig', 'setConfig', 'openNodeSession']) {
+  for (const method of ['read', 'readSessions', 'addInstruction', 'archiveInstruction', 'reviveInstruction', 'removeInstruction', 'readConfig', 'setConfig', 'openNodeSession', 'consultMigration', 'consultSetup']) {
     namespace[method] = async (...values) => {
       calls.push({ method, values })
       return answer
@@ -173,6 +173,24 @@ test('the open-session seam: the endpoint is openNodeSession, cycle and node pas
   assert.deepEqual(
     await other.openNodeSession('s1', '', 'c1', 'n1'),
     { ok: false, code: 'prompt-missing' },
+    'the host half\'s refusal code crosses as it is, the panel spells the words',
+  )
+})
+
+test('the setup-consult seam: the endpoint is consultSetup(sessionId, workspaceRoot), and a landed call says nothing', async () => {
+  const { calls, namespace } = fakeNamespace({ ok: true, value: { ok: true, session: 'session-minted' } })
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
+
+  const outcome = await port.consultSetup('s1', 'C:\\picked')
+
+  assert.deepEqual(outcome, { ok: true, text: '' }, 'a landed consult has nothing to print: the session it opens is the whole effect')
+  assert.deepEqual(calls, [{ method: 'consultSetup', values: ['s1', 'C:\\picked'] }])
+
+  const refused = fakeNamespace({ ok: true, value: { ok: false, code: 'no-session-service', detail: 'agents' } })
+  const other = createPanelPort({ get: (name) => (name === 'remote.superworker' ? refused.namespace : undefined) })
+  assert.deepEqual(
+    await other.consultSetup('s1', ''),
+    { ok: false, code: 'no-session-service', detail: 'agents' },
     'the host half\'s refusal code crosses as it is, the panel spells the words',
   )
 })

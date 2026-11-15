@@ -29,7 +29,9 @@ import {
   layoutOverview,
   layoutSpill,
 } from '../src/client/overview-geom.ts'
+import { zh } from '../src/client/locales/zh.ts'
 import { bundleSkip, mountBuiltPanel } from './helpers/client-shell.mjs'
+import { flush } from './helpers/wait.mjs'
 
 const json = (value) => JSON.stringify(value, null, 2) + '\n'
 
@@ -621,11 +623,13 @@ test('the record names a session this machine does not hold: the panel draws no 
     sessionsService: service,
     useSessions: (select) => select(snap),
   })
-  await stageAt(mounted, 1024, 720)
   const { container } = mounted
 
   assert.equal(container.querySelectorAll('[data-window]').length, 0, 'a window was drawn for a conversation the record does not name')
   assert.ok(!(container.textContent ?? '').includes('an unrelated old conversation.'), "another conversation's rows are on the page")
+  /* Nothing drawable is the empty stage's business, and it stands here: no window field to measure,
+   * so the case that used to pin the stage's box now pins the sentence instead. */
+  assert.equal(emptyStage(mounted)?.said, zh['overview.empty.no-window'], 'the stage stood empty and silent over a record whose session is gone')
 
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
@@ -664,3 +668,153 @@ test('self-looping motion lives in exactly two places here: the waiting border a
 function container(mounted) {
   return mounted.container
 }
+
+/* ------------------------------------------------------------------ the empty stage */
+
+/** The same record with no session note at all: the nodes no conversation has run. */
+const recordWithoutNotes = () => {
+  const full = record()
+  delete full['.superworker/meta/sessions/n0.json']
+  return full
+}
+
+/** A record that holds no node yet: a workspace initialised and left there. */
+const recordWithoutNodes = () => ({
+  ...record(),
+  '.superworker/ideas.json': json({ nodes: {} }),
+  '.superworker/state.json': json({ cycles: [] }),
+  '.superworker/meta/sessions/n0.json': json({ run: [] }),
+})
+
+/** The empty stage's two pieces, read where the reader sees them: nothing when none stands. */
+function emptyStage(mounted) {
+  const stage = mounted.container.querySelector('#pane-overview .superworker-oempty')
+  if (stage === null) return null
+  return {
+    said: stage.querySelector('p')?.textContent ?? '',
+    link: stage.querySelector('.superworker-btn')?.textContent ?? '',
+    button: stage.querySelector('.superworker-btn'),
+  }
+}
+
+/** A promise whose release the case holds: the action is judged while the call is still out. */
+function defer() {
+  let resolve
+  const promise = new Promise((give) => { resolve = give })
+  return { promise, resolve }
+}
+
+test('the stage with no window says which of the three situations it is; all three carry the one move', { skip: bundleSkip }, async () => {
+  /* (a) The record names no session at all: a fresh clone, or a workspace just initialised. */
+  const unstarted = await mountBuiltPanel({
+    record: recordWithoutNotes(),
+    sessionsService: fakeSessionsService(),
+    useSessions: (select) => select(snapshotOf([])),
+  })
+  assert.deepEqual(
+    { said: emptyStage(unstarted)?.said, link: emptyStage(unstarted)?.link },
+    { said: zh['overview.empty.no-session'], link: zh['overview.empty.link'] },
+    'a record that names no session says something else',
+  )
+  assert.equal(unstarted.container.querySelectorAll('[data-window]').length, 0, 'a stand-in window was drawn')
+  assert.ok(unstarted.container.querySelector('#pane-overview .superworker-ofield') === null, 'the empty stage still drew a window field')
+  await unstarted.unmount()
+  assert.deepEqual(unstarted.consoleErrors, [], 'there is an error in the console')
+
+  /* (b) The record names a session this machine does not hold: nothing drawable right now. */
+  const gone = await mountBuiltPanel({
+    record: recordNaming('session-gone'),
+    sessionsService: fakeSessionsService(),
+    useSessions: (select) => select({
+      ids: ['session-old'],
+      byId: { 'session-old': { id: 'session-old', running: true, retainedBy: { mainView: 1 }, displayTitle: 'the unrelated old conversation' } },
+    }),
+  })
+  assert.equal(emptyStage(gone)?.said, zh['overview.empty.no-window'], 'a record whose named session is gone says something else')
+  assert.equal(emptyStage(gone)?.link, zh['overview.empty.link'], 'the two situations carry different actions')
+  assert.equal(gone.container.querySelectorAll('[data-window]').length, 0, 'a stranger was drawn instead of nothing')
+  await gone.unmount()
+  assert.deepEqual(gone.consoleErrors, [], 'there is an error in the console')
+
+  /* (c) The record holds no node yet. */
+  const bare = await mountBuiltPanel({
+    record: recordWithoutNodes(),
+    sessionsService: fakeSessionsService(),
+    useSessions: (select) => select(snapshotOf([])),
+  })
+  assert.equal(emptyStage(bare)?.said, zh['overview.empty.no-nodes'], 'a record with no node says something else')
+  assert.equal(emptyStage(bare)?.link, zh['overview.empty.link'], 'the three situations do not share one action')
+  await bare.unmount()
+  assert.deepEqual(bare.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a stage with a window draws no empty state', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('the pipeline is running.', 1000)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])),
+  })
+  await stageAt(mounted, 1024, 720)
+  assert.notEqual(container(mounted).querySelector('[data-window="m1"]'), null, 'the window the record names is not drawn')
+  assert.equal(emptyStage(mounted), null, 'an empty sentence stood beside a drawn window')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the empty stage\'s action hands this workspace to an agent: consultSetup, the action standing down while it is out', { skip: bundleSkip }, async () => {
+  const gate = defer()
+  const mounted = await mountBuiltPanel({
+    record: recordWithoutNotes(),
+    sessionsService: fakeSessionsService(),
+    useSessions: (select) => select(snapshotOf([])),
+    onConsultSetup: () => gate.promise,
+  })
+  const button = emptyStage(mounted)?.button
+  assert.notEqual(button, null, 'the empty stage carries no action')
+
+  await mounted.act(async () => {
+    button.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
+  })
+  assert.deepEqual(
+    mounted.consulted,
+    [{ sessionId: 'render-check-session', workspaceRoot: '' }],
+    'the press did not reach the host half with this session and the root the selector gave',
+  )
+  assert.equal(button.disabled, true, 'the action stayed pressable while the call was out')
+
+  await mounted.act(async () => {
+    gate.resolve({ ok: true, session: 'consult-check-session' })
+    await flush()
+  })
+  assert.equal(button.disabled, false, 'the action never came back after the call settled')
+  assert.ok(mounted.container.querySelector('.superworker-page > .superworker-innone') === null, 'a landed consult wrote a note line: it has nothing to say')
+  assert.equal(mounted.consulted.length, 1, 'one press opened more than one session')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a refused setup consult says why on the panel\'s note line', { skip: bundleSkip }, async () => {
+  const mounted = await mountBuiltPanel({
+    record: recordWithoutNotes(),
+    sessionsService: fakeSessionsService(),
+    useSessions: (select) => select(snapshotOf([])),
+    onConsultSetup: () => ({ ok: false, code: 'no-session-service', detail: 'agents' }),
+  })
+  const button = emptyStage(mounted)?.button
+  await mounted.act(async () => {
+    button.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
+    await flush()
+  })
+  const note = mounted.container.querySelector('.superworker-page > .superworker-innone')
+  assert.notEqual(note, null, 'the refusal was swallowed: nothing stands on the panel\'s note line')
+  assert.equal(
+    note.textContent,
+    zh['failure.no-session-service'].replace('{detail}', 'agents'),
+    'the refusal does not read as the lookup table\'s sentence for its code',
+  )
+  assert.equal(button.disabled, false, 'the action stayed down after a refused call')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})

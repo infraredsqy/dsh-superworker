@@ -48,12 +48,13 @@
  * caller that wants to watch its sessions passes `onOpened` instead of wrapping
  * the open.
  *
- * The consult session the panel's legacy notice opens is a sibling open in this
- * file as well ({@link openConsultSession}): it shares the sides above — the
- * session-side probe, the standing preset, the workspace attach, the tool arm —
- * and drops the record-facing halves (no launch prompt to read, no note to
- * write), because a workspace whose records sit only in the older layer has
- * neither to offer.
+ * The consult sessions the panel's two nothing-to-draw notices open are sibling opens in this
+ * file as well ({@link openConsultSession}, {@link openSetupSession}): they share the sides above —
+ * the session-side probe, the standing preset, the workspace attach, the tool arm — and drop the
+ * record-facing halves (no launch prompt to read, no note to write), because a workspace with only
+ * the old record directory and one with no session to draw have neither to offer. The two differ in
+ * one thing only: which fixed sentence the engine hands the session ({@link CONSULT_PROMPT} and
+ * {@link SETUP_PROMPT}).
  */
 import { randomUUID } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
@@ -63,7 +64,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentRegistry, AgentSetup } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createUserMessage } from '@deepseek-ai/dsh-llm/message'
-import { CONSULT_PROMPT, type Executor } from 'superworker-core'
+import { CONSULT_PROMPT, SETUP_PROMPT, type Executor } from 'superworker-core'
 import { LAUNCH_PROMPT_FILE, RECORD_LAUNCH } from './contract.ts'
 import type { RecordFailure, RecordRefusalCode } from './failure.ts'
 import { isAbsent, readWholeFile, type SuperworkerScope } from './records.ts'
@@ -344,29 +345,29 @@ export async function openNodeSession(
 }
 
 /**
- * Open the consult session the panel's legacy notice hands a person: one session of this host's
- * own, at the workspace the reader was looking at, whose first instruction is the engine's fixed
- * consult sentence ({@link CONSULT_PROMPT}) — spelled in the engine and only there, so the panel
- * carries no second copy of it.
+ * Open one consult session: a session of this host's own, at the workspace the reader was looking
+ * at, whose first instruction is the fixed sentence handed in — spelled in the engine and only
+ * there, so the panel carries no copy of it.
  *
  * It is a sibling of {@link openNodeSession}, sharing its sides and dropping its record-facing
  * halves. Shared: the session-side probe (a host without the agent registry is refused before
  * anything is minted), the standing preset the session composes through, the workspace attach,
  * the queue around the create/attach stretch, and the tool arm — the last one being the point of
  * the whole open, because the wake's event paths cannot see a session this host minted, and
- * without the tool the consult session would have no way to reach `migrate` and `doctor`. Dropped:
- * a workspace whose records sit only in the older layer has no launch cell to read a prompt from
- * and no node to hang a note on, so neither happens, and the open answers as soon as the consult
+ * without the tool the consult session would have no way to reach `migrate`, `doctor` or the
+ * routing words. Dropped: a workspace with nothing to draw has no launch cell to read a prompt
+ * from and no node to hang a note on, so neither happens, and the open answers as soon as the
  * sentence has gone in — the person follows the session in DSH's own session view, the way they
  * would one they opened by hand.
  *
  * An empty `workspaceRoot` follows the boundary's own convention — the calling session's own
  * workspace — so an in-process caller needs no root of its own.
  */
-export async function openConsultSession(
+async function openConsult(
   ctx: Context,
   sessionId: SessionId,
   workspaceRoot: string,
+  prompt: string,
 ): Promise<SessionOpenOutcome> {
   const side = sessionSideOf(ctx)
   if ('code' in side) return side
@@ -429,10 +430,12 @@ export async function openConsultSession(
          * here would leave a live session nobody wrote down. */
         reportUnattached(ctx, 'the consult session', root, messageOf(error))
       }
-      /* This session has to reach `migrate` and `doctor` — that reach is the whole reason it
-       * exists — and the condition reads it out of the workspace the session is opened in. */
+      /* This session has to reach the words its sentence names — `migrate` and `doctor` for an old
+       * record directory, `sw-route` for a workspace with no node — and that reach is the whole
+       * reason it exists; the wake's condition reads it out of the workspace the session is opened
+       * in. */
       handle.agent.followup(createUserMessage({
-        content: [{ type: 'text', text: CONSULT_PROMPT }],
+        content: [{ type: 'text', text: prompt }],
         source: { kind: 'user' },
       }))
     })
@@ -444,3 +447,28 @@ export async function openConsultSession(
   return { ok: true, session: opened }
 }
 
+/**
+ * Open the consult session the panel's legacy notice hands a person: the engine's fixed migration
+ * sentence ({@link CONSULT_PROMPT}) goes in as the session's first instruction.
+ */
+export function openConsultSession(
+  ctx: Context,
+  sessionId: SessionId,
+  workspaceRoot: string,
+): Promise<SessionOpenOutcome> {
+  return openConsult(ctx, sessionId, workspaceRoot, CONSULT_PROMPT)
+}
+
+/**
+ * Open the consult session the overview's empty stage hands a person: the record names no session
+ * the panel can draw, so the engine's fixed setup sentence ({@link SETUP_PROMPT}) goes in as the
+ * session's first instruction and the agent reads this workspace into its first node. Same probe,
+ * same refusals, same silence after a landed open — only the sentence differs.
+ */
+export function openSetupSession(
+  ctx: Context,
+  sessionId: SessionId,
+  workspaceRoot: string,
+): Promise<SessionOpenOutcome> {
+  return openConsult(ctx, sessionId, workspaceRoot, SETUP_PROMPT)
+}

@@ -209,6 +209,44 @@ export function legacyNoticeWords(t: Translate, reading: SuperworkerReading): Le
   return { title: t('panel.legacy.title'), body: t('panel.legacy.body'), link: t('panel.legacy.link') }
 }
 
+/**
+ * Which of the overview's empty stages this is: the fact, not the sentence.
+ *
+ * The three are told apart because they are three different things to know about a workspace, and
+ * one sentence standing for all of them would hide which one the reader is in: the record holds no
+ * node at all, it holds nodes but names no session that ever ran here, or it names sessions and
+ * none of them can be drawn right now.
+ */
+export type OverviewEmpty = 'no-nodes' | 'no-session' | 'no-window'
+
+/** The overview's empty stage in the two pieces the pane renders it with. */
+export interface OverviewEmptyWords {
+  /** Why no window stands on the stage. */
+  readonly said: string
+  /** The one way forward, as the action's word. */
+  readonly link: string
+}
+
+/* One word per stage, so a fourth stage fails to compile until it speaks. The action is the same
+ * for all three — this workspace still has to become a pipeline — so it is said once. */
+const EMPTY_WORDS: Readonly<Record<OverviewEmpty, WordKey>> = {
+  'no-nodes': 'overview.empty.no-nodes',
+  'no-session': 'overview.empty.no-session',
+  'no-window': 'overview.empty.no-window',
+}
+
+/**
+ * The overview's empty stage: which situation it is, and the one move that changes it.
+ *
+ * Nothing here is measured — the panel hands over the stage it has judged from the record, and the
+ * words are the lookup tables'. The move is the same sentence on all three stages on purpose: an
+ * agent reads this workspace, draws its graph and adds the first node, which is exactly what a
+ * record with no node, no session, or no drawable session is missing.
+ */
+export function overviewEmptyWords(t: Translate, kind: OverviewEmpty): OverviewEmptyWords {
+  return { said: t(EMPTY_WORDS[kind]), link: t('overview.empty.link') }
+}
+
 /** What each refusal code reads as. One entry per code, so a new code fails to compile until it speaks. */
 const FAILURE_WORDS: Readonly<Record<FailureCode, WordKey>> = {
   'arg-not-allowed': 'failure.arg-not-allowed',

@@ -26,7 +26,7 @@ import { pinHome } from './helpers/env.mjs'
 const pinned = pinHome(['SUPERWORKER_HOME_DIR'], 'superworker-gateway-home-')
 after(pinned.restore)
 
-/** The nine endpoints, matching the table in `gateway.ts`. */
+/** Every endpoint, matching the table in `gateway.ts`. */
 const ENDPOINTS = [
   'read',
   'addInstruction',
@@ -37,6 +37,8 @@ const ENDPOINTS = [
   'setConfig',
   'readSessions',
   'openNodeSession',
+  'consultMigration',
+  'consultSetup',
 ]
 
 const wired = await Promise.all([
@@ -121,7 +123,7 @@ async function liveGateway(root) {
   }
 }
 
-test('The nine endpoints all answer in source mode: the signature gate first, other errors aside', { skip: !wired }, async () => {
+test('Every endpoint answers in source mode: the signature gate first, other errors aside', { skip: !wired }, async () => {
   const root = syntheticWorkspace()
   const { ctx, call } = await liveGateway(root)
   try {

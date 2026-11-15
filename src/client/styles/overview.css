@@ -25,6 +25,28 @@
   inset: 0;
 }
 
+/* ---- A stage with no window to draw --------------------------------------- */
+/* The record is in hand and no window can stand on it: not one node, no session it ever named, or
+ * none of the named ones this machine holds now. Nothing is drawn in a window's place — a stand-in
+ * window would be the one thing this panel must never invent — so the stage says which situation
+ * it is and carries the one move that changes it, centred where the windows would have stood. It
+ * is the whole-stage notice's own shape (one sentence, one secondary action) at this cell's size. */
+.superworker-page .superworker-oempty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+.superworker-page .superworker-oempty p {
+  margin: 0;
+  font: var(--dsw-font-s-14);
+  color: var(--dsw-alias-label-caption);
+}
+
 /* ---- The lines between windows -------------------------------------------- */
 /* One child, one line: out of the main window's right edge on the dispatch row that opened it,
  * across the ground between the two windows, and into the child's left edge. The layer covers the

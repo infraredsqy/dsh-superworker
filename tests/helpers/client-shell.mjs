@@ -5,8 +5,8 @@
  * the bundle is loaded through the shell's own module loader, its factory is handed the module table
  * the shell hands it, the host half sits behind it over the in-memory port, and the panel is mounted
  * on the slot roster. What comes back is what a case judges: the container, the readings the boot
- * took (`asked`, `consoleErrors`), and a `settle()` that lets every read it started land before the
- * judge.
+ * took (`asked`, `consulted`, `consoleErrors`), and a `settle()` that lets every read it started
+ * land before the judge.
  *
  * Needs `lib/client.js`; `npm test` builds it first. `bundleSkip` is that missing reason, so a file
  * can skip itself with it instead of failing on an import that cannot load.
@@ -52,11 +52,14 @@ async function specOf(window) {
  * `sessions` service, `workspaces` is the workspace-list source — all three optional, all three
  * forwarded the way the real seat forwards them. `settingsForm` replaces the stand-in settings
  * document the boot attaches (a case that needs the write round trip held open passes one built with
- * `deferred`); it comes back as `form`, so the case can answer what stands queued. `rerender`
- * re-renders the mounted panel with the same props, so a case that holds a mutable snapshot can move
- * it and redraw.
+ * `deferred`); it comes back as `form`, so the case can answer what stands queued. `onConsultSetup`
+ * answers the host's consult-setup endpoint for a case that presses the empty stage's action: it is
+ * handed `{ sessionId, workspaceRoot }` and may answer with a promise (a case holding the call open
+ * to judge the button mid-flight); every call is recorded on `consulted`, so a case can read which
+ * workspace the press named. `rerender` re-renders the mounted panel with the same props, so a case
+ * that holds a mutable snapshot can move it and redraw.
  */
-export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session', useSessions, sessionsService, workspaces, settingsForm }) {
+export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session', useSessions, sessionsService, workspaces, settingsForm, onConsultSetup }) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div></body></html>', {
     url: 'http://127.0.0.1/',
     pretendToBeVisual: true,
@@ -101,6 +104,8 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
 
   /** The face the generated remote client would hand out: every call answers `{ ok, value }`. */
   const asked = []
+  /* Every consult-setup call a case's press made, and the answer that case chose to give it. */
+  const consulted = []
   const wrapped = (run) => async (...values) => {
     try {
       return { ok: true, value: await run(...values) }
@@ -112,6 +117,10 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
     read: wrapped((...values) => { asked.push('read'); return gateway.read(...values) }),
     readSessions: wrapped((...values) => gateway.readSessions(...values)),
     readConfig: wrapped((...values) => gateway.readConfig(...values)),
+    consultSetup: wrapped((sessionId, workspaceRoot) => {
+      consulted.push({ sessionId, workspaceRoot })
+      return onConsultSetup === undefined ? { ok: true, session: 'consult-check-session' } : onConsultSetup({ sessionId, workspaceRoot })
+    }),
   }
 
   /* ---- boot the plugin the way the shell does ---- */
@@ -191,6 +200,7 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
     container,
     form,
     asked,
+    consulted,
     consoleErrors,
     settle,
     rerender,

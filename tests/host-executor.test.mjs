@@ -22,7 +22,8 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { canonicalWorkspaceRoot, executorOf, openNodeSession } from '../src/host/executor.ts'
+import { canonicalWorkspaceRoot, executorOf, openNodeSession, openSetupSession } from '../src/host/executor.ts'
+import { SETUP_PROMPT } from 'superworker-core'
 import { pinHome } from './helpers/env.mjs'
 import { clearPlacement, placeOneSkill } from './helpers/skill-placement.mjs'
 import { until, flush } from './helpers/wait.mjs'
@@ -199,6 +200,46 @@ test('Probe: no agent registry, it refuses naming agents, and builds nothing', a
   const { ctx } = context({ files: {}, agents })
   const noAgents = { ...ctx, get(name) { return name === 'sessions' ? {} : undefined } }
   const outcome = await openNodeSession(noAgents, 's1', 'C:\\ws', 'c1', 'n1')
+  assert.deepEqual(outcome, { ok: false, code: 'no-session-service', detail: 'agents' })
+  assert.equal(agents.created.length, 0)
+})
+
+test('The setup consult: one session under this workspace, attached to it, the engine\'s setup sentence verbatim as its first instruction', async () => {
+  mkdirSync(join(tmpdir(), 'superworker-executor-'), { recursive: true })
+  const root = mkdtempSync(join(tmpdir(), 'superworker-executor-', 'ws-'))
+  const attached = []
+  const workspaceRegistry = {
+    async create() {
+      return { async attachSession(session) { attached.push(session) } }
+    },
+  }
+  const agents = fakeAgents()
+  const { ctx } = context({ files: {}, agents: agents.registry, sessions: {}, workspaceRegistry })
+
+  const outcome = await openSetupSession(ctx, 's1', root)
+
+  assert.equal(outcome.ok, true, JSON.stringify(outcome))
+  assert.equal(agents.created.length, 1, 'the empty stage\'s action opens exactly one session')
+  const record = agents.created[0]
+  assert.equal(outcome.session, record.options.sessionId, 'the answer names the session it minted')
+  assert.equal(record.options.meta.cwd, realpathSync(root), 'cwd must be this workspace root: the agent reads the workspace it was handed')
+  assert.deepEqual(attached, [record.options.sessionId], 'the consult road attaches the session, as the migration consult does')
+  assert.equal(record.followups.length, 1, 'exactly one first instruction')
+  assert.equal(record.followups[0].role, 'user')
+  assert.equal(record.followups[0].content[0].type, 'text')
+  assert.equal(record.followups[0].content[0].text, SETUP_PROMPT, 'the sentence is the engine\'s own, not one character changed')
+  assert.equal(
+    existsSync(join(root, '.superworker', 'meta', 'sessions', 'n1.json')),
+    false,
+    'a consult names no cell, so it writes no note',
+  )
+})
+
+test('Probe: the setup consult asks the same question first, refusing by the same code when there is no agent registry', async () => {
+  const agents = fakeAgents()
+  const { ctx } = context({ files: {}, agents })
+  const noAgents = { ...ctx, get(name) { return name === 'sessions' ? {} : undefined } }
+  const outcome = await openSetupSession(noAgents, 's1', 'C:\\ws')
   assert.deepEqual(outcome, { ok: false, code: 'no-session-service', detail: 'agents' })
   assert.equal(agents.created.length, 0)
 })

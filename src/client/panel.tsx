@@ -4,10 +4,11 @@
  *
  * Each pane's own layout is its own document: the map `map.tsx` (with its layout engine in
  * `map-layout.ts`), the overview `overview.tsx` (with its layout in `overview-geom.ts` and the
- * session-event windows in `session-events.ts`), detail `detail.tsx`, instruction book `notes.tsx`,
- * project settings `config.tsx`, and the issue pane `pool.tsx`; the modal is `delete-confirm.tsx`;
- * the legacy-directory notice that replaces the whole stage is `legacy.tsx`; the reading widgets
- * shared by the map, detail, and instruction book are in `marks.tsx`.
+ * session-event windows in `session-events.ts`; its empty stage is `overview-empty.tsx`), detail
+ * `detail.tsx`, instruction book `notes.tsx`, project settings `config.tsx`, and the issue pane
+ * `pool.tsx`; the modal is `delete-confirm.tsx`; the legacy-directory notice that replaces the whole
+ * stage is `legacy.tsx`; the reading widgets shared by the map, detail, and instruction book are in
+ * `marks.tsx`.
  *
  * Not a single reading is computed here: the four records arrive through the port, and the pure
  * functions in `src/model` read them into the reading for this moment; this layer only draws it. The
@@ -21,7 +22,7 @@ import { everySourceIs, readOverview, readProject, readSessions, strandedCycleOf
 import type { PrefField, PrefsSource, ViewId } from './prefs.ts'
 import { clampSide, DEFAULT_SOURCE, PANEL_PREF_FIELDS, VIEW_IDS, VIEW_WORDS } from './prefs.ts'
 import { useT } from './locale.ts'
-import { failureWord, legacyNoticeWords } from './words.ts'
+import { failureWord, legacyNoticeWords, overviewEmptyWords, type OverviewEmpty } from './words.ts'
 import type { Outcome } from './failure.ts'
 import { failureOf } from './failure.ts'
 import type { Load as LoadOf, Note } from './outcome.ts'
@@ -31,6 +32,7 @@ import { NO_WORKSPACES, workspaceOf, type WorkspaceSource } from './workspaces.t
 import { NO_WINDOWS, type SessionWindows } from './session-events.ts'
 import { READING_CAPACITY } from './overview-geom.ts'
 import { OverviewPane } from './overview.tsx'
+import { OverviewEmptyStage } from './overview-empty.tsx'
 import { MapPane, type CardGo } from './map.tsx'
 import { ConfigPane } from './config.tsx'
 import { DeleteConfirm } from './delete-confirm.tsx'
@@ -180,6 +182,10 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
      "gone". */
   const [claims, setClaims] = React.useState<Readonly<Record<string, string>>>(NO_CLAIMS)
   const [alive, setAlive] = React.useState<ReadonlySet<string> | null>(null)
+  /* Whether the record's session side has answered on this pass. An empty set of notes is only "the
+   * record names no session" once it has: before that it means "not read yet", and the overview's
+   * empty stage would say the wrong one of its three sentences for a beat and take it back. */
+  const [sessionsRead, setSessionsRead] = React.useState(false)
   /* The session-event windows behind the overview: one external store, read the same way every
    * pushed state here is read. Absent, every window simply draws no rows. */
   const windows = props.windows ?? NO_WINDOWS
@@ -238,6 +244,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       setNotes(NO_NOTES)
       setClaims(NO_CLAIMS)
       setAlive(null)
+      setSessionsRead(false)
       return undefined
     }
     let live = true
@@ -247,12 +254,16 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
         setNotes(readSessions(reading.notes))
         setClaims(reading.claims)
         setAlive(reading.alive === null ? null : new Set(reading.alive))
+        setSessionsRead(true)
       },
       () => {
         if (!live) return
         setNotes(NO_NOTES)
         setClaims(NO_CLAIMS)
         setAlive(null)
+        /* A refused read is no reading at all: the overview keeps its silence rather than claiming
+         * the record names nothing when the truth is that nobody looked. */
+        setSessionsRead(false)
       },
     )
     return () => { live = false }
@@ -343,6 +354,21 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     })
   }, [reading, events, nodeOf, props.sessions, sessionId, notes])
 
+  /* The overview's empty stage: the record is in hand and yet no window stands. Which of the three
+   * it is is what the stage says — a workspace with no node at all, one whose record names no
+   * session that ever ran here, or one whose named sessions this machine cannot draw now — and they
+   * are kept apart because they are different things to know. The distinction is judged from the
+   * record side (the reading names the nodes, the notes name the sessions); whether any window
+   * stands at all is the overview's own `main`. */
+  const emptyKind: OverviewEmpty | null = overview === null || overview.main !== null || !sessionsRead
+    ? null
+    : noNodes
+      ? 'no-nodes'
+      : Object.keys(notes).length === 0
+        ? 'no-session'
+        : 'no-window'
+  const emptyWords = emptyKind === null ? null : overviewEmptyWords(t, emptyKind)
+
   /* The event windows the overview holds open are exactly the windows the reading names — the main
    * conversation and the children still running — and only while the overview is the shown pane.
    * Re-watching the same ids is nothing; the ids that left are released there. */
@@ -375,18 +401,26 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     [],
   )
 
-  /* The migration hand behind the legacy notice's action: the whole move is the host opening an
-   * agent session, so this loop deliberately carries no read-again — a landed call changes nothing
-   * on this panel (the migration happens in the session it opens, and a re-read could only repeat
-   * the same notice), and only a refusal has a word for the note line. */
-  const consult = React.useCallback(() => {
+  /* The consult hand behind both nothing-to-draw notices — the legacy notice's migration action and
+   * the overview's empty stage. The whole move is the host opening an agent session, so this loop
+   * deliberately carries no read-again: a landed call changes nothing on this panel (the work
+   * happens in the session it opens, and a re-read could only repeat the same notice), and only a
+   * refusal has a word for the note line. One hand for both, because the two differ in which door
+   * they open and never in what the panel does with the answer. */
+  const consult = React.useCallback((open: () => Promise<Outcome>) => {
     if (consulting) return
     setConsulting(true)
     setNote(null)
-    void writeToNote(() => port.consultMigration(sessionId ?? '', workspaceRoot), {
-      note: (next) => setNote(next),
-    }).finally(() => setConsulting(false))
-  }, [consulting, port, sessionId, workspaceRoot])
+    void writeToNote(open, { note: (next) => setNote(next) }).finally(() => setConsulting(false))
+  }, [consulting])
+
+  const consultMigration = React.useCallback(() => {
+    consult(() => port.consultMigration(sessionId ?? '', workspaceRoot))
+  }, [consult, port, sessionId, workspaceRoot])
+
+  const consultSetup = React.useCallback(() => {
+    consult(() => port.consultSetup(sessionId ?? '', workspaceRoot))
+  }, [consult, port, sessionId, workspaceRoot])
 
   /* The change made on the panel: the changed value leads, then it is written back to the settings
    * document — both sides read the same form, so the settings page's row moves on the spot too.
@@ -484,16 +518,22 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       </header>
 
       {legacy !== null ? (
-        <LegacyNotice notice={legacy} busy={consulting} onConsult={consult} />
+        <LegacyNotice notice={legacy} busy={consulting} onConsult={consultMigration} />
       ) : nothing === null ? (
       <div className="superworker-stage">
         {/* The frame fills the footprint in every view — each pane scrolls what does not fit inside
             itself — and every pane inside it is a direct child, so its own `flex` does the sharing. */}
         <div className="superworker-frame is-fill" id="frame">
           {/* The overview's pane draws the session's windows over one stage: the reading above
-              carries the windows and their rows, this cell only stands the pane under its tab. */}
+              carries the windows and their rows, this cell only stands the pane under its tab. No
+              window to draw is an empty stage with its own sentence and its own move, never a
+              stand-in window: the law is "draw nothing that is not there". */}
           <PaneFrame id="overview" active={tab === 'overview'} noNodes={false} fill>
-            {overview === null ? null : <OverviewPane reading={overview} at={at} />}
+            {overview === null
+              ? null
+              : emptyWords === null
+                ? <OverviewPane reading={overview} at={at} />
+                : <OverviewEmptyStage words={emptyWords} busy={consulting} onConsult={consultSetup} />}
           </PaneFrame>
 
           <MapPane
