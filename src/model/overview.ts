@@ -19,6 +19,12 @@
  * conversation once got drawn — so it is read only when the caller says
  * nothing at all about which sessions this pipeline owns.
  *
+ * A child that ended is still one of the windows while the dispatch row that
+ * opened it is still on the main window's drawn feed: a window follows its row,
+ * and that is what bounds the drawing — the record is never asked to replay the
+ * history of every child this workspace ever ran. A bit is the only word such a
+ * window carries ({@link OverviewWindow.done}); the main window never wears it.
+ *
  * The snapshot's and the log's field spellings are DSH's own (`running`,
  * `parentId`, `updatedAt`, `tool/call`, …), read defensively: a field that is
  * not there reads as absent, and no default pretends to know it. No "still
@@ -30,10 +36,10 @@ import type { SuperworkerNode } from './records.ts'
 import { text } from './fields.ts'
 
 /**
- * The window cap: more than this many children still running, and the overview
- * draws only the most recent ones. The cap counts the children alone — the
- * main window is the conversation this panel lives in, and it is one of the
- * windows whenever the record names it and the list has it.
+ * The window cap: more than this many child windows, and the overview draws
+ * only the most recent ones. The cap counts the children alone — the main window
+ * is the conversation this panel lives in, and it is one of the windows whenever
+ * the record names it and the list has it.
  */
 const WINDOW_CAP = 5
 
@@ -115,6 +121,14 @@ export interface OverviewWindow {
    * field is either a call id or not there at all.
    */
   readonly dispatchCallId?: string
+  /**
+   * Whether this window's conversation is over: true when the session list's
+   * running bit is not true. The main window is **never** done, whatever that
+   * bit says — it is the conversation this panel lives in, and one that stopped
+   * is waiting for its reader, not finished. A done window is drawn where it
+   * stands, its rows said quieter rather than removed.
+   */
+  readonly done: boolean
 }
 
 /** The overview's reading at this snapshot. */
@@ -124,12 +138,20 @@ export interface OverviewReading {
    * session when the record names it, else a named one still running, else the
    * named one that moved last. Absent when the record names none of the list's
    * sessions: the stage stays empty rather than showing a conversation the
-   * pipeline never mentioned.
+   * pipeline never mentioned. Never done (see {@link OverviewWindow.done}).
    */
   readonly main: OverviewWindow | null
-  /** The children still running this round, oldest first: at most five, taken anew at every read. */
+  /**
+   * The child windows, oldest first: the ones still running this round, and the
+   * finished ones whose dispatch row the main window still draws — at most five,
+   * taken anew at every read.
+   */
   readonly children: readonly OverviewWindow[]
-  /** How many running children the five-window cap folded away — a count, never a window: 0 is 0. */
+  /**
+   * How many **running** children the five-window cap folded away — a count,
+   * never a window: 0 is 0. A finished window standing in the five is not
+   * counted here; it is not running and owes nobody a slot.
+   */
   readonly hiddenChildren: number
 }
 
@@ -595,6 +617,7 @@ function windowOf(
   node: SuperworkerNode | undefined,
   events: readonly OverviewEvent[] | undefined,
   capacity: unknown,
+  done: boolean,
 ): OverviewWindow {
   return {
     id,
@@ -603,6 +626,7 @@ function windowOf(
     mode: modeOf(node),
     startedAt: startedAtOf(events),
     rows: capped(foldRows(events), capacity),
+    done,
   }
 }
 
@@ -613,20 +637,23 @@ function windowOf(
  * ({@link mainIdOf}): its own session when the record names it, else a named
  * session still running, else the named one that moved last — and no window at
  * all when the record names none, or names only sessions the list does not
- * hold. A child counts as a window only while the list's running bit says it is
- * still running this round **and** its `parentId` is that main session: a
- * session of another conversation, and any child of one, is never drawn here.
- * Ended a child drops, called up again it is a window again, and nothing is
- * probed or pinned to hold it. Over five running children the most recent five
- * are taken — taken whole from whoever is alive at that moment, never the first
- * five pinned, never a gap filled at the end — and the ones the five leave out
- * are counted, not drawn: `hiddenChildren` is how many running children the cap
- * folded away.
+ * hold. A child counts as a window while its `parentId` is that main session and
+ * either the list's running bit says it is still running, or it has finished and
+ * the dispatch call that named it is a row the main window still draws — a
+ * window follows its row. A session of another conversation, and any child of
+ * one, is never drawn here. Ended a child with no footing on the screen drops,
+ * called up again it is a window again, and nothing is probed or pinned to hold
+ * it. Over five child windows the most recent five are taken — taken whole from
+ * whoever is drawn at that moment, never the first five pinned, never a gap
+ * filled at the end — and the running ones the five leave out are counted, not
+ * drawn: `hiddenChildren` is how many running children the cap folded away.
  *
  * Which call dispatched a child is read off the main session's own events, whole
  * — outside the row capacity, because a dispatch row falling off the top of the
  * feed is the fade's business and not the anchor's: the fact stays even when the
- * row that carries it is no longer drawn. Its rows are that same session's
+ * row that carries it is no longer drawn. The finished child's footing is read
+ * the other way round, against the rows the capacity **kept**; that is the one
+ * place the cut is allowed to decide a window. Its rows are that same session's
  * events, so the window and its anchors can never be read off two conversations.
  */
 export function readOverview(input: OverviewInput): OverviewReading {
@@ -636,28 +663,49 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const nodeFor = (id: string): SuperworkerNode | undefined =>
     input.nodeOf === undefined ? undefined : input.nodes?.[input.nodeOf[id] ?? '']
   const main = mainId === undefined ? undefined : rows[mainId]
+  /* The main window first: a finished child's footing is read off the rows it draws. The main
+     window is never done — the list's running bit says whether anyone is typing into it, not
+     whether the conversation this panel lives in has finished. */
+  const mainWindow = main === undefined || mainId === undefined
+    ? null
+    : windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity, false)
+  const drawnCalls = new Set<string>()
+  for (const row of mainWindow?.rows ?? []) {
+    if (row.callId !== undefined) drawnCalls.add(row.callId)
+  }
   const anchors = dispatchAnchorsOf(mainId === undefined ? undefined : input.events?.[mainId])
-  /* The ones alive this round, before the cap takes its five: what the drawing does not show is
-     counted off this list, never off the capped one (that one is already five, or fewer). */
-  const alive = mainId === undefined
-    ? []
-    : order.filter((id) => {
-      if (id === mainId) return false
-      const row = rows[id]
-      return row !== undefined && row.parentId === mainId && row.running === true
-    })
-  const children = alive.slice(-WINDOW_CAP)
+  /* The children the cap has to seat, before it takes its five: the ones alive this round, and
+     the ones that have finished but still stand on a drawn dispatch row. Nothing else is a child
+     window — a session of another conversation never gets here. */
+  const running: string[] = []
+  const footing: string[] = []
+  if (mainId !== undefined) {
+    for (const id of order) {
+      if (id === mainId) continue
+      const row: OverviewSessionRow | undefined = rows[id]
+      if (row === undefined || row.parentId !== mainId) continue
+      if (row.running === true) {
+        running.push(id)
+        continue
+      }
+      const callId = anchors.get(id)
+      if (callId !== undefined && drawnCalls.has(callId)) footing.push(id)
+    }
+  }
+  const seating = new Set([...running, ...footing])
+  const drawn = order.filter((id) => seating.has(id)).slice(-WINDOW_CAP)
+  const runningSet = new Set(running)
+  const drawnRunning = drawn.filter((id) => runningSet.has(id))
   return {
-    main:
-      main === undefined || mainId === undefined
-        ? null
-        : windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity),
-    children: children.map((id) => {
-      const row = rows[id] ?? { id }
-      const window = windowOf(id, row, nodeFor(id), input.events?.[id], input.capacity)
+    main: mainWindow,
+    children: drawn.map((id) => {
+      const row: OverviewSessionRow = rows[id] ?? { id }
+      const window = windowOf(id, row, nodeFor(id), input.events?.[id], input.capacity, row.running !== true)
       const dispatchCallId = anchors.get(id)
       return dispatchCallId === undefined ? window : { ...window, dispatchCallId }
     }),
-    hiddenChildren: alive.length - children.length,
+    /* Counted off the running list, never off the five the cap kept: what the cap folded away is
+       the running children it left out, and a finished window owes the badge nothing. */
+    hiddenChildren: running.length - drawnRunning.length,
   }
 }

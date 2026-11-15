@@ -16,21 +16,33 @@ import {
   CHILD_HEAD,
   CHILD_FOOT,
   BOX_BORDER,
+  FEED_LEFT,
+  FEED_RIGHT,
   FIELD_MAX_H,
   FIELD_PAD,
   GAP_Y,
   LINK_BEND,
   MAIN_FOOT,
   MAIN_HEAD,
+  MARK_CHECK,
+  MARK_CHECK_STROKE,
+  MARK_FAIL,
+  MARK_FAIL_STROKE,
   PLATE_OUT,
   RAIL_LANE,
   RAIL_LEFT,
   READING_CAPACITY,
+  RING_CELL,
+  RING_RIGHT,
+  RING_SIZE,
+  RING_TOP,
   ROW_H,
   SPILL_GAP,
   SPILL_H,
   layoutLink,
+  layoutMark,
   layoutOverview,
+  layoutRing,
   layoutSpill,
   railBarWidth,
 } from '../src/client/overview-geom.ts'
@@ -466,4 +478,52 @@ test('the widest feed any stage can stand is the capacity the reading is cut to'
     }
   }
   assert.ok(READING_CAPACITY >= worst, `the capacity ${READING_CAPACITY} cut a feed that stands ${worst} rows`)
+})
+
+/* ---- the two marks a window's head can carry ---------------------------- */
+
+/** The two window sizes the marks stand on: the main window with its band from 96 to 290, a child from 32 to 130. */
+const MARKED = [
+  { name: 'main', width: 440, height: 310, head: MAIN_HEAD, foot: MAIN_FOOT },
+  { name: 'child', width: 420, height: 142, head: CHILD_HEAD, foot: CHILD_FOOT },
+]
+
+test("the completed window's mark stands on the process band's middle, whichever size it takes", () => {
+  for (const box of MARKED) {
+    /* The band is the process rows' box: from the head to the window's own foot. */
+    const bandMiddle = box.head + (box.height - box.foot - box.head) / 2
+    const bandMiddleX = (FEED_LEFT + (box.width - FEED_RIGHT)) / 2
+    for (const [size, stroke] of [[MARK_CHECK, MARK_CHECK_STROKE], [MARK_FAIL, MARK_FAIL_STROKE]]) {
+      const mark = layoutMark({ ...box, size, stroke })
+      assert.equal(mark.size, size, `${box.name}: the mark took ${mark.size}, not ${size}`)
+      assert.equal(mark.stroke, stroke, `${box.name}: the mark is stroked ${mark.stroke}, not ${stroke}`)
+      assert.equal(mark.top + size / 2, bandMiddle, `${box.name}: the mark's middle is ${mark.top + size / 2}, the band's is ${bandMiddle}`)
+      assert.equal(mark.left + size / 2, bandMiddleX, `${box.name}: the mark's middle is ${mark.left + size / 2}, the band's is ${bandMiddleX}`)
+      assert.ok(mark.left >= 0 && mark.left + size <= box.width, `${box.name}: the mark runs off the pane's width: ${mark.left}..${mark.left + size}`)
+      assert.ok(mark.top >= 0 && mark.top + size <= box.height, `${box.name}: the mark runs off the pane's height: ${mark.top}..${mark.top + size}`)
+    }
+  }
+})
+
+test('the two pens read as the design table\'s pixels on screen', () => {
+  /* The glyph is drawn in a 12-unit box, so the stroke that lands on screen is stroke × size / 12:
+   * the check's 4px at 44 and the failed mark's 2.5px at 20. */
+  const pen = (size, stroke) => (stroke * size) / 12
+  assert.ok(Math.abs(pen(MARK_CHECK, MARK_CHECK_STROKE) - 4) < 0.05, `the check's pen is ${pen(MARK_CHECK, MARK_CHECK_STROKE)}px, not 4px`)
+  assert.equal(pen(MARK_FAIL, MARK_FAIL_STROKE), 2.5, `the failed mark's pen is ${pen(MARK_FAIL, MARK_FAIL_STROKE)}px, not 2.5px`)
+})
+
+test("the running ring turns in the child's title-line cell, on the same centre a check would take", () => {
+  const ring = layoutRing({ width: 420 })
+  const cellMiddleX = 420 - RING_RIGHT - RING_CELL / 2
+  const cellMiddleY = RING_TOP + RING_CELL / 2
+  assert.equal(ring.size, RING_SIZE, `the ring is ${ring.size} across, not ${RING_SIZE}`)
+  assert.equal(ring.left + RING_SIZE / 2, cellMiddleX, `the ring's middle is ${ring.left + RING_SIZE / 2}, the cell's is ${cellMiddleX}`)
+  assert.equal(ring.top + RING_SIZE / 2, cellMiddleY, `the ring's middle is ${ring.top + RING_SIZE / 2}, the cell's is ${cellMiddleY}`)
+  /* A pane narrower than its own cell keeps the ring inside itself rather than hanging off it. */
+  for (const width of [420, 88, 10, 0]) {
+    const held = layoutRing({ width })
+    assert.ok(held.left >= 0, `the ring starts at ${held.left} on a ${width}px pane`)
+    assert.ok(held.left + held.size <= Math.max(width, held.size), `the ring ends at ${held.left + held.size} on a ${width}px pane`)
+  }
 })

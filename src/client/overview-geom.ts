@@ -236,6 +236,89 @@ export function layoutOverview(input: {
   }
 }
 
+/* ---- The two marks a window can carry ------------------------------------ */
+/* One cell, two fillings: the completed window's check over its body, and the small ring that says
+ * the window is still moving, in its head. Sizes and positions are the design's own table, stated
+ * here so the drawing reads them and neither the component nor the sheet keeps a copy. */
+
+/** The feed's own insets: the band its rows stand in, and the box the completed window's check centres on. */
+export const FEED_LEFT = 24
+export const FEED_RIGHT = 20
+
+/** The check: the design's 44 square, and the pen that draws it — 4px on screen, stated in the glyph's 12-unit viewBox. */
+export const MARK_CHECK = 44
+export const MARK_CHECK_STROKE = 1.09
+
+/** The mark a window whose last word was a failure wears instead: the panel's own 12-unit glyph at 20, a 2.5px pen. */
+export const MARK_FAIL = 20
+export const MARK_FAIL_STROKE = 1.5
+
+/** The disc of the window's own ground the check stands on, so it never melts into the rows behind it. */
+export const MARK_SCRIM = 108
+
+/** The running ring: 10 across, standing in the child's title-line cell — a 20 cell, right 16, top 7. */
+export const RING_SIZE = 10
+export const RING_CELL = 20
+export const RING_RIGHT = 16
+export const RING_TOP = 7
+
+/** One mark's box in its pane's own coordinates, and the pen its glyph is stroked with. */
+export interface OverviewMark {
+  readonly left: number
+  readonly top: number
+  readonly size: number
+  readonly stroke: number
+}
+
+/**
+ * Where the completed window's mark stands: on the middle of the process band, the band running
+ * from the head to the window's own foot. The check is 44 and a failure's mark 20 — same middle,
+ * and this is the one place either size is read. A box too short or too narrow to hold the mark
+ * still states a box inside the pane rather than a negative one.
+ */
+export function layoutMark(input: {
+  readonly width: number
+  readonly height: number
+  readonly head: number
+  readonly foot: number
+  readonly size: number
+  readonly stroke: number
+}): OverviewMark {
+  const { width, height, head, foot, size, stroke } = input
+  const bandTop = Math.min(head, height)
+  const bandBottom = Math.max(bandTop, height - foot)
+  const bandWidth = Math.max(0, width - FEED_LEFT - FEED_RIGHT)
+  const left = FEED_LEFT + Math.round((bandWidth - size) / 2)
+  const top = bandTop + Math.round((bandBottom - bandTop - size) / 2)
+  return {
+    left: Math.max(0, Math.min(left, width - size)),
+    top: Math.max(0, Math.min(top, height - size)),
+    size,
+    stroke,
+  }
+}
+
+/** The running ring's own box: the child's title-line cell, on the same centre the check would take. */
+export interface OverviewRing {
+  readonly left: number
+  readonly top: number
+  readonly size: number
+}
+
+/**
+ * Where the running ring turns: centred in the child window's title-line cell. A pane narrower
+ * than that cell still states a box inside itself rather than a negative one.
+ */
+export function layoutRing(input: { readonly width: number }): OverviewRing {
+  const cellLeft = input.width - RING_RIGHT - RING_CELL
+  const left = Math.max(0, cellLeft) + Math.round((RING_CELL - RING_SIZE) / 2)
+  return {
+    left: Math.max(0, Math.min(left, input.width - RING_SIZE)),
+    top: RING_TOP + Math.round((RING_CELL - RING_SIZE) / 2),
+    size: RING_SIZE,
+  }
+}
+
 /** The dot where a line leaves the main window, as the demo draws it. */
 export const LINK_DOT_R = 2.5
 

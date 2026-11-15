@@ -4,10 +4,10 @@
  * DSH's browser half holds every session's own event window behind its `sessions` service — the
  * same layer every conversation view reads through. This file forwards that service to the panel
  * under a narrow face: `watch` names the sessions whose windows the overview holds open (the main
- * conversation and the children still running), `getSnapshot` hands the durable events back keyed
- * by session. The service arrives late on some deployments, so the forwarding is written the way
- * the workspace list's is: adopt once, tell the listeners, and until then serve one stable empty
- * snapshot.
+ * conversation, the children still running, and the finished children the reading still draws),
+ * `getSnapshot` hands the durable events back keyed by session. The service arrives late on some
+ * deployments, so the forwarding is written the way the workspace list's is: adopt once, tell the
+ * listeners, and until then serve one stable empty snapshot.
  *
  * Only durable events come through — a live chunk is presentation for a view that owns it, never
  * history. Everything is read defensively off the shapes DSH actually ships; nothing here throws.

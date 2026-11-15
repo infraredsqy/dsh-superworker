@@ -370,9 +370,9 @@ const STATE_COLOR = /--dsw-alias-state-|--dsw-alias-link/
 const BORDER_EDGE = /^border(?:-top|-bottom|-left|-right)?(-width)?$/
 /* Ring tracks: the border is the drawn graphic (a rotating ring), not an outline,
  * so it keeps its width — the same exemption the theme's elevation spec spells out.
- * The panel draws this ring in two places, but the rule lives once, in the
- * tokens.css shared block (lines.css keeps only the linemark size box). */
-const RING_TRACKS = new Set(['tokens.css .superworker-state.is-run'])
+ * The panel draws the state mark's ring once, in the tokens.css shared block, and
+ * the overview draws its own smaller one in its sheet; each is the rule it lives in. */
+const RING_TRACKS = new Set(['tokens.css .superworker-state.is-run', 'overview.css .superworker-oring'])
 let elevationPairedWithBorder = 0
 let neutralBorderWide = 0
 let stateBorderNarrow = 0
@@ -574,6 +574,13 @@ const MARKS = [
   { what: 'overview rail bar · the lit child', where: '.superworker-orail b.is-on', property: 'background', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-base', tier: 'B' },
   { what: 'overview rail bar · a child someone must move', where: '.superworker-orail b.is-need', property: 'background', ink: 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 70%, transparent)', ground: '--dsw-alias-bg-base', tier: null },
   { what: 'overview feed row · failed', where: '.superworker-orow.is-fail', property: 'color', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  /* The completed window's check is a mark the reader resolves on its own, and it is reading ink
+   * on purpose: the success hue does not clear the A floor on the light palette. The failed mark
+   * that replaces it keeps the warn family's convention (the theme's own hue, read for the record).
+   * The running ring's head is the link ink, the same colour the panel's other ring leads with. */
+  { what: 'overview completed window · the check', where: '.superworker-omark', property: 'color', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-layer-1', tier: 'A' },
+  { what: 'overview completed window · the failed mark', where: '.superworker-omark.is-fail', property: 'color', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'overview running window · the ring head', where: '.superworker-oring', property: 'border-top-color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-1', tier: null },
   { what: 'the theme\'s own idle point (the basis of the 1.5 floor)', where: null, property: null, ink: 'var(--dsw-alias-state-idle-primary)', ground: '--dsw-alias-bg-base', tier: null },
 ]
 

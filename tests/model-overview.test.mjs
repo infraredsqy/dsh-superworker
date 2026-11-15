@@ -167,6 +167,102 @@ test('one child ends: the five are taken anew from those still alive, in arrival
   assert.deepEqual(reading.children.map((w) => w.id), ['c-1', 'c-2', 'c-4', 'c-5', 'c-6'])
 })
 
+/* ---- finished children: the window keeps its footing ----------------------
+ *
+ * A child that ended is still a window while the dispatch row that opened it is
+ * still on the main window's screen: the window follows its row, which is what
+ * bounds the drawing without the record ever being asked for the history it
+ * would have to draw. A child still running is a window whatever its row does.
+ * The main window is never done — it is the conversation being read, and a
+ * conversation that stopped is waiting for its reader, not finished.
+ */
+
+/** The main log a child hangs off: the call, the catalogue it wrote, and the answer that names it. */
+function dispatchOf(childId, callId = 'call-1') {
+  return [
+    call(1, callId, 'subagent', { description: '派出去做长活', prompt: '…' }),
+    catalog(2, { version: 0, childId, childCreatedAt: 2, mode: 'continuable', label: '派出去做长活' }),
+    result(3, callId, `started subagent ${childId}`),
+  ]
+}
+
+/** One child under the main session, finished unless said otherwise, with the main log's tail as asked. */
+function oneChild(mainTail, { running = false, capacity } = {}) {
+  return readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, running) }),
+    events: { [MAIN]: [...dispatchOf('c-1'), ...mainTail], 'c-1': [said(4, undefined, '它把活干完了')] },
+    ...(capacity === undefined ? {} : { capacity }),
+  })
+}
+
+test('a child that ended while its dispatch row is still drawn stays as a window, marked done', () => {
+  const reading = oneChild([said(5, undefined, '它回来了')])
+  assert.deepEqual(reading.children.map((w) => w.id), ['c-1'])
+  assert.equal(reading.children[0].done, true, 'the finished window does not read as done')
+  assert.deepEqual(
+    reading.children[0].rows.map((row) => row.full),
+    ['它把活干完了'],
+    "the finished window's rows are not its own log",
+  )
+})
+
+test('a child that ended and whose dispatch row the cut took away is no window', () => {
+  /* The row is real and the anchor still names it — but the feed no longer shows it, so nothing on
+   * the screen would stand the window up. Drawing it would be a window with no footing left. */
+  const read = oneChild([said(5, undefined, '它回来了')], { capacity: 1 })
+  assert.deepEqual(read.children, [], 'the reading drew a window whose dispatch row is no longer on the screen')
+  assert.equal(read.hiddenChildren, 0, 'a finished window was counted as a running one folded away')
+
+  /* The row still drawn — the cut kept it — is a footing: the same child stays. */
+  const kept = oneChild([said(5, undefined, '它回来了')], { capacity: 2 })
+  assert.deepEqual(kept.children.map((w) => w.id), ['c-1'], 'a dispatch row still on the screen did not hold its window')
+})
+
+test('a child still running is a window whatever its dispatch row does, and its done bit is false', () => {
+  const read = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, true) }),
+    /* No catalogue and no answer: nothing anchors this child, and the capacity keeps no row anyway. */
+    events: { [MAIN]: [call(1, 'call-1', 'subagent', { description: '还没回来', prompt: '…' })] },
+    capacity: 1,
+  })
+  assert.deepEqual(read.children.map((w) => w.id), ['c-1'], 'a running child lost its window for want of an anchor row')
+  assert.equal(read.children[0].done, false, 'a running child reads as done')
+})
+
+test('a child that ended with no dispatch anchor at all is no window: nothing stands it up', () => {
+  const read = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
+  })
+  assert.deepEqual(read.children, [])
+})
+
+test('the main window is never done: a conversation that stopped is waiting for its reader', () => {
+  /* The list says the main session is not running. It is still the conversation this panel lives
+   * in — the one being read — and no row of it completes that reading. */
+  const alone = mainAlone()
+  assert.equal(alone.main.done, false, 'the main window read as done')
+  const withChild = oneChild([said(5, undefined, '它回来了')])
+  assert.equal(withChild.main.done, false, 'the main window read as done beside a finished child')
+})
+
+test('the cap takes the most recent five child windows, and the badge counts the running ones it folded', () => {
+  const ids = ['c-1', 'c-2', 'c-3', 'c-4', 'c-5', 'c-6']
+  const byId = { [MAIN]: mainRow(MAIN) }
+  for (const id of ids) byId[id] = childRow(id, MAIN)
+  byId['c-7'] = childRow('c-7', MAIN, false)
+  const read = readOverview({
+    sessions: snapshot([MAIN, ...ids, 'c-7'], byId),
+    events: { [MAIN]: [...dispatchOf('c-7', 'call-7'), said(9, undefined, '它还在这儿')] },
+  })
+  assert.deepEqual(
+    read.children.map((w) => w.id),
+    ['c-3', 'c-4', 'c-5', 'c-6', 'c-7'],
+    'the five drawn are not the most recent five child windows',
+  )
+  assert.deepEqual(read.children.filter((w) => w.done).map((w) => w.id), ['c-7'], 'the finished window lost its done bit in the cap')
+  assert.equal(read.hiddenChildren, 2, 'the badge does not count the running children the cap folded away')
+})
+
 test("the nameplate reads the node's own words: title, weight, mode, each the engine's way", () => {
   const reading = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN) }),

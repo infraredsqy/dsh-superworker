@@ -370,8 +370,9 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
   const emptyWords = emptyKind === null ? null : overviewEmptyWords(t, emptyKind)
 
   /* The event windows the overview holds open are exactly the windows the reading names — the main
-   * conversation and the children still running — and only while the overview is the shown pane.
-   * Re-watching the same ids is nothing; the ids that left are released there. */
+   * conversation, the children still running, and the finished ones the reading still draws — and
+   * only while the overview is the shown pane. Re-watching the same ids is nothing; the ids that
+   * left are released there. */
   React.useEffect(() => {
     if (tab !== 'overview' || overview === null) {
       windows.watch([])

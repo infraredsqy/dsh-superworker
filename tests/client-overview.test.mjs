@@ -1,5 +1,5 @@
-/* The overview on the built panel: the reading drawn as windows, and the four motion marks each
- * bound to its fact.
+/* The overview on the built panel: the reading drawn as windows, the four motion marks each bound
+ * to its fact, and the two marks a window's cell can fill.
  *
  * The session list arrives the way the seat hands it over (a `useSessions` hook over a snapshot the
  * case holds and moves), and the event windows arrive through a stand-in for DSH's `sessions`
@@ -13,7 +13,9 @@
  *   when its text repeats the previous newest (growth), and a swapped newest at a steady count
  *   (the cut);
  * - breathing — a window whose newest row is a dispatch row wears it, and stops when the newest
- *   row is no longer one.
+ *   row is no longer one;
+ * - the cell — a finished child keeps its rows in place under the veil and the check; a running
+ *   child turns the small ring; the main window wears neither, whatever its running bit says.
  *
  * Needs `lib/client.js`; `npm test` builds it first. Run `node --test tests/client-overview.test.mjs`.
  */
@@ -22,11 +24,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { cssBlocks, stripComments } from '../tools/lib/cssrules.mjs'
 import {
+  CHILD_FOOT,
+  CHILD_HEAD,
   LINK_DOT_R,
+  MARK_CHECK,
+  MARK_CHECK_STROKE,
   READING_CAPACITY,
   ROW_H,
   layoutLink,
+  layoutMark,
   layoutOverview,
+  layoutRing,
   layoutSpill,
 } from '../src/client/overview-geom.ts'
 import { zh } from '../src/client/locales/zh.ts'
@@ -400,6 +408,107 @@ test('breathing: the mark follows the newest row being a dispatch row', { skip: 
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
+/* ---- the cell: a finished window's mark, a running window's ring ------- */
+
+test('a finished child keeps its rows where they stand, under the veil and the check, and turns no ring', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  /* The dispatch row is still on the main feed, so the finished child still has its footing. */
+  service.set('m1', [...dispatchRun('c1', 'd1', 'the finished job', 100), said('it came back.', 400)])
+  service.set('c1', [read('a.ts', 200), said('the child finished its work.', 300)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: false, title: 'the finished child' }])),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  const child = container.querySelector('[data-window="c1"]')
+  assert.notEqual(child, null, 'a finished child whose dispatch row is still drawn became no window')
+
+  const feed = child.querySelector('.superworker-ofeed')
+  assert.ok(feed.className.includes('is-veiled'), "the finished window's rows are not veiled")
+  assert.equal(child.querySelectorAll('.superworker-orow').length, 2, 'the finished window lost its rows instead of keeping them in place')
+
+  const mark = child.querySelector('.superworker-omark')
+  assert.notEqual(mark, null, 'the finished window wears no check')
+  assert.notEqual(mark.querySelector('svg'), null, 'the check is not drawn')
+  assert.equal(mark.className.includes('is-fail'), false, 'a clean finish wears the failed mark')
+  assert.equal(child.querySelector('.superworker-oring'), null, 'a finished window is still turning a ring')
+
+  /* The mark's box and pen are the geometry's own: the process band's middle, 44 across. */
+  const placement = layoutOverview({ stage: { width: 1024, height: 720 }, mainRows: 2, childRows: [2] })
+  const expected = layoutMark({
+    width: placement.children[0].width,
+    height: placement.children[0].height,
+    head: CHILD_HEAD,
+    foot: CHILD_FOOT,
+    size: MARK_CHECK,
+    stroke: MARK_CHECK_STROKE,
+  })
+  assert.equal(mark.style.left, `${expected.left}px`, `the check stands at ${mark.style.left}, the geometry says ${expected.left}`)
+  assert.equal(mark.style.top, `${expected.top}px`, `the check stands at ${mark.style.top}, the geometry says ${expected.top}`)
+  assert.equal(mark.style.width, `${expected.size}px`, `the check is ${mark.style.width} across, the geometry says ${expected.size}`)
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a running child turns the ring, and wears neither the veil nor a check', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('start.', 100)])
+  service.set('c1', [read('a.ts', 300)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: true, title: 'the running child' }])),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  const child = container.querySelector('[data-window="c1"]')
+  assert.notEqual(child, null, 'the running child is not drawn')
+
+  const ring = child.querySelector('.superworker-oring')
+  assert.notEqual(ring, null, 'a running child turns no ring')
+  assert.equal(child.querySelector('.superworker-omark'), null, 'a running child wears a check')
+  assert.ok(!child.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'a running window is veiled')
+
+  /* The ring's box is the geometry's own: 10 across, in the title-line cell. */
+  const placement = layoutOverview({ stage: { width: 1024, height: 720 }, mainRows: 1, childRows: [1] })
+  const expected = layoutRing({ width: placement.children[0].width })
+  assert.equal(ring.style.left, `${expected.left}px`, `the ring stands at ${ring.style.left}, the geometry says ${expected.left}`)
+  assert.equal(ring.style.top, `${expected.top}px`, `the ring stands at ${ring.style.top}, the geometry says ${expected.top}`)
+  assert.equal(ring.style.width, `${expected.size}px`, `the ring is ${ring.style.width} across, the geometry says ${expected.size}`)
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the main window wears neither the veil nor the check nor the ring, even when its session has stopped', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('a word from the conversation being read.', 100)])
+  /* The list says nobody is typing into it. That is waiting for the reader, not a finished window. */
+  const snap = {
+    ids: ['m1'],
+    byId: { m1: { id: 'm1', running: false, displayTitle: 'the main conversation' } },
+  }
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  const main = container.querySelector('[data-window="m1"]')
+  assert.notEqual(main, null, 'the main window is not drawn')
+  assert.equal(main.querySelector('.superworker-omark'), null, 'the main window wears a check')
+  assert.equal(main.querySelector('.superworker-oring'), null, 'the main window turns a ring')
+  assert.ok(!main.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'the main window is veiled')
+  assert.equal(main.querySelectorAll('.superworker-orow').length, 1, 'the main window lost its rows')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
 test('a dispatched child is tied to its own row: two children, two lines, each on its dispatch row', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
   service.set('m1', [
@@ -635,18 +744,18 @@ test('the record names a session this machine does not hold: the panel draws no 
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test('self-looping motion lives in exactly two places here: the waiting border and the walking line', () => {
+test('self-looping motion lives in exactly three places here: the waiting border, the walking line, and the running ring', () => {
   const sheet = readFileSync(new URL('../src/client/styles/overview.css', import.meta.url), 'utf8')
   const rules = cssBlocks(stripComments(sheet), { descend: 'all' }).filter((block) => block.kind === 'rule')
   /* A loop is an animation that never ends. An enter, a fade or a row arriving fills once and stops;
-     a third looping motion is a change to the design, and this is where it reports itself. */
+   * a fourth looping motion is a change to the design, and this is where it reports itself. */
   const looping = rules
     .filter((rule) => /animation:[^;]*infinite/u.test(rule.body))
     .map((rule) => rule.prelude)
     .sort()
   assert.deepEqual(
     looping,
-    ['.superworker-page .superworker-olink.is-live', '.superworker-page .superworker-opane.is-wait'],
+    ['.superworker-page .superworker-olink.is-live', '.superworker-page .superworker-opane.is-wait', '.superworker-page .superworker-oring'],
     `the sheet loops in ${looping.length} places: ${looping.join(' | ')}`,
   )
   /* The walking line: the demo's own 16px walk, on the dash it draws. */
@@ -663,6 +772,21 @@ test('self-looping motion lives in exactly two places here: the waiting border a
   assert.equal(reduced.length, 1, `the reduced-motion block covers ${reduced.length} link rules`)
   assert.match(reduced[0].body, /animation:\s*none/u, 'the line walks under reduced motion')
   assert.ok(!/stroke-dasharray/u.test(reduced[0].body), 'the reduced-motion block takes the dash away')
+
+  /* The running ring: one turn every 1.3 seconds (half the border's 2.6s breath), on the panel's
+   * 1.5px track. Under reduced motion it stops and keeps a dashed ring — the panel's still form. */
+  const ring = rules.find((rule) => rule.prelude.endsWith('superworker-oring') && rule.at === '')
+  assert.notEqual(ring, undefined, 'no rule turns the running ring')
+  assert.match(ring.body, /animation:\s*superworker-oring-spin 1\.3s linear infinite/u, 'the ring does not turn at the demo\'s pace')
+  assert.match(ring.body, /border:\s*1\.5px solid/u, 'the ring is not on the panel\'s 1.5px track')
+  assert.ok(
+    rules.some((rule) => rule.at === '@keyframes superworker-oring-spin' && /rotate\(1turn\)/u.test(rule.body)),
+    'the ring has no turn to make',
+  )
+  const still = rules.find((rule) => rule.at.includes('prefers-reduced-motion') && rule.prelude.endsWith('superworker-oring'))
+  assert.notEqual(still, undefined, 'the ring keeps turning under reduced motion')
+  assert.match(still.body, /animation:\s*none/u, 'the ring keeps turning under reduced motion')
+  assert.match(still.body, /border-style:\s*dashed/u, 'the still ring is not left as a dashed ring')
 })
 
 function container(mounted) {

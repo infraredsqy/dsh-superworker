@@ -11,7 +11,12 @@
  * - fresh row — one window's newest row is not the row it was (growth, or the cut that replaced
  *   the top row when the newest arrived);
  * - breathing border — the window's newest row is a dispatch row: it has sent work and is waiting
- *   for it. Only this motion loops by itself; its whole job is to be seen.
+ *   for it. It loops by itself; being seen is its whole job.
+ *
+ * Two marks stand beside those motions: a finished child keeps its rows where they stand and wears
+ * the check, and a child still moving wears the small ring in its cell — the one new loop, half the
+ * border's pace. Both are the reading's own facts (`done`, and the waiting fact above, which keeps
+ * the ring off a waiting window), and the main window wears neither.
  *
  * A window's id is wiring, not words: it rides a `data-window` attribute and never prints.
  */
@@ -21,14 +26,23 @@ import { clock } from '../model/index.ts'
 import {
   CHILD_FOOT,
   CHILD_HEAD,
+  FEED_LEFT,
+  FEED_RIGHT,
   LINK_DOT_R,
   MAIN_FOOT,
   MAIN_HEAD,
+  MARK_CHECK,
+  MARK_CHECK_STROKE,
+  MARK_FAIL,
+  MARK_FAIL_STROKE,
+  MARK_SCRIM,
   RAIL_LEFT,
   ROW_H,
   SPILL_DOTS,
   layoutLink,
+  layoutMark,
   layoutOverview,
+  layoutRing,
   layoutSpill,
   railBarWidth,
   type OverviewBox,
@@ -73,8 +87,14 @@ function readingsOf(t: Translate, window: OverviewWindow): string | null {
   return `${t(WEIGHT_WORDS[window.weight])} · ${t(modeWordOf(window.mode))}`
 }
 
-/** The breathing fact: a window whose newest row is a dispatch row has sent work and is waiting for it. */
+/**
+ * The waiting fact: a window that is still going and whose newest row is a dispatch row has sent
+ * work out and is waiting for it. A done window never waits — it has stopped, and the breathing
+ * border would say "out, not back" about a conversation that is over. This is also what keeps the
+ * ring off a waiting window: the two facts are never on one window.
+ */
 function isWaiting(window: OverviewWindow): boolean {
+  if (window.done) return false
   const last = window.rows[window.rows.length - 1]
   return last !== undefined && last.kind === 'dispatch'
 }
@@ -142,6 +162,35 @@ function KindMark(props: { readonly kind: OverviewRowKind }): React.ReactElement
   }
 }
 
+/**
+ * The mark a finished window wears: the panel's own check, or — when the window's last word was a
+ * failure — the panel's existing failed mark. Both are drawn in the same 12-unit box; the size and
+ * the pen that land on screen are `overview-geom.ts`'s, so the one drawing serves both marks.
+ */
+function FinishedMark(props: { readonly failed: boolean; readonly stroke: number }): React.ReactElement {
+  if (props.failed) {
+    return (
+      <svg viewBox="0 0 12 12" aria-hidden="true">
+        <circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" strokeWidth={props.stroke} />
+        <path d="M6 3.8v2.8" fill="none" stroke="currentColor" strokeWidth={props.stroke} strokeLinecap="round" />
+        <circle cx="6" cy="8.2" r="0.9" fill="currentColor" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 12 12" aria-hidden="true">
+      <path
+        d="M2.5 6.5l2.4 2.4 4.6-5.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={props.stroke}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 /** One window's feed: the rows it holds, newest at the bottom, the top fading when the room ran out. */
 function Feed(props: {
   readonly window: OverviewWindow
@@ -149,6 +198,8 @@ function Feed(props: {
   readonly room: number
   /** Whether this window's newest row arrived on this beat. */
   readonly fresh: boolean
+  /** Whether the window has stopped: its rows stay where they stand, said dimmer. */
+  readonly veiled: boolean
   readonly head: number
   readonly foot: number
 }): React.ReactElement {
@@ -156,8 +207,8 @@ function Feed(props: {
   const rows = props.window.rows
   return (
     <div
-      className={`superworker-ofeed${rows.length > props.room ? ' is-fade' : ''}`}
-      style={{ top: props.head, bottom: props.foot }}
+      className={`superworker-ofeed${rows.length > props.room ? ' is-fade' : ''}${props.veiled ? ' is-veiled' : ''}`}
+      style={{ left: FEED_LEFT, right: FEED_RIGHT, top: props.head, bottom: props.foot }}
     >
       {rows.map((row, at) => (
         <div
@@ -187,6 +238,26 @@ function WindowPane(props: {
   const t = useT()
   const { box, window: pane } = props
   const readings = readingsOf(t, pane)
+  const head = props.main ? MAIN_HEAD : CHILD_HEAD
+  const foot = props.main ? MAIN_FOOT : CHILD_FOOT
+  const done = pane.done
+  const last = pane.rows[pane.rows.length - 1]
+  const failed = last !== undefined && last.kind === 'fail'
+  /* The one thing a window's cell says: the check (or, when its last word was a failure, the
+   * panel's own failed mark) once it has stopped, and the small ring while it is still moving. The
+   * main window wears neither — it is the conversation being read, never done, and a ring there
+   * would say "still running" about the very conversation whose stillness means nothing. */
+  const mark = done
+    ? layoutMark({
+      width: box.width,
+      height: box.height,
+      head,
+      foot,
+      size: failed ? MARK_FAIL : MARK_CHECK,
+      stroke: failed ? MARK_FAIL_STROKE : MARK_CHECK_STROKE,
+    })
+    : undefined
+  const ring = !props.main && !done && !props.waiting ? layoutRing({ width: box.width }) : undefined
   const cls = [
     'superworker-opane',
     props.main ? 'is-main' : 'is-child',
@@ -213,7 +284,36 @@ function WindowPane(props: {
           <span className="superworker-num">{clock(pane.startedAt)}</span>
         </div>
       )}
-      <Feed window={pane} room={box.rowsRoom} fresh={props.fresh} head={props.main ? MAIN_HEAD : CHILD_HEAD} foot={props.main ? MAIN_FOOT : CHILD_FOOT} />
+      <Feed
+        window={pane}
+        room={box.rowsRoom}
+        fresh={props.fresh}
+        veiled={done}
+        head={head}
+        foot={foot}
+      />
+      {mark === undefined ? null : (
+        <span
+          className={`superworker-omark${failed ? ' is-fail' : ''}`}
+          aria-hidden="true"
+          style={{
+            left: mark.left,
+            top: mark.top,
+            width: mark.size,
+            height: mark.size,
+            '--superworker-seal-scrim': `${MARK_SCRIM}px`,
+          } as React.CSSProperties}
+        >
+          <FinishedMark failed={failed} stroke={mark.stroke} />
+        </span>
+      )}
+      {ring === undefined ? null : (
+        <i
+          className="superworker-oring"
+          aria-hidden="true"
+          style={{ left: ring.left, top: ring.top, width: ring.size, height: ring.size }}
+        />
+      )}
     </section>
   )
 }
@@ -394,15 +494,21 @@ export function OverviewPane(props: {
     return out
   }, [reading, placement, leaving, currentIds])
 
+  /* The rail's lit bar: the first window still moving. A column of finished windows keeps its bars
+   * — the lane is the column's own ruler — and none of them is lit, because none is moving. */
+  const litId = reading.children.find((one) => !one.done)?.id
+
   return (
     <div className="superworker-overview" ref={bodyRef}>
       {placement.railVisible ? (
         <div className="superworker-orail" aria-hidden="true" style={{ left: RAIL_LEFT }}>
-          {reading.children.map((one, i) => (
+          {reading.children.map((one) => (
             <b
               key={one.id}
-              className={`${i === 0 ? 'is-on' : ''}${isWaiting(one) ? ' is-need' : ''}`.trim()}
-              style={{ width: railBarWidth(one.rows.length, i === 0) }}
+              /* The lit bar follows the one window still moving — a finished window keeps its bar
+               * (the lane is the column's ruler) but never wears the "this one" ink. */
+              className={`${one.id === litId ? 'is-on' : ''}${isWaiting(one) ? ' is-need' : ''}`.trim()}
+              style={{ width: railBarWidth(one.rows.length, one.id === litId) }}
             />
           ))}
         </div>

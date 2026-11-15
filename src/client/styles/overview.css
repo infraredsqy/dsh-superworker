@@ -4,10 +4,12 @@
  *
  * This sheet holds no layout number of its own: where a window stands and how big it is are
  * `overview-geom.ts`'s answer, written onto each box inline; the one row height arrives as
- * `--superworker-orow-h` on the field, and the nameplate's probe as `--superworker-plate-out`.
- * What lives here is tier, ink and motion, all on the tokens. The motions are four, each bound to
- * one fact; only the breathing border loops by itself, and the global reduced-motion rule in
- * `tokens.css` stills it with everything else. */
+ * `--superworker-orow-h` on the field, the nameplate's probe as `--superworker-plate-out`, and the
+ * feed's own insets, the completed window's mark and the running ring as the numbers the pane writes
+ * inline. What lives here is tier, ink and motion, all on the tokens. The motions are six, each
+ * bound to one fact; three of them loop by themselves — the walking tie, the waiting border and the
+ * small ring — and the tie and the ring state their own still form here, while the border leans on
+ * the global reduced-motion rule in `tokens.css`. */
 
 /* ---- The stage ------------------------------------------------------------ */
 .superworker-page .superworker-overview {
@@ -275,11 +277,12 @@
 
 /* ---- The feed -------------------------------------------------------------- */
 /* Bottom-justified, cut by the window's own height: what falls off the top fades, and no scrollbar
- * ever appears. The row height is the field's `--superworker-orow-h` (`ROW_H` in the geometry). */
+ * ever appears. The row height is the field's `--superworker-orow-h` (`ROW_H` in the geometry); the
+ * insets are the pane's own, from `FEED_LEFT` / `FEED_RIGHT` there. A window that has stopped wears
+ * `is-veiled`: its rows stay exactly where they stand, blurred and pressed to three tenths, which is
+ * the A case of the completed-window design — nothing moves, the window just stops speaking. */
 .superworker-page .superworker-ofeed {
   position: absolute;
-  left: 24px;
-  right: 20px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -290,6 +293,10 @@
 .superworker-page .superworker-ofeed.is-fade {
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, currentColor 14px);
   mask-image: linear-gradient(to bottom, transparent 0, currentColor 14px);
+}
+.superworker-page .superworker-ofeed.is-veiled {
+  filter: blur(2.5px);
+  opacity: 0.3;
 }
 .superworker-page .superworker-orow {
   flex: none;
@@ -316,4 +323,75 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- A completed window's mark -------------------------------------------- */
+/* The check, over the middle of the process band. Its box, its size and its pen are the pane's own
+ * inline numbers, from `overview-geom.ts`; this sheet draws only the ink. Under it stands a disc of
+ * the window's own ground, so a 44px mark never melts into the blurred rows behind it (the size is
+ * written in as `--superworker-seal-scrim`, the same way the field hands in its row height).
+ *
+ * The ink is reading ink, never the success green: green reaches only 2.3:1 on the light palette,
+ * under this panel's own 3:1 floor for a mark the reader resolves on its own, while reading ink
+ * clears it in both. A window whose last word was a failure wears the panel's existing failed mark
+ * in the warn ink instead — shape first, colour second. */
+.superworker-page .superworker-omark {
+  position: absolute;
+  display: block;
+  color: var(--superworker-ink-1);
+  pointer-events: none;
+}
+.superworker-page .superworker-omark::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--superworker-seal-scrim, 108px);
+  height: var(--superworker-seal-scrim, 108px);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  corner-shape: round;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent),
+    transparent
+  );
+}
+.superworker-page .superworker-omark svg {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.superworker-page .superworker-omark.is-fail {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+/* ---- A running window's ring ---------------------------------------------- */
+/* "Still moving", in its smallest voice: 10px across on a 1.5px track, one turn every 1.3 seconds —
+ * half the waiting border's 2.6s breath, so the two rhythms land on one beat. The box is the
+ * geometry's (`RING_SIZE` in the child's title-line cell). Only the cell says it: a window that is
+ * waiting wears the border and keeps its cell empty, so the two never stand on one window. */
+.superworker-page .superworker-oring {
+  position: absolute;
+  display: block;
+  border: 1.5px solid var(--dsw-alias-border-l3);
+  border-top-color: var(--dsw-alias-link);
+  border-right-color: var(--dsw-alias-link);
+  border-radius: 50%;
+  corner-shape: round;
+  animation: superworker-oring-spin 1.3s linear infinite;
+}
+@keyframes superworker-oring-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+/* Reduced motion: the ring stops and stays a dashed ring — the panel's own still form for work in
+ * hand (the state mark's) — while the check, which never moved, is untouched. */
+@media (prefers-reduced-motion: reduce) {
+  .superworker-page .superworker-oring {
+    animation: none;
+    border-style: dashed;
+  }
 }
