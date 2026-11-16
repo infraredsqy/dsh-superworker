@@ -219,9 +219,9 @@ export const zh = {
    * are none of them drawable now — because they are different things to know; the action under
    * all three is the same, so it is said once. */
   'overview.empty.no-nodes': '这个工作区还没有节点。',
-  'overview.empty.no-session': '这里还没有跑过的会话。',
+  'overview.empty.no-session': '该工作区当前没有节点。',
   'overview.empty.no-window': '当前没有可识别的运行中会话。',
-  'overview.empty.link': '由 agent 接入这条管道',
+  'overview.empty.link': '启动接入节点的新会话',
   /* A window's own readings line and its rows' verbs. The two person-waiting modes reuse the gate
    * words — the same fact said the same way on every view — so only the third mode needs a word of
    * its own here. */

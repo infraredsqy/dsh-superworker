@@ -195,9 +195,9 @@ export const en: Readonly<Record<WordKey, string>> = {
    * are none of them drawable now — because they are different things to know; the action under
    * all three is the same, so it is said once. */
   'overview.empty.no-nodes': 'This workspace has no nodes yet.',
-  'overview.empty.no-session': 'No session has run here yet.',
+  'overview.empty.no-session': 'This workspace currently has no nodes.',
   'overview.empty.no-window': 'No running session can be recognised right now.',
-  'overview.empty.link': 'Let an agent connect this workspace to the pipeline',
+  'overview.empty.link': 'Start a new session to add nodes',
   /* A window's own readings line and its rows' verbs. The two person-waiting modes reuse the gate
    * words, so only the third mode needs a word of its own here. */
   'overview.weight.light': 'light',
