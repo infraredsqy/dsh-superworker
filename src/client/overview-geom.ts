@@ -11,20 +11,23 @@
  *
  * - The node rail keeps a lane on the left while it stands, and nothing drawn probes into it. One
  *   window alone, or one child, draws no rail and keeps only the stage's own blank. The main
- *   window's nameplate is the one thing that crosses its own window's left edge, and how far it may
- *   probe is exactly the ground between the group and that lane — one pixel of the rail is never
+ *   window's nameplate is the one thing that crosses its own window's left edge; the probe's ground
+ *   is reserved out of the band before a window is measured, so the probe is room the layout keeps
+ *   on every stage rather than slack a narrow one spends — and one pixel of the rail is never
  *   covered.
- * - The group is centred on the stage itself, not on the room the rail leaves over: the lane is
- *   kept on both sides while it stands, so the picture stays on the stage's middle and its two
- *   gutters stay equal.
- * - The field is the stage's own frame: its box is the group's extent, in stage coordinates, and it
+ * - The group is the windows and the probe hanging off the main window's left edge — the plate is the
+ *   group's left end — and that group is centred on the stage itself, not the window band alone and
+ *   not the room the rail leaves over. The lane is kept on both sides while it stands, so the picture
+ *   stays on the stage's middle and its two gutters stay equal instead of leaning half a probe left.
+ * - The field is the stage's own frame: its box is the windows' extent, in stage coordinates, and it
  *   never stands taller than the stage. The shelf that draws the panes lays the field over the whole
  *   stage and writes a pane's coordinate once — never once for the field and again for the pane.
  * - The children stand in one column to the right of the main window, each narrower than it. Equal
  *   share first, content need second: a child never grows past the rows it actually has. With no
  *   live child the column is not drawn and the field is exactly the main window's width.
  * - The main window hugs its content. Only the stage itself cuts it, and the cut is the feed's
- *   fade, not a scrollbar.
+ *   fade, not a scrollbar. Its width is the stage's less the two lanes and the probe's own ground;
+ *   it narrows under the pair's own 340 judge down to the width at which it can still be read.
  * - Past the width where two windows can no longer both keep their smallest sizes, the children
  *   column does not squeeze — it leaves, and the main window stands alone.
  * - A child's window is tied to the dispatch row that opened it by one line: out of the main
@@ -44,11 +47,25 @@ export const RAIL_LANE = 56
 /** Where the rail's own marks start, inside the lane. */
 export const RAIL_LEFT = 16
 
-/** The main window's widest and smallest; a child is always the narrower one. */
+/** The windows' widest: a child is always the narrower one. */
 export const MAIN_MAX_W = 440
 export const CHILD_MAX_W = 420
+/** The pair's own judge, and only that: below it two windows can no longer both be read, so the
+ * children column leaves whole. It is not the width the main window alone may not go under — on a
+ * phone's stage keeping it would push the nameplate back inside the frame, so the window alone is
+ * allowed down to `MAIN_FLOOR_W`. */
 export const MAIN_MIN_W = 340
 export const CHILD_MIN_W = 330
+
+/**
+ * The narrowest the main window stands while the stage has the room for it.
+ *
+ * 240 is where the window's own cell still reads: the feed's insets (24 + 20) leave 196 of row text,
+ * and the nameplate — the window less its 76px right inset, plus the 32px probe — is the same 196
+ * wide, enough for a node's title and its readings line without wrapping. Under it both the title
+ * and the readings start to truncate, which is the one thing a probe's ground must never cost.
+ */
+export const MAIN_FLOOR_W = 240
 
 /** The ground between the two windows: it breathes with the stage inside these ends. */
 export const GAP_X_MIN = 96
@@ -155,8 +172,10 @@ export function layoutOverview(input: {
   const railVisible = childRows.length >= RAIL_FROM
   const side = Math.max(railVisible ? RAIL_LANE : 0, FIELD_PAD)
   /* What the stage really has left under the lane it keeps — nothing fabricated: on a stage too
-     narrow for even that, the windows take whatever is there and shrink with it. */
-  const availW = Math.max(0, stage.width - side * 2)
+     narrow for even that, the windows take whatever is there and shrink with it. The nameplate's
+     probe is taken out first, because it is ground the picture needs rather than slack it may
+     spend: measuring a window against the full band is what emptied the probe on a phone's stage. */
+  const availW = Math.max(0, stage.width - side * 2 - PLATE_OUT)
   /* The field is the stage's own frame, so it takes the stage's height less its edge blank and never
      more: a short stage gets a short field, not a field that hangs off the bottom. */
   const fieldHeight = Math.min(FIELD_MAX_H, Math.max(0, stage.height - FIELD_PAD * 2))
@@ -182,19 +201,27 @@ export function layoutOverview(input: {
   const childrenShown = childRows.length > 0 && availW >= MAIN_MIN_W && mainW >= MAIN_MIN_W && childW >= CHILD_MIN_W
   if (!childrenShown) {
     /* The column leaves whole; the main window takes what the stage next to the rail can give, and
-       narrows with the stage rather than running off it. */
-    mainW = Math.max(0, Math.min(MAIN_MAX_W, availW))
+       narrows with the stage rather than running off it. Its floor is the readable one and not the
+       pair's judge: a phone's stage may put it under 340, never under the width its nameplate can
+       still be read at, and never past the room the stage actually has. */
+    mainW = Math.max(Math.min(MAIN_FLOOR_W, availW), Math.min(MAIN_MAX_W, availW))
     childW = 0
     shownGapX = 0
   }
 
   const fieldWidth = mainW + shownGapX + childW
-  /* Centred on the stage, not on the room left of the lane; the lane's own ground is a floor, so a
-     stage too narrow to centre the group still keeps it off the lane. */
-  const fieldLeft = Math.max(side, Math.floor((stage.width - fieldWidth) / 2))
+  /* Centring is the group's, and the group's left end is the plate's: the windows stand one probe
+     right of the centre the picture takes. Counting the probe here (and its ground in the band
+     above) is what makes the two gutters equal — centring the window band alone left the picture
+     half a probe left of the stage's middle and, on a narrow stage, no probe at all. The lane's own
+     ground is a floor and the stage's right edge the other end, so a stage too narrow to centre the
+     group still keeps the windows off both. */
+  const centred = Math.floor((stage.width - fieldWidth - PLATE_OUT) / 2) + PLATE_OUT
+  const fieldLeft = Math.max(side, Math.min(centred, stage.width - fieldWidth))
   const fieldTop = Math.max(0, Math.floor((stage.height - fieldHeight) / 2))
-  /* The nameplate probes left only as far as the ground between the group and the lane —
-     the probe stops at the lane, never inside it. */
+  /* The probe reaches the ground the group keeps on its left. That is the reserved 32 on every
+     stage with room for its lanes; less only where the stage is narrower than the lanes, the probe
+     and the windows together — and then the plate stops at the lane rather than inside it. */
   const plateOut = Math.max(0, Math.min(PLATE_OUT, fieldLeft - side))
 
   const mainH = Math.min(fieldHeight, MAIN_HEAD + Math.max(0, mainRows) * ROW_H + MAIN_FOOT + BOX_BORDER)

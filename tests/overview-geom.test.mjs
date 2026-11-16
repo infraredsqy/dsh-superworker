@@ -15,6 +15,7 @@ import assert from 'node:assert/strict'
 import {
   CHILD_HEAD,
   CHILD_FOOT,
+  CHILD_MAX_W,
   BOX_BORDER,
   FEED_LEFT,
   FEED_RIGHT,
@@ -26,6 +27,8 @@ import {
   MAIN_HEAD,
   MARK_CHECK,
   MARK_CHECK_STROKE,
+  MAIN_FLOOR_W,
+  MAIN_MAX_W,
   MARK_FAIL,
   MARK_FAIL_STROKE,
   PLATE_OUT,
@@ -69,6 +72,14 @@ const place = (stage, children, rows = 6) =>
 /** The ground this state keeps at each side: the rail's lane while the rail stands, else the stage's own blank. */
 const sideOf = (p) => Math.max(p.railVisible ? RAIL_LANE : 0, FIELD_PAD)
 
+/** The picture's own two ends: the plate's left edge (it is the group's left end, not a thing
+ * hanging off it) and the rightmost window's right edge. The gutters are what the stage leaves. */
+const groupOf = (p) => {
+  const left = p.main.left - p.plateOut
+  const right = Math.max(p.main.left + p.main.width, ...p.children.map((box) => box.left + box.width))
+  return { left, right }
+}
+
 /** The 24px strip one row is drawn in: counted up from the pane's bottom edge — its 0.5px hairline,
  * its foot, then the rows under it — because the feed stands bottom-justified and whatever blank a
  * cut leaves sits at the top of the stack. */
@@ -99,17 +110,19 @@ for (const stage of STAGES) {
     test(`${stage.name} stage, ${count.windows} window(s): the group is centred on the stage, gutters equal`, () => {
       const p = place(stage, count.children)
       const side = sideOf(p)
-      const left = p.fieldLeft
       const right = p.fieldLeft + p.fieldWidth
-      /* A whole group, gutters and all, sits on the stage's own middle — not on the room the rail
-         leaves over, and not on a band that starts where the lane ends. */
+      /* The group is the windows and the plate that probes out of the main window's left edge, and it
+         is that whole picture — not the window band alone — that stands on the stage's middle. The
+         probe's own 32 is part of the group, so counting it here is what keeps the two gutters a
+         pair; centring the band alone leaves the picture half a probe left of the middle. */
+      const group = groupOf(p)
       assert.ok(
-        Math.abs((left + right) / 2 - stage.width / 2) <= 1,
-        `the group's middle is ${(left + right) / 2}, the stage's ${stage.width / 2}`,
+        Math.abs((group.left + group.right) / 2 - stage.width / 2) <= 1,
+        `the group's middle is ${(group.left + group.right) / 2}, the stage's ${stage.width / 2}`,
       )
       assert.ok(
-        Math.abs(left - (stage.width - right)) <= 1,
-        `the gutters are ${left} and ${stage.width - right}, not a pair`,
+        Math.abs(group.left - (stage.width - group.right)) <= 1,
+        `the gutters are ${group.left} and ${stage.width - group.right}, not a pair`,
       )
       /* The right edge stops at the stage less the ground the state keeps — the lane on both sides
          when the rail stands. */
@@ -351,7 +364,7 @@ test('a feed with room to spare: the same bottom-counted middle, and not the hea
 
 /* ---- the narrowest stages ---------------------------------------------------------------- */
 
-for (const width of [200, 256, 320]) {
+for (const width of [200, 256, 320, 360, 390]) {
   for (const children of [0, 2]) {
     test(`a ${width}px stage with ${children} child(ren): every window narrows with the stage and stays on it`, () => {
       const p = layoutOverview({ stage: { width, height: 720 }, mainRows: 6, childRows: rowsFor(children) })
@@ -362,18 +375,85 @@ for (const width of [200, 256, 320]) {
         assert.ok(box.left + box.width <= width, `a window runs off the stage's right: ${box.left + box.width} > ${width}`)
         assert.ok(box.top >= 0 && box.top + box.height <= 720, `a window runs off the stage's height: ${box.top}..${box.top + box.height}`)
       }
-      const left = p.fieldLeft
       const right = p.fieldLeft + p.fieldWidth
-      assert.ok(left >= side, `the group stands at ${left}, on the ${side} it keeps`)
-      assert.ok(right <= width - side, `the group runs to ${right}, past ${width - side}`)
-      assert.ok(Math.abs((left + right) / 2 - width / 2) <= 1, `the group's middle is ${(left + right) / 2}, the stage's ${width / 2}`)
-      assert.ok(Math.abs(left - (width - right)) <= 1, `the gutters are ${left} and ${width - right}, not a pair`)
+      assert.ok(p.fieldLeft >= side, `the windows stand at ${p.fieldLeft}, on the ${side} it keeps`)
+      assert.ok(right <= width - side, `the windows run to ${right}, past ${width - side}`)
+      /* The picture's own gutters — the plate's edge to the stage's, the last window's to the
+         stage's — are a pair even down here; the probe never pushes the group off the middle. */
+      const group = groupOf(p)
+      assert.ok(Math.abs((group.left + group.right) / 2 - width / 2) <= 1, `the group's middle is ${(group.left + group.right) / 2}, the stage's ${width / 2}`)
+      assert.ok(Math.abs(group.left - (width - group.right)) <= 1, `the gutters are ${group.left} and ${width - group.right}, not a pair`)
       /* The window took what the stage had rather than overflowing: never wider than the room it has. */
       assert.ok(p.main.width <= Math.max(0, width - side * 2), `the main window is ${p.main.width} wide in ${width - side * 2} of room`)
       assert.ok(p.main.width > 0, 'the main window vanished')
     })
   }
 }
+
+/* ---- the stages a phone gives the pane --------------------------------------------------- */
+/* 320 / 360 / 390 are the usual portrait widths and 480 a small tablet's; 600 and 720 the heights
+ * they give the stage. On every one of them the plate probes its own 32: the arithmetic keeps that
+ * ground before it measures a window, so the probe is never the thing a narrow stage takes away. The
+ * window gives instead, and the whole picture — window and probe together — stands on the middle
+ * with equal gutters. One child still does not stand a column here: two windows inside 390 was
+ * never readable, and the pair's own judge is unchanged. */
+for (const width of [320, 360, 390, 480]) {
+  for (const height of [600, 720]) {
+    for (const children of [0, 1]) {
+      test(`a phone stage ${width}x${height} with ${children} child(ren): the plate probes its 32 and the group is centred`, () => {
+        const p = layoutOverview({ stage: { width, height }, mainRows: 6, childRows: rowsFor(children) })
+        const side = sideOf(p)
+        /* The probe is the design's own 32, not "something above zero": the reservation is what the
+           band is measured against, so a phone stage never has to give it up. The 16 is the floor
+           the proportion would have to hold if the space ever did fail. */
+        assert.equal(p.plateOut, PLATE_OUT, `the probe is ${p.plateOut} on a ${width}px stage, the design's is ${PLATE_OUT}`)
+        assert.ok(p.plateOut >= 16, `the probe is ${p.plateOut}, under the 16 a probe is worth drawing at`)
+        assert.deepEqual(p.children, [], `the column stood on a ${width}px stage with ${children} child(ren)`)
+        const group = groupOf(p)
+        assert.ok(Math.abs(group.left - (width - group.right)) <= 1, `the gutters are ${group.left} and ${width - group.right}, not a pair`)
+        assert.ok(
+          Math.abs((group.left + group.right) / 2 - width / 2) <= 1,
+          `the group's middle is ${(group.left + group.right) / 2}, the stage's ${width / 2}`,
+        )
+        /* The plate is on the stage's own left end, never past it and never on the lane's ground. */
+        assert.ok(group.left >= side, `the plate starts at ${group.left}, on the ${side} the state keeps`)
+        assert.ok(group.left >= 0, `the plate is off the stage's left edge: ${group.left}`)
+        assert.ok(group.right <= width - side, `the windows end at ${group.right}, past ${width - side}`)
+        /* The window may stand under the pair's 340 judge — that judge is about two windows — but
+           never under the width a reader can still read at. */
+        assert.ok(p.main.width >= MAIN_FLOOR_W, `the main window is ${p.main.width} wide, under the ${MAIN_FLOOR_W} floor`)
+        for (const box of [p.main, ...p.children]) {
+          assert.ok(box.top >= 0 && box.top + box.height <= height, `a window runs off the ${height}px stage: ${box.top}..${box.top + box.height}`)
+          assert.ok(box.height >= 0, `a window has a negative height: ${box.height}`)
+          assert.ok(box.rowsRoom >= 1, 'a window has no room for one row')
+        }
+      })
+    }
+  }
+}
+
+/* ---- the wide stages this change must not move ------------------------------------------- */
+/* The plate's 32 is taken out of the band on every stage, but a wide one has room to spare: the
+ * design's caps still stand, the rows still fit, and the field still ends at the stage's own height.
+ * What moved there is the group's centring alone — the windows stand half a probe right of where the
+ * band alone would have centred them, which is the whole point of counting the probe. */
+test('the wide stages keep the design\'s sizes, the rows and the field this change may not move', () => {
+  for (const [width, height] of [[1024, 720], [1440, 900]]) {
+    for (const children of [0, 1]) {
+      const p = layoutOverview({ stage: { width, height }, mainRows: 6, childRows: rowsFor(children) })
+      assert.equal(p.main.width, MAIN_MAX_W, `a ${width}px stage narrowed the main window to ${p.main.width}`)
+      assert.equal(p.main.height, MAIN_HEAD + 6 * ROW_H + MAIN_FOOT + BOX_BORDER, `the main window is ${p.main.height} tall`)
+      assert.equal(p.main.rowsRoom, 6, `the main window's room came out ${p.main.rowsRoom}`)
+      assert.equal(p.fieldHeight, Math.min(FIELD_MAX_H, height - FIELD_PAD * 2), `the field came out ${p.fieldHeight} tall`)
+      if (children > 0) {
+        assert.equal(p.children.length, 1, 'the child did not stand on the wide stage')
+        assert.equal(p.children[0].width, CHILD_MAX_W, `the child came out ${p.children[0].width} wide`)
+        /* It hugs the rows it holds — the one child in `rowsFor` carries two — and no share more. */
+        assert.equal(p.children[0].rowsRoom, 2, `the child's room came out ${p.children[0].rowsRoom}`)
+      }
+    }
+  }
+})
 
 /* ---- the count above the column ----------------------------------------- */
 
