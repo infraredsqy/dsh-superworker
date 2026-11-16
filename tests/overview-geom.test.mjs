@@ -149,13 +149,21 @@ for (const stage of STAGES) {
       const p = place(stage, count.children)
       if (p.children.length === 0) return
       const n = p.children.length
+      const stack = p.children.reduce((sum, box) => sum + box.height, 0)
+      /* The field holds the column at the design's own ground; a field too short for it takes one
+         shorter ground, the same one between every pair, rather than letting the column run past. */
+      const roomy = stack + GAP_Y * (n - 1) <= p.fieldHeight
       assert.equal(n, count.children, `the column draws ${n} of ${count.children} children`)
       for (let i = 1; i < n; i++) {
         const up = p.children[i - 1]
         const box = p.children[i]
         assert.equal(box.left, up.left, 'the children are not one column')
         assert.equal(box.width, up.width, 'the children do not share one width')
-        assert.equal(box.top, up.top + up.height + GAP_Y, `child ${i} overlaps or drifts from the one above it`)
+        const ground = box.top - (up.top + up.height)
+        assert.ok(ground >= 0, `child ${i} overlaps the one above it by ${-ground}`)
+        assert.ok(ground <= GAP_Y, `child ${i} stands ${ground} off the one above it, past ${GAP_Y}`)
+        assert.equal(ground, p.children[1].top - (p.children[0].top + p.children[0].height), 'the column keeps two different grounds')
+        if (roomy) assert.equal(ground, GAP_Y, `child ${i} gave up the design's ground ${GAP_Y} for ${ground}`)
       }
       const first = p.children[0]
       assert.ok(first.width < p.main.width, 'a child is not narrower than the main window')
@@ -268,50 +276,61 @@ test('no anchor, no line: an absent row, a row off the drawn list, a row cut by 
 /* ---- the dot stands on the row it names, counted up from the pane's bottom -------------- */
 
 /* The feed is bottom-justified inside the pane's foot. A window the stage cuts leaves a blank at the
- * top of the stack, and a reading counted down from the window's head drifts by exactly that blank —
- * most of a row once the feed stands at the capacity. The expectations below are stated as numbers
- * worked out from the pane's own bottom edge, never by running the layout's own formula again. */
+ * top of the stack, and a reading counted down from the window's head drifts by exactly that blank.
+ * The expectations below are stated as numbers worked out from the pane's own bottom edge, never by
+ * running the layout's own formula again. */
 
-test('1024x900, the feed at the capacity: the dot stands on its own row, not on the row above', () => {
+test('1024x900, a feed at the capacity: the window hugs its ten rows, and the dot stands on the row it names', () => {
   const p = layoutOverview({ stage: { width: 1024, height: 900 }, mainRows: READING_CAPACITY, childRows: [3] })
-  /* The stage cuts the window: 29 rows asked for, and the room below its head and foot is what draws. */
-  assert.equal(p.main.height, FIELD_MAX_H, `the window was not clamped: ${p.main.height}`)
-  assert.equal(p.main.rowsRoom, 26, `the window's room came out ${p.main.rowsRoom}`)
+  /* The main window is the tallest frame the capacity allows it: 96 (head) + 10 × 24 (the rows) + 20
+     (foot) + 2 (the frame) = 358 — twenty-two short of the field's own 380, and one row more would
+     have to hang past that end, which is why the capacity stops at ten. */
+  assert.equal(p.main.height, 358, `the window came out ${p.main.height}`)
+  assert.ok(p.main.height + ROW_H > FIELD_MAX_H, `a ${p.main.height}px window still holds one row more under a ${FIELD_MAX_H}px field`)
+  assert.equal(p.main.rowsRoom, 10, `the window's room came out ${p.main.rowsRoom}`)
   const child = p.children[0]
   const gap = child.left - (p.main.left + p.main.width)
   const rowCount = READING_CAPACITY
-  /* The first row still on the screen. Its middle stands 25 rows and a half above the feed's end:
-     760 − 0.5 (hairline) − 20 (foot) − 25*24 − 12 = 127.5 below the pane's top. */
-  const first = layoutLink({ main: p.main, child, rowIndex: rowCount - 26, rowCount, gap })
-  assert.notEqual(first, undefined, 'the first row on screen drew no line')
-  assert.ok(Math.abs(first.fromY - (p.main.top + 127.5)) <= 1, `the dot stands at ${first.fromY}, its row's middle is ${p.main.top + 127.5}`)
-  /* And the row above it is a whole row higher: a dot that drifted up by the stack's top blank lands
-     there, and this is the assertion that says so out loud. */
-  assert.ok(
-    Math.abs(first.fromY - (p.main.top + 127.5 - ROW_H)) > 1,
-    `the dot stands on the row above: ${first.fromY}, that row's middle is ${p.main.top + 127.5 - ROW_H}`,
-  )
-  /* The bottom row's middle is half a row above the feed's end: 760 − 0.5 − 20 − 12 = 727.5. */
+  /* The top row's middle, counted up from the feed's end: 358 − 0.5 (hairline) − 20 (foot) − 9*24
+     − 12 = 109.5 below the pane's top. */
+  const first = layoutLink({ main: p.main, child, rowIndex: 0, rowCount, gap })
+  assert.notEqual(first, undefined, 'the top row drew no line')
+  assert.ok(Math.abs(first.fromY - (p.main.top + 109.5)) <= 1, `the dot stands at ${first.fromY}, its row's middle is ${p.main.top + 109.5}`)
+  /* Counting down from the head lands 1.5px higher — the frame's own blank over the stack — and this
+     is the assertion that says the count starts at the pane's bottom. */
+  assert.ok(Math.abs(first.fromY - (p.main.top + 108)) > 1, `the dot stands where counting from the head put it: ${first.fromY}`)
+  /* The bottom row's middle is half a row above the feed's end: 358 − 0.5 − 20 − 12 = 325.5. */
   const last = layoutLink({ main: p.main, child, rowIndex: rowCount - 1, rowCount, gap })
   assert.notEqual(last, undefined, 'the bottom row drew no line')
-  assert.ok(Math.abs(last.fromY - (p.main.top + 727.5)) <= 1, `the bottom dot stands at ${last.fromY}, not ${p.main.top + 727.5}`)
+  assert.ok(Math.abs(last.fromY - (p.main.top + 325.5)) <= 1, `the bottom dot stands at ${last.fromY}, not ${p.main.top + 325.5}`)
 })
 
-test('1024x720, the feed at the capacity: the same dot, on its own row', () => {
-  const p = layoutOverview({ stage: { width: 1024, height: 720 }, mainRows: READING_CAPACITY, childRows: [3] })
-  assert.equal(p.main.height, 704, `the window was not clamped to the field here: ${p.main.height}`)
-  assert.equal(p.main.rowsRoom, 24, `the window's room came out ${p.main.rowsRoom}`)
+test('1024x300, a capacity feed cut by a short stage: the stack keeps its blank, and the dot stands on the first row it shows', () => {
+  const p = layoutOverview({ stage: { width: 1024, height: 300 }, mainRows: READING_CAPACITY, childRows: [3] })
+  /* The stage gives the field 300 − 2×8 = 284 and no more: the window takes all of it, so ten rows
+     asked for and six fit. */
+  assert.equal(p.fieldHeight, 284, `the field came out ${p.fieldHeight}`)
+  assert.equal(p.main.height, 284, `the window was not cut to the field: ${p.main.height}`)
+  assert.equal(p.main.rowsRoom, 6, `the window's room came out ${p.main.rowsRoom}`)
   const child = p.children[0]
   const gap = child.left - (p.main.left + p.main.width)
   const rowCount = READING_CAPACITY
-  /* 704 − 0.5 − 20 − 23*24 − 12 = 119.5 below the pane's top. */
-  const first = layoutLink({ main: p.main, child, rowIndex: rowCount - 24, rowCount, gap })
+  /* Four of the ten are the cut. The first row still on the screen: 284 − 0.5 − 20 − 5*24 − 12 =
+     131.5 below the pane's top. */
+  const first = layoutLink({ main: p.main, child, rowIndex: rowCount - 6, rowCount, gap })
   assert.notEqual(first, undefined, 'the first row on screen drew no line')
-  assert.ok(Math.abs(first.fromY - (p.main.top + 119.5)) <= 1, `the dot stands at ${first.fromY}, its row's middle is ${p.main.top + 119.5}`)
-  assert.ok(
-    Math.abs(first.fromY - (p.main.top + 119.5 - ROW_H)) > 1,
-    `the dot stands on the row above: ${first.fromY}, that row's middle is ${p.main.top + 119.5 - ROW_H}`,
-  )
+  assert.ok(Math.abs(first.fromY - (p.main.top + 131.5)) <= 1, `the dot stands at ${first.fromY}, its row's middle is ${p.main.top + 131.5}`)
+  /* The row above it stands a whole row higher: a dot that drifted up by the blank the cut left
+     lands there, and this is the assertion that says so out loud. */
+  assert.ok(Math.abs(first.fromY - (p.main.top + 131.5 - ROW_H)) > 1, `the dot stands on the row above: ${first.fromY}, that row's middle is ${p.main.top + 131.5 - ROW_H}`)
+  /* The stack's own end: the bottom row's middle is 284 − 0.5 − 20 − 12 = 251.5 below the pane's
+     top, and a stack counted down from the head would have ended it on 96 + 5*24 + 12 = 228 —
+     23.5px, the blank the cut left, is what separates the two. */
+  const last = layoutLink({ main: p.main, child, rowIndex: rowCount - 1, rowCount, gap })
+  assert.notEqual(last, undefined, 'the bottom row drew no line')
+  assert.ok(Math.abs(last.fromY - (p.main.top + 251.5)) <= 1, `the bottom dot stands at ${last.fromY}, not ${p.main.top + 251.5}`)
+  assert.ok(Math.abs(last.fromY - (p.main.top + MAIN_HEAD + 5 * ROW_H + ROW_H / 2)) > 1, `the dot stands where counting from the head put it: ${last.fromY}`)
+  assert.equal(layoutLink({ main: p.main, child, rowIndex: 0, rowCount, gap }), undefined, 'a row the cut removed drew a line')
 })
 
 test('a feed with room to spare: the same bottom-counted middle, and not the head-counted one', () => {
@@ -473,11 +492,18 @@ test('the widest feed any stage can stand is the capacity the reading is cut to'
   let worst = 1
   for (const stage of STAGES) {
     for (const count of COUNTS) {
-      const p = place(stage, count.children)
+      /* The reading hands every window the capacity — the most it may ever hold — so the boxes here
+         stand as tall as a feed ever does. If one of them had room for a row more, the capacity
+         would be cutting a feed that stands: that is exactly the line this asserts. */
+      const p = layoutOverview({
+        stage: { width: stage.width, height: stage.height },
+        mainRows: READING_CAPACITY,
+        childRows: Array.from({ length: count.children }, () => READING_CAPACITY),
+      })
       for (const box of [p.main, ...p.children]) worst = Math.max(worst, box.rowsRoom)
     }
   }
-  assert.ok(READING_CAPACITY >= worst, `the capacity ${READING_CAPACITY} cut a feed that stands ${worst} rows`)
+  assert.equal(READING_CAPACITY, worst, `a feed stands ${worst} rows, the reading is cut to ${READING_CAPACITY}`)
 })
 
 /* ---- the two marks a window's head can carry ---------------------------- */

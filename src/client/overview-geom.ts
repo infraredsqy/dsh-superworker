@@ -66,7 +66,7 @@ export const CHILD_HEAD = 32
 export const CHILD_FOOT = 12
 
 /** The field's height ends, and the blank kept at the stage's edges — the field is never taller than the stage. */
-export const FIELD_MAX_H = 760
+export const FIELD_MAX_H = 380
 export const FIELD_PAD = 8
 
 /** The window frame's hairline on both ends; without it the last row would be counted as fitting when it does not. */
@@ -130,11 +130,11 @@ function roomOf(height: number, head: number, foot: number): number {
   return Math.max(0, Math.floor((height - BOX_BORDER - head - foot) / ROW_H))
 }
 
-/** The tallest a feed could ever stand, in rows: the bound the caller gives the reading's cut. */
-export const READING_CAPACITY = Math.max(
-  roomOf(FIELD_MAX_H, MAIN_HEAD, MAIN_FOOT),
-  roomOf(FIELD_MAX_H, CHILD_HEAD, CHILD_FOOT),
-)
+/** The tallest a feed could ever stand, in rows: the bound the caller gives the reading's cut. The
+ * capacity is the rows the tallest window can stand, and the main window is that window — its head
+ * and foot are the deeper pair, so at the field's own height it holds the fewest rows of the two
+ * frames and its count is the bound both keep: 96 + n*24 + 20 + 2 <= 380 stands ten rows. */
+export const READING_CAPACITY = roomOf(FIELD_MAX_H, MAIN_HEAD, MAIN_FOOT)
 
 /**
  * The layout for one stage and one reading: the main window's box, the children column's boxes in
@@ -209,7 +209,12 @@ export function layoutOverview(input: {
   const children: OverviewBox[] = []
   const n = childrenShown ? childRows.length : 0
   if (n > 0) {
-    const share = Math.max(0, Math.floor((fieldHeight - GAP_Y * (n - 1)) / n))
+    /* A child's box is at least its title line, its foot and one row: under that it holds no feed at
+       all. The ground between two children gives way before a child's own rows do, so the even share
+       takes that floor whenever the field can hold n of them with no ground between them. */
+    const least = CHILD_HEAD + CHILD_FOOT + BOX_BORDER + ROW_H
+    const even = Math.max(0, Math.floor((fieldHeight - GAP_Y * (n - 1)) / n))
+    const share = fieldHeight >= least * n ? Math.max(least, even) : even
     const heights = childRows.map((rows) => Math.min(share, CHILD_HEAD + Math.max(0, rows) * ROW_H + CHILD_FOOT + BOX_BORDER))
     const stack = heights.reduce((a, b) => a + b, 0)
     /* The ground between two children gives way on a stage too short to hold it, so the column ends
