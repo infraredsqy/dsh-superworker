@@ -271,10 +271,11 @@ export interface OverviewMark {
 }
 
 /**
- * Where the completed window's mark stands: on the middle of the process band, the band running
- * from the head to the window's own foot. The check is 44 and a failure's mark 20 — same middle,
- * and this is the one place either size is read. A box too short or too narrow to hold the mark
- * still states a box inside the pane rather than a negative one.
+ * Where the finished window's mark stands: on the middle of the process band, the band running from
+ * the head to the window's own foot. The main window is the only one that is ever finished now, and
+ * it reads its head and foot here the same way any box did. The check is 44 and a failure's mark 20
+ * — same middle, and this is the one place either size is read. A box too short or too narrow to
+ * hold the mark still states a box inside the pane rather than a negative one.
  */
 export function layoutMark(input: {
   readonly width: number

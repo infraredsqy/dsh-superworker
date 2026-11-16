@@ -9,7 +9,8 @@
  * inline. What lives here is tier, ink and motion, all on the tokens. The motions are six, each
  * bound to one fact; three of them loop by themselves — the walking tie, the waiting border and the
  * small ring — and the tie and the ring state their own still form here, while the border leans on
- * the global reduced-motion rule in `tokens.css`. */
+ * the global reduced-motion rule in `tokens.css`. The waiting border answers one fact only: the
+ * window at a person's gate. */
 
 /* ---- The stage ------------------------------------------------------------ */
 .superworker-page .superworker-overview {
@@ -55,8 +56,9 @@
  * stage without standing in the pointer's way, and the windows are drawn over it.
  *
  * `is-live` says the child is running this round, and the dash walks toward it — the picture the
- * reader asked for, so this panel now has two motions that loop by themselves: this one and the
- * waiting border. A third one is a change to the design, and the sheet's own guard says so. */
+ * reader asked for. This panel's self-looping motions are exactly three: this walk, the person
+ * gate's border, and the running ring. A fourth one is a change to the design, and the sheet's own
+ * guard says so. */
 .superworker-page .superworker-olinks {
   position: absolute;
   inset: 0;
@@ -119,8 +121,11 @@
 }
 
 /* ---- The node rail -------------------------------------------------------- */
-/* One bar per running child, in the reading's order; the first is the lit one and a waiting child
- * wears the warn ink. The lane it keeps is the geometry's (`RAIL_LANE`); the bars only fill it. */
+/* One bar per running child, in the reading's order; the first is the lit one. The warn ink is the
+ * person gate's: the bar of a window standing at the gate wears it. A bar stands for a child, and the
+ * gate is the main window's reading, so no bar lights today — the rule states the ink's one meaning
+ * rather than inventing a second one for a child that is merely waiting for an answer. The lane the
+ * bars keep is the geometry's (`RAIL_LANE`); the bars only fill it. */
 .superworker-page .superworker-orail {
   position: absolute;
   top: 50%;
@@ -155,6 +160,10 @@
 }
 .superworker-page .superworker-opane.is-wait {
   border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 34%, transparent);
+  /* The warm ground the demo draws for a waiting pane: the theme's warn hue mixed into the layer the
+   * window already stands on, so no literal colour is invented and a palette switch moves it with
+   * the rest. It is the row's own ground, so a waiting window reads amber without shouting. */
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, var(--dsw-alias-bg-layer-1));
 }
 
 /* ---- The four motions ----------------------------------------------------- */
@@ -204,8 +213,10 @@
   animation: superworker-orow-in 0.2s ease both;
 }
 
-/* Breathing border — the newest row is a dispatch row: work is out and being waited for. The one
- * motion that loops by itself; being seen is its whole job. */
+/* Breathing border — the window's node stands at a person's gate (a checkpoint: delivered and not
+ * yet approved), so the reader is what it waits on. The one motion that loops by itself; being seen
+ * is its whole job. A window waiting on work it sent out keeps its ring and does not breathe: one
+ * border, one fact. */
 @keyframes superworker-opane-breathe {
   0%,
   100% {
@@ -278,9 +289,10 @@
 /* ---- The feed -------------------------------------------------------------- */
 /* Bottom-justified, cut by the window's own height: what falls off the top fades, and no scrollbar
  * ever appears. The row height is the field's `--superworker-orow-h` (`ROW_H` in the geometry); the
- * insets are the pane's own, from `FEED_LEFT` / `FEED_RIGHT` there. A window that has stopped wears
- * `is-veiled`: its rows stay exactly where they stand, blurred and pressed to three tenths, which is
- * the A case of the completed-window design — nothing moves, the window just stops speaking. */
+ * insets are the pane's own, from `FEED_LEFT` / `FEED_RIGHT` there. The main window whose session has
+ * stopped wears `is-veiled`: its rows stay exactly where they stand, blurred and pressed to three
+ * tenths, which is the A case of the completed-window design — nothing moves, the window just stops
+ * speaking. A waiting window is not veiled: what it waits on is still the reader's to see. */
 .superworker-page .superworker-ofeed {
   position: absolute;
   overflow: hidden;
@@ -325,7 +337,7 @@
   white-space: nowrap;
 }
 
-/* ---- A completed window's mark -------------------------------------------- */
+/* ---- The finished main window's mark -------------------------------------- */
 /* The check, over the middle of the process band. Its box, its size and its pen are the pane's own
  * inline numbers, from `overview-geom.ts`; this sheet draws only the ink. Under it stands a disc of
  * the window's own ground, so a 44px mark never melts into the blurred rows behind it (the size is
@@ -334,7 +346,8 @@
  * The ink is reading ink, never the success green: green reaches only 2.3:1 on the light palette,
  * under this panel's own 3:1 floor for a mark the reader resolves on its own, while reading ink
  * clears it in both. A window whose last word was a failure wears the panel's existing failed mark
- * in the warn ink instead — shape first, colour second. */
+ * in the warn ink instead — shape first, colour second. Only the main window is ever finished: a
+ * child that ended has left the page by its leave animation. */
 .superworker-page .superworker-omark {
   position: absolute;
   display: block;

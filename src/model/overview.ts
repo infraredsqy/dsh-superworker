@@ -19,11 +19,15 @@
  * conversation once got drawn — so it is read only when the caller says
  * nothing at all about which sessions this pipeline owns.
  *
- * A child that ended is still one of the windows while the dispatch row that
- * opened it is still on the main window's drawn feed: a window follows its row,
- * and that is what bounds the drawing — the record is never asked to replay the
- * history of every child this workspace ever ran. A bit is the only word such a
- * window carries ({@link OverviewWindow.done}); the main window never wears it.
+ * A child window is a child that is still running: the list's own bit says
+ * alive, or the child is no window at all. A child that ended is not drawn and
+ * not counted — the window it had is taken off the page by the client's leave
+ * animation, which is why the drawing never has to keep a finished one. The
+ * main window is the conversation this panel lives in, and it carries the two
+ * bits the drawing's three states are read from: `done` (the list's running bit
+ * is not true) and `waiting` (the caller names this session as one whose node
+ * stands at the person gate — a checkpoint). See
+ * {@link OverviewWindow.done} and {@link OverviewWindow.waiting}.
  *
  * The snapshot's and the log's field spellings are DSH's own (`running`,
  * `parentId`, `updatedAt`, `tool/call`, …), read defensively: a field that is
@@ -123,12 +127,23 @@ export interface OverviewWindow {
   readonly dispatchCallId?: string
   /**
    * Whether this window's conversation is over: true when the session list's
-   * running bit is not true. The main window is **never** done, whatever that
-   * bit says — it is the conversation this panel lives in, and one that stopped
-   * is waiting for its reader, not finished. A done window is drawn where it
-   * stands, its rows said quieter rather than removed.
+   * running bit is not true. The main window is the only one that can carry it —
+   * a child is a window only while it is still running, and one that ended leaves
+   * the page by the client's leave animation instead of staying as a finished
+   * window, so the reading never produces a done child. Absent means the
+   * conversation is running.
    */
-  readonly done: boolean
+  readonly done?: boolean
+  /**
+   * Whether this window stands at a person's gate: the caller named this session
+   * as one whose node is a checkpoint — the node's mode is `checkpoint`, it is
+   * delivered, and this delivery has not been approved yet. That judgment is the
+   * record's own (`readProject`'s node gate); this module only carries the fact
+   * the caller hands over and never re-reads the record for it. Only the main
+   * window carries it, and the drawing reads it before {@link done}: a window at
+   * the gate is drawn as waiting, never as finished. Absent means no gate.
+   */
+  readonly waiting?: boolean
 }
 
 /** The overview's reading at this snapshot. */
@@ -138,19 +153,19 @@ export interface OverviewReading {
    * session when the record names it, else a named one still running, else the
    * named one that moved last. Absent when the record names none of the list's
    * sessions: the stage stays empty rather than showing a conversation the
-   * pipeline never mentioned. Never done (see {@link OverviewWindow.done}).
+   * pipeline never mentioned. It is the only window that carries
+   * {@link OverviewWindow.done} and {@link OverviewWindow.waiting}.
    */
   readonly main: OverviewWindow | null
   /**
-   * The child windows, oldest first: the ones still running this round, and the
-   * finished ones whose dispatch row the main window still draws — at most five,
-   * taken anew at every read.
+   * The child windows, oldest first: the ones still running this round — at most
+   * five, taken anew at every read. A child that ended is not here: its window
+   * leaves the page by the client's leave animation.
    */
   readonly children: readonly OverviewWindow[]
   /**
    * How many **running** children the five-window cap folded away — a count,
-   * never a window: 0 is 0. A finished window standing in the five is not
-   * counted here; it is not running and owes nobody a slot.
+   * never a window: 0 is 0.
    */
   readonly hiddenChildren: number
 }
@@ -185,6 +200,16 @@ export interface OverviewInput {
    * conversation is the one they expect to see, running or not.
    */
   readonly sessionId?: unknown
+  /**
+   * The sessions whose node stands at a person's gate and reads as a
+   * **checkpoint**: the node's mode is `checkpoint`, it has been delivered, and
+   * that delivery has not been approved yet. The panel already computes it off
+   * the record's own gate reading (`readProject`'s `node.gate.kind`), and hands
+   * the session ids over; this module only carries the fact, so the gate is
+   * never re-read and never invented here. The main window stands waiting when
+   * its session is one of these; absent means none is.
+   */
+  readonly waitingSessions?: readonly unknown[] | undefined
 }
 
 /** The drawn row each tool name folds into. A name outside the four sets is a tool this fold does not know, and folds as the neutral `tool`. */
@@ -617,7 +642,6 @@ function windowOf(
   node: SuperworkerNode | undefined,
   events: readonly OverviewEvent[] | undefined,
   capacity: unknown,
-  done: boolean,
 ): OverviewWindow {
   return {
     id,
@@ -626,8 +650,17 @@ function windowOf(
     mode: modeOf(node),
     startedAt: startedAtOf(events),
     rows: capped(foldRows(events), capacity),
-    done,
   }
+}
+
+/** The sessions the caller named as standing at a person's gate; nothing named is none. */
+function waitingOf(input: OverviewInput): ReadonlySet<string> {
+  const waiting = new Set<string>()
+  if (!Array.isArray(input.waitingSessions)) return waiting
+  for (const id of input.waitingSessions) {
+    if (typeof id === 'string' && id.length > 0) waiting.add(id)
+  }
+  return waiting
 }
 
 /**
@@ -637,23 +670,27 @@ function windowOf(
  * ({@link mainIdOf}): its own session when the record names it, else a named
  * session still running, else the named one that moved last — and no window at
  * all when the record names none, or names only sessions the list does not
- * hold. A child counts as a window while its `parentId` is that main session and
- * either the list's running bit says it is still running, or it has finished and
- * the dispatch call that named it is a row the main window still draws — a
- * window follows its row. A session of another conversation, and any child of
- * one, is never drawn here. Ended a child with no footing on the screen drops,
- * called up again it is a window again, and nothing is probed or pinned to hold
- * it. Over five child windows the most recent five are taken — taken whole from
- * whoever is drawn at that moment, never the first five pinned, never a gap
+ * hold. A child counts as a window while its `parentId` is that main session
+ * **and** the list's running bit says it is still running; a child that ended is
+ * not drawn and not counted, because the window it had is taken off the page by
+ * the client's leave animation — the reading never has to keep a finished one.
+ * A session of another conversation, and any child of one, is never drawn here.
+ * Over five child windows the most recent five are taken — taken whole from
+ * whoever is running at that moment, never the first five pinned, never a gap
  * filled at the end — and the running ones the five leave out are counted, not
  * drawn: `hiddenChildren` is how many running children the cap folded away.
+ *
+ * The main window's two bits are read here and nowhere else: `done` is the
+ * list's running bit not being true, and `waiting` is the caller naming this
+ * session as one whose node stands at the person gate (a checkpoint). Which of
+ * the three states a window is drawn in is the drawing half's business, and the
+ * gate is read before `done` there: a checkpoint is why its conversation stopped,
+ * not a finished piece of work.
  *
  * Which call dispatched a child is read off the main session's own events, whole
  * — outside the row capacity, because a dispatch row falling off the top of the
  * feed is the fade's business and not the anchor's: the fact stays even when the
- * row that carries it is no longer drawn. The finished child's footing is read
- * the other way round, against the rows the capacity **kept**; that is the one
- * place the cut is allowed to decide a window. Its rows are that same session's
+ * row that carries it is no longer drawn. Its rows are that same session's
  * events, so the window and its anchors can never be read off two conversations.
  */
 export function readOverview(input: OverviewInput): OverviewReading {
@@ -663,49 +700,38 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const nodeFor = (id: string): SuperworkerNode | undefined =>
     input.nodeOf === undefined ? undefined : input.nodes?.[input.nodeOf[id] ?? '']
   const main = mainId === undefined ? undefined : rows[mainId]
-  /* The main window first: a finished child's footing is read off the rows it draws. The main
-     window is never done — the list's running bit says whether anyone is typing into it, not
-     whether the conversation this panel lives in has finished. */
+  const waiting = waitingOf(input)
   const mainWindow = main === undefined || mainId === undefined
     ? null
-    : windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity, false)
-  const drawnCalls = new Set<string>()
-  for (const row of mainWindow?.rows ?? []) {
-    if (row.callId !== undefined) drawnCalls.add(row.callId)
-  }
+    : {
+      ...windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity),
+      done: main.running !== true,
+      ...(waiting.has(mainId) ? { waiting: true } : {}),
+    }
   const anchors = dispatchAnchorsOf(mainId === undefined ? undefined : input.events?.[mainId])
-  /* The children the cap has to seat, before it takes its five: the ones alive this round, and
-     the ones that have finished but still stand on a drawn dispatch row. Nothing else is a child
-     window — a session of another conversation never gets here. */
+  /* The children the cap has to seat: the ones alive this round, and nothing else. A finished child
+     is not a window however its dispatch row stands — its window leaves the page by the client's
+     leave animation, and the reading keeps no finished one to draw. */
   const running: string[] = []
-  const footing: string[] = []
   if (mainId !== undefined) {
     for (const id of order) {
       if (id === mainId) continue
       const row: OverviewSessionRow | undefined = rows[id]
       if (row === undefined || row.parentId !== mainId) continue
-      if (row.running === true) {
-        running.push(id)
-        continue
-      }
-      const callId = anchors.get(id)
-      if (callId !== undefined && drawnCalls.has(callId)) footing.push(id)
+      if (row.running === true) running.push(id)
     }
   }
-  const seating = new Set([...running, ...footing])
-  const drawn = order.filter((id) => seating.has(id)).slice(-WINDOW_CAP)
-  const runningSet = new Set(running)
-  const drawnRunning = drawn.filter((id) => runningSet.has(id))
+  const drawn = order.filter((id) => running.includes(id)).slice(-WINDOW_CAP)
   return {
     main: mainWindow,
     children: drawn.map((id) => {
       const row: OverviewSessionRow = rows[id] ?? { id }
-      const window = windowOf(id, row, nodeFor(id), input.events?.[id], input.capacity, row.running !== true)
+      const window = windowOf(id, row, nodeFor(id), input.events?.[id], input.capacity)
       const dispatchCallId = anchors.get(id)
       return dispatchCallId === undefined ? window : { ...window, dispatchCallId }
     }),
     /* Counted off the running list, never off the five the cap kept: what the cap folded away is
-       the running children it left out, and a finished window owes the badge nothing. */
-    hiddenChildren: running.length - drawnRunning.length,
+       the running children it left out. */
+    hiddenChildren: running.length - drawn.length,
   }
 }

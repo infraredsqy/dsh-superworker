@@ -333,6 +333,19 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     return out
   }, [notes])
 
+  /* The sessions standing at a person's gate as a checkpoint: the record's own gate reading says so
+   * — the node's mode is `checkpoint`, it is delivered, and that delivery has not been approved —
+   * and the note naming the node names the session it would be a window in. The overview draws that
+   * window as waiting instead of finished; the judgment stays the model's, only the fact is handed
+   * over. */
+  const waitingSessions = React.useMemo((): readonly string[] => {
+    const out: string[] = []
+    for (const [session, nodeId] of Object.entries(nodeOf)) {
+      if (project?.nodeById[nodeId]?.gate?.kind === 'checkpoint') out.push(session)
+    }
+    return out
+  }, [nodeOf, project])
+
   /* The overview's reading at this beat: which windows from the session list the browser already
    * holds, which rows from the event windows `windows` holds open, which nameplate material from
    * the record. Which conversation is the main window is decided by the pipeline's own record: the
@@ -351,8 +364,9 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       nodeOf,
       nodes: reading.nodes,
       capacity: READING_CAPACITY,
+      waitingSessions,
     })
-  }, [reading, events, nodeOf, props.sessions, sessionId, notes])
+  }, [reading, events, nodeOf, props.sessions, sessionId, notes, waitingSessions])
 
   /* The overview's empty stage: the record is in hand and yet no window stands. Which of the three
    * it is is what the stage says — a workspace with no node at all, one whose record names no
@@ -370,9 +384,8 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
   const emptyWords = emptyKind === null ? null : overviewEmptyWords(t, emptyKind)
 
   /* The event windows the overview holds open are exactly the windows the reading names — the main
-   * conversation, the children still running, and the finished ones the reading still draws — and
-   * only while the overview is the shown pane. Re-watching the same ids is nothing; the ids that
-   * left are released there. */
+   * conversation and the children still running — and only while the overview is the shown pane.
+   * Re-watching the same ids is nothing; the ids that left are released there. */
   React.useEffect(() => {
     if (tab !== 'overview' || overview === null) {
       windows.watch([])

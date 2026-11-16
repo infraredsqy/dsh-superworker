@@ -1,21 +1,24 @@
 /* The overview on the built panel: the reading drawn as windows, the four motion marks each bound
- * to its fact, and the two marks a window's cell can fill.
+ * to its fact, and the three states a window can be in.
  *
  * The session list arrives the way the seat hands it over (a `useSessions` hook over a snapshot the
  * case holds and moves), and the event windows arrive through a stand-in for DSH's `sessions`
  * service — the same narrow face `session-events.ts` reads. What the cases hold down:
  *
  * - the windows and their words: the node's own nameplate on the main window, running children
- *   only, a stopped child no window at all, and no session id printed anywhere;
+ *   only, a child that ended no window at all, and no session id printed anywhere;
  * - enter — a window joining the set carries the mark;
  * - leave — a window leaving carries the mark, and after the leave's span the page has lost it;
+ *   a child that ends is exactly that: the reading stops drawing it, and the animation takes it away;
  * - fresh row — the arrival's two readings carry the mark, on that row alone: a gained row even
  *   when its text repeats the previous newest (growth), and a swapped newest at a steady count
  *   (the cut);
- * - breathing — a window whose newest row is a dispatch row wears it, and stops when the newest
- *   row is no longer one;
- * - the cell — a finished child keeps its rows in place under the veil and the check; a running
- *   child turns the small ring; the main window wears neither, whatever its running bit says.
+ * - breathing — the person gate's alone: the main window at a checkpoint wears it, while a window
+ *   whose newest row is a dispatch row keeps its ring and draws no border;
+ * - the main window's three states, one fact each: running draws as it runs; not running under no
+ *   gate is finished — rows in place under the veil and the check; at a person's gate (a checkpoint
+ *   the record's own gate reading names) it breathes amber, with no veil and no check;
+ * - a running child turns the small ring, and wears neither veil nor check.
  *
  * Needs `lib/client.js`; `npm test` builds it first. Run `node --test tests/client-overview.test.mjs`.
  */
@@ -24,9 +27,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { cssBlocks, stripComments } from '../tools/lib/cssrules.mjs'
 import {
-  CHILD_FOOT,
-  CHILD_HEAD,
   LINK_DOT_R,
+  MAIN_FOOT,
+  MAIN_HEAD,
   MARK_CHECK,
   MARK_CHECK_STROKE,
   READING_CAPACITY,
@@ -79,6 +82,25 @@ const record = () => ({
   '.superworker/instructions.json': json({ instructions: [] }),
   '.superworker/issues/issues.json': json({ version: 1, issues: {} }),
   '.superworker/meta/sessions/n0.json': json({ run: [{ session: 'm1', at: '2026-01-09T00:00:00.000Z' }] }),
+})
+
+/** The same record, with the node at a person's gate: delivered, and that delivery not yet approved. */
+const recordAtCheckpoint = () => ({
+  ...record(),
+  '.superworker/ideas.json': json({
+    nodes: {
+      n0: {
+        title: 'the driven node',
+        description: 'the piece the main conversation drives',
+        tags: [],
+        mode: 'checkpoint',
+        status: 'completed',
+        created_at: '2026-01-08T00:00:00.000Z',
+        completed_at: '2026-01-09T00:00:00.000Z',
+        dependencies: [],
+      },
+    },
+  }),
 })
 
 /** The session-list snapshot, in the shape the seat's `useSessions` hook hands over. */
@@ -188,9 +210,10 @@ test('the overview draws the reading: the node nameplate on the main window, run
   assert.equal(main.querySelectorAll('.superworker-orow').length, 2, 'the main window does not draw its two rows')
   assert.equal(child.querySelectorAll('.superworker-orow').length, 1, 'the child does not draw its one row')
 
-  /* One running child: no node rail. The main window's newest row is a dispatch row: it breathes. */
+  /* One running child: no node rail. The main window's newest row is a dispatch row, and the amber
+   * border answers the person gate alone — so neither window breathes here. */
   assert.equal(container.querySelector('.superworker-orail'), null, 'one child drew a node rail')
-  assert.ok(main.className.includes('is-wait'), 'a dispatch-newest main window does not breathe')
+  assert.ok(!main.className.includes('is-wait'), 'a main window whose newest row is a dispatch row breathes: the border answers the gate alone')
   assert.ok(!child.className.includes('is-wait'), 'a child whose newest row is a read breathes')
 
   /* Enter marks on first sight: both windows joined the set on this beat. */
@@ -386,9 +409,13 @@ test('fresh row: at a steady count the swapped newest row carries the mark', { s
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test('breathing: the mark follows the newest row being a dispatch row', { skip: bundleSkip }, async () => {
+test('breathing belongs to the person gate alone: a child whose newest row is a dispatch row keeps its ring', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
-  let snap = snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])
+  /* Two running children, so the node rail stands and its bars can be read. */
+  const snap = snapshotOf([
+    { id: 'c1', running: true, title: 'the first child' },
+    { id: 'c2', running: true, title: 'the second child' },
+  ])
   const mounted = await mountBuiltPanel({
     record: record(),
     sessionsService: service,
@@ -399,55 +426,150 @@ test('breathing: the mark follows the newest row being a dispatch row', { skip: 
     service.set('c1', [dispatched('a task out', 1000, 'd9')])
   })
   const pane = container(mounted).querySelector('[data-window="c1"]')
-  assert.ok(pane.className.includes('is-wait'), 'a dispatch-newest window does not breathe')
+  assert.ok(!pane.className.includes('is-wait'), 'a window whose newest row is a dispatch row breathes: the amber border answers the gate alone')
+  assert.notEqual(pane.querySelector('.superworker-oring'), null, 'a running child waiting on its dispatch lost its ring')
+  /* The rail's warn ink answers the same one fact: a bar lights for the window at the gate, and a
+   * child waiting for an answer stands for nothing there. */
+  assert.equal(container(mounted).querySelectorAll('.superworker-orail b.is-need').length, 0, 'a rail bar lit the gate ink for a child waiting on an answer')
   await mounted.act(async () => {
     service.set('c1', [dispatched('a task out', 1000, 'd9'), said('it came back.', 2000)])
   })
-  assert.ok(!container(mounted).querySelector('[data-window="c1"]').className.includes('is-wait'), 'the window went on breathing after the newest row stopped being a dispatch')
+  assert.ok(!container(mounted).querySelector('[data-window="c1"]').className.includes('is-wait'), 'the row stopped being a dispatch and the window started breathing')
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-/* ---- the cell: a finished window's mark, a running window's ring ------- */
+/* ---- the cell: the main window's three states, a running child's ring ------ */
 
-test('a finished child keeps its rows where they stand, under the veil and the check, and turns no ring', { skip: bundleSkip }, async () => {
+test('a child that ends leaves the page: the pane fades where it stands, and after the span it is gone', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
-  /* The dispatch row is still on the main feed, so the finished child still has its footing. */
-  service.set('m1', [...dispatchRun('c1', 'd1', 'the finished job', 100), said('it came back.', 400)])
+  /* The dispatch row that opened it is still on the main feed — a finished child is no window on it. */
+  service.set('m1', [...dispatchRun('c1', 'd1', 'the finishing job', 100), said('it came back.', 400)])
   service.set('c1', [read('a.ts', 200), said('the child finished its work.', 300)])
+  let snap = snapshotOf([{ id: 'c1', running: true, title: 'the finishing child' }])
   const mounted = await mountBuiltPanel({
     record: record(),
     sessionsService: service,
-    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: false, title: 'the finished child' }])),
+    useSessions: (select) => select(snap),
   })
   await stageAt(mounted, 1024, 720)
   const { container } = mounted
-  const child = container.querySelector('[data-window="c1"]')
-  assert.notEqual(child, null, 'a finished child whose dispatch row is still drawn became no window')
+  assert.notEqual(container.querySelector('[data-window="c1"]'), null, 'the running child is not drawn')
 
-  const feed = child.querySelector('.superworker-ofeed')
-  assert.ok(feed.className.includes('is-veiled'), "the finished window's rows are not veiled")
-  assert.equal(child.querySelectorAll('.superworker-orow').length, 2, 'the finished window lost its rows instead of keeping them in place')
+  /* The child's session stops running. The reading stops drawing it, so the pane leaves by the
+   * animation it already runs when an id vanishes: it is not kept as a finished window, it carries
+   * no check, and nothing stands where it stood. */
+  snap = snapshotOf([{ id: 'c1', running: false, title: 'the finishing child' }])
+  await mounted.rerender()
+  const leaving = container.querySelector('[data-window="c1"]')
+  assert.notEqual(leaving, null, 'the pane left the page before its leave ran')
+  assert.ok(leaving.className.includes('is-leave'), 'the leaving pane carries no leave mark')
+  assert.equal(leaving.querySelector('.superworker-omark'), null, 'a finished child was kept with the check')
+  assert.ok(!leaving.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'a finished child was kept veiled')
 
-  const mark = child.querySelector('.superworker-omark')
-  assert.notEqual(mark, null, 'the finished window wears no check')
+  /* Waiting on the leave's own span: the removal is the component's timer, and jsdom fires no
+   * animationend to hang on — the only fact to wait for is the span itself running out. */
+  await mounted.act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 340))
+  })
+  assert.equal(container.querySelector('[data-window="c1"]'), null, 'the page kept the finished child past the leave span')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the main window whose session has stopped: veiled rows and the check, nothing else', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('a word from the conversation being read.', 100)])
+  /* The list says nobody is typing into it: the conversation has stopped, and its reader is the next
+   * move. That is the finished state — the rows stay where they stand, veiled, under the one mark. */
+  const snap = {
+    ids: ['m1'],
+    byId: { m1: { id: 'm1', running: false, displayTitle: 'the main conversation' } },
+  }
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  const main = container.querySelector('[data-window="m1"]')
+  assert.notEqual(main, null, 'the main window is not drawn')
+
+  const feed = main.querySelector('.superworker-ofeed')
+  assert.ok(feed.className.includes('is-veiled'), "the stopped window's rows are not veiled")
+  assert.equal(main.querySelectorAll('.superworker-orow').length, 1, 'the stopped window lost its rows instead of keeping them in place')
+  const mark = main.querySelector('.superworker-omark')
+  assert.notEqual(mark, null, 'the stopped window wears no check')
   assert.notEqual(mark.querySelector('svg'), null, 'the check is not drawn')
-  assert.equal(mark.className.includes('is-fail'), false, 'a clean finish wears the failed mark')
-  assert.equal(child.querySelector('.superworker-oring'), null, 'a finished window is still turning a ring')
+  assert.equal(mark.className.includes('is-fail'), false, 'a clean stop wears the failed mark')
+  assert.equal(main.querySelector('.superworker-oring'), null, 'the main window turns a ring')
+  assert.equal(main.className.includes('is-wait'), false, 'a stopped window no gate holds still waits')
 
   /* The mark's box and pen are the geometry's own: the process band's middle, 44 across. */
-  const placement = layoutOverview({ stage: { width: 1024, height: 720 }, mainRows: 2, childRows: [2] })
+  const placement = layoutOverview({ stage: { width: 1024, height: 720 }, mainRows: 1, childRows: [] })
   const expected = layoutMark({
-    width: placement.children[0].width,
-    height: placement.children[0].height,
-    head: CHILD_HEAD,
-    foot: CHILD_FOOT,
+    width: placement.main.width,
+    height: placement.main.height,
+    head: MAIN_HEAD,
+    foot: MAIN_FOOT,
     size: MARK_CHECK,
     stroke: MARK_CHECK_STROKE,
   })
   assert.equal(mark.style.left, `${expected.left}px`, `the check stands at ${mark.style.left}, the geometry says ${expected.left}`)
   assert.equal(mark.style.top, `${expected.top}px`, `the check stands at ${mark.style.top}, the geometry says ${expected.top}`)
   assert.equal(mark.style.width, `${expected.size}px`, `the check is ${mark.style.width} across, the geometry says ${expected.size}`)
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test("the main window at a person's gate stops as a checkpoint: it breathes amber, unveiled and unchecked", { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  /* An output row, not a dispatch row: the only thing that can make this window breathe is the gate. */
+  service.set('m1', [said('delivered, waiting for the person.', 100)])
+  const snap = {
+    ids: ['m1'],
+    byId: { m1: { id: 'm1', running: false, displayTitle: 'the main conversation' } },
+  }
+  const mounted = await mountBuiltPanel({
+    record: recordAtCheckpoint(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  const main = container.querySelector('[data-window="m1"]')
+  assert.notEqual(main, null, 'the main window is not drawn')
+
+  assert.ok(main.className.includes('is-wait'), 'the window whose node is a checkpoint does not breathe')
+  assert.ok(!main.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'the checkpoint window is veiled')
+  assert.equal(main.querySelector('.superworker-omark'), null, 'the checkpoint window wears the finished check')
+  assert.equal(main.querySelectorAll('.superworker-orow').length, 1, 'the checkpoint window lost its rows')
+  assert.equal(main.querySelector('.superworker-oring'), null, 'the checkpoint window turns a ring')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the main window still running draws as it runs: no veil, no check, no gate', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [read('a.ts', 100)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([])),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  const main = container.querySelector('[data-window="m1"]')
+  assert.notEqual(main, null, 'the main window is not drawn')
+  assert.equal(main.querySelector('.superworker-omark'), null, 'a running main window wears a check')
+  assert.equal(main.querySelector('.superworker-oring'), null, 'a running main window turns a ring')
+  assert.ok(!main.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'a running main window is veiled')
+  assert.equal(main.className.includes('is-wait'), false, 'a running main window nobody waits on breathes')
+  assert.equal(main.querySelectorAll('.superworker-orow').length, 1, 'the running main window lost its rows')
 
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
@@ -478,32 +600,6 @@ test('a running child turns the ring, and wears neither the veil nor a check', {
   assert.equal(ring.style.left, `${expected.left}px`, `the ring stands at ${ring.style.left}, the geometry says ${expected.left}`)
   assert.equal(ring.style.top, `${expected.top}px`, `the ring stands at ${ring.style.top}, the geometry says ${expected.top}`)
   assert.equal(ring.style.width, `${expected.size}px`, `the ring is ${ring.style.width} across, the geometry says ${expected.size}`)
-
-  await mounted.unmount()
-  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
-})
-
-test('the main window wears neither the veil nor the check nor the ring, even when its session has stopped', { skip: bundleSkip }, async () => {
-  const service = fakeSessionsService()
-  service.set('m1', [said('a word from the conversation being read.', 100)])
-  /* The list says nobody is typing into it. That is waiting for the reader, not a finished window. */
-  const snap = {
-    ids: ['m1'],
-    byId: { m1: { id: 'm1', running: false, displayTitle: 'the main conversation' } },
-  }
-  const mounted = await mountBuiltPanel({
-    record: record(),
-    sessionsService: service,
-    useSessions: (select) => select(snap),
-  })
-  await stageAt(mounted, 1024, 720)
-  const { container } = mounted
-  const main = container.querySelector('[data-window="m1"]')
-  assert.notEqual(main, null, 'the main window is not drawn')
-  assert.equal(main.querySelector('.superworker-omark'), null, 'the main window wears a check')
-  assert.equal(main.querySelector('.superworker-oring'), null, 'the main window turns a ring')
-  assert.ok(!main.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'the main window is veiled')
-  assert.equal(main.querySelectorAll('.superworker-orow').length, 1, 'the main window lost its rows')
 
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')

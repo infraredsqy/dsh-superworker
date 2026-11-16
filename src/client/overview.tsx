@@ -7,16 +7,24 @@
  * diffed between consecutive readings, never invented:
  *
  * - enter — the window set gained a window;
- * - leave — the set lost one; the pane lingers for the leave's span, then leaves the page;
+ * - leave — the set lost one; the pane lingers for the leave's span, then leaves the page. A child
+ *   that ended leaves this way: the reading stops drawing it the moment its session stops running,
+ *   so its window fades where it stands and is gone — it is never kept as a finished window;
  * - fresh row — one window's newest row is not the row it was (growth, or the cut that replaced
  *   the top row when the newest arrived);
- * - breathing border — the window's newest row is a dispatch row: it has sent work and is waiting
- *   for it. It loops by itself; being seen is its whole job.
+ * - breathing border — the main window's node stands at a person's gate: it is waiting for the reader
+ *   to say yes. It loops by itself; being seen is its whole job.
  *
- * Two marks stand beside those motions: a finished child keeps its rows where they stand and wears
- * the check, and a child still moving wears the small ring in its cell — the one new loop, half the
- * border's pace. Both are the reading's own facts (`done`, and the waiting fact above, which keeps
- * the ring off a waiting window), and the main window wears neither.
+ * The main window's three states are read from two facts the reading carries, one state each, and
+ * the gate stands first: at the person gate (`waiting` — a checkpoint) it wears the amber breathing
+ * border and no veil and no check; the session not running (`done`) it wears the veil over its rows
+ * and the check in the middle of the process band; otherwise it draws as it runs. The check and the
+ * veil are the main window's alone now — a child that finished is no longer a window at all.
+ *
+ * A running child turns the small ring in its cell, half the border's pace — that is the whole of
+ * what "still moving" says. Neither the ring nor any other fact reaches for the border: the amber
+ * breath belongs to the gate alone, so a window that sent work out and is waiting for it back says
+ * nothing but its ring.
  *
  * A window's id is wiring, not words: it rides a `data-window` attribute and never prints.
  */
@@ -85,18 +93,6 @@ function modeWordOf(mode: string): WordKey {
 function readingsOf(t: Translate, window: OverviewWindow): string | null {
   if (window.weight === null || window.mode === null) return null
   return `${t(WEIGHT_WORDS[window.weight])} · ${t(modeWordOf(window.mode))}`
-}
-
-/**
- * The waiting fact: a window that is still going and whose newest row is a dispatch row has sent
- * work out and is waiting for it. A done window never waits — it has stopped, and the breathing
- * border would say "out, not back" about a conversation that is over. This is also what keeps the
- * ring off a waiting window: the two facts are never on one window.
- */
-function isWaiting(window: OverviewWindow): boolean {
-  if (window.done) return false
-  const last = window.rows[window.rows.length - 1]
-  return last !== undefined && last.kind === 'dispatch'
 }
 
 /** The row's own mark, one small drawing per kind, the way the state marks are drawn. */
@@ -198,7 +194,7 @@ function Feed(props: {
   readonly room: number
   /** Whether this window's newest row arrived on this beat. */
   readonly fresh: boolean
-  /** Whether the window has stopped: its rows stay where they stand, said dimmer. */
+  /** Whether the window's session has stopped: its rows stay where they stand, said dimmer. */
   readonly veiled: boolean
   readonly head: number
   readonly foot: number
@@ -233,21 +229,25 @@ function WindowPane(props: {
   readonly enter: boolean
   readonly leave: boolean
   readonly fresh: boolean
-  readonly waiting: boolean
 }): React.ReactElement {
   const t = useT()
   const { box, window: pane } = props
   const readings = readingsOf(t, pane)
   const head = props.main ? MAIN_HEAD : CHILD_HEAD
   const foot = props.main ? MAIN_FOOT : CHILD_FOOT
-  const done = pane.done
   const last = pane.rows[pane.rows.length - 1]
   const failed = last !== undefined && last.kind === 'fail'
-  /* The one thing a window's cell says: the check (or, when its last word was a failure, the
-   * panel's own failed mark) once it has stopped, and the small ring while it is still moving. The
-   * main window wears neither — it is the conversation being read, never done, and a ring there
-   * would say "still running" about the very conversation whose stillness means nothing. */
-  const mark = done
+  /* The three states of the main window, one fact each and the gate first: a checkpoint is why its
+   * conversation stopped, so it is drawn as waiting — never veiled and never checked, the rows still
+   * saying what is on the table for the reader. Otherwise a window whose session is not running is
+   * finished: its rows stay where they stand, veiled, under the one mark. A child is drawn only
+   * while it runs, so neither state ever reaches it. */
+  const atGate = pane.waiting === true
+  const finished = props.main && pane.done === true && !atGate
+  /* The one thing a window's cell says now: the check (or, when its last word was a failure, the
+   * panel's own failed mark) on the finished main window, and the small ring while a child is still
+   * moving. The main window wears no ring — it is the conversation being read. */
+  const mark = finished
     ? layoutMark({
       width: box.width,
       height: box.height,
@@ -257,13 +257,13 @@ function WindowPane(props: {
       stroke: failed ? MARK_FAIL_STROKE : MARK_CHECK_STROKE,
     })
     : undefined
-  const ring = !props.main && !done && !props.waiting ? layoutRing({ width: box.width }) : undefined
+  const ring = !props.main ? layoutRing({ width: box.width }) : undefined
   const cls = [
     'superworker-opane',
     props.main ? 'is-main' : 'is-child',
     props.enter ? 'is-enter' : '',
     props.leave ? 'is-leave' : '',
-    props.waiting ? 'is-wait' : '',
+    atGate ? 'is-wait' : '',
   ]
     .filter((one) => one.length > 0)
     .join(' ')
@@ -288,7 +288,7 @@ function WindowPane(props: {
         window={pane}
         room={box.rowsRoom}
         fresh={props.fresh}
-        veiled={done}
+        veiled={finished}
         head={head}
         foot={foot}
       />
@@ -321,7 +321,7 @@ function WindowPane(props: {
 /**
  * The overview pane over the reading of one moment. The motion facts ride the beat the reading
  * changes: enter on first sight, leave on a vanished id (held until the leave's span has run),
- * fresh on a replaced newest row, breathing on the waiting fact.
+ * fresh on a replaced newest row, breathing on the person gate.
  */
 export function OverviewPane(props: {
   readonly reading: OverviewReading
@@ -494,9 +494,9 @@ export function OverviewPane(props: {
     return out
   }, [reading, placement, leaving, currentIds])
 
-  /* The rail's lit bar: the first window still moving. A column of finished windows keeps its bars
-   * — the lane is the column's own ruler — and none of them is lit, because none is moving. */
-  const litId = reading.children.find((one) => !one.done)?.id
+  /* The rail's lit bar: the first child, which is the one the column is showing in hand — every child
+   * the reading draws is still running, so the first is the one moving. */
+  const litId = reading.children[0]?.id
 
   return (
     <div className="superworker-overview" ref={bodyRef}>
@@ -505,9 +505,10 @@ export function OverviewPane(props: {
           {reading.children.map((one) => (
             <b
               key={one.id}
-              /* The lit bar follows the one window still moving — a finished window keeps its bar
-               * (the lane is the column's ruler) but never wears the "this one" ink. */
-              className={`${one.id === litId ? 'is-on' : ''}${isWaiting(one) ? ' is-need' : ''}`.trim()}
+              /* The lit bar follows the child the column shows in hand. The warn ink is the person
+               * gate's alone: a bar wears it when the window it stands for is the one at the gate, and
+               * a bar for a child never is — which is what keeps one ink meaning one fact. */
+              className={`${one.id === litId ? 'is-on' : ''}${one.waiting === true ? ' is-need' : ''}`.trim()}
               style={{ width: railBarWidth(one.rows.length, one.id === litId) }}
             />
           ))}
@@ -543,7 +544,6 @@ export function OverviewPane(props: {
             enter={enteredRef.current.has(reading.main.id)}
             leave={leaving.has(reading.main.id)}
             fresh={freshIds.has(reading.main.id)}
-            waiting={isWaiting(reading.main)}
           />
         )}
         {reading.children.map((one, i) => {
@@ -559,7 +559,6 @@ export function OverviewPane(props: {
               enter={enteredRef.current.has(one.id)}
               leave={leaving.has(one.id)}
               fresh={freshIds.has(one.id)}
-              waiting={isWaiting(one)}
             />
           )
         })}
@@ -591,7 +590,6 @@ export function OverviewPane(props: {
               enter={false}
               leave
               fresh={false}
-              waiting={false}
             />
           )
         })}
