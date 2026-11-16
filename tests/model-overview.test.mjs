@@ -580,6 +580,41 @@ test("a run's output folds a second run row after the command; other tools' resu
   assert.equal(rows[1].full, '14 个用例通过，0 失败')
 })
 
+test("a run result that opens on a blank line cuts to no sentence, so it folds to no row", () => {
+  /* The shape the real rehearsal log carries: PowerShell's table output opens with a
+     blank line, the cut lands before the first word, and a wordless run row would
+     draw as its word and the separator alone. The command's row already stands. */
+  const reading = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN) }),
+    events: {
+      'c-1': [
+        call(1, 'call-1', 'pwsh', { command: 'Get-ChildItem C:\\demo' }),
+        result(2, 'call-1', '\r\nPath\r\n----\r\nC:\\demo\r\n\r\n'),
+        call(3, 'call-2', 'bash', { command: 'echo done' }),
+        result(4, 'call-2', '\r\n\r\n'),
+      ],
+    },
+  })
+  const rows = reading.children[0].rows
+  assert.deepEqual(rows.map((r) => r.kind), ['run', 'run'], 'a wordless run row was collected')
+  assert.deepEqual(rows.map((r) => r.text), ['Get-ChildItem C:\\demo', 'echo done'])
+})
+
+test("a command opening on a line break draws no wordless row, yet its result still answers", () => {
+  const reading = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN) }),
+    events: {
+      'c-1': [
+        call(1, 'call-1', 'bash', { command: '\n npx vitest run superworker-core' }),
+        result(2, 'call-1', '14 个用例通过'),
+      ],
+    },
+  })
+  const rows = reading.children[0].rows
+  assert.deepEqual(rows.map((r) => r.kind), ['run'], 'the result lost its answer for want of the call id')
+  assert.equal(rows[0].text, '14 个用例通过')
+})
+
 test("the reader's own words fold to no row", () => {
   const reading = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN) }),

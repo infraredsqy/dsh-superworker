@@ -376,10 +376,18 @@ function firstSentence(full: string): string {
   return full
 }
 
-/** One row, only when there is something to say: a row with no content is not drawn. */
+/**
+ * One row, only when there is something to say: no content, no row — and no
+ * sentence, no row either. A body that opens with a line break cuts to an
+ * empty sentence (a run result whose output opens with a blank line does:
+ * PowerShell's tables all do), and a row with no sentence would draw as its
+ * word and the separator alone. Its call's row already stands above it.
+ */
 function pushRow(rows: OverviewRow[], kind: OverviewRowKind, full: string | undefined): void {
   if (full === undefined || full.length === 0) return
-  rows.push({ kind, text: firstSentence(full), full })
+  const cut = firstSentence(full)
+  if (cut.length === 0) return
+  rows.push({ kind, text: cut, full })
 }
 
 /** The text a message's own content blocks carry, when it carries any. */
@@ -432,7 +440,9 @@ function parseArguments(raw: unknown): Record<string, unknown> | undefined {
  * One tool call folds into one row, named by the tool's own arguments. The
  * call's own id rides the row verbatim — a result or a child's dispatch anchor
  * answers by it — while a run's id is also kept aside, since only a run's
- * result is worth a row of its own.
+ * result is worth a row of its own. The id is kept before the sentence is cut,
+ * so a call whose body cuts to nothing (a command opening on a line break)
+ * still answers for its result without drawing its own wordless row.
  */
 function foldCall(
   data: Record<string, unknown> | undefined,
@@ -445,9 +455,11 @@ function foldCall(
   const callId = text(data?.callId)
   if (kind === 'run' && callId !== undefined) runCalls.add(callId)
   const subject = subjectOf(kind, name, parseArguments(data?.arguments))
+  const cut = firstSentence(subject)
+  if (cut.length === 0) return
   rows.push({
     kind,
-    text: firstSentence(subject),
+    text: cut,
     full: subject,
     ...(callId === undefined ? {} : { callId }),
   })
