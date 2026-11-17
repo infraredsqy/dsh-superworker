@@ -10,7 +10,11 @@
  * The ground rules this arithmetic holds by, whatever the stage does:
  *
  * - The node rail keeps a lane on the left while it stands, and nothing drawn probes into it. One
- *   window alone, or one child, draws no rail and keeps only the stage's own blank. The main
+ *   window alone, or one child, draws no rail and keeps only the stage's own blank. The rail is the
+ *   standing children column's own index: where the column cannot stand, the rail does not stand
+ *   either — two dim bars in a lane whose column left the stage are the empty frame a reader cannot
+ *   name. The lane itself is kept from two live children, the rail's own threshold, whether or not
+ *   the stage ends up seating their column. The main
  *   window's nameplate is the one thing that crosses its own window's left edge; the probe's ground
  *   is reserved out of the band before a window is measured, so the probe is room the layout keeps
  *   on every stage rather than slack a narrow one spends — and one pixel of the rail is never
@@ -136,7 +140,7 @@ export interface OverviewPlacement {
   readonly children: readonly OverviewBox[]
   /** How far the nameplate probes left of the main window's edge; the rail keeps every pixel left of that. */
   readonly plateOut: number
-  /** Whether the node rail exists: it takes two live children, shown or not. */
+  /** Whether the node rail stands: it takes two live children, and a stage that seats their column. */
   readonly railVisible: boolean
 }
 
@@ -166,11 +170,11 @@ export function layoutOverview(input: {
   readonly childRows: readonly number[]
 }): OverviewPlacement {
   const { stage, mainRows, childRows } = input
-  /* The rail is a fact about the live children, not about the drawing: it stands from two of them,
-     shown or not. While it stands the lane it keeps stays clear on both sides — that symmetry is
-     what puts the group on the stage's middle; with no rail the stage's own blank is all there is. */
-  const railVisible = childRows.length >= RAIL_FROM
-  const side = Math.max(railVisible ? RAIL_LANE : 0, FIELD_PAD)
+  /* The lane is kept from two live children — the rail's own threshold — whether or not the stage
+     ends up seating their column. While it is kept it stays clear on both sides, and that symmetry
+     is what puts the group on the stage's middle; with no lane the stage's own blank is all there is. */
+  const wantRail = childRows.length >= RAIL_FROM
+  const side = Math.max(wantRail ? RAIL_LANE : 0, FIELD_PAD)
   /* What the stage really has left under the lane it keeps — nothing fabricated: on a stage too
      narrow for even that, the windows take whatever is there and shrink with it. The nameplate's
      probe is taken out first, because it is ground the picture needs rather than slack it may
@@ -199,6 +203,10 @@ export function layoutOverview(input: {
      smallest sizes: with no child, or on a stage too narrow for the pair, the ground between two
      windows is not kept for a window that is not there. */
   const childrenShown = childRows.length > 0 && availW >= MAIN_MIN_W && mainW >= MAIN_MIN_W && childW >= CHILD_MIN_W
+  /* The rail is the column's own index: it stands only where the column stands. Two dim bars in a
+     lane whose column left the stage are the empty frame on the stage's left — the rail leaves with
+     the column it indexes, and the lane it kept goes back to being the stage's own blank. */
+  const railVisible = wantRail && childrenShown
   if (!childrenShown) {
     /* The column leaves whole; the main window takes what the stage next to the rail can give, and
        narrows with the stage rather than running off it. Its floor is the readable one and not the

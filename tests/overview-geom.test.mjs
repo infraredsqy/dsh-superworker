@@ -513,12 +513,13 @@ test('a child never grows past the rows it actually holds', () => {
   }
 })
 
-test('a stage too narrow for two windows draws the main window alone', () => {
+test('a stage too narrow for two windows draws the main window alone, and no rail for the column that left', () => {
   const p = place(STAGES[0], 5)
   assert.deepEqual(p.children, [], 'the children column did not leave')
   assert.ok(p.main.width >= 200, 'the main window collapsed')
-  /* The rail is a fact about the running children, not about the drawing: five are out, so it exists. */
-  assert.equal(p.railVisible, true, 'five running children left no node rail')
+  /* Five live children, and no column beside them: a rail whose bars index windows that are not
+     drawn is the empty frame on the stage's left — it leaves with the column it indexes. */
+  assert.equal(p.railVisible, false, 'a rail stood for a column the stage could not seat')
 })
 
 /* The stage heights a short window gives the pane — below the field's tallest, and below what its

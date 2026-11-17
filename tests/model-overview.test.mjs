@@ -490,6 +490,108 @@ test('a caller that says nothing about the pipeline keeps DSH\'s main view: the 
   assert.deepEqual(said_nothing.main.rows.map((row) => row.full), ['一句话'])
 })
 
+/* ---- the record's parallel legs -------------------------------------------
+ *
+ * A relay opens each leg after the one before it reads "closed", and a restart
+ * mid-line leaves the parent links pointing wherever the last trigger stood —
+ * so the parentage of two legs dispatched side by side groups nothing. The run
+ * notes are the one fact about which sessions are this line's work: a leg the
+ * list still calls running draws its window off the record's word alone, beside
+ * the window the reader sits in, and a leg whose running bit went false draws
+ * nothing again — the last completed one is the main window's own rule, and it
+ * does not move.
+ */
+
+test('two record-named legs still running draw two child windows, whatever their parent links say', () => {
+  const conductor = 'session-conductor'
+  const fast = 'session-fast-leg'
+  const slow = 'session-slow-leg'
+  const reading = readOverview({
+    sessions: snapshot([conductor, fast, slow], {
+      [conductor]: pipelineRow(conductor, { updatedAt: '2026-11-17T06:20:15.000Z' }),
+      /* The parent links are the relay's own leftovers: one points at a session that is gone, one
+         at the main — neither admission is what stands these windows up. */
+      [fast]: pipelineRow(fast, { running: true, parentId: 'session-gone-leg', updatedAt: '2026-11-17T06:20:40.000Z' }),
+      [slow]: pipelineRow(slow, { running: true, parentId: conductor, updatedAt: '2026-11-17T06:20:41.000Z' }),
+    }),
+    pipelineSessions: [conductor, fast, slow],
+    sessionId: conductor,
+    nodeOf: { [fast]: 'n-fast', [slow]: 'n-slow' },
+    nodes: {
+      'n-fast': { title: '快工：一张小抄', mode: 'auto' },
+      'n-slow': { title: '慢工：三段小传', mode: 'auto' },
+    },
+    events: { [fast]: [said(1, undefined, '快工的行')], [slow]: [said(2, undefined, '慢工的行')] },
+  })
+  assert.equal(reading.main.id, conductor, `the main window is ${reading.main.id}, not the reader's own conversation`)
+  assert.deepEqual(reading.children.map((w) => w.id), [fast, slow], `the drawn children are ${reading.children.map((w) => w.id)}`)
+  assert.deepEqual(
+    reading.children.map((w) => w.title),
+    ['快工：一张小抄', '慢工：三段小传'],
+    'a parallel leg lost the node nameplate its run note names',
+  )
+  assert.equal(reading.hiddenChildren, 0, 'a drawn leg was counted as one the cap folded away')
+})
+
+test('a record-named leg whose running bit went false is no child window', () => {
+  /* The slow leg's own session reads not running — whatever still moves inside
+     it is another session's bit, and this reading never chases it. The main
+     window's own rule is untouched: the reader's own conversation still wins
+     among the record-named ones, running or not. */
+  const conductor = 'session-conductor'
+  const fast = 'session-fast-leg'
+  const slow = 'session-slow-leg'
+  const reading = readOverview({
+    sessions: snapshot([conductor, fast, slow], {
+      [conductor]: pipelineRow(conductor),
+      [fast]: pipelineRow(fast, { running: true, updatedAt: '2026-11-17T06:20:40.000Z' }),
+      [slow]: pipelineRow(slow, { parentId: conductor, updatedAt: '2026-11-17T06:20:41.000Z' }),
+    }),
+    pipelineSessions: [conductor, fast, slow],
+    sessionId: slow,
+  })
+  assert.equal(reading.main.id, slow, `the main window is ${reading.main.id}, not the reader's own conversation`)
+  assert.deepEqual(reading.children.map((w) => w.id), [fast], `the drawn children are ${reading.children.map((w) => w.id)}`)
+})
+
+/* ---- a window that can say nothing is no window ---------------------------
+ *
+ * The list's running bit alone never stands a window up: a session with no
+ * nameplate word (no node the notes name, no label the list spells) and no row
+ * its own events fold into would draw as a bordered box with an empty head —
+ * the one thing this panel must never invent. One readable half is enough,
+ * either half: a label names the window, rows say what it is doing.
+ */
+
+test('a running session with no readable head and no readable events is a box, not a window', () => {
+  const speechless = readOverview({
+    sessions: snapshot([MAIN, 'c-1', 'c-2'], {
+      [MAIN]: mainRow(MAIN),
+      'c-1': { id: 'c-1', running: true, parentId: MAIN, retainedBy: {} },
+      'c-2': childRow('c-2', MAIN),
+    }),
+  })
+  assert.deepEqual(speechless.children.map((w) => w.id), ['c-2'], 'a headless, eventless box was drawn as a window')
+  assert.equal(speechless.hiddenChildren, 0, 'the box was counted as a window the cap folded away')
+
+  const titled = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], {
+      [MAIN]: mainRow(MAIN),
+      'c-1': { id: 'c-1', running: true, parentId: MAIN, displayTitle: 'the label the list spells', retainedBy: {} },
+    }),
+  })
+  assert.deepEqual(titled.children.map((w) => w.id), ['c-1'], 'a running session with a label but no rows lost its window')
+
+  const spoken = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], {
+      [MAIN]: mainRow(MAIN),
+      'c-1': { id: 'c-1', running: true, parentId: MAIN, retainedBy: {} },
+    }),
+    events: { 'c-1': [said(1, undefined, '它干了什么')] },
+  })
+  assert.deepEqual(spoken.children.map((w) => w.id), ['c-1'], 'a running session with rows but no label lost its window')
+})
+
 /* ---- which rows ---------------------------------------------------------- */
 
 test('a failed tool call folds into a fail row, the reason whole', () => {

@@ -717,6 +717,51 @@ test('the column left the stage: an anchored child draws no window and no line',
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
+test('the rail leaves with the column it indexes: no empty frame stands in the lane on a narrow stage', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('c1', [read('a.ts', 300)])
+  service.set('c2', [read('b.ts', 400)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([
+      { id: 'c1', running: true, title: 'the first child' },
+      { id: 'c2', running: true, title: 'the second child' },
+    ])),
+  })
+  /* The narrow stage again, with two running children: the column leaves, and the rail — two dim
+     bars indexing windows that are not drawn — is the empty frame on the stage's left. It leaves
+     with the column; the stage keeps only the main window and its own blank. */
+  await stageAt(mounted, 640, 480)
+  const { container } = mounted
+  assert.equal(container.querySelectorAll('[data-window]').length, 1, 'the narrow stage drew more than the main window')
+  assert.equal(container.querySelector('.superworker-orail'), null, 'a rail stood for a column that is not there')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a running child with no label and no readable events draws no pane', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  /* c1 can be retained, but its window holds nothing readable and its row spells no label: the box
+     it would draw has no head and nothing to say. c2, labelled, is the control: a head alone is
+     enough for a window to say what it is. */
+  const snap = snapshotOf([
+    { id: 'c1', running: true, title: '' },
+    { id: 'c2', running: true, title: 'the labelled child' },
+  ])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  assert.equal(container.querySelector('[data-window="c1"]'), null, 'a headless, eventless box was drawn as a window')
+  assert.notEqual(container.querySelector('[data-window="c2"]'), null, 'the labelled child lost its window')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
 test('six running children draw five windows and count the one folded away', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
   const children = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'].map((id) => ({ id, running: true, title: `child ${id}` }))
