@@ -348,7 +348,7 @@ export interface OverviewInput {
    * It is the debt a red window is drawn on, and it is narrower than
    * {@link undeliveredSessions} on purpose: a cell nobody has started and nobody holds
    * is the line's next work, not a debt — a conductor waiting for its next dispatch
-   * must not wear the failed glyph. `shelved` cells are not held either; they owe a
+   * must not wear the break's red frame. `shelved` cells are not held either; they owe a
    * person, which is the gate.
    */
   readonly heldSessions?: readonly unknown[] | undefined

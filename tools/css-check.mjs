@@ -573,13 +573,14 @@ const MARKS = [
   { what: 'overview rail bar · an idle child', where: '.superworker-orail b', property: 'background', ink: 'color-mix(in srgb, var(--superworker-ink-1) 26%, transparent)', ground: '--dsw-alias-bg-base', tier: 'B' },
   { what: 'overview rail bar · the lit child', where: '.superworker-orail b.is-on', property: 'background', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-base', tier: 'B' },
   { what: 'overview rail bar · a child someone must move', where: '.superworker-orail b.is-need', property: 'background', ink: 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 70%, transparent)', ground: '--dsw-alias-bg-base', tier: null },
-  { what: 'overview feed row · failed', where: '.superworker-orow.is-fail', property: 'color', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'overview feed row · failed', where: '.superworker-orow.is-fail', property: 'color', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
   /* The completed window's check is a mark the reader resolves on its own, and it is reading ink
-   * on purpose: the success hue does not clear the A floor on the light palette. The failed mark
-   * that replaces it keeps the warn family's convention (the theme's own hue, read for the record).
-   * The running ring's head is the link ink, the same colour the panel's other ring leads with. */
+   * on purpose: the success hue does not clear the A floor on the light palette. A break is the
+   * window's own frame, in the theme's error hue — the one ink this page keeps for a break — read
+   * for the record like the warn family above. The running ring's head is the link ink, the same
+   * colour the panel's other ring leads with. */
   { what: 'overview completed window · the check', where: '.superworker-omark', property: 'color', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-layer-1', tier: 'A' },
-  { what: 'overview completed window · the failed mark', where: '.superworker-omark.is-fail', property: 'color', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'overview broken window · the frame', where: '.superworker-opane.is-broken', property: 'border-color', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-base', tier: null },
   { what: 'overview running window · the ring head', where: '.superworker-oring', property: 'border-top-color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-1', tier: null },
   { what: 'the theme\'s own idle point (the basis of the 1.5 floor)', where: null, property: null, ink: 'var(--dsw-alias-state-idle-primary)', ground: '--dsw-alias-bg-base', tier: null },
 ]

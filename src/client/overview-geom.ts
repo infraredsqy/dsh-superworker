@@ -300,10 +300,10 @@ export function layoutOverview(input: {
 }
 
 /* ---- The marks a window can carry ---------------------------------------- */
-/* One cell, three fillings: the delivered window's check over its body, the broken leg's failed
- * glyph with its one word under it, and the small ring that says the window is still moving, in its
- * head. Sizes and positions are the design's own table, stated here so the drawing reads them and
- * neither the component nor the sheet keeps a copy. */
+/* Two fillings: the delivered window's check over its body, and the small ring that says the window
+ * is still moving, in its head. A break is not a mark — the window's own frame wears it, so the stage
+ * states no box for it. Sizes and positions are the design's own table, stated here so the drawing
+ * reads them and neither the component nor the sheet keeps a copy. */
 
 /** The feed's own insets: the band its rows stand in, and the box a window's mark centres on. */
 export const FEED_LEFT = 24
@@ -312,10 +312,6 @@ export const FEED_RIGHT = 20
 /** The check: the design's 44 square, and the pen that draws it — 4px on screen, stated in the glyph's 12-unit viewBox. */
 export const MARK_CHECK = 44
 export const MARK_CHECK_STROKE = 1.09
-
-/** The mark a window whose last word was a failure wears instead: the panel's own 12-unit glyph at 20, a 2.5px pen. */
-export const MARK_FAIL = 20
-export const MARK_FAIL_STROKE = 1.5
 
 /** The disc of the window's own ground the check stands on, so it never melts into the rows behind it. */
 export const MARK_SCRIM = 108
@@ -342,12 +338,10 @@ export interface OverviewMark {
 }
 
 /**
- * Where a window's mark stands: on the middle of the process band, the band running from the head to
- * the window's own foot. The main window is the only one that is ever marked now, and it reads its
- * head and foot here the same way any box did. The check is 44 and the break's failed glyph 20 —
- * same middle, and this is the one place either size is read, so a window whose record verdict
- * turns from one to the other does not jump its glyph. A box too short or too narrow to hold the
- * mark still states a box inside the pane rather than a negative one.
+ * Where a window's check stands: on the middle of the process band, the band running from the head to
+ * the window's own foot. The main window is the only one that is ever marked, and it reads its head
+ * and foot here the same way any box did. A box too short or too narrow to hold the mark still states
+ * a box inside the pane rather than a negative one.
  */
 export function layoutMark(input: {
   readonly width: number
@@ -369,50 +363,6 @@ export function layoutMark(input: {
     size,
     stroke,
   }
-}
-
-/** The one word a broken window says: the widest it sets in either language, its line, and the
- * ground kept between it and the mark above it. */
-export const BROKEN_WORD_W = 56
-export const BROKEN_WORD_H = 16
-export const BROKEN_WORD_GAP = 4
-
-/** One word's box, in its pane's own coordinates. */
-export interface OverviewWord {
-  readonly left: number
-  readonly top: number
-  readonly width: number
-  readonly height: number
-}
-
-/** The broken leg's drawing: the panel's failed glyph and the one word under it. */
-export interface OverviewBroken {
-  readonly mark: OverviewMark
-  readonly word: OverviewWord
-}
-
-/**
- * Where a broken window's drawing stands: the failed glyph on the process band's middle — the same
- * place a delivered window's check takes, so the verdict turning from one to the other moves no ink
- * — and the one word under it, centred on the glyph. The word sits inside the mark's own scrim,
- * which is why it hangs under rather than beside: a scrim is one disc on the band's middle, and a
- * word outside it would sit on the blurred rows it has to be read against.
- *
- * A pane too small for the pair keeps the word inside its own box rather than stating a box that
- * falls off the bottom; the glyph is the band's, the word follows it.
- */
-export function layoutBroken(input: {
-  readonly width: number
-  readonly height: number
-  readonly head: number
-  readonly foot: number
-}): OverviewBroken {
-  const { width, height, head, foot } = input
-  const mark = layoutMark({ width, height, head, foot, size: MARK_FAIL, stroke: MARK_FAIL_STROKE })
-  const wordW = Math.max(0, Math.min(BROKEN_WORD_W, width))
-  const left = Math.max(0, Math.min(mark.left + Math.round((mark.size - wordW) / 2), width - wordW))
-  const top = Math.max(0, Math.min(mark.top + mark.size + BROKEN_WORD_GAP, height - BROKEN_WORD_H))
-  return { mark, word: { left, top, width: wordW, height: BROKEN_WORD_H } }
 }
 
 /** The running ring's own box: the child's title-line cell, on the same centre the check would take. */

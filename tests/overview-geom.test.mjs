@@ -31,8 +31,6 @@ import {
   MAIN_MAX_W,
   CHILD_FLOOR_W,
   GAP_X_MIN,
-  MARK_FAIL,
-  MARK_FAIL_STROKE,
   PLATE_OUT,
   RAIL_LANE,
   RAIL_LEFT,
@@ -610,37 +608,34 @@ test('the widest feed any stage can stand is the capacity the reading is cut to'
   assert.equal(READING_CAPACITY, worst, `a feed stands ${worst} rows, the reading is cut to ${READING_CAPACITY}`)
 })
 
-/* ---- the two marks a window's head can carry ---------------------------- */
+/* ---- the mark a window's body can carry -------------------------------- */
 
-/** The two window sizes the marks stand on: the main window with its band from 96 to 290, a child from 32 to 130. */
+/** The two window sizes the check stands on: the main window with its band from 96 to 290, a child from 32 to 130. */
 const MARKED = [
   { name: 'main', width: 440, height: 310, head: MAIN_HEAD, foot: MAIN_FOOT },
   { name: 'child', width: 420, height: 142, head: CHILD_HEAD, foot: CHILD_FOOT },
 ]
 
-test("the completed window's mark stands on the process band's middle, whichever size it takes", () => {
+test("the completed window's check stands on the process band's middle, whichever size it takes", () => {
   for (const box of MARKED) {
     /* The band is the process rows' box: from the head to the window's own foot. */
     const bandMiddle = box.head + (box.height - box.foot - box.head) / 2
     const bandMiddleX = (FEED_LEFT + (box.width - FEED_RIGHT)) / 2
-    for (const [size, stroke] of [[MARK_CHECK, MARK_CHECK_STROKE], [MARK_FAIL, MARK_FAIL_STROKE]]) {
-      const mark = layoutMark({ ...box, size, stroke })
-      assert.equal(mark.size, size, `${box.name}: the mark took ${mark.size}, not ${size}`)
-      assert.equal(mark.stroke, stroke, `${box.name}: the mark is stroked ${mark.stroke}, not ${stroke}`)
-      assert.equal(mark.top + size / 2, bandMiddle, `${box.name}: the mark's middle is ${mark.top + size / 2}, the band's is ${bandMiddle}`)
-      assert.equal(mark.left + size / 2, bandMiddleX, `${box.name}: the mark's middle is ${mark.left + size / 2}, the band's is ${bandMiddleX}`)
-      assert.ok(mark.left >= 0 && mark.left + size <= box.width, `${box.name}: the mark runs off the pane's width: ${mark.left}..${mark.left + size}`)
-      assert.ok(mark.top >= 0 && mark.top + size <= box.height, `${box.name}: the mark runs off the pane's height: ${mark.top}..${mark.top + size}`)
-    }
+    const mark = layoutMark({ ...box, size: MARK_CHECK, stroke: MARK_CHECK_STROKE })
+    assert.equal(mark.size, MARK_CHECK, `${box.name}: the mark took ${mark.size}, not ${MARK_CHECK}`)
+    assert.equal(mark.stroke, MARK_CHECK_STROKE, `${box.name}: the mark is stroked ${mark.stroke}, not ${MARK_CHECK_STROKE}`)
+    assert.equal(mark.top + MARK_CHECK / 2, bandMiddle, `${box.name}: the mark's middle is ${mark.top + MARK_CHECK / 2}, the band's is ${bandMiddle}`)
+    assert.equal(mark.left + MARK_CHECK / 2, bandMiddleX, `${box.name}: the mark's middle is ${mark.left + MARK_CHECK / 2}, the band's is ${bandMiddleX}`)
+    assert.ok(mark.left >= 0 && mark.left + MARK_CHECK <= box.width, `${box.name}: the mark runs off the pane's width: ${mark.left}..${mark.left + MARK_CHECK}`)
+    assert.ok(mark.top >= 0 && mark.top + MARK_CHECK <= box.height, `${box.name}: the mark runs off the pane's height: ${mark.top}..${mark.top + MARK_CHECK}`)
   }
 })
 
-test('the two pens read as the design table\'s pixels on screen', () => {
+test("the check's pen reads as the design table's pixels on screen", () => {
   /* The glyph is drawn in a 12-unit box, so the stroke that lands on screen is stroke × size / 12:
-   * the check's 4px at 44 and the failed mark's 2.5px at 20. */
+   * the check's 4px at 44. */
   const pen = (size, stroke) => (stroke * size) / 12
   assert.ok(Math.abs(pen(MARK_CHECK, MARK_CHECK_STROKE) - 4) < 0.05, `the check's pen is ${pen(MARK_CHECK, MARK_CHECK_STROKE)}px, not 4px`)
-  assert.equal(pen(MARK_FAIL, MARK_FAIL_STROKE), 2.5, `the failed mark's pen is ${pen(MARK_FAIL, MARK_FAIL_STROKE)}px, not 2.5px`)
 })
 
 test("the running ring turns in the child's title-line cell, on the same centre a check would take", () => {

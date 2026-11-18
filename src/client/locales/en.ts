@@ -220,10 +220,9 @@ export const en: Readonly<Record<WordKey, string>> = {
   'overview.row.dispatch': 'dispatches',
   'overview.row.fail': 'fails',
   'overview.row.tool': 'calls',
-  /* The one word a broken window says, and the reasons a conversation's last turn ended with — each
-   * carried verbatim off DSH's own `turn/end`, so the reader is told how it stopped rather than left
-   * to guess. `other` is also the word for an ending the log does not carry. */
-  'overview.state.broken': 'Broken',
+  /* The reasons a conversation's last turn ended with — each carried verbatim off DSH's own
+   * `turn/end`, so the reader is told how it stopped rather than left to guess. `other` is also the
+   * word for an ending the log does not carry. */
   'overview.ending.completed': 'It closed the turn itself without handing the work in',
   'overview.ending.user': 'Stopped by hand',
   'overview.ending.disposed': 'The host disposed of it',

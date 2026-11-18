@@ -506,7 +506,7 @@ test('the main window whose session has stopped: veiled rows and the check, noth
   const mark = main.querySelector('.superworker-omark')
   assert.notEqual(mark, null, 'the stopped window wears no check')
   assert.notEqual(mark.querySelector('svg'), null, 'the check is not drawn')
-  assert.equal(mark.className.includes('is-fail'), false, 'a clean stop wears the failed mark')
+  assert.equal(main.className.includes('is-broken'), false, 'a clean stop wears the break’s frame')
   assert.equal(main.querySelector('.superworker-oring'), null, 'the main window turns a ring')
   assert.equal(main.className.includes('is-wait'), false, 'a stopped window no gate holds still waits')
 
@@ -686,12 +686,11 @@ test('a leg that died owing work keeps its window, and that window is the broken
    * a hover full of paths over a long thought is noise on a page read at a glance. */
   assert.equal(ghost.querySelector('.superworker-orow').getAttribute('title'), null, 'a row carries its full text as a hover again')
 
-  /* The broken drawing: the panel's failed glyph and the one word, with the reason on its title. */
-  const mark = ghost.querySelector('.superworker-omark')
-  assert.equal(mark !== null, true, 'the dead leg wears no failed glyph')
-  assert.ok(mark.className.includes('is-fail'), 'the dead leg wears the finished check instead')
-  assert.equal(mark.getAttribute('title'), zh['overview.ending.user'], 'the mark does not say why the conversation stopped')
-  assert.equal(ghost.querySelector('.superworker-omark-w')?.textContent, zh['overview.state.broken'], 'the dead leg says no word')
+  /* The break is the frame's own ink, and the frame is the only thing that says it: no glyph, no word
+   * inside the window, and the reason it stopped on the frame's title. */
+  assert.ok(ghost.className.includes('is-broken'), 'the dead leg’s frame says nothing about the work it still owes')
+  assert.equal(ghost.querySelector('.superworker-omark'), null, 'the dead leg wears a mark inside a frame that already says it')
+  assert.equal(ghost.getAttribute('title'), zh['overview.ending.user'], 'the frame does not say why the conversation stopped')
 
   /* It is not moving any more, so the ring is gone with the motion. */
   assert.equal(ghost.querySelector('.superworker-oring'), null, 'a stopped leg still turns its ring')

@@ -165,6 +165,17 @@
    * the rest. It is the row's own ground, so a waiting window reads amber without shouting. */
   background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, var(--dsw-alias-bg-layer-1));
 }
+/* Broken — work is owed and nobody is working it. The frame itself says so, in the one ink this page
+ * keeps for a break: a border is read before any glyph, so the window needs no mark and no word
+ * inside it, and the two verdicts a frame can carry are told apart by ink alone — amber for the gate
+ * that waits on a person, red for the leg that stopped owing the line its work. It stands a step
+ * wider than the hairline and at full strength, because this is the one reading on the stage that
+ * has to be seen before anything is read. It does not breathe: the gate breathes because it is a
+ * question still open, and a break is an answer nobody gave. */
+.superworker-page .superworker-opane.is-broken {
+  border-width: 1px;
+  border-color: var(--dsw-alias-state-error-primary);
+}
 /* The window this machine can open answers a press: the cursor says so on a desk, and
  * `touch-action: manipulation` is the touch half — without it WebKit holds a tap on a plain box back
  * to see whether a double-tap zoom is coming, and the activation lands late or not at all. Nothing
@@ -365,8 +376,11 @@
 .superworker-page .superworker-orow:last-child {
   color: var(--superworker-ink-2);
 }
+/* A failed call in the feed wears the same ink the window's own frame wears when the line breaks:
+ * one ink for a break, wherever it is read. The amber is kept for the gate — a person being owed —
+ * so neither colour has to be read twice. */
 .superworker-page .superworker-orow.is-fail {
-  color: var(--dsw-alias-state-warn-primary);
+  color: var(--dsw-alias-state-error-primary);
 }
 .superworker-page .superworker-orow-t {
   flex: 1 1 auto;
@@ -413,24 +427,22 @@
   unicode-bidi: isolate;
 }
 
-/* ---- The main window's verdict mark --------------------------------------- */
-/* The record's verdict, over the middle of the process band: the check for work handed in, the
- * panel's existing failed glyph for a broken leg. Its box, its size and its pen are the pane's own
- * inline numbers, from `overview-geom.ts`; this sheet draws only the ink. Under it stands a disc of
- * the window's own ground, so a 44px mark never melts into the blurred rows behind it (the size is
- * written in as `--superworker-seal-scrim`, the same way the field hands in its row height).
+/* ---- The main window's check --------------------------------------------- */
+/* The record's verdict, over the middle of the process band: the check for work handed in. Its box,
+ * its size and its pen are the pane's own inline numbers, from `overview-geom.ts`; this sheet draws
+ * only the ink. Under it stands a disc of the window's own ground, so a 44px mark never melts into
+ * the blurred rows behind it (the size is written in as `--superworker-seal-scrim`, the same way the
+ * field hands in its row height).
  *
- * The ink is reading ink for the check, never the success green: green reaches only 2.3:1 on the
- * light palette, under this panel's own 3:1 floor for a mark the reader resolves on its own, while
- * reading ink clears it in both. A broken leg wears the warn ink instead — the same ink the fail
- * rows in the feed already wear — because shape first, colour second, and a break is a case a
- * person has to move on. Only the main window is ever marked: a child that ended has left the page
- * by its leave animation.
+ * The ink is reading ink, never the success green: green reaches only 2.3:1 on the light palette,
+ * under this panel's own 3:1 floor for a mark the reader resolves on its own, while reading ink
+ * clears it in both. A break is not a mark at all — the window's own frame wears it (`.is-broken`) —
+ * because a break is a case a person has to move on, and it must be seen before anything is read.
+ * Only the main window is ever checked: a child that delivered has nothing left to stand here for.
  *
- * The mark answers the pointer, and only for its `title`: the reason a conversation ended is said
- * in words on hover, and a mark that swallowed the pointer would have no way to say it. It swallows
- * nothing else — the mark is a child of the window, so a press on it is a press on the window, and
- * the hover title still has its own element to be hovered on. */
+ * The check swallows no pointer: it is a child of the window, so a press on it is a press on the
+ * window, and the reason a broken frame stopped is the frame's own title, not a title of the mark's.
+ */
 .superworker-page .superworker-omark {
   position: absolute;
   display: block;
@@ -458,26 +470,6 @@
   display: block;
   width: 100%;
   height: 100%;
-}
-.superworker-page .superworker-omark.is-fail {
-  color: var(--dsw-alias-state-warn-primary);
-}
-
-/* ---- The one word a broken window says ------------------------------------ */
-/* Under the failed glyph, centred on it, inside the mark's own scrim and in the same warn ink: the
- * glyph says "stopped badly" and this says which leg broke, in the one word the reader has for it.
- * Its box is the geometry's (`BROKEN_WORD_*`), written inline like every other box on the stage; it
- * is the mark's caption, so it never moves on its own, and it carries the same `title` the mark
- * does. */
-.superworker-page .superworker-omark-w {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font: var(--dsw-font-xxs-12);
-  font-weight: 500;
-  color: var(--dsw-alias-state-warn-primary);
-  white-space: nowrap;
 }
 
 /* ---- A running window's ring ---------------------------------------------- */
