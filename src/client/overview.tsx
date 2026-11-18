@@ -187,7 +187,9 @@ function FinishedMark(props: { readonly failed: boolean; readonly stroke: number
   )
 }
 
-/** One window's feed: the rows it holds, newest at the bottom, the top fading when the room ran out. */
+/** One window's feed: the rows it holds, newest at the bottom, the top fading when the room ran out.
+ * A live row is the streaming step's own tail: it redraws at the animation frame, and its clip is
+ * the sheet's head-crop — the newest words stay on the line's end. */
 function Feed(props: {
   readonly window: OverviewWindow
   /** How many rows the box has room for; past it the top row fades out. */
@@ -209,11 +211,15 @@ function Feed(props: {
       {rows.map((row, at) => (
         <div
           key={at}
-          className={`superworker-orow is-${row.kind}${at === rows.length - 1 && props.fresh ? ' is-fresh' : ''}`}
+          className={`superworker-orow is-${row.kind}${row.live === true ? ' is-live' : ''}${at === rows.length - 1 && props.fresh ? ' is-fresh' : ''}`}
           title={row.full}
         >
           <KindMark kind={row.kind} />
-          <span className="superworker-orow-t">{`${t(ROW_WORDS[row.kind])} · ${row.text}`}</span>
+          <span className="superworker-orow-t">
+            {row.live === true
+              ? <span className="superworker-orow-live">{`${t(ROW_WORDS[row.kind])} · ${row.text}`}</span>
+              : `${t(ROW_WORDS[row.kind])} · ${row.text}`}
+          </span>
         </div>
       ))}
     </div>

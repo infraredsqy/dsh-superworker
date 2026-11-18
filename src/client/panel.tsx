@@ -187,9 +187,12 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
    * empty stage would say the wrong one of its three sentences for a beat and take it back. */
   const [sessionsRead, setSessionsRead] = React.useState(false)
   /* The session-event windows behind the overview: one external store, read the same way every
-   * pushed state here is read. Absent, every window simply draws no rows. */
+   * pushed state here is read — its durable events and, beside them, the windows' transient live
+   * chunks (the streaming step's own half, redrawn at the animation frame by the forwarding half).
+   * Absent, every window simply draws no rows. */
   const windows = props.windows ?? NO_WINDOWS
   const events = React.useSyncExternalStore(windows.subscribe, windows.getSnapshot, windows.getSnapshot)
+  const live = React.useSyncExternalStore(windows.subscribe, windows.getLive, windows.getLive)
   /* Which moment the read happened at: fixed on the fetch beat. Everything displays by it — the
    * reading already carries this moment; "now" is never fetched separately. */
   const [at, setAt] = React.useState<Date>(() => new Date())
@@ -347,13 +350,15 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
   }, [nodeOf, project])
 
   /* The overview's reading at this beat: which windows from the session list the browser already
-   * holds, which rows from the event windows `windows` holds open, which nameplate material from
-   * the record. Which conversation is the main window is decided by the pipeline's own record: the
-   * sessions its node notes name are the only ones this pane may draw, and this panel's own session
-   * wins among them. DSH's `retainedBy.mainView` is deliberately not trusted here — it marks
-   * whichever conversation the browser holds open, and an unrelated old one carrying it is exactly
-   * how a foreign conversation got drawn. The rows ride a capacity — what the tallest feed could
-   * ever stand; whatever a smaller box cannot show is the pane's fade, not a scrollbar. */
+   * holds, which rows from the event windows `windows` holds open — settled rows from the durable
+   * log, and the streaming step's live tails from its transient chunks — and which nameplate
+   * material from the record. Which conversation is the main window is decided by the pipeline's
+   * own record: the sessions its node notes name are the only ones this pane may draw, and this
+   * panel's own session wins among them. DSH's `retainedBy.mainView` is deliberately not trusted
+   * here — it marks whichever conversation the browser holds open, and an unrelated old one
+   * carrying it is exactly how a foreign conversation got drawn. The rows ride a capacity — what
+   * the tallest feed could ever stand; whatever a smaller box cannot show is the pane's fade, not
+   * a scrollbar. */
   const overview = React.useMemo((): OverviewReading | null => {
     if (reading === null) return null
     return readOverview({
@@ -361,12 +366,13 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       sessionId,
       pipelineSessions: Object.values(notes),
       events,
+      live,
       nodeOf,
       nodes: reading.nodes,
       capacity: READING_CAPACITY,
       waitingSessions,
     })
-  }, [reading, events, nodeOf, props.sessions, sessionId, notes, waitingSessions])
+  }, [reading, events, live, nodeOf, props.sessions, sessionId, notes, waitingSessions])
 
   /* The overview's empty stage: the record is in hand and yet no window stands. Which of the three
    * it is is what the stage says — a workspace with no node at all, one whose record names no

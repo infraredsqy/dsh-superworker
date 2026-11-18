@@ -941,3 +941,115 @@ test('an unreadable dispatch anchors nothing: still in flight, or answered by a 
   )
   assert.equal('dispatchCallId' in isError.children[0], false)
 })
+
+/* ---- the live step's tails -------------------------------------------------
+ *
+ * While a step streams, the transient live chunks the caller hands over draw
+ * at most two rows — the thinking tail, then the spoken tail — each the live
+ * buffer's newest slice, cut to a small tail and moving with the stream. They
+ * hang after the settled rows, and the step's message settling folds them away
+ * into the ordinary rows. The settled rows' shape does not move.
+ */
+
+/** One live chunk, the way DSH's transient entries carry it. */
+function liveChunk(type, delta, attemptId = 'attempt-1') {
+  return { type: 'assistant/live-chunk', time: 1, data: { attemptId, chunk: { type, text: delta } } }
+}
+
+/** One child streaming under the main session. */
+function streamed(durable, live, extra = {}) {
+  return readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN) }),
+    events: { 'c-1': durable },
+    ...(live === undefined ? {} : { live: { 'c-1': live } }),
+    ...extra,
+  })
+}
+
+test('a streaming step draws at most two tails, after the settled rows', () => {
+  const reading = streamed(
+    [call(1, 'call-1', 'read', { file_path: 'a.ts' })],
+    [
+      /* Tool arguments stream the same way and read to nothing here. */
+      { type: 'assistant/live-chunk', time: 1, data: { attemptId: 'attempt-1', chunk: { type: 'tool-call-delta', index: 0, id: 't1', argumentsDelta: '{"a":1}' } } },
+      liveChunk('reasoning-delta', '先读先例，'),
+      liveChunk('reasoning-delta', '再比对拼写。'),
+      liveChunk('text-delta', '条目级合并要认出'),
+    ],
+  )
+  const rows = reading.children[0].rows
+  assert.deepEqual(rows.map((r) => r.kind), ['read', 'think', 'output'], 'the tails did not hang after the settled rows in order')
+  assert.deepEqual(rows.map((r) => r.live), [undefined, true, true], 'the tails do not read as live rows, or the settled row does')
+  assert.equal(rows[1].text, '先读先例，再比对拼写。')
+  assert.equal(rows[2].text, '条目级合并要认出')
+  /* Each tail carries its own slice as its whole content: a live row keeps no "full" copy for a tooltip to churn per frame. */
+  assert.equal(rows[1].full, rows[1].text)
+})
+
+test('a long line keeps only its tail: the newest characters, never half a glyph', () => {
+  const spoken = 'x'.repeat(200) + '最新的一小段'
+  const reading = streamed([], [liveChunk('text-delta', spoken)])
+  const tail = reading.children[0].rows[0].text
+  assert.equal(tail, spoken.slice(-120), 'the tail is not the buffer\'s newest slice')
+  assert.ok(tail.endsWith('最新的一小段'), 'the tail lost its newest words')
+
+  /* A slice that lands between the two halves of a surrogate pair drops the orphan, and keeps a whole pair. */
+  const split = 'a' + '😀' + 'b'.repeat(119)
+  assert.equal(streamed([], [liveChunk('text-delta', split)]).children[0].rows[0].text, 'b'.repeat(119))
+  const whole = 'a'.repeat(119) + '😀'
+  assert.equal(streamed([], [liveChunk('text-delta', whole)]).children[0].rows[0].text, 'a'.repeat(118) + '😀')
+})
+
+test('the tail follows the newest line, and a trailing break falls back to the finished one', () => {
+  const moved = streamed([], [liveChunk('reasoning-delta', '第一行已经写完。\n第二行正在写')])
+  assert.equal(moved.children[0].rows[0].text, '第二行正在写', 'the tail did not follow the line break')
+  const trailing = streamed([], [liveChunk('reasoning-delta', '刚写完的一行\n')])
+  assert.equal(trailing.children[0].rows[0].text, '刚写完的一行', 'a trailing break blanked the row')
+  const collapsed = streamed([], [liveChunk('text-delta', '词  之间\t的空白收拢')])
+  assert.equal(collapsed.children[0].rows[0].text, '词 之间 的空白收拢')
+})
+
+test('the step settling folds the tails away into the ordinary rows', () => {
+  const durable = [said(1, '先读先例。', '条目级合并要认出插件自己声明的域。覆盖和缺省分开存。')]
+  const streaming = streamed(
+    durable,
+    [liveChunk('reasoning-delta', '先读先例的最后一小段'), liveChunk('text-delta', '覆盖和缺省分开存的最后一小段')],
+  )
+  assert.deepEqual(
+    streaming.children[0].rows.map((r) => [r.kind, r.live]),
+    [['think', undefined], ['output', undefined], ['think', true], ['output', true]],
+    'the tails did not hang after the settled rows, or were not live',
+  )
+  /* The chunks retired, the same conversation folds the old way: first-sentence rows, nothing live. */
+  const settled = streamed(durable)
+  assert.deepEqual(
+    settled.children[0].rows.map((r) => r.text),
+    ['先读先例。', '条目级合并要认出插件自己声明的域。'],
+  )
+  assert.ok(settled.children[0].rows.every((r) => r.live === undefined), 'a settled row carried the live mark')
+})
+
+test('a retry starts the tails over: the newest attempt is the one read', () => {
+  const reading = streamed([], [
+    liveChunk('text-delta', '旧的一次尝试写到一半', 'attempt-1'),
+    liveChunk('text-delta', '新的一次从头写', 'attempt-2'),
+  ])
+  assert.deepEqual(reading.children[0].rows.map((r) => r.text), ['新的一次从头写'])
+})
+
+test('chunks that say nothing draw no tail', () => {
+  const reading = streamed([], [
+    liveChunk('text-delta', '   '),
+    liveChunk('text-delta', '\n\t\n'),
+    { type: 'assistant/live-chunk', time: 1, data: { attemptId: 'attempt-1', chunk: { type: 'finish', reason: 'stop' } } },
+  ])
+  assert.deepEqual(reading.children[0].rows, [])
+})
+
+test("the main window draws the same tails off its own conversation's chunks", () => {
+  const reading = readOverview({
+    sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN, { running: true }) }),
+    live: { [MAIN]: [liveChunk('text-delta', '正在说的一句话')] },
+  })
+  assert.deepEqual(reading.main.rows.map((r) => [r.kind, r.text]), [['output', '正在说的一句话']])
+})

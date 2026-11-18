@@ -5,12 +5,16 @@
  * same layer every conversation view reads through. This file forwards that service to the panel
  * under a narrow face: `watch` names the sessions whose windows the overview holds open (the main
  * conversation, the children still running, and the finished children the reading still draws),
- * `getSnapshot` hands the durable events back keyed by session. The service arrives late on some
- * deployments, so the forwarding is written the way the workspace list's is: adopt once, tell the
- * listeners, and until then serve one stable empty snapshot.
+ * `getSnapshot` hands the durable events back keyed by session, and `getLive` hands the window's
+ * transient live chunks back the same way — DSH's own `assistant/live-chunk` presentation, kept
+ * apart from the durable log because they are never history. The live chunks are the high-rate
+ * half: one redraw follows the animation frame, not the chunk — the same cadence DSH's
+ * conversation half publishes them at — while a durable event publishes on the spot, taking any
+ * pending frame with it (a settlement retires the chunks it settles). The service arrives late on
+ * some deployments, so the forwarding is written the way the workspace list's is: adopt once, tell
+ * the listeners, and until then serve one stable empty snapshot.
  *
- * Only durable events come through — a live chunk is presentation for a view that owns it, never
- * history. Everything is read defensively off the shapes DSH actually ships; nothing here throws.
+ * Everything is read defensively off the shapes DSH actually ships; nothing here throws.
  */
 import { injectAt, type ClientContext } from './context.ts'
 import { serviceAt } from './data.ts'
@@ -24,6 +28,8 @@ import type { OverviewEvent } from '../model/index.ts'
  */
 export interface SessionWindows {
   getSnapshot(): Readonly<Record<string, readonly OverviewEvent[]>>
+  /** The transient live chunks, keyed by session id: the streaming step's own half of the window. */
+  getLive(): Readonly<Record<string, readonly OverviewEvent[]>>
   subscribe(listener: () => void): () => void
   watch(ids: readonly string[]): void
 }
@@ -34,6 +40,7 @@ const EMPTY: Readonly<Record<string, readonly OverviewEvent[]>> = Object.freeze(
 /** The face a deployment without the service serves: nothing held, nobody notified. */
 export const NO_WINDOWS: SessionWindows = {
   getSnapshot: () => EMPTY,
+  getLive: () => EMPTY,
   subscribe: () => () => undefined,
   watch: () => undefined,
 }
@@ -45,28 +52,48 @@ interface Hold {
   release?: (() => void) | undefined
   off?: (() => void) | undefined
   events: readonly OverviewEvent[]
+  live: readonly OverviewEvent[]
 }
 
-/** What one durable entry carries; live chunks carry `transient` and stop here. */
-function readWindow(source: unknown): readonly OverviewEvent[] {
+/** One window read apart: the durable log, and the transient live chunks beside it. */
+interface WindowRead {
+  readonly events: readonly OverviewEvent[]
+  readonly live: readonly OverviewEvent[]
+}
+
+/** Whether two forwarded lists hold the same entries in the same order — the test that keeps an unchanged window from asking for a redraw. */
+function sameEvents(left: readonly OverviewEvent[], right: readonly OverviewEvent[]): boolean {
+  if (left === right) return true
+  if (left.length !== right.length) return false
+  for (let at = 0; at < left.length; at++) {
+    if (left[at] !== right[at]) return false
+  }
+  return true
+}
+
+/** What one window carries: durable entries forward whole; live chunks ride `transient` and land in their own list, never the durable one. */
+function readWindow(source: unknown): WindowRead {
   const read = (source as { getSnapshot?: unknown } | null | undefined)?.getSnapshot
-  if (typeof read !== 'function') return EMPTY_EVENTS
+  if (typeof read !== 'function') return { events: EMPTY_EVENTS, live: EMPTY_EVENTS }
   let held: unknown
   try {
     held = (read as () => unknown).call(source)
   } catch {
-    return EMPTY_EVENTS
+    return { events: EMPTY_EVENTS, live: EMPTY_EVENTS }
   }
   const entries = (held as { entries?: unknown } | null | undefined)?.entries
-  if (!Array.isArray(entries)) return EMPTY_EVENTS
+  if (!Array.isArray(entries)) return { events: EMPTY_EVENTS, live: EMPTY_EVENTS }
   const events: OverviewEvent[] = []
+  const live: OverviewEvent[] = []
   for (const entry of entries) {
-    if (entry === null || typeof entry !== 'object' || (entry as { type?: unknown }).type !== 'event') continue
+    if (entry === null || typeof entry !== 'object') continue
     const event = (entry as { event?: unknown }).event
     if (event === null || typeof event !== 'object' || typeof (event as { type?: unknown }).type !== 'string') continue
-    events.push(event as OverviewEvent)
+    const kind = (entry as { type?: unknown }).type
+    if (kind === 'transient') live.push(event as OverviewEvent)
+    else if (kind === 'event') events.push(event as OverviewEvent)
   }
-  return events
+  return { events, live }
 }
 
 /**
@@ -82,16 +109,59 @@ export function sessionWindowsAt(owner: unknown): SessionWindows | undefined {
 
   const holds = new Map<string, Hold>()
   const listeners = new Set<() => void>()
-  let snapshot = EMPTY
-  let dirty = false
+  let eventsSnapshot = EMPTY
+  let liveSnapshot = EMPTY
+  let dirtyEvents = false
+  let dirtyLive = false
+  /* The pending live frame, when one is: further chunks ask for nothing while it stands. */
+  let frame: number | undefined
 
   const publish = (): void => {
-    if (!dirty) return
-    const next: Record<string, readonly OverviewEvent[]> = {}
-    for (const [id, hold] of holds) next[id] = hold.events
-    snapshot = next
-    dirty = false
+    if (!dirtyEvents && !dirtyLive) return
+    if (dirtyEvents) {
+      const next: Record<string, readonly OverviewEvent[]> = {}
+      for (const [id, hold] of holds) next[id] = hold.events
+      eventsSnapshot = next
+      dirtyEvents = false
+    }
+    if (dirtyLive) {
+      const next: Record<string, readonly OverviewEvent[]> = {}
+      for (const [id, hold] of holds) next[id] = hold.live
+      liveSnapshot = next
+      dirtyLive = false
+    }
     for (const listener of listeners) listener()
+  }
+
+  /** Publish on the spot, taking a pending live frame with it: a durable event is a settlement, and the chunks it retires never wait behind a frame. */
+  const publishNow = (): void => {
+    if (frame !== undefined) {
+      if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame)
+      frame = undefined
+    }
+    publish()
+  }
+
+  /**
+   * The live chunks' beat: one redraw follows the animation frame, not the chunk — the cadence
+   * DSH's conversation half publishes live chunks at. While a frame is pending, further chunks
+   * ask for nothing; the pending frame already carries them.
+   */
+  const scheduleLive = (): void => {
+    if (frame !== undefined) return
+    if (typeof requestAnimationFrame !== 'function') {
+      publish()
+      return
+    }
+    /* Cross three paint opportunities before the redraw, exactly DSH's own cadence. */
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
+          frame = undefined
+          publish()
+        })
+      })
+    })
   }
 
   const open = (id: string): void => {
@@ -111,17 +181,30 @@ export function sessionWindowsAt(owner: unknown): SessionWindows | undefined {
       release: typeof reference.release === 'function' ? () => reference?.release?.() : undefined,
       off: undefined,
       events: EMPTY_EVENTS,
+      live: EMPTY_EVENTS,
     }
     const source = reference.binding?.eventSource
     const read = (source as { getSnapshot?: unknown } | null | undefined)?.getSnapshot
     const subscribe = (source as { subscribe?: unknown } | null | undefined)?.subscribe
     if (typeof read === 'function' && typeof subscribe === 'function') {
-      hold.events = readWindow(source)
+      const first = readWindow(source)
+      hold.events = first.events
+      hold.live = first.live
       try {
         const off = (subscribe as (listener: () => void) => unknown).call(source, () => {
-          hold.events = readWindow(source)
-          dirty = true
-          publish()
+          const next = readWindow(source)
+          const eventsMoved = !sameEvents(hold.events, next.events)
+          const liveMoved = !sameEvents(hold.live, next.live)
+          hold.events = next.events
+          hold.live = next.live
+          if (eventsMoved) {
+            dirtyEvents = true
+            dirtyLive = true
+            publishNow()
+          } else if (liveMoved) {
+            dirtyLive = true
+            scheduleLive()
+          }
         })
         hold.off = typeof off === 'function' ? (off as () => void) : undefined
       } catch {
@@ -129,11 +212,13 @@ export function sessionWindowsAt(owner: unknown): SessionWindows | undefined {
       }
     }
     holds.set(id, hold)
-    dirty = true
+    dirtyEvents = true
+    dirtyLive = true
   }
 
   const face: SessionWindows = {
-    getSnapshot: () => snapshot,
+    getSnapshot: () => eventsSnapshot,
+    getLive: () => liveSnapshot,
     subscribe(listener) {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
@@ -149,13 +234,14 @@ export function sessionWindowsAt(owner: unknown): SessionWindows | undefined {
           /* Releasing is best-effort: the window drops from the snapshot either way. */
         }
         holds.delete(id)
-        dirty = true
+        dirtyEvents = true
+        dirtyLive = true
       }
       for (const id of ids) {
         if (typeof id !== 'string' || id.length === 0 || holds.has(id)) continue
         open(id)
       }
-      publish()
+      publishNow()
     },
   }
   return face
@@ -189,6 +275,7 @@ export function createSessionWindows(ctx: unknown): SessionWindows {
   }
   return {
     getSnapshot: () => face?.getSnapshot() ?? EMPTY,
+    getLive: () => face?.getLive() ?? EMPTY,
     subscribe(listener) {
       listeners.add(listener)
       if (listeners.size === 1 && face !== undefined) {

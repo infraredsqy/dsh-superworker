@@ -337,6 +337,25 @@
   white-space: nowrap;
 }
 
+/* ---- The live step's tail rows -------------------------------------------- */
+/* While a step streams, its thinking and its words hang after the settled rows
+ * as two tail rows, each the buffer's newest slice, redrawn at the animation
+ * frame the forwarding half publishes at. Whatever still does not fit the row
+ * is cropped at the head, not the tail — the newest words are the whole point
+ * of a tail row — so the row's own clip runs the other way (`direction: rtl`,
+ * the ellipsis landing at the head) while `text-align` keeps the line aligned
+ * with the settled rows. The tail span isolates its own left-to-right run, so
+ * content the buffer happens to carry reads in its own order. The row never
+ * wraps: one line, whatever the buffer is doing. */
+.superworker-page .superworker-orow.is-live .superworker-orow-t {
+  direction: rtl;
+  text-align: left;
+}
+.superworker-page .superworker-orow.is-live .superworker-orow-live {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
 /* ---- The finished main window's mark -------------------------------------- */
 /* The check, over the middle of the process band. Its box, its size and its pen are the pane's own
  * inline numbers, from `overview-geom.ts`; this sheet draws only the ink. Under it stands a disc of

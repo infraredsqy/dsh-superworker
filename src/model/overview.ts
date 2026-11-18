@@ -110,6 +110,12 @@ export interface OverviewRow {
   readonly full: string
   /** Which tool call this row folds: DSH's own `callId` carried out verbatim; a row that folds no call carries none. */
   readonly callId?: string
+  /**
+   * The streaming step's own tail: this row is a live buffer's newest slice, cut anew as the step
+   * streams and redrawn at the animation frame, and it folds away when the step's message settles
+   * into the ordinary rows above it. Absent on a settled row.
+   */
+  readonly live?: boolean
 }
 
 /** One window on the overview. */
@@ -187,6 +193,15 @@ export interface OverviewInput {
   readonly sessions: OverviewSnapshot
   /** Each session's own events, keyed by session id; a session with none here draws none. */
   readonly events?: Readonly<Record<string, readonly OverviewEvent[]>>
+  /**
+   * Each session's transient live chunks, keyed by session id — DSH's own
+   * `assistant/live-chunk` entries passed through verbatim by the forwarding
+   * half. These are the conversation's Client-only presentation, never history:
+   * they fold into the streaming step's tail rows and nothing else, and the
+   * step's settlement retires them, so a session with none here (or none left)
+   * draws no tail at all.
+   */
+  readonly live?: Readonly<Record<string, readonly OverviewEvent[]>>
   /** Which node each session works, keyed by session id — folded by the caller out of the records' own session notes, not re-read here. */
   readonly nodeOf?: Readonly<Record<string, string>>
   /** The nodes' records verbatim: a window's nameplate reads its title and its two readings here. */
@@ -399,6 +414,88 @@ function pushRow(rows: OverviewRow[], kind: OverviewRowKind, full: string | unde
   const cut = firstSentence(full)
   if (cut.length === 0) return
   rows.push({ kind, text: cut, full })
+}
+
+/* ---- the live step's tails --------------------------------------------------
+ *
+ * A conversation streams its step out chunk by chunk, and the reader watching
+ * from the overview reads "alive" off a row that moves with it: the newest
+ * slice of what the step is writing now, shown at the line's end. DSH's own
+ * conversation half does the same dance — live chunks as Client-only transient
+ * events, redraws published at the animation frame, the step's settlement
+ * retiring the chunks — and these tails are this panel's reading of those
+ * entries, never a second stream of its own.
+ */
+
+/**
+ * How much of the live buffer a tail row keeps. The cut bounds the string the
+ * row redraws every frame; what still does not fit the drawn row is the
+ * drawing half's head crop, not this number's business.
+ */
+const LIVE_TAIL_LIMIT = 120
+
+/**
+ * The buffer's tail: its newest line, whitespace runs collapsed, cut to the
+ * newest characters. A line break is where the newest content starts, so an
+ * earlier finished line yields to the one being written — and a trailing break
+ * (the newest line not yet begun) yields back to the line just finished, so
+ * the row never goes blank between the two.
+ */
+function tailOf(buffer: string, limit: number): string {
+  let cut = buffer.length
+  while (cut > 0) {
+    const start = buffer.lastIndexOf('\n', cut - 1) + 1
+    const line = buffer.slice(start, cut).replace(/\s+/gu, ' ').trim()
+    if (line.length > 0) {
+      if (line.length <= limit) return line
+      const tail = line.slice(-limit)
+      /* A cut through a surrogate pair would print half a glyph: an orphaned
+       * half at the slice's head is dropped, a whole pair kept. */
+      const head = tail.charCodeAt(0)
+      const next = tail.charCodeAt(1)
+      const orphaned = head >= 0xd800 && head <= 0xdbff
+        ? !(next >= 0xdc00 && next <= 0xdfff)
+        : head >= 0xdc00 && head <= 0xdfff
+      return orphaned ? tail.slice(1) : tail
+    }
+    cut = start === 0 ? 0 : start - 1
+  }
+  return ''
+}
+
+/**
+ * The rows a window draws while its step streams: at most two, the thinking
+ * tail and then the spoken tail, each the newest slice of that buffer. A
+ * buffer that says nothing (whitespace, tool arguments, a chunk the fold does
+ * not read) draws no row; a retry's chunks arrive under a new attempt id, and
+ * the tails follow the newest attempt rather than mixing the two.
+ */
+function liveRowsOf(events: readonly OverviewEvent[] | undefined): readonly OverviewRow[] {
+  let think = ''
+  let spoken = ''
+  let attempt: unknown
+  for (const event of events ?? []) {
+    if (text(event.type) !== 'assistant/live-chunk') continue
+    const data = asRecord(event.data)
+    if (data === undefined) continue
+    if (data.attemptId !== attempt) {
+      attempt = data.attemptId
+      think = ''
+      spoken = ''
+    }
+    const chunk = asRecord(data.chunk)
+    const kind = text(chunk?.type)
+    const delta = typeof chunk?.text === 'string' ? chunk.text : ''
+    if (delta.length === 0) continue
+    if (kind === 'reasoning-delta') think += delta
+    else if (kind === 'text-delta') spoken += delta
+  }
+  const rows: OverviewRow[] = []
+  const thinkTail = tailOf(think, LIVE_TAIL_LIMIT)
+  if (thinkTail.length > 0) rows.push({ kind: 'think', text: thinkTail, full: thinkTail, live: true })
+  const spokenTail = tailOf(spoken, LIVE_TAIL_LIMIT)
+  if (spokenTail.length > 0) rows.push({ kind: 'output', text: spokenTail, full: spokenTail, live: true })
+  return rows
 }
 
 /** The text a message's own content blocks carry, when it carries any. */
@@ -665,6 +762,7 @@ function windowOf(
   node: SuperworkerNode | undefined,
   events: readonly OverviewEvent[] | undefined,
   capacity: unknown,
+  live: readonly OverviewEvent[] | undefined,
 ): OverviewWindow {
   return {
     id,
@@ -672,7 +770,10 @@ function windowOf(
     weight: weightOf(node),
     mode: modeOf(node),
     startedAt: startedAtOf(events),
-    rows: capped(foldRows(events), capacity),
+    /* The settled rows stand first in their existing shape; the streaming
+       step's tails hang after them — at most two, and gone again once the
+       step's message lands among the settled rows. */
+    rows: [...capped(foldRows(events), capacity), ...liveRowsOf(live)],
   }
 }
 
@@ -713,6 +814,12 @@ function waitingOf(input: OverviewInput): ReadonlySet<string> {
  * gate is read before `done` there: a checkpoint is why its conversation stopped,
  * not a finished piece of work.
  *
+ * While a window's step streams, its two tail rows — each the newest slice of
+ * one live buffer, read off the transient chunks the caller hands over — hang
+ * after the settled rows and move with the stream; the step's message settling
+ * folds them away into the ordinary rows again. The settled rows' shape does
+ * not move.
+ *
  * Which call dispatched a child is read off the main session's own events, whole
  * — outside the row capacity, because a dispatch row falling off the top of the
  * feed is the fade's business and not the anchor's: the fact stays even when the
@@ -731,7 +838,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const mainWindow = main === undefined || mainId === undefined
     ? null
     : {
-      ...windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity),
+      ...windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity, input.live?.[mainId]),
       done: main.running !== true,
       ...(waiting.has(mainId) ? { waiting: true } : {}),
     }
@@ -757,7 +864,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
      seat the cap could fold away, so the count keeps counting windows alone. */
   const seats: OverviewWindow[] = []
   for (const id of running) {
-    const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity)
+    const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id])
     if (window.title === null && window.rows.length === 0) continue
     seats.push(window)
   }
