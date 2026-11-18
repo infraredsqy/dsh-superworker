@@ -113,6 +113,7 @@ async function liveGateway(root) {
   const peer = { signal: new AbortController().signal, principal: { kind: 'owner' } }
   return {
     ctx,
+    gateway,
     call: async (method, args) => {
       try {
         return { ok: true, value: await gateway.invoke({ namespace: 'superworker', method, args, peer }) }
@@ -132,6 +133,29 @@ test('Every endpoint answers in source mode: the signature gate first, other err
       assert.notEqual(answer.code, 'gateway/signature-invalid', `${method}: the gateway judged the signature unreadable: ${String(answer.message)}`)
       assert.notEqual(answer.code, 'gateway/invocation-unavailable', `${method} was not recognized by the gateway: ${String(answer.message)}`)
     }
+  } finally {
+    await ctx.stop?.()
+  }
+})
+
+test('The channel endpoint is a real stream: the gateway opens it as one and its first frame carries both halves', { skip: !wired }, async () => {
+  const root = syntheticWorkspace()
+  const { ctx, gateway } = await liveGateway(root)
+  const peer = { signal: new AbortController().signal, principal: { kind: 'owner' } }
+  try {
+    /* Through the gateway's own stream opener, which is the only road a stream endpoint has: calling it
+     * as a plain call is refused by design, and that refusal is what proves the marker landed. */
+    const stream = await gateway.stream({ namespace: 'superworker', method: 'watch', args: { sessionId: 's1', workspaceRoot: '' }, peer })
+    const frames = []
+    for await (const frame of stream) {
+      frames.push(frame)
+      break
+    }
+    assert.equal(frames.length, 1, 'the channel sent no first frame')
+    assert.equal(frames[0].workspaceRoot, root)
+    assert.deepEqual(frames[0].reading.sources, { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'read' })
+    assert.equal(frames[0].sessions.state, 'read', 'the frame carried no session half')
+    assert.equal(typeof frames[0].at, 'number')
   } finally {
     await ctx.stop?.()
   }

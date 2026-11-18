@@ -18,7 +18,7 @@ import { createPanelPort } from '../src/client/data.ts'
 function fakeNamespace(answer = { ok: true, value: { workspaceRoot: 'C:\\ws' } }) {
   const calls = []
   const namespace = {}
-  for (const method of ['read', 'readSessions', 'addInstruction', 'archiveInstruction', 'reviveInstruction', 'removeInstruction', 'readConfig', 'setConfig', 'openNodeSession', 'consultMigration', 'consultSetup']) {
+  for (const method of ['watch', 'read', 'readSessions', 'addInstruction', 'archiveInstruction', 'reviveInstruction', 'removeInstruction', 'readConfig', 'setConfig', 'openNodeSession', 'consultMigration', 'consultSetup']) {
     namespace[method] = async (...values) => {
       calls.push({ method, values })
       return answer
@@ -258,6 +258,60 @@ test('the channel has no such endpoint: both read and write report no-operation,
     refusedWith({ code: 'no-operation', detail: 'readConfig' }),
     'a missing endpoint on the read face throws the same code',
   )
+})
+
+test('the channel: watch opens the namespace stream with the two arguments, delivers frames in order, and dispose closes it', async () => {
+  const calls = []
+  let closed = false
+  const frames = [{ at: 1, reading: null, sessions: null }, { at: 2, reading: null, sessions: null }]
+  const namespace = {
+    watch: (...values) => {
+      calls.push(values)
+      const stream = (async function* () {
+        try {
+          for (const item of frames) yield item
+        } finally {
+          closed = true
+        }
+      })()
+      return Object.assign(stream, { dispose: () => { closed = true } })
+    },
+  }
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
+  const seen = []
+  let landed
+  const both = new Promise((resolve) => { landed = resolve })
+  const off = port.watch('s1', 'C:\\picked', (frame) => {
+    seen.push(frame)
+    if (seen.length === frames.length) landed()
+  })
+  await both
+  assert.deepEqual(calls[0], ['s1', 'C:\\picked'], 'the stream endpoint takes exactly the two positions the call table names')
+  assert.deepEqual(seen.map((frame) => frame.at), [1, 2], 'the frames arrive in the order the host sent them')
+  off()
+  assert.equal(closed, true, 'disposing the port closes the stream')
+})
+
+test('a deployment with no stream: the channel answers one frame off the two reads, then silence', async () => {
+  const calls = []
+  const namespace = {
+    read: async (...values) => { calls.push(['read', ...values]); return { ok: true, value: { workspaceRoot: 'C:\\ws' } } },
+    readSessions: async (...values) => { calls.push(['readSessions', ...values]); return { ok: true, value: { workspaceRoot: 'C:\\ws', notes: {}, claims: {}, alive: null } } },
+  }
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
+  let landed
+  const one = new Promise((resolve) => { landed = resolve })
+  const frames = []
+  const off = port.watch('s1', 'C:\\picked', (frame) => {
+    frames.push(frame)
+    landed()
+  })
+  await one
+  assert.equal(frames.length, 1, 'one frame, and no polling after it')
+  assert.equal(frames[0].reading.workspaceRoot, 'C:\\ws')
+  assert.equal(frames[0].sessions.notes !== undefined, true, 'the frame carries the session half too')
+  assert.deepEqual(calls.map((call) => call[0]), ['read', 'readSessions'])
+  off()
 })
 
 test('the answer is not something readable: report unparsable-answer, no made-up reading', async () => {

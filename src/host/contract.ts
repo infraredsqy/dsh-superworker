@@ -14,6 +14,7 @@
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RECORD_DIR_NAME } from 'superworker-core'
 import type { SuperworkerReading, RecordSourceKey } from '../model/records.ts'
+import type { SuperworkerSessionsReading } from './sessions.ts'
 
 export type {
   SuperworkerCycle,
@@ -78,6 +79,30 @@ export const LAUNCH_PROMPT_FILE = 'prompt.txt'
 /** Options that may accompany a read. */
 export interface SuperworkerReadOptions {
   readonly signal?: AbortSignal
+}
+
+/**
+ * One push of the panel's reading: what the stream endpoint sends, and the one
+ * shape every pane of this plugin draws from.
+ *
+ * The two halves are the two reads the panel used to make in two calls — the
+ * four records, and the session side (notes, dispatch claims, the live roster) —
+ * carried together because they are read at one moment and any pane reads across
+ * both. One of them being unreadable is a frame that says so (`failure`), never a
+ * frame that pretends: a half that could not be read stands `null`, and the panel
+ * keeps showing the last reading it had rather than an invented empty one.
+ */
+export interface SuperworkerFrame {
+  /** The absolute workspace root this frame reads. */
+  readonly workspaceRoot: string
+  /** When the read happened, epoch milliseconds by this host's clock. */
+  readonly at: number
+  /** The four records' reading; `null` when this pass could not read them. */
+  readonly reading: SuperworkerReading | null
+  /** The records' session side; `null` on the same terms as {@link reading}. */
+  readonly sessions: SuperworkerSessionsReading | null
+  /** Why the halves are `null`, when they are: a code, and whatever the far side said as the detail. */
+  readonly failure?: { readonly code: string; readonly detail?: string }
 }
 
 /**

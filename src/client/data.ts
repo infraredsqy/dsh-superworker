@@ -10,7 +10,7 @@
  * `failure.ts`), and a write that fails answers with one; the panel turns it into words
  * (`src/client/words.ts`), because the panel is the only place that knows the reader's language.
  */
-import type { SuperworkerReading } from '../host/contract.ts'
+import type { SuperworkerFrame, SuperworkerReading } from '../host/contract.ts'
 import type { SuperworkerConfigReading } from '../host/project-config.ts'
 import type { SuperworkerSessionsReading } from '../host/sessions.ts'
 import type { InstructionScope } from '../host/gateway.ts'
@@ -43,6 +43,19 @@ const WRITE_ENDPOINTS: Readonly<Record<WriteVerb, string>> = {
  */
 export interface PanelPort {
   readonly source: 'remote' | 'carrier' | 'none'
+  /**
+   * The one channel: every reading this panel draws, pushed when the records change.
+   *
+   * A frame carries the four records and the record's session side read at one moment, so no pane
+   * keeps its own fetch beat. The first frame arrives on the spot — a panel that just opened has
+   * nothing to draw until it does — and later ones when the host sees a change: the record directory
+   * changing, a session notice, or one of this panel's own writes. A channel that cannot be opened
+   * (this deployment carries no stream) answers one frame and then silence, and the panel's own
+   * writes ask again; nothing here polls.
+   * @param onFrame - Called for each frame, in order, until the returned disposer is called.
+   * @returns The cancellation: no frame arrives after it, and the host's stream is closed.
+   */
+  watch(sessionId: string, workspaceRoot: string, onFrame: (frame: SuperworkerFrame) => void): () => void
   /** Read the four records of the named workspace; rejects with a {@link RefusedError} when it cannot. */
   read(sessionId: string, workspaceRoot: string): Promise<SuperworkerReading>
   /** The most recent session opened for each cell in the named workspace: where card clicks go. */
@@ -141,6 +154,7 @@ function readArgs(sessionId: string, workspaceRoot: string): Readonly<Record<str
  * a key reorder is debt this layer does not carry.
  */
 const REMOTE_PARAM_ORDER: Readonly<Record<string, readonly string[]>> = {
+  watch: ['sessionId', 'workspaceRoot'],
   read: ['sessionId', 'workspaceRoot', 'options'],
   readSessions: ['sessionId', 'workspaceRoot'],
   addInstruction: ['sessionId', 'workspaceRoot', 'text', 'scope', 'cycle', 'node'],
@@ -164,6 +178,36 @@ type PortCall = <T>(
   method: string,
   args: Readonly<Record<string, unknown>>,
 ) => Promise<Answer<T>>
+
+/**
+ * One open stream as this layer holds it: the items it delivers, and its own cancellation. DSH's
+ * generated stream handle is this shape (`AsyncIterable` plus `dispose`); only these two things are
+ * named here, because the browser half must not carry the protocol's types into its bundle.
+ */
+interface StreamHandle<T> extends AsyncIterable<T> {
+  dispose?: () => void
+}
+
+/**
+ * Opening one stream endpoint: the method name, the named arguments, and the sink each item lands
+ * in. Answers the cancellation, so the two paths keep one shape for the panel.
+ */
+type StreamOpen = (
+  method: string,
+  args: Readonly<Record<string, unknown>>,
+  onItem: (item: unknown) => void,
+) => () => void
+
+/** A frame that carries why it could not read: the panel keeps the last reading it had and says the refusal. */
+function refusalFrame(workspaceRoot: string, failure: Failure): SuperworkerFrame {
+  return {
+    workspaceRoot,
+    at: Date.now(),
+    reading: null,
+    sessions: null,
+    failure: { code: failure.code, ...(failure.detail !== undefined ? { detail: failure.detail } : {}) },
+  }
+}
 
 /** A refusal in the shape a write hands back, without the `ok` tag the reading already carries. */
 function refused(failure: Failure): Outcome {
@@ -199,9 +243,42 @@ function openOutcome(answer: Answer<SessionOpenOutcome>): Outcome {
  * @param source - Which layer this port ultimately connected through.
  * @param call - Given the endpoint name and named arguments; it unfolds the answer into the two branches.
  */
-function portFromCall(source: PanelPort['source'], call: PortCall): PanelPort {
+function portFromCall(source: PanelPort['source'], call: PortCall, stream?: StreamOpen | undefined): PanelPort {
   return {
     source,
+    watch(sessionId, workspaceRoot, onFrame) {
+      if (stream !== undefined) {
+        return stream('watch', { sessionId, workspaceRoot }, (item) => {
+          if (item !== null && typeof item === 'object') onFrame(item as SuperworkerFrame)
+        })
+      }
+      /* This deployment carries no stream: one frame, read the old way, and silence after it. The
+         panel's own writes re-subscribe, which is the whole retry — nothing here polls, and no
+         second implementation of the reading is kept just for this path. */
+      let live = true
+      void (async () => {
+        try {
+          const [reading, sessions] = await Promise.all([
+            call<SuperworkerReading>('read', readArgs(sessionId, workspaceRoot)),
+            call<SuperworkerSessionsReading>('readSessions', { sessionId, workspaceRoot }),
+          ])
+          if (!live) return
+          if (!reading.ok) {
+            onFrame(refusalFrame(workspaceRoot, reading.failure))
+            return
+          }
+          if (!sessions.ok) {
+            onFrame(refusalFrame(workspaceRoot, sessions.failure))
+            return
+          }
+          onFrame({ workspaceRoot, at: Date.now(), reading: reading.value, sessions: sessions.value })
+        } catch (error) {
+          if (!live) return
+          onFrame({ workspaceRoot, at: Date.now(), reading: null, sessions: null, failure: { code: 'transport-failed', detail: textOf(error) } })
+        }
+      })()
+      return () => { live = false }
+    },
     async read(sessionId, workspaceRoot) {
       const answer = await call<SuperworkerReading>('read', readArgs(sessionId, workspaceRoot))
       if (!answer.ok) throw new RefusedError(answer.failure)
@@ -268,7 +345,47 @@ function remotePort(namespace: Service): PanelPort {
       return { ok: false, failure: { code: 'transport-failed', detail: textOf(error) } }
     }
   }
-  return portFromCall('remote', call)
+  return portFromCall('remote', call, streamOf(namespace))
+}
+
+/**
+ * The mounted namespace's stream endpoint, opened as this layer's own {@link StreamOpen}.
+ *
+ * Absent when the deployment mounted no such method (an older host): the port then serves the one
+ * frame path, and the panel keeps working without a channel rather than inventing one.
+ * @param namespace - The mounted remote namespace.
+ */
+function streamOf(namespace: Service): StreamOpen | undefined {
+  const open = namespace['watch']
+  if (typeof open !== 'function') return undefined
+  return (method, args, onItem) => {
+    let handle: StreamHandle<unknown> | undefined
+    let live = true
+    try {
+      handle = (open as (...values: unknown[]) => StreamHandle<unknown>).call(namespace, ...positional(method, args))
+    } catch {
+      return () => undefined
+    }
+    const held = handle
+    void (async () => {
+      try {
+        for await (const item of held) {
+          if (!live) return
+          onItem(item)
+        }
+      } catch {
+        /* The carrier was lost: the last frame stays on screen, and the panel's own writes ask again. */
+      }
+    })()
+    return () => {
+      live = false
+      try {
+        held.dispose?.()
+      } catch {
+        /* The handle is finished either way. */
+      }
+    }
+  }
 }
 
 /** The carrier layer: assembles endpoint and arguments itself; the answer still wears the `{ ok, value }` shape. */
@@ -293,7 +410,7 @@ function absentPort(): PanelPort {
     throw new RefusedError({ code: 'not-connected' })
   }
   const refusedWrite = async (): Promise<Outcome> => ({ ok: false, code: 'no-write-channel' })
-  return { source: 'none', read: missing, readSessions: missing, say: refusedWrite, write: refusedWrite, readConfig: missing, setConfig: refusedWrite, openNodeSession: refusedWrite, consultMigration: refusedWrite, consultSetup: refusedWrite }
+  return { source: 'none', watch: () => () => undefined, read: missing, readSessions: missing, say: refusedWrite, write: refusedWrite, readConfig: missing, setConfig: refusedWrite, openNodeSession: refusedWrite, consultMigration: refusedWrite, consultSetup: refusedWrite }
 }
 
 /**

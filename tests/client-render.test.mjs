@@ -127,7 +127,7 @@ test('this build: the shell loads, the panel draws, every tab opens, cycle names
   /* ---- what it drew ---- */
   assert.notEqual(container.querySelector('.superworker-page'), null, 'the panel page is drawn')
   assert.ok((container.textContent ?? '').length > 0, 'there are words on the panel')
-  assert.ok(asked.length > 0, 'it asked the host half for the record')
+  assert.ok(asked.includes('watch'), 'it opened the host half\'s channel for the records')
 
   /* Every pane its tabs point at: press each one, and the thing it says it controls has to be there
    * and to be the shown one. The tab set is read off the panel, so a pane added or dropped later

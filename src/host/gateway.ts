@@ -22,9 +22,10 @@ import {
   instructionRemoveLine,
   instructionReviveLine,
 } from './instruction-lines.ts'
-import type { SuperworkerReading, SuperworkerReadOptions, SuperworkerRecords } from './contract.ts'
+import type { SuperworkerFrame, SuperworkerReading, SuperworkerReadOptions, SuperworkerRecords } from './contract.ts'
 import { openConsultSession, openSetupSession, type SessionOpenOutcome } from './executor.ts'
 import type { RecordOutcome } from './failure.ts'
+import { RecordsPump } from './pump.ts'
 import { parseConfigList, type SuperworkerConfigReading } from './project-config.ts'
 import { dispatchCell } from './relay.ts'
 import { readReading } from './records.ts'
@@ -52,7 +53,14 @@ const REMOTE_METHODS: readonly string[] = [
   'openNodeSession',
   'consultMigration',
   'consultSetup',
+  'watch',
 ]
+
+/**
+ * The endpoints that answer as one stream of items rather than one value: the
+ * panel's own channel. Every other endpoint is a plain call.
+ */
+const STREAM_METHODS: ReadonlySet<string> = new Set(['watch'])
 
 /**
  * The signal a read uses when the caller passes none: never cancelled.
@@ -75,7 +83,14 @@ const NEVER_ABORT = new AbortController().signal
  */
 function markRemote(instance: object, method: string, endpoint: string): void {
   const implementation: unknown = Reflect.get(instance, method)
-  const decorate = Remote(endpoint) as unknown as (fn: unknown, context: unknown) => void
+  /**
+   * Attach the marker the gateway reads, in the shape the protocol's types allow: a plain name for a
+   * call that answers one value, the options form for a stream (the name and `mode: 'stream'` are the
+   * two things a stream endpoint adds).
+   */
+  const decorate = (STREAM_METHODS.has(method)
+    ? Remote({ name: endpoint, mode: 'stream' as const })
+    : Remote(endpoint)) as unknown as (fn: unknown, context: unknown) => void
   decorate(implementation, {
     kind: 'method',
     name: method,
@@ -98,6 +113,8 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
   readonly typertRemote: TypertGatewayBinding<this>
   /** How this half reaches the host context — same name as the `Service` base class field, and the gateway reads from here too. */
   readonly ctx: Context
+  /** The one channel the panel watches: the reading pushed when the records change, never polled. */
+  readonly #pump: RecordsPump
 
   /**
    * @param serviceKey - The service key, i.e. the remote namespace; normally omitted.
@@ -118,6 +135,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
       }
     }
     this.typertRemote = bindTypertRemote(this, serviceKey)
+    this.#pump = new RecordsPump(ctx)
   }
 
   /**
@@ -134,6 +152,46 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
     const signal = options?.signal ?? NEVER_ABORT
     const root = await rootFor(this.ctx, sessionId, workspaceRoot)
     return readReading(this.ctx.workspaceFiles, { sessionId, workspaceRoot: root }, signal)
+  }
+
+  /**
+   * The panel's one channel: the whole reading of this workspace, pushed whenever it changes.
+   *
+   * This is what every pane draws from — the four records and the session side read at one moment
+   * and sent as one frame ({@link SuperworkerFrame}) — so no part of the panel has to decide when to
+   * ask again. The first frame goes out at once (a panel that just opened has nothing), then one per
+   * change, coalesced by the pump (`pump.ts`): the record directory watched on this host, the
+   * session notices, and this half's own writes. A read that fails rides its refusal on a frame, and
+   * the stream stays open — a channel that dies on one bad read is a panel that stops updating.
+   *
+   * The stream ends when the browser stops reading it: the cancellation is the carrier's own, handed
+   * to the one parameter the gateway appends.
+   * @param sessionId - Session identity; the workspace file gateway resolves paths by it.
+   * @param workspaceRoot - The workspace root to read, absolute; an empty string means this session's own root.
+   * @param signal - The stream's cancellation; ending the iteration releases the workspace.
+   */
+  async *watch(sessionId: SessionId, workspaceRoot: string, signal: AbortSignal): AsyncIterable<SuperworkerFrame> {
+    const root = await rootFor(this.ctx, sessionId, workspaceRoot)
+    yield* this.#pump.follow(root, (mine) => this.#frameOf(sessionId, root, mine), signal)
+  }
+
+  /**
+   * One frame: the two halves read together, at one moment, off one root.
+   *
+   * A true private, like the write path's `#superworker`: the endpoint table's missing-registration
+   * scan reads the prototype, and this is no endpoint of its own.
+   * @param workspaceRoot - The workspace root, absolute and already canonical.
+   * @param signal - The read's cancellation.
+   */
+  async #frameOf(sessionId: SessionId, workspaceRoot: string, signal: AbortSignal): Promise<SuperworkerFrame> {
+    const scope = { sessionId, workspaceRoot }
+    const [reading, notes, claims] = await Promise.all([
+      readReading(this.ctx.workspaceFiles, scope, signal),
+      readSessionNotes(this.ctx.workspaceFiles, scope, signal),
+      readClaims(this.ctx.workspaceFiles, scope, signal),
+    ])
+    const sessions: SuperworkerSessionsReading = { ...notes, claims, alive: aliveAgentIds(this.ctx) }
+    return { workspaceRoot, at: Date.now(), reading, sessions }
   }
 
   /**
@@ -290,7 +348,11 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    */
   async openNodeSession(sessionId: SessionId, workspaceRoot: string, cycle: string, node: string): Promise<SessionOpenOutcome> {
     const root = await rootFor(this.ctx, sessionId, workspaceRoot)
-    return dispatchCell(this.ctx, sessionId, root, cycle, node)
+    const outcome = await dispatchCell(this.ctx, sessionId, root, cycle, node)
+    /* A dispatch lands the claim and the session note: the panel that pressed the button sees its own
+       dispatch on the next frame instead of on the next page flip. */
+    this.#pump.stir(root)
+    return outcome
   }
 
   /**
@@ -329,7 +391,11 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    */
   async #superworker(sessionId: SessionId, workspaceRoot: string, args: readonly string[], said?: string): Promise<RecordOutcome> {
     const root = await rootFor(this.ctx, sessionId, workspaceRoot)
-    return runWords(root, args, said)
+    const outcome = await runWords(root, args, said)
+    /* The write landed on disk a moment ago: the panel's channel is told now rather than waiting for
+       its own file change to come back around through the directory watch. */
+    this.#pump.stir(root)
+    return outcome
   }
 }
 

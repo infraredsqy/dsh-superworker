@@ -117,6 +117,21 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
     read: wrapped((...values) => { asked.push('read'); return gateway.read(...values) }),
     readSessions: wrapped((...values) => gateway.readSessions(...values)),
     readConfig: wrapped((...values) => gateway.readConfig(...values)),
+    /* The channel is a stream, not a call: the face hands out the same shape the mounted namespace
+     * does — an async iterable whose `dispose` cancels it — so the panel under test subscribes to it
+     * exactly the way it does on a real host. */
+    watch: (sessionId, workspaceRoot) => {
+      const controller = new AbortController()
+      asked.push('watch')
+      const stream = (async function* () {
+        try {
+          for await (const frame of gateway.watch(sessionId, workspaceRoot, controller.signal)) yield frame
+        } catch {
+          /* The mount is done: the stream ends with it. */
+        }
+      })()
+      return Object.assign(stream, { dispose: () => { controller.abort() } })
+    },
     consultSetup: wrapped((sessionId, workspaceRoot) => {
       consulted.push({ sessionId, workspaceRoot })
       return onConsultSetup === undefined ? { ok: true, session: 'consult-check-session' } : onConsultSetup({ sessionId, workspaceRoot })
@@ -160,6 +175,13 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
     ...panel.port,
     read: (id, root, signal) => track(panel.port.read(id, root, signal)),
     readSessions: (id, root, signal) => track(panel.port.readSessions(id, root, signal)),
+    /* The panel subscribes once and draws frames; a case waits for the first frame the way it waits
+     * for its reads, so "let the reading land" still means what it says. */
+    watch: (id, root, onFrame) => {
+      let land
+      track(new Promise((resolve) => { land = resolve }))
+      return panel.port.watch(id, root, (frame) => { land(); onFrame(frame) })
+    },
   }
   const settle = async () => {
     for (let round = 0; round < 6; round++) {
