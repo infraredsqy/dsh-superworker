@@ -679,8 +679,9 @@ test('a leg that died owing work keeps its window, and that window is the broken
   assert.equal(ghost !== null, true, 'a leg that died with its work still owed was not drawn at all')
   assert.ok(ghost.className.includes('is-child'), 'the dead leg was drawn as the main window')
 
-  /* The conversation is over, so its rows stand still and are said dimmer. */
-  assert.ok(ghost.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'the dead leg’s rows are not veiled')
+  /* The conversation is over, but its frame is what says so: the rows stay sharp, because they are how
+   * far the leg got before it stopped, and the frame is asking the reader to deal with exactly that. */
+  assert.equal(ghost.querySelector('.superworker-ofeed').className.includes('is-veiled'), false, 'the dead leg’s rows are blurred behind the frame that already says what happened')
   assert.equal(ghost.querySelectorAll('.superworker-orow').length, 1, 'the dead leg lost the rows it died with')
   /* A row is a reading, not a tooltip: its whole text lives in the conversation the window opens, and
    * a hover full of paths over a long thought is noise on a page read at a glance. */

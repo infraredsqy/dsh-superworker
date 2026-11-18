@@ -337,12 +337,12 @@
 /* ---- The feed -------------------------------------------------------------- */
 /* Bottom-justified, cut by the window's own height: what falls off the top fades, and no scrollbar
  * ever appears. The row height is the field's `--superworker-orow-h` (`ROW_H` in the geometry); the
- * insets are the pane's own, from `FEED_LEFT` / `FEED_RIGHT` there. The main window whose
- * conversation is over wears `is-veiled`: its rows stay exactly where they stand, blurred and
- * pressed to three tenths, which is the A case of the completed-window design — nothing moves, the
- * window just stops speaking. The veil answers the conversation being over and nothing else, so a
- * broken window wears it too (it stopped) and a window at a person's gate does not: what a gate
- * waits on is still the reader's to see. */
+ * insets are the pane's own, from `FEED_LEFT` / `FEED_RIGHT` there. The window whose conversation is
+ * over and whose frame says nothing wears `is-veiled`: its rows stay exactly where they stand,
+ * blurred and pressed to three tenths, which is the A case of the completed-window design — nothing
+ * moves, the window just stops speaking. A framed window wears none of it: at a person's gate the
+ * rows are what the reader has to give their word on, and in a red frame they are how far the leg got
+ * before it stopped — blur would hide the one thing each frame is asking about. */
 .superworker-page .superworker-ofeed {
   position: absolute;
   overflow: hidden;

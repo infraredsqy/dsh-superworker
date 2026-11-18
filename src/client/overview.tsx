@@ -18,22 +18,26 @@
  * A window's state is one drawing per fact, and the person's gate stands first. At a gate
  * (`waiting` — a checkpoint or a manual node; the drawing never asks which, and nothing here keys a
  * state to one of those two modes) it wears the amber breathing border and nothing else: no veil, no
- * mark. Otherwise the veil follows `settled` alone — the conversation is over, the rows stay where
- * they stand, said dimmer — and the frame follows the record's own verdict, never the quiet: the
- * check belongs to `delivered`, and `alert` — work owed, nobody doing it, and the conversation not
- * ended by itself — is the frame itself, in the break's ink. A border is read before any glyph, so a
- * break needs no mark and no word of its own, on a child as much as on the window this panel lives
- * in: the debt is the same debt whoever left it, and the one red frame says it. A conversation that
- * merely went quiet, with no verdict on the record, changes nothing about its frame.
+ * mark. Otherwise the frame follows the record's own verdict, never the quiet: the check belongs to
+ * `delivered`, and `alert` — work owed, nobody doing it, and the conversation not ended by itself —
+ * is the frame itself, in the break's ink. A border is read before any glyph, so a break needs no
+ * mark and no word of its own, on a child as much as on the window this panel lives in: the debt is
+ * the same debt whoever left it, and the one red frame says it. A conversation that merely went
+ * quiet, with no verdict on the record, changes nothing about its frame.
  *
  * What a red frame leaves out is *why* the conversation stopped, and that is the words' work: the
  * nameplate's second line carries DSH's own `turn/end` reason whenever the window owes work, and the
  * frame carries the same reason as its title, so a reader on a desk finds out what happened without
  * opening anything.
  *
- * The veil and the check are the main window's alone — a child that finished is no longer a window
- * at all. "Veiled" follows `settled` alone, so a broken leg is veiled like any stopped conversation
- * (it is one) while the gate is not: what it waits on is still the reader's to see.
+ * The veil is what a stopped conversation wears instead of a state: its rows stay where they stand,
+ * said dimmer. A framed window wears none of it — not the gate, and not the break: the rows are the
+ * evidence the frame is asking about, what is on the table for the reader's word or how far the leg
+ * got before it stopped, and blur is the one thing that would hide them. So the veil survives for
+ * the window that ended with nothing owed and nothing delivered, and the check sits over it.
+ *
+ * The check and the veil are the main window's alone — a child that finished is no longer a window
+ * at all.
  *
  * A running child turns the small ring in its cell, half the border's pace — that is the whole of
  * what "still moving" says. Neither the ring nor any other fact reaches for the border: the amber
@@ -245,7 +249,7 @@ function Feed(props: {
   readonly room: number
   /** Whether this window's newest row arrived on this beat. */
   readonly fresh: boolean
-  /** Whether the window's conversation is over: its rows stay where they stand, said dimmer. */
+  /** Whether the conversation is over and its frame says nothing: the rows stay where they stand, said dimmer. */
   readonly veiled: boolean
   readonly head: number
   readonly foot: number
@@ -331,10 +335,6 @@ function WindowPane(props: {
    * with its work still owed is a ghost, and it is drawn broken exactly like the conversation this
    * panel lives in — the debt is the same debt whoever left it. */
   const atGate = pane.waiting === true
-  /* The veil answers the conversation being over and nothing else: its rows stay where they stand,
-   * said dimmer. It is not a verdict on the work, so it is read off `settled` alone — and a broken
-   * leg wears it too, because a broken leg is a conversation that stopped. */
-  const veiled = pane.settled === true && !atGate
   /* The check is the record's delivery and nothing else. A conversation that merely went quiet has
    * not handed anything in, and earns no mark at all. */
   const handed = props.main && !atGate && pane.delivered === true
@@ -342,6 +342,12 @@ function WindowPane(props: {
    * leg of its own. It is drawn by its frame, not by a mark inside it — the whole window is the one
    * drawing, and a red border is read sooner than any glyph. */
   const broken = !atGate && !handed && pane.alert === true
+  /* The veil answers the conversation being over and nothing else: its rows stay where they stand,
+   * said dimmer. A window whose frame already carries a state wears none of it — at the gate the
+   * amber breath and here the red frame — because those two rows are the evidence the reader came
+   * for: what is on the table for their word, or how far the leg got before it stopped. Blurring
+   * them would hide the one thing the frame is asking about. */
+  const veiled = pane.settled === true && !atGate && !broken
   /* The one mark a window's cell carries: the check for work handed in. */
   const mark = handed
     ? layoutMark({ width: box.width, height: box.height, head, foot, size: MARK_CHECK, stroke: MARK_CHECK_STROKE })
@@ -361,6 +367,11 @@ function WindowPane(props: {
     && (broken || (pane.ending !== undefined && pane.ending.kind !== 'completed'))
     ? t(endingWordOf(pane.ending))
     : undefined
+  /* The caption line under the name: the record's readings, then how the conversation stopped. One
+   * line, one separator, whatever the window has to say — two spans would leave the reason running on
+   * from the mode with no mark between them. */
+  const spoken = [readings, stopped].filter((one): one is string => one !== null && one !== undefined)
+  const caption = spoken.length === 0 ? null : spoken.join(' · ')
   /* The ring says "still moving" on both windows — the conversation this panel lives in is as much a
    * thing that runs as a leg it dispatched, and a reader who has to look for the spinner only on some
    * windows learns to stop looking. Only two windows wear none: one whose conversation stopped, and
@@ -398,10 +409,9 @@ function WindowPane(props: {
               <span className="superworker-num">{elapsedOf(t, pane.elapsedSeconds)}</span>
             </span>
           </p>
-          {readings === null && stopped === undefined ? null : (
+          {caption === null ? null : (
             <p className="superworker-oplate-m">
-              {readings === null ? null : <span>{readings}</span>}
-              {stopped === undefined ? null : <span>{stopped}</span>}
+              <span>{caption}</span>
             </p>
           )}
           {moving ? <i className="superworker-oring" aria-hidden="true" style={{ width: RING_SIZE, height: RING_SIZE }} /> : null}
