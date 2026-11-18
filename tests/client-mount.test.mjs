@@ -397,6 +397,23 @@ test('switching language: the row changes to the other language and subscribers 
   assert.equal(after.t(SEAT_WORD), WORD_TABLES.en[SEAT_WORD], 'the word drawn must come from the dictionary')
 })
 
+test('a dictionary registered before this build existed: a word it does not know is read from the bundled table', () => {
+  /* DSH's registry holds one table per namespace, so an older load's table stays in force and a build
+   * that adds keys would print their lookup names on screen until the page is reloaded from scratch.
+   * The service answers an unknown key with the key itself — that is the signal, and the bundled copy
+   * is what the reader gets instead of `overview.state.broken`. */
+  const stale = {
+    register: () => { throw new Error('the namespace is already taken') },
+    bind: () => (key) => (key === 'overview.state.broken' ? key : WORD_TABLES.zh[key] ?? key),
+    getSnapshot: () => ({ active: 'zh', revision: 1 }),
+  }
+  const port = createLocalePort()
+  port.attach(stale)
+  assert.equal(port.getSnapshot().t('overview.state.broken'), WORD_TABLES.zh['overview.state.broken'], 'a key the registry never heard of printed as a lookup name')
+  /* The words the registry does know still come from it, untouched. */
+  assert.equal(port.getSnapshot().t(SEAT_WORD), WORD_TABLES.zh[SEAT_WORD])
+})
+
 test('with no locale service present: this layer speaks Chinese from the bundled dictionary', () => {
   /* The fallback is not a stub: a deployment with no locale service keeps the words the panel had
    * before it could be translated — the mechanism must not change the copy. */

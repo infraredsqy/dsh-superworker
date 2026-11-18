@@ -111,6 +111,30 @@ function bundledAt(locale: string): Translate {
 }
 
 /**
+ * The service's translator, with the bundled table standing behind every key it does not know.
+ *
+ * A namespace has a single occupant in DSH's registry: a table registered by an earlier load of this
+ * panel stays in force, so a build that adds words would print their lookup names until the page is
+ * reloaded from scratch. DSH answers a key it has no word for with the key itself, which is exactly
+ * the signal to read here — the panel keeps speaking its bundled copy instead of showing `a.b.c`.
+ * @param bind - The service's own translator for this namespace.
+ */
+function boundAt(bind: (key: string) => string, activeAt: () => string): Translate {
+  return (key, params) => {
+    let said: string | undefined
+    try {
+      said = bind(key)
+    } catch {
+      said = undefined
+    }
+    const word = said === undefined || said === key
+      ? (WORD_TABLES[activeAt()]?.[key] ?? zh[key] ?? key)
+      : said
+    return interpolate(word, params)
+  }
+}
+
+/**
  * The port itself.
  *
  * It stands first on the bundled fallback and stays usable whether or not a service ever arrives.
@@ -215,7 +239,8 @@ export function createLocalePort(): LocalePort {
         }
       }
       try {
-        bound = ((key, params) => next.bind(LOCALE_NS)(key, params)) as Translate
+        const translate = next.bind(LOCALE_NS)
+        bound = boundAt((key) => translate(key), () => active)
       } catch (error) {
         /* A service that cannot bind is no better than none: the bundled table takes over. */
         bound = null
