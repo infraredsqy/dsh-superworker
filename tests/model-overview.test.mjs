@@ -402,11 +402,16 @@ test('alert waits for the stall: a killed turn is no break while a leg of the li
   assert.equal(stopped.main.alert, true, 'a leg killed with its node still owed read as nothing wrong')
 })
 
-test('alert: a completed turn on a stranded node with the pipeline quiet is the phantom dispatch', () => {
-  /* It says it is done, nothing was handed in, and no named session is running: the debt is standing
-   * and nobody is working it. */
+test('no alert: a turn the conversation closed itself owes the record, not the reader', () => {
+  /* The false red this rule kills: a leg finishes its work, its turn reads `completed`, and for a
+   * breath the record still holds the cell — the engine's settle has not landed yet. Nothing about
+   * that breath is a fault, whoever still holds the cell or which claims outlived the session: a
+   * clean end is the engine's business, and a reading that paints it red calls a finished leg a
+   * broken one. */
   const reading = factScene({ ending: turnEnd(9, 'completed'), stranded: [OWED_NODE] })
-  assert.equal(reading.main.alert, true, 'a quiet pipeline with the debt still held read as nothing wrong')
+  assert.equal('alert' in reading.main, false, 'a cleanly ended leg with the record lagging was called broken')
+  const held = factScene({ ending: turnEnd(9, 'completed'), held: [MAIN] })
+  assert.equal('alert' in held.main, false, 'a cleanly ended leg whose cell the line still holds was called broken')
 })
 
 test('no alert: a completed turn that yielded to its own running leg is a pipeline in motion', () => {
@@ -479,6 +484,18 @@ test('a ghost resting between rounds is drawn quietly: the debt is not proved br
   })
   assert.equal(killed.children[0].alert, true, 'a leg stopped by hand with work owed read as resting')
   assert.deepEqual(killed.children[0].ending, { kind: 'aborted', cause: 'user' })
+
+  /* The resting leg's claim still on disk changes nothing: the readable turn it closed itself is the
+   * word that wins, and a session that ended cleanly is "gone from the roster" for the simple reason
+   * that it ended — the record running behind its own session is a lag, not a fault. */
+  const claimed = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
+    nodeOf: { 'c-1': OWED_NODE },
+    undeliveredSessions: ['c-1'],
+    strandedNodes: [OWED_NODE],
+    events: { 'c-1': [said(5, undefined, '这一轮说完了'), { type: 'turn/end', time: 6, data: { reason: { kind: 'completed' } } }] },
+  })
+  assert.equal('alert' in claimed.children[0], false, 'a cleanly ended leg with its claim still on disk was called broken')
 })
 
 test('a stopped leg yields the stage to a leg that is still running', () => {

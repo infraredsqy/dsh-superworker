@@ -220,15 +220,14 @@ export const en: Readonly<Record<WordKey, string>> = {
   'overview.row.dispatch': 'dispatches',
   'overview.row.fail': 'fails',
   'overview.row.tool': 'calls',
-  /* The reasons a conversation's last turn ended with — each carried verbatim off DSH's own
-   * `turn/end`, so the reader is told how it stopped rather than left to guess. `other` is also the
-   * word for an ending the log does not carry. */
-  'overview.ending.completed': 'It closed the turn itself without handing the work in',
-  'overview.ending.user': 'Stopped by hand',
-  'overview.ending.disposed': 'The host disposed of it',
-  'overview.ending.interrupted': 'The process interrupted it',
-  'overview.ending.failed': 'It ended in an error',
-  'overview.ending.other': 'Ended without word',
+  /* The one short word a broken window's line says: how the conversation's last turn ended, carried
+   * verbatim off DSH's own `turn/end`. Short in every language on purpose — the conversation behind
+   * the press carries the detail. `other` is also the word for an ending the log does not carry. */
+  'overview.fault.user': 'aborted by user',
+  'overview.fault.disposed': 'disposed',
+  'overview.fault.interrupted': 'interrupted',
+  'overview.fault.error': 'error',
+  'overview.fault.other': 'no word',
   /* The name a window whose title the record does not name is announced by: what pressing it does. */
   'overview.window.aria': 'Open this conversation',
 

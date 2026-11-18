@@ -989,9 +989,13 @@ export function endingOf(events: readonly OverviewEvent[] | undefined): Overview
  *
  * `alert` is deliberately narrow: it needs the debt (`stranded`, which the
  * caller has already judged against the record and this host's live agents), a
- * readable last turn, and a line that has stopped — no leg of the pipeline
- * running. A conversation that yielded to a leg of its own, or one that ran
- * again since its abort, is a pipeline still in motion, and that is not a break.
+ * readable last turn that the conversation did **not** close itself, and a line
+ * that has stopped — no leg of the pipeline running. A conversation that closed
+ * its own turn owes the record, not the reader: the cell it left held is the
+ * engine's business (a settle that has not landed yet, or a handoff nobody
+ * wrote), and a pipeline that has merely gone quiet about it is not a break. A
+ * conversation that yielded to a leg of its own, or one that ran again since
+ * its abort, is a pipeline still in motion, and that is not a break either.
  */
 function factsOf(input: {
   readonly settled: boolean
@@ -1011,9 +1015,12 @@ function factsOf(input: {
   /* A debt is drawn only while the line stands still. A pipeline with a leg still running has not
      stopped at this window whatever its last turn said, and the red is the shape of a stall, never a
      record of one bad round — which is also why a window that ran again since its abort wears none.
-     An unreadable ending accuses nobody: a silence is not a debt being dropped. */
+     A turn the conversation closed itself accuses nobody: the engine settles a clean end in its own
+     time, and a record running behind its own session is a lag, not a fault. An unreadable ending
+     accuses nobody either: a silence is not a debt being dropped. */
   const stalled = input.settled && !input.moving
-  if (input.owed && stalled && input.ending !== undefined) return { ...settled, ...ending, alert: true }
+  const cut = input.ending !== undefined && input.ending.kind !== 'completed'
+  if (input.owed && stalled && cut) return { ...settled, ...ending, alert: true }
   return { ...settled, ...ending }
 }
 
@@ -1193,8 +1200,15 @@ export function readOverview(input: OverviewInput): OverviewReading {
     if (window.title === null && window.rows.length === 0) continue
     const ending = endingOf(input.events?.[id])
     const gated = waiting.has(id)
+    /* The proof is whichever witness spoke: a last turn the conversation did not close itself, or —
+       when the log carried no word at all — the caller's stranded judgment (the claim is on disk and
+       the session is gone). A turn the conversation closed itself is no proof, whoever still holds
+       the cell: the engine settles a clean end in its own time, and a record running behind its own
+       session is a lag, not a fault. */
     const broken = !gated
-      && (stranded.has(input.nodeOf?.[id] ?? '') || (ending !== undefined && ending.kind !== 'completed'))
+      && (ending === undefined
+        ? stranded.has(input.nodeOf?.[id] ?? '')
+        : ending.kind !== 'completed')
     seats.push({
       ...window,
       settled: true,

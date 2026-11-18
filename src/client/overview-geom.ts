@@ -316,6 +316,11 @@ export const MARK_CHECK_STROKE = 1.09
 /** The disc of the window's own ground the check stands on, so it never melts into the rows behind it. */
 export const MARK_SCRIM = 108
 
+/** The fault line a broken window says: the glyph's size and the line's height. The word is short in
+ * every language on purpose — the conversation behind the press carries the detail. */
+export const FAULT_MARK = 16
+export const FAULT_LINE_H = 20
+
 /** The running ring: 10 across, standing in the child's title-line cell — a 20 cell, right 16, top 7. */
 export const RING_SIZE = 10
 export const RING_CELL = 20
@@ -362,6 +367,38 @@ export function layoutMark(input: {
     top: Math.max(0, Math.min(top, height - size)),
     size,
     stroke,
+  }
+}
+
+/** The fault line's own box, in its pane's own coordinates: the whole width of the band, one line tall. */
+export interface OverviewFault {
+  readonly left: number
+  readonly top: number
+  readonly width: number
+  readonly height: number
+}
+
+/**
+ * Where a broken window's one line stands: centred on the process band's middle — the same middle
+ * the check takes, so the eye that learned where a verdict lives finds this one there too. The line
+ * takes the band's whole width and centres what it holds in it; a pane too short for the line keeps
+ * it inside the pane rather than stating a box that falls off.
+ */
+export function layoutFault(input: {
+  readonly width: number
+  readonly height: number
+  readonly head: number
+  readonly foot: number
+}): OverviewFault {
+  const { width, height, head, foot } = input
+  const bandTop = Math.min(head, height)
+  const bandBottom = Math.max(bandTop, height - foot)
+  const top = bandTop + Math.round((bandBottom - bandTop - FAULT_LINE_H) / 2)
+  return {
+    left: FEED_LEFT,
+    top: Math.max(0, Math.min(top, height - FAULT_LINE_H)),
+    width: Math.max(0, width - FEED_LEFT - FEED_RIGHT),
+    height: FAULT_LINE_H,
   }
 }
 

@@ -472,6 +472,27 @@
   height: 100%;
 }
 
+/* ---- The one line a broken window says ------------------------------------ */
+/* The fault line: the panel's failed glyph and one short word beside it, centred on the band's
+ * middle in the frame's own ink — the frame is what says the state, and this line is the whole of
+ * "why", kept to a few syllables in every language because the conversation behind the press carries
+ * the detail. The rows around it stay readable; the line sits over them, not instead of them. */
+.superworker-page .superworker-ofault {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font: var(--dsw-font-xs-13);
+  font-weight: 500;
+  color: var(--dsw-alias-state-error-primary);
+  white-space: nowrap;
+}
+.superworker-page .superworker-ofault svg {
+  flex: none;
+  display: block;
+}
+
 /* ---- A running window's ring ---------------------------------------------- */
 /* "Still moving", in its smallest voice: 10px across on a 1.5px track, one turn every 1.3 seconds —
  * half the waiting border's 2.6s breath, so the two rhythms land on one beat. The box is the

@@ -22,6 +22,7 @@ import {
   FIELD_MAX_H,
   FIELD_PAD,
   GAP_Y,
+  layoutFault,
   LINK_BEND,
   MAIN_FOOT,
   MAIN_HEAD,
@@ -636,6 +637,19 @@ test("the check's pen reads as the design table's pixels on screen", () => {
    * the check's 4px at 44. */
   const pen = (size, stroke) => (stroke * size) / 12
   assert.ok(Math.abs(pen(MARK_CHECK, MARK_CHECK_STROKE) - 4) < 0.05, `the check's pen is ${pen(MARK_CHECK, MARK_CHECK_STROKE)}px, not 4px`)
+})
+
+test("the fault line stands on the band's middle, the same middle the check takes", () => {
+  for (const box of MARKED) {
+    const bandMiddle = box.head + (box.height - box.foot - box.head) / 2
+    const fault = layoutFault(box)
+    /* The line is one row tall, centred where the check's 44 centres, and it takes the band's whole
+     * width — what it holds is centred in it by the sheet. */
+    assert.equal(fault.top + fault.height / 2, bandMiddle, `${box.name}: the line's middle is ${fault.top + fault.height / 2}, the band's is ${bandMiddle}`)
+    assert.equal(fault.left, FEED_LEFT)
+    assert.equal(fault.width, box.width - FEED_LEFT - FEED_RIGHT)
+    assert.ok(fault.top >= 0 && fault.top + fault.height <= box.height, `${box.name}: the line runs off the pane: ${fault.top}..${fault.top + fault.height}`)
+  }
 })
 
 test("the running ring turns in the child's title-line cell, on the same centre a check would take", () => {

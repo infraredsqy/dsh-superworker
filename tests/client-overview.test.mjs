@@ -689,9 +689,15 @@ test('a leg that died owing work keeps its window, and that window is the broken
 
   /* The break is the frame's own ink, and the frame is the only thing that says it: no glyph, no word
    * inside the window, and the reason it stopped on the frame's title. */
+  /* The break is the frame's own ink, and the frame is the only thing that says it: no check, no
+   * hover of the frame's own, and the one word the fault line says. */
   assert.ok(ghost.className.includes('is-broken'), 'the dead leg’s frame says nothing about the work it still owes')
   assert.equal(ghost.querySelector('.superworker-omark'), null, 'the dead leg wears a mark inside a frame that already says it')
-  assert.equal(ghost.getAttribute('title'), zh['overview.ending.user'], 'the frame does not say why the conversation stopped')
+  const fault = ghost.querySelector('.superworker-ofault')
+  assert.equal(fault !== null, true, 'the dead leg says no word')
+  assert.equal(fault.textContent, zh['overview.fault.user'], 'the dead leg’s word is not how its turn ended')
+  assert.equal(fault.querySelector('svg') === null, false, 'the fault line carries no glyph')
+  assert.equal(ghost.getAttribute('title'), null, 'the frame still carries a hover of its own')
 
   /* It is not moving any more, so the ring is gone with the motion. */
   assert.equal(ghost.querySelector('.superworker-oring'), null, 'a stopped leg still turns its ring')

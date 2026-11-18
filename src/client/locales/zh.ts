@@ -247,15 +247,14 @@ export const zh = {
   'overview.row.dispatch': '派出',
   'overview.row.fail': '失败',
   'overview.row.tool': '调用',
-  /* The reasons a conversation's last turn ended with — each carried verbatim off DSH's own
-   * `turn/end`, so the reader is told how it stopped rather than left to guess. `other` is also the
-   * word for an ending the log does not carry. */
-  'overview.ending.completed': '自己收的尾，没交出结果',
-  'overview.ending.user': '被手动停下',
-  'overview.ending.disposed': '宿主退出时中断',
-  'overview.ending.interrupted': '进程中断',
-  'overview.ending.failed': '出错结束',
-  'overview.ending.other': '没有交代',
+  /* The one short word a broken window's line says: how the conversation's last turn ended, carried
+   * verbatim off DSH's own `turn/end`. Short in every language on purpose — the conversation behind
+   * the press carries the detail. `other` is also the word for an ending the log does not carry. */
+  'overview.fault.user': '被手动停下',
+  'overview.fault.disposed': '宿主中断',
+  'overview.fault.interrupted': '进程中断',
+  'overview.fault.error': '出错',
+  'overview.fault.other': '没有交代',
   /* The name a window whose title the record does not name is announced by: what pressing it does. */
   'overview.window.aria': '打开这个会话',
 
