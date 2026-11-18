@@ -682,6 +682,9 @@ test('a leg that died owing work keeps its window, and that window is the broken
   /* The conversation is over, so its rows stand still and are said dimmer. */
   assert.ok(ghost.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'the dead leg’s rows are not veiled')
   assert.equal(ghost.querySelectorAll('.superworker-orow').length, 1, 'the dead leg lost the rows it died with')
+  /* A row is a reading, not a tooltip: its whole text lives in the conversation the window opens, and
+   * a hover full of paths over a long thought is noise on a page read at a glance. */
+  assert.equal(ghost.querySelector('.superworker-orow').getAttribute('title'), null, 'a row carries its full text as a hover again')
 
   /* The broken drawing: the panel's failed glyph and the one word, with the reason on its title. */
   const mark = ghost.querySelector('.superworker-omark')

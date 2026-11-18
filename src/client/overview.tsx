@@ -264,10 +264,12 @@ function Feed(props: {
       style={{ left: FEED_LEFT, right: FEED_RIGHT, top: props.head, bottom: props.foot }}
     >
       {rows.map((row, at) => (
+        /* No hover title on a row: the row is a reading and a press away from the conversation itself,
+           and a tooltip full of build paths over a long thought is noise over a page read at a glance
+           — the window opens the whole thing for whoever needs it. */
         <div
           key={at}
           className={`superworker-orow is-${row.kind}${row.live === true ? ' is-live' : ''}${at === rows.length - 1 && props.fresh ? ' is-fresh' : ''}`}
-          title={row.full}
         >
           <KindMark kind={row.kind} />
           <span className={`superworker-orow-t${row.live === true ? ' is-live' : ''}`}>
