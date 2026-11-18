@@ -230,7 +230,7 @@ export const zh = {
    * are none of them drawable now — because they are different things to know. The stage says which
    * one it is and nothing more: the move is the standing corner's doors, which need no sentence. */
   'overview.empty.no-nodes': '这个工作区还没有节点。',
-  'overview.empty.no-session': '节点都在，还没有一个开始。',
+  'overview.empty.no-session': '这个工作区没有已执行的节点。',
   'overview.empty.no-window': '当前没有可识别的运行中会话。',
   /* The standing corner: two doors and their fold. The words name the two skills' own work — the
    * graph's and the line's — and are heard only, never drawn: the doors answer with glyphs. */

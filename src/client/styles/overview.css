@@ -68,7 +68,9 @@
   bottom: 14px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* The stack hangs from the pane's right edge, so a door grows leftward and every piece's right
+   * edge lands on one line — the fold disc's own. */
+  align-items: flex-end;
   gap: 8px;
 }
 .superworker-page .superworker-ofab-door,
@@ -77,19 +79,39 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
   height: 34px;
   padding: 0;
   background: var(--dsw-alias-bg-layer-2);
   border: 0;
-  border-radius: 50%;
-  corner-shape: round;
   color: var(--superworker-ink-2);
   cursor: pointer;
-  /* The disc floats over the stage's windows, so it is the soft elevation material and nothing
+  /* The corner floats over the stage's windows, so it is the soft elevation material and nothing
    * else: the material carries its own hairline, and a border beside it would say it twice. */
   box-shadow: var(--dsw-elevation-soft);
   touch-action: manipulation;
+}
+/* The fold: a disc, the quiet shape a corner keeps. */
+.superworker-page .superworker-ofab-pin {
+  width: 34px;
+  border-radius: 50%;
+  corner-shape: round;
+}
+/* A door is the command it opens the session with: glyph first, then the invocation in the code
+ * face every command on this panel wears — what the press will send, shown before the press. The
+ * pill's right edge sits on the fold's, so the stack reads as one object standing up. */
+.superworker-page .superworker-ofab-door {
+  gap: 7px;
+  padding: 0 12px 0 10px;
+  border-radius: 999px;
+  corner-shape: round;
+}
+.superworker-page .superworker-ofab-door svg {
+  flex: none;
+}
+.superworker-page .superworker-ofab-word {
+  font: var(--dsw-font-xxxs-11);
+  font-family: var(--ds-font-family-code);
+  white-space: nowrap;
 }
 .superworker-page .superworker-ofab-door:hover:not(:disabled),
 .superworker-page .superworker-ofab-pin:hover:not(:disabled) {

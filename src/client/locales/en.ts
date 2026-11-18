@@ -204,7 +204,7 @@ export const en: Readonly<Record<WordKey, string>> = {
    * are none of them drawable now — because they are different things to know. The stage says which
    * one it is and nothing more: the move is the standing corner's doors, which need no sentence. */
   'overview.empty.no-nodes': 'This workspace has no nodes yet.',
-  'overview.empty.no-session': 'The nodes are here; none has started.',
+  'overview.empty.no-session': 'No node has run in this workspace yet.',
   'overview.empty.no-window': 'No running session can be recognised right now.',
   /* The standing corner: two doors and their fold. The words name the two skills' own work — the
    * graph's and the line's — and are heard only, never drawn: the doors answer with glyphs. */

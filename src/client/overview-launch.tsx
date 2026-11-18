@@ -12,7 +12,9 @@
  * has nothing to drive.
  *
  * Collapsed it is one quiet disc, so an empty stage keeps its emptiness; a press stands the two
- * doors up over it, and a press anywhere else folds them back. Both roads are presses, never a
+ * doors up over it, and a press anywhere else folds them back. Each door wears the invocation it
+ * will open its session with — the slash, the skill, in the command face — so what a press starts
+ * is read before the press, not after it. Both roads are presses, never a
  * hover — the reader is on a touch screen half the time, and a control that opens on hover has no
  * road there.
  */
@@ -57,6 +59,11 @@ export function OverviewLaunch(props: {
           <circle cx="2.9" cy="9.2" r="1.3" fill="currentColor" />
           <circle cx="9.1" cy="9.2" r="1.3" fill="currentColor" />
         </svg>
+        {/* The door wears the invocation it will open the session with, slash and all, in the code
+         * face every command on this panel wears — the same word, the same spelling, the reader
+         * would type. It is the host half's own first sentence for this door, shown before the
+         * press instead of after it. */}
+        <span className="superworker-ofab-word">{'/sw-route'}</span>
       </button>
       <button
         type="button"
@@ -69,6 +76,7 @@ export function OverviewLaunch(props: {
         <svg viewBox="0 0 12 12" width="14" height="14" aria-hidden="true">
           <path d="M4.2 2.9v6.2l5-3.1z" fill="currentColor" />
         </svg>
+        <span className="superworker-ofab-word">{'/sw-conduct'}</span>
       </button>
       <button
         type="button"
