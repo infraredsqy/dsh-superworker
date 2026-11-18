@@ -186,35 +186,83 @@
 }
 
 /* ---- The four motions ----------------------------------------------------- */
-/* Enter — the window set gained a window. */
-@keyframes superworker-opane-in {
-  from {
+/* A window is a thing with extent, so it arrives and leaves by folding, never by teleporting: out
+ * is down first — the rows collapse into the title line — then sideways, the sliver it left
+ * shrinking to nothing; in is the same road walked backwards. The road is why a seat the line
+ * re-takes after a stop reads as the same window opening again rather than a new one landing where
+ * the old one died. The keyframes read the pane's own numbers as vars (`--superworker-pane-*`,
+ * written inline beside the box), because a box that lives in inline styles cannot be keyframed to
+ * any other way. */
+
+/* Enter — the window set gained a window: sideways from nothing, then down to its rows. The fill
+ * is `backwards` on purpose: the last frame's values are the pane's own inline ones, and `both`
+ * would freeze the box at the size it entered with, overriding every later reading of it. */
+@keyframes superworker-opane-unfold {
+  0% {
+    width: 0;
+    height: var(--superworker-pane-fold, 45px);
     opacity: 0;
-    transform: translateY(8px) scale(0.995);
   }
-  to {
+  45% {
+    width: var(--superworker-pane-w);
+    height: var(--superworker-pane-fold, 45px);
     opacity: 1;
-    transform: none;
+  }
+  100% {
+    width: var(--superworker-pane-w);
+    height: var(--superworker-pane-h);
+    opacity: 1;
   }
 }
 .superworker-page .superworker-opane.is-enter {
-  animation: superworker-opane-in 0.26s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation: superworker-opane-unfold 0.3s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
 }
 
-/* Leave — the set lost one. The pane fades where it stands; when the span has run, the page loses it. */
-@keyframes superworker-opane-out {
-  from {
+/* Leave — the set lost one: the rows fold up into the title line, then the sliver folds away
+ * sideways. It clips while it goes (`overflow: hidden`), or the fold would spill the rows it is
+ * folding over. When the span has run, the page loses it. */
+@keyframes superworker-opane-fold {
+  0% {
+    height: var(--superworker-pane-h);
+    width: var(--superworker-pane-w);
     opacity: 1;
-    transform: none;
   }
-  to {
+  45% {
+    height: var(--superworker-pane-fold, 45px);
+    width: var(--superworker-pane-w);
+    opacity: 1;
+  }
+  100% {
+    height: var(--superworker-pane-fold, 45px);
+    width: 0;
     opacity: 0;
-    transform: translateY(4px) scale(0.99);
   }
 }
 .superworker-page .superworker-opane.is-leave {
-  animation: superworker-opane-out 0.22s ease both;
+  animation: superworker-opane-fold 0.32s ease forwards;
+  overflow: hidden;
+  /* The fold is the one motion this pane makes; a reflow transition still running when the leave
+   * begins would outrank it (a transition beats an animation), so the leave turns it off. */
+  transition: none;
   pointer-events: none;
+}
+/* Leave, for whoever reads with motion off: a plain fade where the pane stands, no geometry
+ * changed — the removal discipline is the same, only the road is plainer. */
+@keyframes superworker-opane-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* A standing pane reflows with the set — a window joining or leaving moves its neighbours' boxes,
+ * and those moves are transitions, not jumps: the reading states the boxes, the sheet spends the
+ * travel between them. Enter and leave are keyframes instead (above), and the two never meet: a
+ * pane mounts into its animation, and a pane leaving has just turned its transition off. */
+.superworker-page .superworker-opane {
+  transition: left 0.2s ease, top 0.2s ease, width 0.2s ease, height 0.2s ease;
 }
 
 /* Fresh row — one window's newest row is not the row it was. */
@@ -514,10 +562,21 @@
   }
 }
 /* Reduced motion: the ring stops and stays a dashed ring — the panel's own still form for work in
- * hand (the state mark's) — while the check, which never moved, is untouched. */
+ * hand (the state mark's) — while the check, which never moved, is untouched. The folds go plain
+ * too: a leaving pane fades where it stands, an entering one simply is, and a standing pane's
+ * reflow steps with the reading instead of spending travel on it. */
 @media (prefers-reduced-motion: reduce) {
   .superworker-page .superworker-oring {
     animation: none;
     border-style: dashed;
+  }
+  .superworker-page .superworker-opane {
+    transition: none;
+  }
+  .superworker-page .superworker-opane.is-enter {
+    animation: none;
+  }
+  .superworker-page .superworker-opane.is-leave {
+    animation: superworker-opane-out 0.22s ease both;
   }
 }

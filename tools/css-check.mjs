@@ -262,10 +262,12 @@ for (const file of [...panelFiles, { path: THEME_SHEET, rules: themeRules }]) {
 /** Properties a page's script passes in, each with a fallback where it is read. */
 const optional = new Set([...[...panelFiles].flatMap(file => [...read(file.path).matchAll(/var\(\s*(--[\w-]+)\s*,/g)].map(([, name]) => name))])
 /* Custom properties the client's TSX writes inline, so no sheet may declare a value for them:
- * the map's card box (`map.tsx`, from `map-layout.ts`'s `CARD_W` / `CARD_H`). The sheet reads
+ * the map's card box (`map.tsx`, from `map-layout.ts`'s `CARD_W` / `CARD_H`), and the overview
+ * pane's own box (`overview.tsx`, from `overview-geom.ts` — the fold keyframes are the one reader,
+ * and a pane that has not been given a box has no business folding). The sheet reads
  * them fallback-less on purpose — the inline style is the only writer, and a CSS-declared copy
  * could only drift. */
-const scriptWritten = new Set(['--card-w', '--card-h'])
+const scriptWritten = new Set(['--card-w', '--card-h', '--superworker-pane-w', '--superworker-pane-h'])
 for (const file of panelFiles) {
   for (const rule of file.rules) {
     for (const [property, value] of rule.declarations) {
@@ -325,11 +327,12 @@ for (const name of [...panelTokens].sort()) {
 
 /* The same question on the panel's own side: a `--superworker-*` name with a letter off
  * (`--superworker-ink44`) paints nothing in either palette, raises nothing, and every mark it
- * inks just goes missing. A name a page's script hands in is written with a fallback. */
+ * inks just goes missing. A name a page's script hands in is written with a fallback — or is one
+ * of the script's own boxes, which no sheet may declare and whose only reader is a keyframe. */
 let undeclaredPanelTokens = 0
 for (const name of [...panelTokens].sort()) {
   if (!name.startsWith('--superworker-')) continue
-  if (!panelDeclared.has(name) && !optional.has(name)) {
+  if (!panelDeclared.has(name) && !optional.has(name) && !scriptWritten.has(name)) {
     undeclaredPanelTokens += 1
     fail('panel token not declared', name)
   }

@@ -6,10 +6,12 @@
  * out with `overview-geom`, and draws. Each motion is bound to exactly one fact, and the facts are
  * diffed between consecutive readings, never invented:
  *
- * - enter — the window set gained a window;
- * - leave — the set lost one; the pane lingers for the leave's span, then leaves the page. A child
- *   that ended leaves this way: the reading stops drawing it the moment its session stops running,
- *   so its window fades where it stands and is gone — it is never kept as a finished window;
+ * - enter — the window set gained a window: it unfolds, sideways first and then down to its rows;
+ * - leave — the set lost one; the pane folds as it lingers — the rows up into the title line, then
+ *   the sliver away sideways — and when the span has run, the page loses it. A child that ended
+ *   leaves this way: the reading stops drawing it the moment its session stops running, so it is
+ *   never kept as a finished window — and a seat the line re-takes later comes back the same road,
+ *   which is why a re-seated window reads as the same window opening again, not a jump;
  * - fresh row — one window's newest row is not the row it was (growth, or the cut that replaced
  *   the top row when the newest arrived);
  * - breathing border — the main window's node stands at a person's gate: it is waiting for the reader
@@ -57,6 +59,7 @@ import type { OverviewEnding, OverviewReading, OverviewRowKind, OverviewWindow }
 import {
   CHILD_FOOT,
   CHILD_HEAD,
+  BOX_BORDER,
   FAULT_MARK,
   FEED_LEFT,
   FEED_RIGHT,
@@ -86,8 +89,9 @@ import { useT, type Translate } from './locale.ts'
 import { elapsedOf } from './words.ts'
 import type { WordKey } from './locales/index.ts'
 
-/** How long the leave animation runs; the removal waits a breath past it. The span itself lives in the sheet. */
-const LEAVE_SPAN_MS = 260
+/** How long the leave's fold runs, and a breath past it before the page loses the pane. The fold
+ * itself lives in the sheet. */
+const LEAVE_SPAN_MS = 380
 
 /**
  * What one press on a window may do: the map's own two hands (`CardGo`), asked of a session instead
@@ -397,7 +401,19 @@ function WindowPane(props: {
     <section
       className={cls}
       data-window={pane.id}
-      style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
+      style={{
+        left: box.left,
+        top: box.top,
+        width: box.width,
+        height: box.height,
+        /* The fold's own numbers, read by the sheet's keyframes from wherever the pane stands: the
+         * box it holds now, and the title line it folds down to when it goes. The keyframes are the
+         * one place a pane's box may be animated — inline styles cannot be keyframed to, so the box
+         * hands its own values over as vars. */
+        '--superworker-pane-w': `${box.width}px`,
+        '--superworker-pane-h': `${box.height}px`,
+        '--superworker-pane-fold': `${head + foot + BOX_BORDER}px`,
+      } as React.CSSProperties}
       {...pressable}
     >
       {props.main ? (

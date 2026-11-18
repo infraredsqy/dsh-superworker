@@ -323,7 +323,7 @@ test('leave: the pane fades where it stands, and after the span the page has los
    * animationend to hang on — the only fact to wait for is the span itself running out. Inside
    * act, because the span's expiry is what updates the drawing. */
   await mounted.act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 340))
+    await new Promise((resolve) => setTimeout(resolve, 480))
   })
   assert.equal(container(mounted).querySelector('[data-window="c3"]'), null, 'the page kept the pane past the leave span')
   assert.equal(container(mounted).querySelectorAll('.superworker-olinks path').length, 1, 'the page kept the leaving child\'s line past the leave span')
@@ -473,7 +473,7 @@ test('a child that ends leaves the page: the pane fades where it stands, and aft
   /* Waiting on the leave's own span: the removal is the component's timer, and jsdom fires no
    * animationend to hang on — the only fact to wait for is the span itself running out. */
   await mounted.act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 340))
+    await new Promise((resolve) => setTimeout(resolve, 480))
   })
   assert.equal(container.querySelector('[data-window="c1"]'), null, 'the page kept the finished child past the leave span')
 
