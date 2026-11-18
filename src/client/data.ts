@@ -248,9 +248,14 @@ function portFromCall(source: PanelPort['source'], call: PortCall, stream?: Stre
     source,
     watch(sessionId, workspaceRoot, onFrame) {
       if (stream !== undefined) {
-        return stream('watch', { sessionId, workspaceRoot }, (item) => {
-          if (item !== null && typeof item === 'object') onFrame(item as SuperworkerFrame)
-        })
+        try {
+          return stream('watch', { sessionId, workspaceRoot }, (item) => {
+            if (item !== null && typeof item === 'object') onFrame(item as SuperworkerFrame)
+          })
+        } catch {
+          /* This deployment mounted the name but cannot open it as a stream: the one-frame road below is
+             the reading this panel still gets, rather than an empty stage that says nothing at all. */
+        }
       }
       /* This deployment carries no stream: one frame, read the old way, and silence after it. The
          panel's own writes re-subscribe, which is the whole retry — nothing here polls, and no
@@ -359,17 +364,16 @@ function streamOf(namespace: Service): StreamOpen | undefined {
   const open = namespace['watch']
   if (typeof open !== 'function') return undefined
   return (method, args, onItem) => {
-    let handle: StreamHandle<unknown> | undefined
-    let live = true
-    try {
-      handle = (open as (...values: unknown[]) => StreamHandle<unknown>).call(namespace, ...positional(method, args))
-    } catch {
-      return () => undefined
+    const opened = (open as (...values: unknown[]) => StreamHandle<unknown>).call(namespace, ...positional(method, args))
+    /* A host that mounted this name as a plain call would hand back a promise: reading it as a stream is
+       not this layer's to guess. Say so on the spot, and the caller keeps the one-frame road. */
+    if (opened === null || typeof opened !== 'object' || typeof (opened as AsyncIterable<unknown>)[Symbol.asyncIterator] !== 'function') {
+      throw new TypeError('the mounted watch endpoint is not a stream')
     }
-    const held = handle
+    let live = true
     void (async () => {
       try {
-        for await (const item of held) {
+        for await (const item of opened) {
           if (!live) return
           onItem(item)
         }
@@ -380,7 +384,7 @@ function streamOf(namespace: Service): StreamOpen | undefined {
     return () => {
       live = false
       try {
-        held.dispose?.()
+        opened.dispose?.()
       } catch {
         /* The handle is finished either way. */
       }

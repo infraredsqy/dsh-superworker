@@ -314,6 +314,29 @@ test('a deployment with no stream: the channel answers one frame off the two rea
   off()
 })
 
+test('a namespace whose watch is a plain call, not a stream: the channel still answers one frame off the two reads', async () => {
+  /* The name is mounted, so the port tries it as a stream first: a promise comes back, and reading a
+   * promise as a stream is not a guess this layer is allowed to make. The one-frame road is the answer,
+   * rather than an empty stage that looks like a workspace with nothing in it. */
+  const namespace = {
+    watch: async () => ({ ok: true, value: {} }),
+    read: async () => ({ ok: true, value: { workspaceRoot: 'C:\\ws' } }),
+    readSessions: async () => ({ ok: true, value: { workspaceRoot: 'C:\\ws', notes: {}, claims: {}, alive: null } }),
+  }
+  const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
+  let landed
+  const one = new Promise((resolve) => { landed = resolve })
+  const frames = []
+  const off = port.watch('s1', 'C:\\picked', (frame) => {
+    frames.push(frame)
+    landed()
+  })
+  await one
+  assert.equal(frames.length, 1, 'the fallback frame did not arrive')
+  assert.equal(frames[0].reading.workspaceRoot, 'C:\\ws')
+  off()
+})
+
 test('the answer is not something readable: report unparsable-answer, no made-up reading', async () => {
   const { namespace } = fakeNamespace('not an object')
   const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
