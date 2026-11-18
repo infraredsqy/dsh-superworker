@@ -382,8 +382,11 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       waitingSessions,
       deliveredSessions,
       strandedNodes,
+      /* The moment the frame was read at: the end a running window's span is measured to. A window
+       * that stopped is measured to its own last word instead, so nothing here keeps counting. */
+      at: at.getTime(),
     })
-  }, [reading, events, live, nodeOf, props.sessions, sessionId, notes, waitingSessions, deliveredSessions, strandedNodes])
+  }, [reading, events, live, nodeOf, props.sessions, sessionId, notes, waitingSessions, deliveredSessions, strandedNodes, at])
 
   /* The overview's empty stage: the record is in hand and yet no window stands. Which of the three
    * it is is what the stage says — a workspace with no node at all, one whose record names no

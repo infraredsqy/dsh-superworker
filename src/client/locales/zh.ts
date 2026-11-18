@@ -210,6 +210,17 @@ export const zh = {
   'date.before-yesterday': '前天',
   'date.month-day': '{month}月{day}日',
 
+  /* ── How a span reads ────────────────────────────────────────────────────────────────────── */
+  /* The unit the model measured, said in this language's own hand: the hours and the minutes left
+   * past them, the minutes and the seconds left past them, or the smaller unit alone when nothing
+   * is left past it. No verb stands beside the number — no "已运行" — because a window putting a
+   * number on its own title line has already said what the number is about. */
+  'span.hours-minutes': '{hours}小时{minutes}分',
+  'span.hours': '{hours}小时',
+  'span.minutes-seconds': '{minutes}分{seconds}秒',
+  'span.minutes': '{minutes}分',
+  'span.seconds': '{seconds}秒',
+
   /* ── The scope of an instruction ──────────────────────────────────────────────────────────── */
   'scope.node': '这一格',
 

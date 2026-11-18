@@ -15,12 +15,13 @@
 import type { Translate } from './locale.ts'
 import type { Failure, FailureCode } from './failure.ts'
 import type { WordKey } from './locales/index.ts'
-import { clock, dayParts, everySourceIs, lineStateOf } from '../model/index.ts'
+import { clock, dayParts, elapsedParts, everySourceIs, lineStateOf } from '../model/index.ts'
 import type {
   CycleReading,
   CycleState,
   DayParts,
   DepsReading,
+  ElapsedParts,
   GateReading,
   InstructionGroupReading,
   IssueState,
@@ -179,10 +180,24 @@ export function timeOf(t: Translate, moment: Date | null, at: Date): string {
   return moment === null ? '--' : `${dayLabel(t, dayParts(moment, at))} ${clock(moment)}`
 }
 
-/* How long something took is printed by the model's compact spelling (`duration`: `41s`, `1h02`),
- * which reads the same in every language. A localised spelling once stood here beside it with no
- * place that drew it; a second spelling of one duration is the thing this file exists to avoid, so
- * it is gone rather than kept for a future caller. */
+/* How long something took is measured once, by the model (`elapsedParts`: which unit, how many of it,
+ * how much of the smaller one is left), and said once, here. It is the only spelling of a span the
+ * panel has: a compact `1h02` once stood beside a localised one, and a second spelling of one duration
+ * is the thing this file exists to avoid. The number carries no verb ("已运行", "running for"): a
+ * window is saying how long it has been open, and the reader already knows what they are looking at. */
+export function elapsedOf(t: Translate, seconds: number | null): string {
+  const parts: ElapsedParts | null = elapsedParts(seconds)
+  if (parts === null) return '--'
+  if (parts.unit === 'seconds') return t('span.seconds', { seconds: parts.value })
+  if (parts.unit === 'minutes') {
+    return parts.rest === 0
+      ? t('span.minutes', { minutes: parts.value })
+      : t('span.minutes-seconds', { minutes: parts.value, seconds: parts.rest })
+  }
+  return parts.rest === 0
+    ? t('span.hours', { hours: parts.value })
+    : t('span.hours-minutes', { hours: parts.value, minutes: parts.rest })
+}
 
 /** The legacy-directory notice in the three pieces the panel renders it with. */
 export interface LegacyNoticeWords {

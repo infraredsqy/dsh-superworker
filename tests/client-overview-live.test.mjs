@@ -11,7 +11,8 @@
  * - a redraw follows the frame, not the chunk: a chunk pushed between frames moves nothing until
  *   the frame lands;
  * - a tail row is one line, and its clip crops at the head, so the newest words stay at the line's
- *   end (the sheet's own rules are pinned beside the computed ones);
+ *   end, while the row's word stands outside that clip and never crops (the sheet's own rules are
+ *   pinned beside the computed ones);
  * - the step settling folds the tails into the settled rows' ordinary shape.
  *
  * Needs `lib/client.js`; `npm test` builds it first. Run `node --test tests/client-overview-live.test.mjs`.
@@ -156,8 +157,8 @@ const frames = async (mounted, count) => {
 }
 
 const liveRows = (mounted) => mounted.container.querySelectorAll('[data-window="m1"] .superworker-orow.is-live')
-const liveTexts = (mounted) => [...mounted.container.querySelectorAll('[data-window="m1"] .superworker-orow.is-live .superworker-orow-live')]
-  .map((one) => one.textContent)
+/** Each tail row as a reader reads it: its word, the separator, and the buffer's newest slice. */
+const liveTexts = (mounted) => [...liveRows(mounted)].map((one) => one.textContent)
 
 test('the streamed step draws the tail rows: the head never renders, the newest words follow the frames', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
@@ -241,7 +242,8 @@ test('a tail row is one line, and its clip crops at the head', { skip: bundleSki
   })
   await frames(mounted, 4)
 
-  const clip = mounted.container.querySelector('[data-window="m1"] .superworker-orow.is-live .superworker-orow-t')
+  const row = mounted.container.querySelector('[data-window="m1"] .superworker-orow.is-live')
+  const clip = row?.querySelector('.superworker-orow-cut')
   assert.notEqual(clip, null, 'the tail row drew no clip')
   const clipStyle = mounted.window.getComputedStyle(clip)
   assert.equal(clipStyle.whiteSpace, 'nowrap', 'the tail row can wrap: it is not one line')
@@ -251,11 +253,19 @@ test('a tail row is one line, and its clip crops at the head', { skip: bundleSki
   const tailStyle = mounted.window.getComputedStyle(clip.querySelector('.superworker-orow-live'))
   assert.equal(tailStyle.direction, 'ltr', 'the tail span does not read its own run')
 
+  /* The word is the drawing's, not the buffer's: it stands before the clip, so a tail long enough to
+   * crop can never crop away which buffer is speaking. */
+  const word = row.querySelector('.superworker-orow-w')
+  assert.notEqual(word, null, 'the tail row drew no word of its own')
+  assert.equal(word.textContent, '输出 · ', 'the tail row’s word is not its word and its separator')
+  assert.equal(clip.contains(word), false, 'the row’s word stands inside the clip the tail crops through')
+  assert.equal(clip.textContent, '一行之内的尾巴。', 'the clip holds more than the buffer’s newest slice')
+
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test('the sheet says the tail row’s own rules: head-cropped, one line, the tail isolated', () => {
+test('the sheet says the tail row’s own rules: head-cropped, one line, the word outside the crop', () => {
   const sheet = readFileSync(new URL('../src/client/styles/overview.css', import.meta.url), 'utf8')
   const rules = cssBlocks(stripComments(sheet), { descend: 'all' }).filter((block) => block.kind === 'rule')
   /* The one line is the settled row's own clip; the live variant only turns it. */
@@ -264,10 +274,26 @@ test('the sheet says the tail row’s own rules: head-cropped, one line, the tai
   assert.match(base.body, /white-space:\s*nowrap/u, 'the feed row is not pinned to one line')
   assert.match(base.body, /text-overflow:\s*ellipsis/u, 'the feed row has no ellipsis to crop with')
 
-  const clip = rules.find((rule) => rule.prelude.includes('.superworker-orow.is-live .superworker-orow-t') && rule.at === '')
-  assert.notEqual(clip, undefined, 'no rule turns a live tail row’s clip')
+  /* A live row lays its word and its cropped tail out side by side, and the crop is the tail's box. */
+  const line = rules.find((rule) => rule.prelude.endsWith('.superworker-orow-t.is-live') && rule.at === '')
+  assert.notEqual(line, undefined, 'no rule lays a live tail row out as its word and its tail')
+  assert.match(line.body, /display:\s*flex/u, 'the live row does not put its word beside its tail')
+
+  const word = rules.find((rule) => rule.prelude.endsWith('.superworker-orow-w') && rule.at === '')
+  assert.notEqual(word, undefined, 'no rule keeps the row’s word whole')
+  assert.match(word.body, /flex:\s*none/u, 'the word may shrink: the crop can eat it')
+  assert.match(word.body, /white-space:\s*pre/u, 'the word’s own trailing space collapses')
+
+  const clip = rules.find((rule) => rule.prelude.endsWith('.superworker-orow-cut') && rule.at === '')
+  assert.notEqual(clip, undefined, 'no rule turns a live tail’s clip')
   assert.match(clip.body, /direction:\s*rtl/u, 'the clip does not run tail-first (head cropped)')
   assert.match(clip.body, /text-align:\s*left/u, 'the clip does not keep the settled alignment')
+  assert.match(clip.body, /text-overflow:\s*ellipsis/u, 'the clip has no ellipsis to crop with')
+
+  /* The swallowed shape — the word inside the box the head crop runs through — has to be gone, not
+   * merely outnumbered: one rule keeping it puts the word back on the crop's menu. */
+  const swallowed = rules.find((rule) => /\.superworker-orow\.is-live \.superworker-orow-t\b/u.test(rule.prelude) && rule.at === '')
+  assert.equal(swallowed, undefined, 'a rule still turns the row text: the word crops with the tail')
 
   const tail = rules.find((rule) => rule.prelude.includes('.superworker-orow-live') && rule.at === '')
   assert.notEqual(tail, undefined, 'no rule isolates the tail run')

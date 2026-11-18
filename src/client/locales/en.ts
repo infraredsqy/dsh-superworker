@@ -186,6 +186,15 @@ export const en: Readonly<Record<WordKey, string>> = {
   'date.before-yesterday': 'Two days ago',
   'date.month-day': '{month}/{day}',
 
+  /* ── How a span reads ────────────────────────────────────────────────────────────────────── */
+  /* The number leads in English, its unit right behind it, and no verb stands in front of either:
+   * the window already said what the number is about. */
+  'span.hours-minutes': '{hours}h {minutes}m',
+  'span.hours': '{hours}h',
+  'span.minutes-seconds': '{minutes}m {seconds}s',
+  'span.minutes': '{minutes}m',
+  'span.seconds': '{seconds}s',
+
   /* ── The scope of an instruction ──────────────────────────────────────────────────────────── */
   'scope.node': 'This cell',
 

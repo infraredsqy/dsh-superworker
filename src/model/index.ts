@@ -27,6 +27,6 @@ export type {
 export { readLine, readPool, readWeights } from './pool.ts'
 export { belongsTo, bucketOf, everySourceIs, lineStateOf, nodesOf, ownersOf, rankOf } from './reading.ts'
 export type { CycleState, DetailGroupKey, NodeBucket, NodeRank } from './reading.ts'
-export { clock, dayParts, duration, durationParts } from './format.ts'
-export type { DayParts, DurationParts } from './format.ts'
+export { clock, dayParts, elapsedParts } from './format.ts'
+export type { DayParts, ElapsedParts } from './format.ts'
 export { cutAt, field, happenedAt, secondsBetween, text, toMoment, writtenBy } from './fields.ts'

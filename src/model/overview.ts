@@ -46,7 +46,7 @@
  * running bit is the authority.
  */
 import type { SuperworkerNode } from './records.ts'
-import { text } from './fields.ts'
+import { secondsBetween, text } from './fields.ts'
 
 /**
  * The window cap: more than this many child windows, and the overview draws
@@ -151,6 +151,13 @@ export interface OverviewWindow {
   readonly mode: string | null
   /** When the conversation started: the earliest moment its own events carry; absent when none does. */
   readonly startedAt: Date | null
+  /**
+   * How long it has been running, in whole seconds: from {@link startedAt} to the
+   * moment this reading was taken while the running bit says alive, and to the
+   * conversation's own last word once it is over — a window nobody is in must
+   * not keep counting. Absent when there is no start to count from.
+   */
+  readonly elapsedSeconds: number | null
   /** The rows it draws: the most recent it has room for, in the order they happened. */
   readonly rows: readonly OverviewRow[]
   /**
@@ -297,6 +304,16 @@ export interface OverviewInput {
    * caller, which has the three facts; this module only reads the debt off it.
    */
   readonly strandedNodes?: readonly unknown[] | undefined
+  /**
+   * The moment this reading is taken at, in epoch milliseconds (a moment string is
+   * read the same way, the convention every other moment on this input follows).
+   * It is read for one thing only: how long a window has been running
+   * ({@link OverviewWindow.elapsedSeconds}), which is measured to it while the
+   * conversation still runs. Absent, no running span is stated at all — a window
+   * that cannot say how long it has run says nothing rather than a number
+   * measured from the wrong end.
+   */
+  readonly at?: unknown
 }
 
 /** The drawn row each tool name folds into. A name outside the four sets is a tool this fold does not know, and folds as the neutral `tool`. */
@@ -381,6 +398,16 @@ function movedAtOf(row: OverviewSessionRow | undefined): number {
     if (!Number.isNaN(ms)) return ms
   }
   return 0
+}
+
+/** The moment a reading was taken at, read the same way a row's own moment is; absent says nothing. */
+function atOf(raw: unknown): Date | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return new Date(raw)
+  if (typeof raw === 'string' && raw.length > 0) {
+    const ms = Date.parse(raw)
+    if (!Number.isNaN(ms)) return new Date(ms)
+  }
+  return null
 }
 
 /**
@@ -802,6 +829,23 @@ function startedAtOf(events: readonly OverviewEvent[] | undefined): Date | null 
   return earliest === undefined ? null : new Date(earliest)
 }
 
+/**
+ * When the conversation last moved: the newest moment its own events carry. It is
+ * the end of the span a window that stopped is measured to — the log's own last
+ * word, not the moment this reading was taken, which would keep a dead window's
+ * number counting for as long as the panel stays open.
+ */
+function endedAtOf(events: readonly OverviewEvent[] | undefined): Date | null {
+  let latest: number | undefined
+  for (const event of events ?? []) {
+    const time = event.time
+    if (typeof time === 'number' && Number.isFinite(time) && (latest === undefined || time > latest)) {
+      latest = time
+    }
+  }
+  return latest === undefined ? null : new Date(latest)
+}
+
 function titleOf(row: OverviewSessionRow, node: SuperworkerNode | undefined): string | null {
   return text(node?.title) ?? text(row.displayTitle) ?? null
 }
@@ -824,13 +868,19 @@ function windowOf(
   events: readonly OverviewEvent[] | undefined,
   capacity: unknown,
   live: readonly OverviewEvent[] | undefined,
+  at: Date | null,
 ): OverviewWindow {
+  const startedAt = startedAtOf(events)
   return {
     id,
     title: titleOf(row, node),
     weight: weightOf(node),
     mode: modeOf(node),
-    startedAt: startedAtOf(events),
+    startedAt,
+    /* A leg that is still moving is measured to the moment this reading was taken; one that stopped
+       is measured to its own last word. Either way the number is a span this reading states, never a
+       clock the drawing reads for itself. */
+    elapsedSeconds: secondsBetween(startedAt, row.running === true ? at : endedAtOf(events)),
     /* The settled rows stand first in their existing shape; the streaming
        step's tails hang after them — at most two, and gone again once the
        step's message lands among the settled rows. */
@@ -960,6 +1010,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const nodeFor = (id: string): SuperworkerNode | undefined =>
     input.nodeOf === undefined ? undefined : input.nodes?.[input.nodeOf[id] ?? '']
   const main = mainId === undefined ? undefined : rows[mainId]
+  const at = atOf(input.at)
   const waiting = waitingOf(input)
   const delivered = namedSet(input.deliveredSessions)
   const stranded = namedSet(input.strandedNodes)
@@ -974,7 +1025,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const mainWindow = main === undefined || mainId === undefined
     ? null
     : {
-      ...windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity, input.live?.[mainId]),
+      ...windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity, input.live?.[mainId], at),
       ...factsOf({
         settled: main.running !== true,
         gated: waiting.has(mainId),
@@ -1006,7 +1057,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
      seat the cap could fold away, so the count keeps counting windows alone. */
   const seats: OverviewWindow[] = []
   for (const id of running) {
-    const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id])
+    const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id], at)
     if (window.title === null && window.rows.length === 0) continue
     /* A seat is drawn only while it runs, so it carries no state of its own: the gate, the delivery
        and the debt are verdicts about work at rest, and the main window is where they are read. The

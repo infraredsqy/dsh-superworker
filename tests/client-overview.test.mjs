@@ -194,15 +194,15 @@ test('the overview draws the reading: the node nameplate on the main window, run
   const main = container.querySelector('[data-window="m1"]')
   assert.notEqual(main, null, 'the main window is not drawn')
   assert.ok(main.className.includes('is-main'), 'the main window does not wear the main class')
-  assert.equal(main.querySelector('.superworker-oplate-t')?.textContent, 'the driven node', 'the nameplate does not read the record node the note names')
+  assert.equal(main.querySelector('.superworker-oplate-n')?.textContent, 'the driven node', 'the nameplate does not read the record node the note names')
   assert.ok((main.querySelector('.superworker-oplate-m span')?.textContent ?? '').length > 0, 'the nameplate carries no readings line')
-  assert.notEqual(main.querySelector('.superworker-oplate-m .superworker-num'), null, 'the nameplate carries no moment')
+  assert.notEqual(main.querySelector('.superworker-ocorner .superworker-num'), null, 'the nameplate states no running span')
 
   const child = container.querySelector('[data-window="c1"]')
   assert.notEqual(child, null, 'a running child is not drawn')
   assert.equal(child.querySelector('.superworker-ohead-t')?.textContent, 'the first child', 'the child title line does not read the list label')
   assert.equal(child.querySelector('.superworker-ohead-r'), null, 'a window that works no node carries a readings line')
-  assert.notEqual(child.querySelector('.superworker-ohead .superworker-num'), null, 'the child title line carries no moment')
+  assert.notEqual(child.querySelector('.superworker-ohead .superworker-num'), null, 'the child title line states no running span')
   assert.equal(container.querySelector('[data-window="c2"]'), null, 'a stopped child became a window')
 
   assert.ok(!((container.textContent ?? '').includes('m1') || (container.textContent ?? '').includes('c1')), 'a session id printed on the page')
@@ -553,7 +553,7 @@ test("the main window at a person's gate stops as a checkpoint: it breathes ambe
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test('the main window still running draws as it runs: no veil, no check, no gate', { skip: bundleSkip }, async () => {
+test('the main window still running draws as it runs: no veil, no check, no gate, and the ring turns in its nameplate', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
   service.set('m1', [read('a.ts', 100)])
   const mounted = await mountBuiltPanel({
@@ -566,7 +566,12 @@ test('the main window still running draws as it runs: no veil, no check, no gate
   const main = container.querySelector('[data-window="m1"]')
   assert.notEqual(main, null, 'the main window is not drawn')
   assert.equal(main.querySelector('.superworker-omark'), null, 'a running main window wears a check')
-  assert.equal(main.querySelector('.superworker-oring'), null, 'a running main window turns a ring')
+  /* "Still moving" is drawn on the window that is moving, whichever window it is: a reader looking for
+   * the spinner in one place must not have to learn that the main window keeps it somewhere else. */
+  const ring = main.querySelector('.superworker-oring')
+  assert.notEqual(ring, null, 'a running main window turns no ring')
+  assert.notEqual(main.querySelector('.superworker-oplate .superworker-oring'), null, 'the main window’s ring is not in its nameplate')
+  assert.equal(ring.style.width, '10px', `the ring is ${ring.style.width} across, not 10`)
   assert.ok(!main.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'a running main window is veiled')
   assert.equal(main.className.includes('is-wait'), false, 'a running main window nobody waits on breathes')
   assert.equal(main.querySelectorAll('.superworker-orow').length, 1, 'the running main window lost its rows')
@@ -851,7 +856,7 @@ test('the built panel draws the conversation the record names, not the one DSH h
   const main = container.querySelector('[data-window="session-pipeline"]')
   assert.notEqual(main, null, 'the record-named conversation is not drawn')
   assert.ok(main.className.includes('is-main'), 'the record-named conversation does not wear the main class')
-  assert.equal(main.querySelector('.superworker-oplate-t')?.textContent, 'the driven node', 'the nameplate does not read the node the note names')
+  assert.equal(main.querySelector('.superworker-oplate-n')?.textContent, 'the driven node', 'the nameplate does not read the node the note names')
   assert.equal(container.querySelector('[data-window="session-old"]'), null, 'the conversation DSH holds as its main view was drawn')
   assert.equal(main.querySelectorAll('.superworker-orow').length, 1, 'the main window does not draw its one row')
   assert.ok((container.textContent ?? '').includes('this pipeline own words.'), "the main window's row is not its own conversation's")
@@ -916,7 +921,7 @@ test('self-looping motion lives in exactly three places here: the waiting border
 
   /* The running ring: one turn every 1.3 seconds (half the border's 2.6s breath), on the panel's
    * 1.5px track. Under reduced motion it stops and keeps a dashed ring — the panel's still form. */
-  const ring = rules.find((rule) => rule.prelude.endsWith('superworker-oring') && rule.at === '')
+  const ring = rules.find((rule) => rule.prelude.trim() === '.superworker-page .superworker-oring' && rule.at === '')
   assert.notEqual(ring, undefined, 'no rule turns the running ring')
   assert.match(ring.body, /animation:\s*superworker-oring-spin 1\.3s linear infinite/u, 'the ring does not turn at the demo\'s pace')
   assert.match(ring.body, /border:\s*1\.5px solid/u, 'the ring is not on the panel\'s 1.5px track')
@@ -924,7 +929,13 @@ test('self-looping motion lives in exactly three places here: the waiting border
     rules.some((rule) => rule.at === '@keyframes superworker-oring-spin' && /rotate\(1turn\)/u.test(rule.body)),
     'the ring has no turn to make',
   )
-  const still = rules.find((rule) => rule.at.includes('prefers-reduced-motion') && rule.prelude.endsWith('superworker-oring'))
+  /* The main window's ring is that same ring with its cell in the nameplate: the sheet gives it a
+   * place and nothing else, so it can never drift into a second kind of spinner. */
+  const plate = rules.find((rule) => rule.prelude.trim() === '.superworker-page .superworker-oplate .superworker-oring' && rule.at === '')
+  assert.notEqual(plate, undefined, 'no rule gives the nameplate’s ring its cell')
+  assert.ok(!/animation|border/u.test(plate.body), 'the nameplate’s ring declares a turn or a track of its own')
+  assert.match(plate.body, /top:\s*16px/u, 'the nameplate’s ring is not centred on the title line')
+  const still = rules.find((rule) => rule.at.includes('prefers-reduced-motion') && rule.prelude.trim() === '.superworker-page .superworker-oring')
   assert.notEqual(still, undefined, 'the ring keeps turning under reduced motion')
   assert.match(still.body, /animation:\s*none/u, 'the ring keeps turning under reduced motion')
   assert.match(still.body, /border-style:\s*dashed/u, 'the still ring is not left as a dashed ring')

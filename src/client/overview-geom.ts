@@ -303,6 +303,13 @@ export const RING_CELL = 20
 export const RING_RIGHT = 16
 export const RING_TOP = 7
 
+/**
+ * Where a child's title line stops on the right: at the ring's cell's own edge. The cell is the
+ * ring's and no one else's, so the line's last word — the elapsed number — can never be put under
+ * the turning ink; the ring keeps the cell's own ground on every side of it.
+ */
+export const HEAD_RIGHT = RING_RIGHT + RING_CELL
+
 /** One mark's box in its pane's own coordinates, and the pen its glyph is stroked with. */
 export interface OverviewMark {
   readonly left: number

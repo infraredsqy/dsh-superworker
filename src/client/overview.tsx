@@ -39,12 +39,12 @@
  */
 import * as React from 'react'
 import type { OverviewEnding, OverviewReading, OverviewRowKind, OverviewWindow } from '../model/index.ts'
-import { clock } from '../model/index.ts'
 import {
   CHILD_FOOT,
   CHILD_HEAD,
   FEED_LEFT,
   FEED_RIGHT,
+  HEAD_RIGHT,
   LINK_DOT_R,
   MAIN_FOOT,
   MAIN_HEAD,
@@ -52,6 +52,7 @@ import {
   MARK_CHECK_STROKE,
   MARK_SCRIM,
   RAIL_LEFT,
+  RING_SIZE,
   ROW_H,
   SPILL_DOTS,
   layoutBroken,
@@ -66,7 +67,7 @@ import {
   type StageSize,
 } from './overview-geom.ts'
 import { useT, type Translate } from './locale.ts'
-import { timeOf } from './words.ts'
+import { elapsedOf } from './words.ts'
 import type { WordKey } from './locales/index.ts'
 
 /** How long the leave animation runs; the removal waits a breath past it. The span itself lives in the sheet. */
@@ -221,7 +222,8 @@ function FinishedMark(props: { readonly failed: boolean; readonly stroke: number
 
 /** One window's feed: the rows it holds, newest at the bottom, the top fading when the room ran out.
  * A live row is the streaming step's own tail: it redraws at the animation frame, and its clip is
- * the sheet's head-crop — the newest words stay on the line's end. */
+ * the sheet's head-crop — the newest words stay on the line's end, while the row's word stays whole
+ * outside that clip: which buffer is speaking is not a thing the crop is allowed to eat. */
 function Feed(props: {
   readonly window: OverviewWindow
   /** How many rows the box has room for; past it the top row fades out. */
@@ -247,9 +249,16 @@ function Feed(props: {
           title={row.full}
         >
           <KindMark kind={row.kind} />
-          <span className="superworker-orow-t">
+          <span className={`superworker-orow-t${row.live === true ? ' is-live' : ''}`}>
             {row.live === true
-              ? <span className="superworker-orow-live">{`${t(ROW_WORDS[row.kind])} · ${row.text}`}</span>
+              ? (
+                <>
+                  <span className="superworker-orow-w">{`${t(ROW_WORDS[row.kind])} · `}</span>
+                  <span className="superworker-orow-cut">
+                    <span className="superworker-orow-live">{row.text}</span>
+                  </span>
+                </>
+              )
               : `${t(ROW_WORDS[row.kind])} · ${row.text}`}
           </span>
         </div>
@@ -290,8 +299,8 @@ function WindowPane(props: {
    * leg of its own. It wears the panel's failed glyph and the one word that says so. */
   const broken = props.main && !atGate && !handed && pane.alert === true
   /* The one thing a window's cell says: the verdict mark on the main window (the check for work
-   * handed in, the failed glyph and its word for a break), and the small ring while a child is still
-   * moving. The main window wears no ring — it is the conversation being read. */
+   * handed in, the failed glyph and its word for a break). The ring is not a verdict — it says the
+   * conversation is still moving, so both windows wear it while they run. */
   const verdict = broken ? layoutBroken({ width: box.width, height: box.height, head, foot }) : undefined
   const mark = verdict !== undefined
     ? verdict.mark
@@ -303,7 +312,12 @@ function WindowPane(props: {
    * check does not carry it: its fact is the record's delivery, and "it closed the turn itself
    * without handing the work in" would be the one sentence a delivered window must never say. */
   const reason = broken ? t(endingWordOf(pane.ending)) : undefined
-  const ring = !props.main ? layoutRing({ width: box.width }) : undefined
+  /* The ring says "still moving" on both windows — the conversation this panel lives in is as much a
+   * thing that runs as a leg it dispatched, and a reader who has to look for the spinner only on some
+   * windows learns to stop looking. Only two windows wear none: one whose conversation stopped, and
+   * one at a person's gate, where the gate's own breath is already the mark. */
+  const moving = !atGate && pane.settled !== true
+  const ring = !props.main && moving ? layoutRing({ width: box.width }) : undefined
   const cls = [
     'superworker-opane',
     props.main ? 'is-main' : 'is-child',
@@ -316,18 +330,29 @@ function WindowPane(props: {
   return (
     <section className={cls} data-window={pane.id} style={{ left: box.left, top: box.top, width: box.width, height: box.height }}>
       {props.main ? (
+        /* The nameplate is this window's title line, so its own right end carries the two facts a
+         * child's title line carries: how long the conversation has run, and the ring while it still
+         * moves. The number lives here and not on the readings line, where it would stand in the
+         * left-aligned flow and be read as part of the caption. */
         <div className="superworker-oplate">
-          {pane.title === null ? null : <p className="superworker-oplate-t">{pane.title}</p>}
-          <p className="superworker-oplate-m">
-            {readings === null ? null : <span>{readings}</span>}
-            <span className="superworker-num">{timeOf(t, pane.startedAt, props.at)}</span>
+          <p className="superworker-oplate-t">
+            <span className="superworker-oplate-n">{pane.title ?? ''}</span>
+            <span className="superworker-ocorner">
+              <span className="superworker-num">{elapsedOf(t, pane.elapsedSeconds)}</span>
+            </span>
           </p>
+          {readings === null ? null : (
+            <p className="superworker-oplate-m">
+              <span>{readings}</span>
+            </p>
+          )}
+          {moving ? <i className="superworker-oring" aria-hidden="true" style={{ width: RING_SIZE, height: RING_SIZE }} /> : null}
         </div>
       ) : (
-        <div className="superworker-ohead">
+        <div className="superworker-ohead" style={{ right: HEAD_RIGHT }}>
           <span className="superworker-ohead-t">{pane.title ?? ''}</span>
           {readings === null ? null : <span className="superworker-ohead-r">{readings}</span>}
-          <span className="superworker-num">{clock(pane.startedAt)}</span>
+          <span className="superworker-num">{elapsedOf(t, pane.elapsedSeconds)}</span>
         </div>
       )}
       <Feed

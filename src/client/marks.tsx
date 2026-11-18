@@ -9,10 +9,10 @@
  */
 import * as React from 'react'
 import type { CycleReading, CycleState, NodeReading } from '../model/index.ts'
-import { bucketOf, duration, lineStateOf, readDeps } from '../model/index.ts'
+import { bucketOf, lineStateOf, readDeps } from '../model/index.ts'
 import type { Translate } from './locale.ts'
 import { useT } from './locale.ts'
-import { depsSentence, gateTitle, stateWord, strandedTitle } from './words.ts'
+import { depsSentence, elapsedOf, gateTitle, stateWord, strandedTitle } from './words.ts'
 
 /**
  * What each line state wears on the mark: the same answer that spells the hover sentence
@@ -30,7 +30,7 @@ const LINE_CLASSES: Readonly<Record<CycleState, string>> = {
  * detail rows and the map's own card both stand it up.
  */
 export function runningTitle(t: Translate, node: NodeReading): string {
-  return node.elapsedSeconds === null ? t('state.running') : t('marks.running.elapsed', { elapsed: duration(node.elapsedSeconds) })
+  return node.elapsedSeconds === null ? t('state.running') : t('marks.running.elapsed', { elapsed: elapsedOf(t, node.elapsedSeconds) })
 }
 
 /**

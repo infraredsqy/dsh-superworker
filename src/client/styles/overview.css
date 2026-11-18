@@ -246,10 +246,38 @@
 }
 .superworker-page .superworker-oplate-t {
   margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  /* The ring's own ground inside the plate: its ink is 10 wide, 15 in from the padding box's edge,
+   * so the number stops 32 from it — the same breath the title line's cell keeps around its ring. */
+  padding-right: 32px;
   font: var(--dsw-font-xs-13);
   font-weight: 500;
   line-height: 20px;
   color: var(--dsw-alias-label-primary);
+}
+.superworker-page .superworker-oplate-n {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The plate's right end: how long this conversation has run, said at the caption's voice so it never
+ * competes with the name it stands beside. */
+.superworker-page .superworker-ocorner {
+  flex: none;
+  font: var(--dsw-font-xxs-12);
+  font-weight: 400;
+  color: var(--dsw-alias-label-caption);
+}
+/* The main window's ring turns in the plate's own corner, on the title line's middle: the plate is a
+ * positioned box, so the ring needs no box of its own from the geometry — only its size, which comes
+ * in inline. */
+.superworker-page .superworker-oplate .superworker-oring {
+  top: 16px;
+  right: 15px;
 }
 .superworker-page .superworker-oplate-m {
   margin: 6px 0 0;
@@ -260,12 +288,12 @@
   line-height: 16px;
   color: var(--dsw-alias-label-caption);
 }
-
 /* ---- A child window's title line ------------------------------------------ */
+/* Its right edge is the geometry's (`HEAD_RIGHT`): the line stops where the running ring's cell
+ * begins, so the number that ends the line never stands under the turning ink. */
 .superworker-page .superworker-ohead {
   position: absolute;
   left: 16px;
-  right: 16px;
   top: 8px;
   height: 18px;
   display: flex;
@@ -345,12 +373,30 @@
  * as two tail rows, each the buffer's newest slice, redrawn at the animation
  * frame the forwarding half publishes at. Whatever still does not fit the row
  * is cropped at the head, not the tail — the newest words are the whole point
- * of a tail row — so the row's own clip runs the other way (`direction: rtl`,
+ * of a tail row — so the tail's own clip runs the other way (`direction: rtl`,
  * the ellipsis landing at the head) while `text-align` keeps the line aligned
- * with the settled rows. The tail span isolates its own left-to-right run, so
- * content the buffer happens to carry reads in its own order. The row never
- * wraps: one line, whatever the buffer is doing. */
-.superworker-page .superworker-orow.is-live .superworker-orow-t {
+ * with the settled rows. That clip holds the buffer's text and nothing else:
+ * the row's word (`思考 · `, `输出 · `) stands before it as its own box, outside
+ * the crop — which buffer is speaking is the drawing's own word, not the
+ * buffer's, so a crop of the newest words may not eat it. The word keeps its
+ * trailing space with `white-space: pre`, so a live row and a settled one put
+ * the word and the text at the same distance. The tail span isolates its own
+ * left-to-right run, so content the buffer happens to carry reads in its own
+ * order. The row never wraps: one line, whatever the buffer is doing. */
+.superworker-page .superworker-orow-t.is-live {
+  display: flex;
+  align-items: baseline;
+}
+.superworker-page .superworker-orow-w {
+  flex: none;
+  white-space: pre;
+}
+.superworker-page .superworker-orow-cut {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   direction: rtl;
   text-align: left;
 }

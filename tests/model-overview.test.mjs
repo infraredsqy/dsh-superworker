@@ -1220,3 +1220,27 @@ test("the main window draws the same tails off its own conversation's chunks", (
   })
   assert.deepEqual(reading.main.rows.map((r) => [r.kind, r.text]), [['output', '正在说的一句话']])
 })
+
+/* ---- how long a window has run ------------------------------------------- */
+
+test('a running window is measured to the moment read, a stopped one to its own last word', () => {
+  const events = { [MAIN]: [said(1000, undefined, '开头'), said(5000, undefined, '结尾')] }
+  const running = readOverview({
+    sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN, { running: true }) }),
+    events,
+    at: 9000,
+  })
+  assert.equal(running.main.startedAt.getTime(), 1000)
+  assert.equal(running.main.elapsedSeconds, 8, 'a running window is measured to the moment the reading was taken')
+
+  const stopped = readOverview({ sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }), events, at: 9000 })
+  assert.equal(stopped.main.elapsedSeconds, 4, 'a stopped window kept counting past its own last word')
+
+  /* No moment handed in says nothing about a window that still runs — a number measured from the wrong
+   * end is worse than none — while a stopped window can still state its own span. */
+  const unmeasured = readOverview({ sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN, { running: true }) }), events })
+  assert.equal(unmeasured.main.elapsedSeconds, null, 'a running window with no moment of its own invented a span')
+
+  const eventless = readOverview({ sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }), at: 9000 })
+  assert.equal(eventless.main.elapsedSeconds, null, 'no start means no span, never 0')
+})

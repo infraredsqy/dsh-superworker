@@ -4,8 +4,7 @@
  * This module measures; it does not speak. A span's wording differs per language, so what is given
  * here is the *shape* of a duration — which unit it falls in, how many of that unit — and the client
  * says it. The only spellings that stay here are the ones that read the same in every language:
- * digits, the `--` that marks an absent value, and the compact `41s` / `1h02` form the panel prints
- * inline beside a card.
+ * digits and the `--` that marks an absent value.
  *
  * When the moment is absent, an "absent" shape is given (`null`, or `--`) rather than a `0` that
  * reads as "exactly zero". Everything is based on the moment the caller provides; this module never
@@ -20,32 +19,27 @@ export function clock(moment: Date | null): string {
   return moment ? `${two(moment.getHours())}:${two(moment.getMinutes())}` : '--'
 }
 
-/** Which unit a span falls in, how many of it, and the whole minutes left over past the hours. */
-export interface DurationParts {
+/** Which unit a span is said in, how many of it, and how much of the smaller unit is left over. */
+export interface ElapsedParts {
   readonly unit: 'seconds' | 'minutes' | 'hours'
+  /** Whole units the span is said in. */
   readonly value: number
-  /** Whole minutes left once the hours are taken out; `0` in the other two units. */
+  /** Whole minutes left past the hours, or whole seconds left past the minutes; `0` in the seconds unit. */
   readonly rest: number
 }
 
 /**
- * The unit a span falls in: under a minute goes to seconds, a whole minute but under an hour to
- * minutes, beyond that to hours. No duration — or a moment not yet reached — has no unit at all.
+ * The unit a span is said in: under a minute goes to seconds, a whole minute but under an hour to
+ * minutes and the seconds left past them, beyond that to hours and the minutes left past them.
+ * Floored, never rounded — a window saying how long it has run may not claim a minute it has not run
+ * yet. No span — or a moment not yet reached — has no unit at all.
  */
-export function durationParts(seconds: number | null): DurationParts | null {
+export function elapsedParts(seconds: number | null): ElapsedParts | null {
   if (seconds === null || seconds < 0) return null
-  if (seconds < 60) return { unit: 'seconds', value: seconds, rest: 0 }
-  const minutes = Math.round(seconds / 60)
-  if (minutes < 60) return { unit: 'minutes', value: minutes, rest: 0 }
-  return { unit: 'hours', value: Math.floor(minutes / 60), rest: minutes % 60 }
-}
-
-export function duration(seconds: number | null): string {
-  const parts = durationParts(seconds)
-  if (parts === null) return '--'
-  if (parts.unit === 'seconds') return `${parts.value}s`
-  if (parts.unit === 'minutes') return `${parts.value}m`
-  return parts.rest > 0 ? `${parts.value}h${two(parts.rest)}` : `${parts.value}h`
+  const whole = Math.floor(seconds)
+  if (whole < 60) return { unit: 'seconds', value: whole, rest: 0 }
+  if (whole < 3600) return { unit: 'minutes', value: Math.floor(whole / 60), rest: whole % 60 }
+  return { unit: 'hours', value: Math.floor(whole / 3600), rest: Math.floor((whole % 3600) / 60) }
 }
 
 /**
