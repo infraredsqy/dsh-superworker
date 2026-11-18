@@ -41,6 +41,14 @@
  * being cleared once and forgotten. A delivered leg is never a window; it owes
  * nobody.
  *
+ * A session DSH ran **for** one of these windows — its row carries the
+ * `parentId` of the session that dispatched it, and the ordered list leaves it
+ * out — is a child of that window: a window while it runs, and, when it was cut
+ * off while its dispatcher's cell was still held and the line has stopped, a
+ * window afterwards too. It works no node of its own, so its debt is its
+ * dispatcher's: the work it was doing is still on the table and nothing took it
+ * over. One that closed its own turn hands the work back and leaves.
+ *
  * The main window is the conversation this panel lives in, and it
  * carries the facts the drawing's states are read from: `settled` (the list's
  * running bit is not true — the rows will not move again), `delivered` (the
@@ -332,6 +340,18 @@ export interface OverviewInput {
    * a finished round. Absent, no leg outlives its run.
    */
   readonly undeliveredSessions?: readonly unknown[] | undefined
+  /**
+   * The sessions whose node a line **still holds**: the node is not delivered and a
+   * cycle holds it, which is the project's own `running` reading. The caller reads it
+   * off the record.
+   *
+   * It is the debt a red window is drawn on, and it is narrower than
+   * {@link undeliveredSessions} on purpose: a cell nobody has started and nobody holds
+   * is the line's next work, not a debt — a conductor waiting for its next dispatch
+   * must not wear the failed glyph. `shelved` cells are not held either; they owe a
+   * person, which is the gate.
+   */
+  readonly heldSessions?: readonly unknown[] | undefined
   /**
    * The moment this reading is taken at, in epoch milliseconds (a moment string is
    * read the same way, the convention every other moment on this input follows).
@@ -874,6 +894,12 @@ function endedAtOf(events: readonly OverviewEvent[] | undefined): Date | null {
   return latest === undefined ? null : new Date(latest)
 }
 
+/** Whether a conversation was cut off rather than closing its own turn: a readable ending that is not `completed`. */
+function cutShort(events: readonly OverviewEvent[] | undefined): boolean {
+  const ending = endingOf(events)
+  return ending !== undefined && ending.kind !== 'completed'
+}
+
 function titleOf(row: OverviewSessionRow, node: SuperworkerNode | undefined): string | null {
   return text(node?.title) ?? text(row.displayTitle) ?? null
 }
@@ -1047,29 +1073,23 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const delivered = namedSet(input.deliveredSessions)
   const stranded = namedSet(input.strandedNodes)
   const undelivered = namedSet(input.undeliveredSessions)
-  /* Whether any leg of this pipeline is still alive right now: a conversation
-     that yielded while these move is waiting on its own work, not broken, and a
-     leg that stopped is not where the line stands while a sibling of it runs. A
-     caller that named nothing judges across the whole list it handed over. */
-  const moving = (named === undefined ? order : [...named]).some((id) => rows[id]?.running === true)
-  const owedBy = (id: string): boolean => {
-    const node = input.nodeOf?.[id]
-    return node !== undefined && stranded.has(node)
+  const held = namedSet(input.heldSessions)
+  /* The rows the list knows without listing: DSH keeps a session's dispatched subagents in its own
+     `byId` map — each carrying the `parentId` of the session that dispatched it — while the ordered
+     list holds top-level sessions only. A row with no parent link is a top-level session and is drawn
+     only when the list lists it; the bond to a window is the only reason to look past the list. */
+  const parentOf = (id: string): string | undefined => {
+    const parent = rows[id]?.parentId
+    return typeof parent === 'string' && parent.length > 0 ? parent : undefined
   }
-  const mainWindow = main === undefined || mainId === undefined
-    ? null
-    : {
-      ...windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity, input.live?.[mainId], at),
-      ...factsOf({
-        settled: main.running !== true,
-        gated: waiting.has(mainId),
-        delivered: delivered.has(mainId),
-        owed: owedBy(mainId),
-        moving,
-        ending: endingOf(input.events?.[mainId]),
-      }),
-    }
-  const anchors = dispatchAnchorsOf(mainId === undefined ? undefined : input.events?.[mainId])
+  const rowIds = [...new Set([...order, ...Object.keys(rows).filter((id) => parentOf(id) !== undefined)])]
+  /* Whether this session owes work somebody was on: the record holding its cell, or the caller's
+     judgment that the claim outlived the session. */
+  const debtOf = (id: string): boolean => {
+    const node = input.nodeOf?.[id]
+    return held.has(id) || (node !== undefined && stranded.has(node))
+  }
+  const mainWindowDebt = mainId === undefined ? false : debtOf(mainId)
   /* The seats the column can take, in two kinds. A **running** leg: the sessions the record names and
      the list calls running — the relay's legs, whose parent links point wherever the last trigger stood
      — plus the main session's own running children, which is the whole admission when the caller says
@@ -1085,17 +1105,20 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const running: string[] = []
   const ghosts: string[] = []
   if (mainId !== undefined) {
-    for (const id of order) {
+    for (const id of rowIds) {
       if (id === mainId) continue
       const row: OverviewSessionRow | undefined = rows[id]
       if (row === undefined) continue
+      const parent = parentOf(id)
       /* A ghost needs no parent link and no running bit — that is exactly what the dead leg lost — only
          the record's own word that the node is still on the table. */
       if (row.running !== true) {
         if (undelivered.has(id)) ghosts.push(id)
+        else if (parent === mainId && mainWindowDebt && cutShort(input.events?.[id])) ghosts.push(id)
         continue
       }
-      const admitted = named === undefined || named.has(id) || row.parentId === mainId
+      const admitted = parent === mainId
+        || (named === undefined ? order.includes(id) : named.has(id))
       if (!admitted) continue
       running.push(id)
     }
@@ -1110,19 +1133,42 @@ export function readOverview(input: OverviewInput): OverviewReading {
     ghosts.push(id)
   }
   /* A leg that stopped keeps the stage only while nothing came after it: a leg whose conversation
-     began later took its place, and the line is standing where the newest of them stands. A leg with
-     no readable word of its own cannot be placed in that order, and stands. */
+     began later took its place, and the line is standing where the newest of them stands. Only this
+     line's own conversations count — the session list is every workspace's, and a conversation opened
+     afterwards in another one is no step of this pipeline. A leg with no readable word of its own
+     cannot be placed in that order, and stands. */
+  const ofThisLine = (id: string): boolean => parentOf(id) === mainId
+    || (named === undefined ? order.includes(id) : named.has(id))
   const supersededBy = (id: string): boolean => {
     const end = endedAtOf(input.events?.[id])
     if (end === null) return false
     for (const other of order) {
-      if (other === id || other === mainId) continue
+      if (other === id || other === mainId || !ofThisLine(other)) continue
       const start = startedAtOf(input.events?.[other])
       if (start !== null && start.getTime() > end.getTime()) return true
     }
     return false
   }
   const standing = running.length > 0 ? [] : ghosts.filter((id) => !supersededBy(id))
+  /* Whether anything of this line is still moving: a running leg, or — with no record side at all — a
+     session of the list the caller handed over. A pipeline with a leg still running has not stopped,
+     which is what keeps the red off every window of it. */
+  const moving = running.length > 0
+    || (named === undefined ? order : [...named]).some((id) => rows[id]?.running === true)
+  const mainWindow = main === undefined || mainId === undefined
+    ? null
+    : {
+      ...windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity, input.live?.[mainId], at),
+      ...factsOf({
+        settled: main.running !== true,
+        gated: waiting.has(mainId),
+        delivered: delivered.has(mainId),
+        owed: mainWindowDebt,
+        moving,
+        ending: endingOf(input.events?.[mainId]),
+      }),
+    }
+  const anchors = dispatchAnchorsOf(mainId === undefined ? undefined : input.events?.[mainId])
   /* A window with nothing readable — no nameplate word and no row its own events fold into — is a
      box, not a window, and the running bit alone never stands one up. Dropped here, it is also no
      seat the cap could fold away, so the count keeps counting windows alone. */

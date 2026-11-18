@@ -155,7 +155,9 @@ test('the cap counts what it folded away: six alive children draw five, and one 
   assert.equal(seven.hiddenChildren, 2, `the count reads ${seven.hiddenChildren} with seven alive children`)
 
   /* Five or fewer: nothing is folded away, and the count is 0 — a number, not an absence. */
-  assert.equal(readOverview({ sessions: snapshot([MAIN, ...ids.slice(0, 5)], byId) }).hiddenChildren, 0, 'five alive children were counted as hidden')
+  const five = ids.slice(0, 5)
+  const fiveById = { [MAIN]: mainRow(MAIN), ...Object.fromEntries(five.map((id) => [id, childRow(id, MAIN)])) }
+  assert.equal(readOverview({ sessions: snapshot([MAIN, ...five], fiveById) }).hiddenChildren, 0, 'five alive children were counted as hidden')
   assert.equal(mainAlone().hiddenChildren, 0, 'a window with no children counted hidden ones')
 })
 
@@ -317,7 +319,7 @@ const OWED_NODE = 'n-owed'
  * main window however the leg is doing; the leg only decides whether anything
  * is still moving.
  */
-function factScene({ running = false, ending, waiting, delivered, stranded, runningLeg } = {}) {
+function factScene({ running = false, ending, waiting, delivered, stranded, held, runningLeg } = {}) {
   const byId = { [MAIN]: mainRow(MAIN, { running }) }
   const ids = [MAIN]
   const pipeline = [MAIN]
@@ -335,6 +337,7 @@ function factScene({ running = false, ending, waiting, delivered, stranded, runn
     ...(waiting === undefined ? {} : { waitingSessions: waiting }),
     ...(delivered === undefined ? {} : { deliveredSessions: delivered }),
     ...(stranded === undefined ? {} : { strandedNodes: stranded }),
+    ...(held === undefined ? {} : { heldSessions: held }),
   })
 }
 
@@ -535,6 +538,95 @@ test('a leg put out to wait stands quiet: a person is owed a word, nobody was br
   })
   assert.equal(reading.children[0].waiting, true, 'the gate did not land on the leg the person owes a word for')
   assert.equal('alert' in reading.children[0], false, 'a gate was drawn as a break')
+})
+
+test('alert on the debt the record holds, even when no claim outlived the session', () => {
+  /* The stopped conductor: its cell is still held by a line, its last turn was stopped by hand, and
+   * nothing else of the line is running. The stranded reading needs the live roster and a claim on
+   * disk, and the red must not wait for it — the record's own holding is the debt. */
+  const reading = factScene({ ending: turnEnd(9, 'aborted', 'user'), held: [MAIN] })
+  assert.equal(reading.main.alert, true, 'a stopped leg whose cell the line still holds read as nothing wrong')
+})
+
+test('no alert on a cell that is merely next: nobody holds it, nothing was cut', () => {
+  /* The idle conductor between dispatches: its node is not delivered, no line holds it, and its last
+   * turn closed itself. That is a pipeline waiting for its own next step, not money owed. */
+  const reading = factScene({ ending: turnEnd(9, 'completed') })
+  assert.equal('alert' in reading.main, false, 'a conductor waiting for its next dispatch was called broken')
+})
+
+test('a subagent that was cut keeps a seat while its leg owes the work', () => {
+  /* The leg's own dispatched worker — a session with a `parentId` and no node of its own. While it
+   * runs it is a child; when it is cut off with the leg's cell still held and the line stopped, it
+   * keeps a window and wears the break: it was doing that work and nothing took it over. */
+  const byId = {
+    [MAIN]: mainRow(MAIN),
+    'sub-1': { id: 'sub-1', parentId: MAIN, running: false, displayTitle: 'exec-finale', retainedBy: {} },
+  }
+  const reading = readOverview({
+    sessions: snapshot([MAIN], byId),
+    pipelineSessions: [MAIN],
+    sessionId: MAIN,
+    nodeOf: { [MAIN]: OWED_NODE },
+    heldSessions: [MAIN],
+    events: {
+      [MAIN]: [said(1, undefined, '派它去做'), { type: 'turn/end', time: 9, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }],
+      'sub-1': [said(2, undefined, '写 finale.md'), { type: 'turn/end', time: 3, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }],
+    },
+  })
+  assert.deepEqual(reading.children.map((w) => w.id), ['sub-1'], 'a cut subagent lost the seat it was working from')
+  assert.equal(reading.children[0].title, 'exec-finale', 'the subagent borrowed a name it does not have')
+  assert.equal(reading.children[0].alert, true, 'a cut subagent was drawn quietly')
+  assert.equal(reading.main.alert, true, 'the leg that dispatched it was not drawn as stopped')
+
+  /* The same worker while it runs: a window, and nothing said about the work — the line is moving. */
+  const alive = readOverview({
+    sessions: snapshot([MAIN], { ...byId, 'sub-1': { ...byId['sub-1'], running: true } }),
+    pipelineSessions: [MAIN],
+    sessionId: MAIN,
+    nodeOf: { [MAIN]: OWED_NODE },
+    heldSessions: [MAIN],
+    events: { [MAIN]: [said(1, undefined, '派它去做')], 'sub-1': [said(2, undefined, '正在写')] },
+  })
+  assert.deepEqual(alive.children.map((w) => w.id), ['sub-1'], 'a running subagent was not drawn')
+  assert.equal('alert' in alive.main, false, 'a leg whose own worker still runs was called stopped')
+
+  /* One that closed its own turn: it handed its work back, so its window goes with it. */
+  const done = readOverview({
+    sessions: snapshot([MAIN], byId),
+    pipelineSessions: [MAIN],
+    sessionId: MAIN,
+    nodeOf: { [MAIN]: OWED_NODE },
+    heldSessions: [MAIN],
+    events: {
+      [MAIN]: [said(1, undefined, '派它去做')],
+      'sub-1': [{ type: 'turn/end', time: 3, data: { reason: { kind: 'completed' } } }],
+    },
+  })
+  assert.deepEqual(done.children, [], 'a subagent that finished its turn kept a seat')
+})
+
+test('another workspace\'s conversation is no step of this line: it supersedes nothing and moves nothing', () => {
+  /* The snapshot is every workspace's session list. A conversation opened afterwards, or one still
+   * running, says nothing about where this pipeline stands. */
+  const reading = readOverview({
+    sessions: snapshot([MAIN, 'c-1', 'elsewhere'], {
+      [MAIN]: mainRow(MAIN),
+      'c-1': childRow('c-1', MAIN, false),
+      elsewhere: { id: 'elsewhere', running: true, displayTitle: 'some other conversation', retainedBy: {} },
+    }),
+    pipelineSessions: [MAIN],
+    sessionId: MAIN,
+    nodeOf: { 'c-1': OWED_NODE },
+    undeliveredSessions: ['c-1'],
+    strandedNodes: [OWED_NODE],
+    events: {
+      'c-1': [said(2, undefined, '这一格停在这'), { type: 'turn/end', time: 10, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }],
+      elsewhere: [said(20, undefined, '我是别处的')],
+    },
+  })
+  assert.deepEqual(reading.children.map((w) => w.id), ['c-1'], 'a conversation of another workspace took this line\'s stage away')
+  assert.equal(reading.children[0].alert, true, 'a conversation of another workspace was read as this line moving')
 })
 
 test('no ghost: a leg that stopped owing nothing leaves with its window', () => {

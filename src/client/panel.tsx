@@ -353,6 +353,17 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     return out
   }, [nodeOf, project])
 
+  /* The sessions whose node a line still holds: not delivered, and the record's own `running` reading.
+   * This is the debt a red window is drawn on — narrower than "not delivered", because a cell nobody
+   * has started and nobody holds is the line's next work rather than money owed. */
+  const heldSessions = React.useMemo((): readonly string[] => {
+    const out: string[] = []
+    for (const [session, nodeId] of Object.entries(nodeOf)) {
+      if (project?.nodeById[nodeId]?.running === true) out.push(session)
+    }
+    return out
+  }, [nodeOf, project])
+
   /* The sessions whose node the record has not delivered: any state but `completed`, a cell put out to
    * wait included. Such a leg keeps its window after its conversation stops, as long as the line has
    * stopped with it — the window is where that work is read — while a leg the record has delivered
@@ -412,11 +423,12 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       deliveredSessions,
       strandedNodes,
       undeliveredSessions,
+      heldSessions,
       /* The moment the frame was read at: the end a running window's span is measured to. A window
        * that stopped is measured to its own last word instead, so nothing here keeps counting. */
       at: at.getTime(),
     })
-  }, [reading, events, live, nodeOf, props.sessions, sessionId, notes, waitingSessions, deliveredSessions, strandedNodes, undeliveredSessions, at])
+  }, [reading, events, live, nodeOf, props.sessions, sessionId, notes, waitingSessions, deliveredSessions, strandedNodes, undeliveredSessions, heldSessions, at])
 
   /* The overview's empty stage: the record is in hand and yet no window stands. Which of the three
    * it is is what the stage says — a workspace with no node at all, one whose record names no
@@ -433,18 +445,33 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
         : 'no-window'
   const emptyWords = emptyKind === null ? null : overviewEmptyWords(t, emptyKind)
 
-  /* The event windows the overview holds open are exactly the windows the reading names — the main
-   * conversation and the children still running — and only while the overview is the shown pane.
-   * Re-watching the same ids is nothing; the ids that left are released there. */
+  /* The event windows the overview holds open: every window the reading names, plus the sessions that
+   * could still become one — the leg's dispatched workers, whose own last turn decides whether their
+   * seat stays, and the legs whose cells the record still owes. A window's admission is read off its
+   * own log (`turn/end`, and when it began), so that log has to be open before the window exists.
+   * Only while the overview is the shown pane; re-watching the same ids is nothing, and the ids that
+   * left are released there. */
+  const watchIds = React.useMemo((): readonly string[] => {
+    const out = new Set<string>()
+    const main = overview?.main?.id
+    if (main !== undefined) out.add(main)
+    for (const one of overview?.children ?? []) out.add(one.id)
+    if (main !== undefined) {
+      const byId = (props.sessions as { readonly byId?: Readonly<Record<string, { readonly parentId?: unknown }>> } | undefined)?.byId ?? {}
+      for (const [id, row] of Object.entries(byId)) {
+        if (row?.parentId === main) out.add(id)
+      }
+    }
+    for (const id of undeliveredSessions) out.add(id)
+    return [...out]
+  }, [overview, props.sessions, undeliveredSessions])
   React.useEffect(() => {
     if (tab !== 'overview' || overview === null) {
       windows.watch([])
       return
     }
-    windows.watch(
-      [overview.main?.id, ...overview.children.map((one) => one.id)].filter((one) => one !== undefined),
-    )
-  }, [windows, overview, tab])
+    windows.watch(watchIds)
+  }, [windows, watchIds, overview, tab])
   React.useEffect(() => () => windows.watch([]), [windows])
 
   /* Every write on the panel goes through this hand: put the sentence verbatim onto the note line,
