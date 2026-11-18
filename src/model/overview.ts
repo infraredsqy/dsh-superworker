@@ -1056,7 +1056,8 @@ export function readOverview(input: OverviewInput): OverviewReading {
      the list calls running — the relay's legs, whose parent links point wherever the last trigger stood
      — plus the main session's own running children, which is the whole admission when the caller says
      nothing about the pipeline. A **ghost**: a leg the record names whose node it still owes
-     (`owedSessions`) but whose conversation is not running — resting between rounds, or dead. Nothing
+     (`owedSessions`) but whose conversation is not running — resting between rounds, dead, or gone from
+     the list altogether. Nothing
      will settle such a leg next unless something prompts it, and the window it keeps is the only place
      that debt can be read; letting the window go with the conversation is how a broken leg becomes
      invisible. A stopped session whose node is not owed is still no seat: it left its work behind, and
@@ -1078,6 +1079,15 @@ export function readOverview(input: OverviewInput): OverviewReading {
       if (!admitted) continue
       running.push(id)
     }
+  }
+  /* A leg the record owes whose conversation the list no longer holds at all — deleted, or disposed
+     without ever reaching the roster. Its node's own title is enough to stand the seat, and the
+     window has no rows because there are none to draw: the debt is the whole of what is known. A leg
+     that went quiet while its conversation stayed on the list is the case above, not this one. */
+  for (const id of owed) {
+    if (id === mainId || rows[id] !== undefined) continue
+    if (input.nodeOf?.[id] === undefined) continue
+    ghosts.push(id)
   }
   /* A window with nothing readable — no nameplate word and no row its own events fold into — is a
      box, not a window, and the running bit alone never stands one up. Dropped here, it is also no

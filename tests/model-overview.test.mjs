@@ -506,7 +506,37 @@ test('a ghost stands after the moving legs, so the cap folds a watched leg befor
   assert.equal(reading.hiddenChildren, 1, 'the folded-away leg was not counted')
 })
 
-test('precedence: a gate beats a delivery beats a debt — gated, delivered and stranded reads waiting only', () => {  const all = factScene({
+test('a ghost stands on the record alone when its conversation left the list', () => {
+  /* The record still owes this node and still names the session that carries it, but the session is
+   * gone from the list — deleted, or never reached it. The debt is what has to stay visible: the seat
+   * stands with the node's own title and no rows, because a conversation this pane cannot see has
+   * nothing to say. */
+  const reading = readOverview({
+    sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }),
+    nodeOf: { 'gone-1': OWED_NODE },
+    nodes: { [OWED_NODE]: { title: '收尾：一张总单' } },
+    owedSessions: ['gone-1'],
+    strandedNodes: [OWED_NODE],
+  })
+  assert.deepEqual(reading.children.map((w) => w.id), ['gone-1'], 'a debt whose conversation was gone drew no window')
+  assert.equal(reading.children[0].title, '收尾：一张总单', 'the seat took no name from the record')
+  assert.deepEqual(reading.children[0].rows, [], 'a conversation this pane cannot see grew rows')
+  assert.equal(reading.children[0].settled, true)
+  assert.equal(reading.children[0].alert, true, 'a debt with its conversation gone was drawn quietly')
+  assert.equal(reading.hiddenChildren, 0)
+
+  /* The same session, its node no longer owed by any line: nobody is being waited on, so no seat. */
+  const settledDebt = readOverview({
+    sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }),
+    nodeOf: { 'gone-1': OWED_NODE },
+    nodes: { [OWED_NODE]: { title: '收尾：一张总单' } },
+    owedSessions: [],
+  })
+  assert.deepEqual(settledDebt.children, [], 'a session the list lost was drawn without the record owing it')
+})
+
+test('precedence: a gate beats a delivery beats a debt — gated, delivered and stranded reads waiting only', () => {
+  const all = factScene({
     ending: turnEnd(9, 'aborted', 'user'),
     waiting: [MAIN],
     delivered: [MAIN],
