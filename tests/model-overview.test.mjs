@@ -386,10 +386,17 @@ test("delivered lands from the record's word alone: the check is drawn on it, an
   assert.equal('ending' in reading.main, false, 'a delivery invented an ending')
 })
 
-test('alert: a killed turn on a stranded node is a broken leg at once, even while a leg still runs', () => {
-  const reading = factScene({ ending: turnEnd(9, 'aborted', 'user'), stranded: [OWED_NODE], runningLeg: 'leg-1' })
-  assert.equal(reading.main.alert, true, 'a leg killed with its node still owed read as nothing wrong')
-  assert.deepEqual(reading.main.ending, { kind: 'aborted', cause: 'user' }, 'the ending was not carried verbatim')
+test('alert waits for the stall: a killed turn is no break while a leg of the line still runs', () => {
+  /* The red is the shape of a stall, not a record of one bad round. While another leg of the line runs
+   * the pipeline has not stopped here, and the reading says nothing — the moment that leg stops, the
+   * same ending is read as the break it is. */
+  const running = factScene({ ending: turnEnd(9, 'aborted', 'user'), stranded: [OWED_NODE], runningLeg: 'leg-1' })
+  assert.equal('alert' in running.main, false, 'a leg killed while the line still ran was called a stall')
+  assert.deepEqual(running.main.ending, { kind: 'aborted', cause: 'user' }, 'the ending was not carried verbatim')
+
+  /* The same scene with the leg gone: the line stands here, and the debt is drawn. */
+  const stopped = factScene({ ending: turnEnd(9, 'aborted', 'user'), stranded: [OWED_NODE] })
+  assert.equal(stopped.main.alert, true, 'a leg killed with its node still owed read as nothing wrong')
 })
 
 test('alert: a completed turn on a stranded node with the pipeline quiet is the phantom dispatch', () => {
@@ -437,7 +444,7 @@ test('a ghost: a leg that stopped with its work still owed keeps its window, dra
   const reading = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
     nodeOf: { 'c-1': OWED_NODE },
-    owedSessions: ['c-1'],
+    undeliveredSessions: ['c-1'],
     strandedNodes: [OWED_NODE],
     events: { 'c-1': [said(5, undefined, '写到一半就停了')] },
   })
@@ -453,7 +460,7 @@ test('a ghost resting between rounds is drawn quietly: the debt is not proved br
   const resting = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
     nodeOf: { 'c-1': OWED_NODE },
-    owedSessions: ['c-1'],
+    undeliveredSessions: ['c-1'],
     events: { 'c-1': [said(5, undefined, '这一轮说完了'), { type: 'turn/end', time: 6, data: { reason: { kind: 'completed' } } }] },
   })
   assert.equal(resting.children.length, 1, 'a leg resting between rounds left the page')
@@ -464,11 +471,70 @@ test('a ghost resting between rounds is drawn quietly: the debt is not proved br
   const killed = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
     nodeOf: { 'c-1': OWED_NODE },
-    owedSessions: ['c-1'],
+    undeliveredSessions: ['c-1'],
     events: { 'c-1': [{ type: 'turn/end', time: 6, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }] },
   })
   assert.equal(killed.children[0].alert, true, 'a leg stopped by hand with work owed read as resting')
   assert.deepEqual(killed.children[0].ending, { kind: 'aborted', cause: 'user' })
+})
+
+test('a stopped leg yields the stage to a leg that is still running', () => {
+  /* The debt stays on the record's books; the stage shows where the line stands now, and a sibling of
+   * this leg is still working, so the line has not stopped here. When that sibling stops in turn, the
+   * same scene reads as the stall it was. */
+  const scene = (legRunning) => readOverview({
+    sessions: snapshot([MAIN, 'c-1', 'c-2'], {
+      [MAIN]: mainRow(MAIN),
+      'c-1': childRow('c-1', MAIN, false),
+      'c-2': childRow('c-2', MAIN, legRunning),
+    }),
+    nodeOf: { 'c-1': OWED_NODE, 'c-2': 'n-other' },
+    undeliveredSessions: ['c-1', 'c-2'],
+    strandedNodes: [OWED_NODE],
+    events: {
+      'c-1': [said(5, undefined, '写到一半就停了'), said(50, undefined, '最后一句')],
+      'c-2': [said(6, undefined, '我在做')],
+    },
+  })
+  assert.deepEqual(scene(true).children.map((w) => w.id), ['c-2'], 'a stopped leg kept the stage while a sibling still ran')
+  assert.deepEqual(scene(false).children.map((w) => w.id).sort(), ['c-1', 'c-2'], 'the stall hid a debt when the line stopped')
+})
+
+test('a leg that stopped is superseded by a leg that began after it', () => {
+  /* Two legs in a row: the first stopped, the second began after its last word, so the line stands at
+   * the second one. The first is history — it belongs to the map, not to this stage. */
+  const reading = readOverview({
+    sessions: snapshot([MAIN, 'c-1', 'c-2'], {
+      [MAIN]: mainRow(MAIN),
+      'c-1': childRow('c-1', MAIN, false),
+      'c-2': childRow('c-2', MAIN, false),
+    }),
+    nodeOf: { 'c-1': OWED_NODE, 'c-2': 'n-next' },
+    undeliveredSessions: ['c-1', 'c-2'],
+    strandedNodes: [OWED_NODE],
+    events: {
+      'c-1': [said(5, undefined, '第一条腿'), { type: 'turn/end', time: 10, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }],
+      'c-2': [said(20, undefined, '第二条腿')],
+    },
+  })
+  assert.deepEqual(reading.children.map((w) => w.id), ['c-2'], 'a superseded leg kept the stage the newer one had taken')
+  assert.equal('alert' in reading.children[0], false, 'a leg that just began was called broken')
+})
+
+test('a leg put out to wait stands quiet: a person is owed a word, nobody was broken', () => {
+  /* `shelved` is a cell on the table waiting for a person, not an agent's debt: the window breathes at
+   * the gate and is never drawn as a break, even though its last turn was stopped by hand. */
+  const reading = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
+    nodeOf: { 'c-1': OWED_NODE },
+    nodes: { [OWED_NODE]: { title: '收尾：一张总单' } },
+    undeliveredSessions: ['c-1'],
+    waitingSessions: ['c-1'],
+    strandedNodes: [OWED_NODE],
+    events: { 'c-1': [{ type: 'turn/end', time: 10, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }] },
+  })
+  assert.equal(reading.children[0].waiting, true, 'the gate did not land on the leg the person owes a word for')
+  assert.equal('alert' in reading.children[0], false, 'a gate was drawn as a break')
 })
 
 test('no ghost: a leg that stopped owing nothing leaves with its window', () => {
@@ -482,27 +548,37 @@ test('no ghost: a leg that stopped owing nothing leaves with its window', () => 
   /* And a stopped session no node names is nobody's debt either. */
   const untied = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
-    owedSessions: [],
+    undeliveredSessions: [],
     strandedNodes: [OWED_NODE],
     events: { 'c-1': [said(5, undefined, '我是个工具性子 agent')] },
   })
   assert.deepEqual(untied.children, [], 'a stopped session no node names was drawn as a debt')
 })
 
-test('a ghost stands after the moving legs, so the cap folds a watched leg before a debt', () => {
-  /* Six children: five still running and one ghost. The cap keeps five, and the one it lets go is a
-   * leg that is still being watched — the debt is what the reader has to act on. */
+test('over the cap, standing debts fold from the oldest: five windows stand, the rest are counted', () => {
+  /* Six legs of one parallel batch, all stopped with their cells undelivered and nothing started after
+   * any of them: every one of them is the shape of the stall. The stage holds five and counts the one
+   * it left out — the oldest, which is the least of what the reader has to act on. */
   const children = ['c-1', 'c-2', 'c-3', 'c-4', 'c-5', 'c-6']
   const byId = { [MAIN]: mainRow(MAIN) }
-  for (const id of children) byId[id] = childRow(id, MAIN, id !== 'c-1')
+  const events = {}
+  const nodeOf = {}
+  children.forEach((id, index) => {
+    byId[id] = childRow(id, MAIN, false)
+    nodeOf[id] = `n-${index}`
+    events[id] = [
+      said(index + 1, undefined, `第 ${index + 1} 条`),
+      { type: 'turn/end', time: 100, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } },
+    ]
+  })
   const reading = readOverview({
     sessions: snapshot([MAIN, ...children], byId),
-    nodeOf: { 'c-1': OWED_NODE },
-    owedSessions: ['c-1'],
-    events: { 'c-1': [said(5, undefined, '停在这里')] },
+    nodeOf,
+    undeliveredSessions: children,
+    events,
   })
   assert.equal(reading.children.length, 5, 'the cap did not hold at five')
-  assert.deepEqual(reading.children.map((w) => w.id).slice(-1), ['c-1'], 'the ghost was the window the cap folded away')
+  assert.equal(reading.children[0].id, 'c-2', 'the cap folded the newest debt instead of the oldest')
   assert.equal(reading.hiddenChildren, 1, 'the folded-away leg was not counted')
 })
 
@@ -515,7 +591,7 @@ test('a ghost stands on the record alone when its conversation left the list', (
     sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }),
     nodeOf: { 'gone-1': OWED_NODE },
     nodes: { [OWED_NODE]: { title: '收尾：一张总单' } },
-    owedSessions: ['gone-1'],
+    undeliveredSessions: ['gone-1'],
     strandedNodes: [OWED_NODE],
   })
   assert.deepEqual(reading.children.map((w) => w.id), ['gone-1'], 'a debt whose conversation was gone drew no window')
@@ -530,7 +606,7 @@ test('a ghost stands on the record alone when its conversation left the list', (
     sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }),
     nodeOf: { 'gone-1': OWED_NODE },
     nodes: { [OWED_NODE]: { title: '收尾：一张总单' } },
-    owedSessions: [],
+    undeliveredSessions: [],
   })
   assert.deepEqual(settledDebt.children, [], 'a session the list lost was drawn without the record owing it')
 })

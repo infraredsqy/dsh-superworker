@@ -117,7 +117,12 @@ function modeWordOf(mode: string): WordKey {
 /** The window's `weight · mode` line, when the record names a node; a window that works no node carries no readings. */
 function readingsOf(t: Translate, window: OverviewWindow): string | null {
   if (window.weight === null || window.mode === null) return null
-  return `${t(WEIGHT_WORDS[window.weight])} · ${t(modeWordOf(window.mode))}`
+  const line = `${t(WEIGHT_WORDS[window.weight])} · ${t(modeWordOf(window.mode))}`
+  /* A cell put out to wait is a person being owed, and its mode does not say so — a shelved `auto` cell
+     still reads 自动. The gate's word rides this caption line, which is where the other two gates
+     already say themselves through their mode; there is one word for it, and it is the state's own. */
+  const gated = window.waiting === true && window.mode !== 'manual' && window.mode !== 'checkpoint'
+  return gated ? `${line} · ${t('state.shelved')}` : line
 }
 
 /**

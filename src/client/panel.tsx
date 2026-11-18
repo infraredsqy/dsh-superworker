@@ -335,30 +335,32 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     return out
   }, [notes])
 
-  /* The sessions whose node owes a person a word: the record's own gate reading, both kinds — a
-   * checkpoint (delivered, and that delivery not approved) or a manual node nobody is working. A gate
-   * is a person being owed, so a manual node whose leg is running right now is not one: it is being
-   * worked. The overview draws such a window as waiting instead of finished or broken; the judgment
-   * stays the model's, only the fact is handed over. */
+  /* The sessions whose node owes a person a word: the record's own gate reading, all three kinds — a
+   * checkpoint (delivered, and that delivery not approved), a manual node nobody is working, or a node
+   * put out to wait (`shelved`, which the record keeps for the person to revive or close). A gate is a
+   * person being owed, so a manual node whose leg is running right now is not one: it is being worked.
+   * The overview draws such a window as waiting instead of finished or broken; the judgment stays the
+   * model's, only the fact is handed over. */
   const waitingSessions = React.useMemo((): readonly string[] => {
     const out: string[] = []
     for (const [session, nodeId] of Object.entries(nodeOf)) {
       const node = project?.nodeById[nodeId]
       if (node === undefined) continue
       if (node.gate?.kind === 'checkpoint') out.push(session)
+      else if (node.gate?.kind === 'shelved') out.push(session)
       else if (node.gate?.kind === 'manual' && !node.running) out.push(session)
     }
     return out
   }, [nodeOf, project])
 
-  /* The sessions whose node the record still owes: the node's word is not `completed` and a line is
-   * holding it, which is the project's own `running` reading. Such a leg keeps its window after its
-   * conversation stops — resting between rounds, or dead — because the work is still on the table and
-   * the window is where that is read; a leg whose node is handed in leaves with its conversation. */
-  const owedSessions = React.useMemo((): readonly string[] => {
+  /* The sessions whose node the record has not delivered: any state but `completed`, a cell put out to
+   * wait included. Such a leg keeps its window after its conversation stops, as long as the line has
+   * stopped with it — the window is where that work is read — while a leg the record has delivered
+   * leaves with its conversation, owing nobody anything. */
+  const undeliveredSessions = React.useMemo((): readonly string[] => {
     const out: string[] = []
     for (const [session, nodeId] of Object.entries(nodeOf)) {
-      if (project?.nodeById[nodeId]?.running === true) out.push(session)
+      if (project?.nodeById[nodeId]?.state !== 'completed') out.push(session)
     }
     return out
   }, [nodeOf, project])
@@ -409,12 +411,12 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       waitingSessions,
       deliveredSessions,
       strandedNodes,
-      owedSessions,
+      undeliveredSessions,
       /* The moment the frame was read at: the end a running window's span is measured to. A window
        * that stopped is measured to its own last word instead, so nothing here keeps counting. */
       at: at.getTime(),
     })
-  }, [reading, events, live, nodeOf, props.sessions, sessionId, notes, waitingSessions, deliveredSessions, strandedNodes, owedSessions, at])
+  }, [reading, events, live, nodeOf, props.sessions, sessionId, notes, waitingSessions, deliveredSessions, strandedNodes, undeliveredSessions, at])
 
   /* The overview's empty stage: the record is in hand and yet no window stands. Which of the three
    * it is is what the stage says — a workspace with no node at all, one whose record names no
