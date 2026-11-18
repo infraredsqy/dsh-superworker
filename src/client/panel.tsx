@@ -24,7 +24,6 @@ import { clampSide, DEFAULT_SOURCE, PANEL_PREF_FIELDS, VIEW_IDS, VIEW_WORDS } fr
 import { useT } from './locale.ts'
 import { failureWord, legacyNoticeWords, overviewEmptyWords, type OverviewEmpty } from './words.ts'
 import type { Outcome } from './failure.ts'
-import { failureOf } from './failure.ts'
 import type { Load as LoadOf, Note } from './outcome.ts'
 import { writeToNote } from './outcome.ts'
 import type { PanelPort } from './data.ts'
@@ -210,8 +209,16 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
    * open a second migration session for the same workspace. */
   const [consulting, setConsulting] = React.useState(false)
 
-  /* Fetching: read once on the pass this view becomes visible; again when the workspace changes or
-   * after a write lands (`tick` is that pass's marker). */
+  /* The one channel: every reading this panel draws arrives as a frame — the four records and the
+   * record's session side, read together at one moment by the host and pushed whenever they change
+   * (a word writing files, a session starting or ending, this panel's own write). So there is no
+   * fetch beat to keep in step with anything: the panes render one fact, and the frame's own moment
+   * (`at`) is what every display is measured from. A frame whose halves could not be read leaves the
+   * last good reading in place and states the refusal, rather than drawing an invented empty one.
+   *
+   * The effect re-subscribes when the workspace changes and after a write of ours lands (`tick`):
+   * on a host with a stream the pump has already sent the new frame, and this only re-arms; on a
+   * deployment without one, the re-arm is what re-reads. */
   React.useEffect(() => {
     if (sessionId === undefined || sessionId.length === 0) {
       setLoad({ phase: 'no-session' })
@@ -219,58 +226,35 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     }
     if (pickedNone) return undefined
     let live = true
-    setLoad({ phase: 'loading' })
-    port.read(sessionId, workspaceRoot).then(
-      (reading) => {
-        if (!live) return
-        setAt(new Date())
-        setLoad({ phase: 'ok', reading })
-      },
-      (error: unknown) => {
-        if (!live) return
-        setLoad({ phase: 'failed', failure: failureOf(error) })
-      },
-    )
-    return () => { live = false }
-  }, [port, sessionId, workspaceRoot, tick, pickedNone])
-
-  /* Session notes, dispatch claims and the live-agent roster: the host half carries the record
-     store's session side back verbatim, and the model layer reads "which session each cell should
-     go to" and "which cell is stranded" against it. The map has cards to click, the detail has
-     rows to judge, and the overview reads which node each window works — so the read happens on
-     the passes any of the three is visible; an unreadable one draws as empty. The write-side verbs
-     do touch this side — a dispatch lands the claim and the note — so `tick` rides here too: a
-     settled write re-reads the session side on the same beat as the records, and a red cell or a
-     card's click target moves with it rather than waiting for the next page flip. */
-  React.useEffect(() => {
-    if (pickedNone || (tab !== 'map' && tab !== 'detail' && tab !== 'overview') || sessionId === undefined || sessionId.length === 0) {
-      setNotes(NO_NOTES)
-      setClaims(NO_CLAIMS)
-      setAlive(null)
-      setSessionsRead(false)
-      return undefined
-    }
-    let live = true
-    port.readSessions(sessionId, workspaceRoot).then(
-      (reading) => {
-        if (!live) return
-        setNotes(readSessions(reading.notes))
-        setClaims(reading.claims)
-        setAlive(reading.alive === null ? null : new Set(reading.alive))
-        setSessionsRead(true)
-      },
-      () => {
-        if (!live) return
+    setLoad((held) => (held.phase === 'ok' ? held : { phase: 'loading' }))
+    const off = port.watch(sessionId, workspaceRoot, (frame) => {
+      if (!live) return
+      setAt(new Date(frame.at))
+      if (frame.reading !== null) {
+        setLoad({ phase: 'ok', reading: frame.reading })
+      } else if (frame.failure !== undefined) {
+        setLoad({ phase: 'failed', failure: { code: 'transport-failed', ...(frame.failure.detail !== undefined ? { detail: frame.failure.detail } : {}) } })
+      }
+      /* The session side arrives on the same frame: notes, the dispatch claims, and the live roster
+       * the stranded reading judges. A refused half is no reading at all — the overview keeps its
+       * silence rather than claiming the record names nothing when the truth is that nobody looked. */
+      if (frame.sessions === null) {
         setNotes(NO_NOTES)
         setClaims(NO_CLAIMS)
         setAlive(null)
-        /* A refused read is no reading at all: the overview keeps its silence rather than claiming
-         * the record names nothing when the truth is that nobody looked. */
         setSessionsRead(false)
-      },
-    )
-    return () => { live = false }
-  }, [port, sessionId, workspaceRoot, tab, pickedNone, tick])
+        return
+      }
+      setNotes(readSessions(frame.sessions.notes))
+      setClaims(frame.sessions.claims)
+      setAlive(frame.sessions.alive === null ? null : new Set(frame.sessions.alive))
+      setSessionsRead(true)
+    })
+    return () => {
+      live = false
+      off()
+    }
+  }, [port, sessionId, workspaceRoot, tick, pickedNone])
 
   /* The click on a card: only when the record's session is on this machine right now does the card
    * click through. The session identity is recognized in two places — this machine's own notes
@@ -336,18 +320,43 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     return out
   }, [notes])
 
-  /* The sessions standing at a person's gate as a checkpoint: the record's own gate reading says so
-   * — the node's mode is `checkpoint`, it is delivered, and that delivery has not been approved —
-   * and the note naming the node names the session it would be a window in. The overview draws that
-   * window as waiting instead of finished; the judgment stays the model's, only the fact is handed
-   * over. */
+  /* The sessions whose node owes a person a word: the record's own gate reading, both kinds — a
+   * checkpoint (delivered, and that delivery not approved) or a manual node nobody is working. A gate
+   * is a person being owed, so a manual node whose leg is running right now is not one: it is being
+   * worked. The overview draws such a window as waiting instead of finished or broken; the judgment
+   * stays the model's, only the fact is handed over. */
   const waitingSessions = React.useMemo((): readonly string[] => {
     const out: string[] = []
     for (const [session, nodeId] of Object.entries(nodeOf)) {
-      if (project?.nodeById[nodeId]?.gate?.kind === 'checkpoint') out.push(session)
+      const node = project?.nodeById[nodeId]
+      if (node === undefined) continue
+      if (node.gate?.kind === 'checkpoint') out.push(session)
+      else if (node.gate?.kind === 'manual' && !node.running) out.push(session)
     }
     return out
   }, [nodeOf, project])
+
+  /* The sessions whose node the record calls delivered: the node's state is `completed`. The gate
+   * still wins over this in the overview's own reading (a delivered checkpoint owes a person a word,
+   * not a check), so nothing has to be subtracted here. When every node is delivered the whole
+   * pipeline has handed itself in, and the conversation this panel lives in carries that verdict even
+   * when it works no node of its own. */
+  const deliveredSessions = React.useMemo((): readonly string[] => {
+    const out: string[] = []
+    for (const [session, nodeId] of Object.entries(nodeOf)) {
+      if (project?.nodeById[nodeId]?.state === 'completed') out.push(session)
+    }
+    const nodes = project?.nodes ?? []
+    if (sessionId !== undefined && sessionId.length > 0 && nodes.length > 0
+      && nodes.every((node) => node.state === 'completed') && !out.includes(sessionId)) {
+      out.push(sessionId)
+    }
+    return out
+  }, [nodeOf, project, sessionId])
+
+  /* The nodes the dispatch reading calls stranded — claim on disk, cell still held, its session gone
+   * from this host's live roster: the one debt the overview can name as owed by nobody. */
+  const strandedNodes = React.useMemo((): readonly string[] => Object.keys(stranded), [stranded])
 
   /* The overview's reading at this beat: which windows from the session list the browser already
    * holds, which rows from the event windows `windows` holds open — settled rows from the durable
@@ -371,8 +380,10 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       nodes: reading.nodes,
       capacity: READING_CAPACITY,
       waitingSessions,
+      deliveredSessions,
+      strandedNodes,
     })
-  }, [reading, events, live, nodeOf, props.sessions, sessionId, notes, waitingSessions])
+  }, [reading, events, live, nodeOf, props.sessions, sessionId, notes, waitingSessions, deliveredSessions, strandedNodes])
 
   /* The overview's empty stage: the record is in hand and yet no window stands. Which of the three
    * it is is what the stage says — a workspace with no node at all, one whose record names no

@@ -31,11 +31,12 @@
  * drawn and not counted — the window it had is taken off the page by the
  * client's leave animation, which is why the drawing never has to keep a
  * finished one. The main window is the conversation this panel lives in, and it
- * carries the two
- * bits the drawing's three states are read from: `done` (the list's running bit
- * is not true) and `waiting` (the caller names this session as one whose node
- * stands at the person gate — a checkpoint). See
- * {@link OverviewWindow.done} and {@link OverviewWindow.waiting}.
+ * carries the facts the drawing's states are read from: `settled` (the list's
+ * running bit is not true — the rows will not move again), `delivered` (the
+ * record says the work is handed in), `waiting` (the caller names this session
+ * as one whose node stands at a person's gate) and `alert` (work is owed,
+ * nobody is doing it, and the conversation did not end by itself). See
+ * {@link OverviewWindow}.
  *
  * The snapshot's and the log's field spellings are DSH's own (`running`,
  * `parentId`, `updatedAt`, `tool/call`, …), read defensively: a field that is
@@ -118,6 +119,26 @@ export interface OverviewRow {
   readonly live?: boolean
 }
 
+/**
+ * How a conversation's last turn ended, read off DSH's own `turn/end` event and
+ * carried verbatim: this module judges nothing about it, the drawing words it.
+ *
+ * The vocabulary is DSH's (`TurnEndReason`, merge-extensible there), so both
+ * fields stay open: `kind` is `completed` for a turn the model closed itself,
+ * `aborted` for a cancellation, `interrupted` for a turn the log had left open
+ * when the process died, `error` for a failed turn, and `blocked` / `max-tokens`
+ * / `forked` for the other ways one ends. `cause` is the cancellation's own
+ * cause — `user`, `parent`, `hook`, `disposed`, `legacy` — present only when the
+ * kind is `aborted`. A kind this reading has never seen is carried as it is: an
+ * unknown ending is still an ending, and never read as `completed`.
+ */
+export interface OverviewEnding {
+  /** DSH's own reason kind, verbatim. */
+  readonly kind: string
+  /** The cancellation cause, when `kind` is `aborted`. */
+  readonly cause?: string
+}
+
 /** One window on the overview. */
 export interface OverviewWindow {
   /** Which session it is. */
@@ -141,21 +162,44 @@ export interface OverviewWindow {
   readonly dispatchCallId?: string
   /**
    * Whether this window's conversation is over: true when the session list's
-   * running bit is not true. The main window is the only one that can carry it —
-   * a child is a window only while it is still running, and one that ended leaves
-   * the page by the client's leave animation instead of staying as a finished
-   * window, so the reading never produces a done child. Absent means the
-   * conversation is running.
+   * running bit is not true. It says the rows will not move again — nothing
+   * more. A conversation stops for many reasons, and only {@link delivered}
+   * says the piece of work was handed in. The main window is the only one that
+   * can carry it today — a child is a window only while it is still running, so
+   * the reading never produces a settled child. Absent means it is running.
    */
-  readonly done?: boolean
+  readonly settled?: boolean
+  /**
+   * Whether the record says this window's work is handed in: its node is
+   * delivered, no gate stands on it, and the conversation is over — while it
+   * still runs, the record's word belongs to the previous round. This is the one
+   * fact the check is drawn on — never the conversation being quiet.
+   */
+  readonly delivered?: boolean
+  /**
+   * Whether this window owes work that nobody is doing: its node is still owed
+   * by a line, its session is not alive, and its conversation did not end by
+   * itself — it was stopped, the host disposed of it, the process interrupted
+   * it, it failed — or it ended with the debt still held while no leg of this
+   * pipeline is moving at all. A conversation that merely yielded to work of its
+   * own (waiting for a leg it dispatched) is not this: the pipeline is still
+   * moving, so nothing is stuck.
+   */
+  readonly alert?: boolean
+  /**
+   * How the conversation's last turn ended, verbatim off DSH's own `turn/end`
+   * reason ({@link OverviewEnding}): the fact a reader is told the reason with.
+   * Absent when no `turn/end` is readable in the window's own events.
+   */
+  readonly ending?: OverviewEnding
   /**
    * Whether this window stands at a person's gate: the caller named this session
-   * as one whose node is a checkpoint — the node's mode is `checkpoint`, it is
-   * delivered, and this delivery has not been approved yet. That judgment is the
-   * record's own (`readProject`'s node gate); this module only carries the fact
-   * the caller hands over and never re-reads the record for it. Only the main
-   * window carries it, and the drawing reads it before {@link done}: a window at
-   * the gate is drawn as waiting, never as finished. Absent means no gate.
+   * as one whose node owes a person a word — a checkpoint (delivered, not
+   * approved) or a manual node nobody has started. That judgment is the record's
+   * own (`readProject`'s node gate); this module only carries the fact the
+   * caller hands over and never re-reads the record for it. Only the main window
+   * carries it, and the drawing reads it before anything else: a window at the
+   * gate is drawn as waiting, never as finished and never as broken.
    */
   readonly waiting?: boolean
 }
@@ -167,8 +211,9 @@ export interface OverviewReading {
    * session when the record names it, else a named one still running, else the
    * named one that moved last. Absent when the record names none of the list's
    * sessions: the stage stays empty rather than showing a conversation the
-   * pipeline never mentioned. It is the only window that carries
-   * {@link OverviewWindow.done} and {@link OverviewWindow.waiting}.
+   * pipeline never mentioned. It is the only window that can carry
+   * {@link OverviewWindow.settled}, {@link OverviewWindow.delivered},
+   * {@link OverviewWindow.waiting} and {@link OverviewWindow.alert}.
    */
   readonly main: OverviewWindow | null
   /**
@@ -227,15 +272,31 @@ export interface OverviewInput {
    */
   readonly sessionId?: unknown
   /**
-   * The sessions whose node stands at a person's gate and reads as a
-   * **checkpoint**: the node's mode is `checkpoint`, it has been delivered, and
-   * that delivery has not been approved yet. The panel already computes it off
-   * the record's own gate reading (`readProject`'s `node.gate.kind`), and hands
-   * the session ids over; this module only carries the fact, so the gate is
-   * never re-read and never invented here. The main window stands waiting when
-   * its session is one of these; absent means none is.
+   * The sessions whose node stands at a person's gate, both kinds: a
+   * **checkpoint** (delivered, and that delivery not approved yet) and a
+   * **manual** node nobody has started. The panel computes it off the record's
+   * own gate reading (`readProject`'s `node.gate.kind`) — the manual kind only
+   * while nobody is working the node, since a gate is a person being owed, not a
+   * conversation being quiet — and hands the session ids over; this module only
+   * carries the fact, so the gate is never re-read and never invented here. The
+   * main window stands waiting when its session is one of these; absent means
+   * none is.
    */
   readonly waitingSessions?: readonly unknown[] | undefined
+  /**
+   * The sessions whose node the record calls **delivered**: the node's state is
+   * `completed` and no gate of this reading stands on it. The judgment is the
+   * record's own (`readProject`'s `node.state`); this module only carries it, and
+   * the drawing puts its check on nothing else.
+   */
+  readonly deliveredSessions?: readonly unknown[] | undefined
+  /**
+   * The nodes the dispatch reading calls **stranded** — a claim on disk, the
+   * cell still held by a line, and the session its note names absent from this
+   * host's live agents (`strandedCycleOf`). The judgment is already made by the
+   * caller, which has the three facts; this module only reads the debt off it.
+   */
+  readonly strandedNodes?: readonly unknown[] | undefined
 }
 
 /** The drawn row each tool name folds into. A name outside the four sets is a tool this fold does not know, and folds as the neutral `tool`. */
@@ -779,12 +840,74 @@ function windowOf(
 
 /** The sessions the caller named as standing at a person's gate; nothing named is none. */
 function waitingOf(input: OverviewInput): ReadonlySet<string> {
-  const waiting = new Set<string>()
-  if (!Array.isArray(input.waitingSessions)) return waiting
-  for (const id of input.waitingSessions) {
-    if (typeof id === 'string' && id.length > 0) waiting.add(id)
+  return namedSet(input.waitingSessions)
+}
+
+/**
+ * The one way a caller-named list of sessions is read: ids that name something,
+ * a list that is absent or not a list naming nobody. (A named *pipeline* keeps
+ * its own tri-state reading — `pipelineOf` — because "nobody said" and "the
+ * record names none" are different facts there.)
+ */
+function namedSet(list: readonly unknown[] | undefined): ReadonlySet<string> {
+  const named = new Set<string>()
+  if (!Array.isArray(list)) return named
+  for (const id of list) {
+    if (typeof id === 'string' && id.length > 0) named.add(id)
   }
-  return waiting
+  return named
+}
+
+/**
+ * How the conversation's last turn ended: the **last** `turn/end` the events
+ * carry, folded to the two facts above. Absent when the window has no such
+ * event, which is not the same as "it ended well" — a conversation still
+ * running has none, and one whose log could not be read has none either.
+ */
+export function endingOf(events: readonly OverviewEvent[] | undefined): OverviewEnding | undefined {
+  let ending: OverviewEnding | undefined
+  for (const event of events ?? []) {
+    if (text(event.type) !== 'turn/end') continue
+    const reason = asRecord(asRecord(event.data)?.reason)
+    const kind = text(reason?.kind)
+    if (kind === undefined) continue
+    const cause = kind === 'aborted' ? text(asRecord(reason?.reason)?.kind) : undefined
+    ending = cause === undefined ? { kind } : { kind, cause }
+  }
+  return ending
+}
+
+/**
+ * The four facts a window's last state is read from, in the order the drawing
+ * reads them — a person's gate first (a checkpoint is why its conversation
+ * stopped, and nothing about it is broken), then the delivery the record names,
+ * then a debt nobody is working.
+ *
+ * `alert` is deliberately narrow: it needs the debt (`stranded`, which the
+ * caller has already judged against the record and this host's live agents) and
+ * a conversation that did not end by itself, or one that did but left the debt
+ * standing while nothing else in the pipeline moves. A conversation that yielded
+ * to a leg of its own is a pipeline still in motion, and that is not a break.
+ */
+function factsOf(input: {
+  readonly settled: boolean
+  readonly gated: boolean
+  readonly delivered: boolean
+  readonly owed: boolean
+  readonly moving: boolean
+  readonly ending: OverviewEnding | undefined
+}): Pick<OverviewWindow, 'settled' | 'delivered' | 'alert' | 'waiting' | 'ending'> {
+  const ending = input.ending === undefined ? {} : { ending: input.ending }
+  const settled = input.settled ? { settled: true } : {}
+  if (input.gated) return { ...settled, ...ending, waiting: true }
+  /* A delivery is a verdict about a piece of work that is over: while the conversation still runs, the
+     record naming the node completed is the *previous* round's word, and stamping a moving window with
+     a check would claim a run that has not ended. */
+  if (input.delivered && input.settled) return { ...settled, ...ending, delivered: true }
+  const broken = input.ending !== undefined && input.ending.kind !== 'completed'
+  const stuck = input.ending !== undefined && input.ending.kind === 'completed' && !input.moving
+  if (input.owed && (broken || stuck)) return { ...settled, ...ending, alert: true }
+  return { ...settled, ...ending }
 }
 
 /**
@@ -807,12 +930,15 @@ function waitingOf(input: OverviewInput): ReadonlySet<string> {
  * filled at the end — and the running ones the five leave out are counted, not
  * drawn: `hiddenChildren` is how many running children the cap folded away.
  *
- * The main window's two bits are read here and nowhere else: `done` is the
- * list's running bit not being true, and `waiting` is the caller naming this
- * session as one whose node stands at the person gate (a checkpoint). Which of
- * the three states a window is drawn in is the drawing half's business, and the
- * gate is read before `done` there: a checkpoint is why its conversation stopped,
- * not a finished piece of work.
+ * The window's state facts are read here and nowhere else ({@link factsOf}):
+ * `settled` is the list's running bit not being true, `waiting` is the caller
+ * naming this session as one whose node owes a person a word, `delivered` is the
+ * caller naming it as a node the record calls completed, and `alert` is a debt
+ * nobody is working — the caller's stranded reading, plus a conversation that did
+ * not end by itself (`turn/end` says so) or that ended with the debt standing
+ * while no leg of the pipeline moves. The check belongs to `delivered` alone: a
+ * conversation going quiet is not a piece of work handed in, and a checkpoint's
+ * silence is why the gate is drawn first.
  *
  * While a window's step streams, its two tail rows — each the newest slice of
  * one live buffer, read off the transient chunks the caller hands over — hang
@@ -835,12 +961,28 @@ export function readOverview(input: OverviewInput): OverviewReading {
     input.nodeOf === undefined ? undefined : input.nodes?.[input.nodeOf[id] ?? '']
   const main = mainId === undefined ? undefined : rows[mainId]
   const waiting = waitingOf(input)
+  const delivered = namedSet(input.deliveredSessions)
+  const stranded = namedSet(input.strandedNodes)
+  /* Whether any leg of this pipeline is still alive right now: a conversation
+     that yielded while these move is waiting on its own work, not broken. A
+     caller that named nothing judges across the whole list it handed over. */
+  const moving = (named === undefined ? order : [...named]).some((id) => rows[id]?.running === true)
+  const owedBy = (id: string): boolean => {
+    const node = input.nodeOf?.[id]
+    return node !== undefined && stranded.has(node)
+  }
   const mainWindow = main === undefined || mainId === undefined
     ? null
     : {
       ...windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity, input.live?.[mainId]),
-      done: main.running !== true,
-      ...(waiting.has(mainId) ? { waiting: true } : {}),
+      ...factsOf({
+        settled: main.running !== true,
+        gated: waiting.has(mainId),
+        delivered: delivered.has(mainId),
+        owed: owedBy(mainId),
+        moving,
+        ending: endingOf(input.events?.[mainId]),
+      }),
     }
   const anchors = dispatchAnchorsOf(mainId === undefined ? undefined : input.events?.[mainId])
   /* The seats the column can take: the sessions the record names and the list calls running — the
@@ -866,7 +1008,11 @@ export function readOverview(input: OverviewInput): OverviewReading {
   for (const id of running) {
     const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id])
     if (window.title === null && window.rows.length === 0) continue
-    seats.push(window)
+    /* A seat is drawn only while it runs, so it carries no state of its own: the gate, the delivery
+       and the debt are verdicts about work at rest, and the main window is where they are read. The
+       ending rides along all the same — it is a fact about the conversation, not about the work. */
+    const ending = endingOf(input.events?.[id])
+    seats.push(ending === undefined ? window : { ...window, ending })
   }
   const drawn = seats.slice(-WINDOW_CAP)
   return {

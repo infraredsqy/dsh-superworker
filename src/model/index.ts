@@ -12,8 +12,9 @@ export { readProject } from './project.ts'
 export { depthsOf, readDeps, readGraph } from './graph.ts'
 export { groupInstructions, readInstructions } from './instructions.ts'
 export { latestSessionOf, readSessions, strandedCycleOf } from './sessions.ts'
-export { readOverview } from './overview.ts'
+export { endingOf, readOverview } from './overview.ts'
 export type {
+  OverviewEnding,
   OverviewEvent,
   OverviewInput,
   OverviewReading,
