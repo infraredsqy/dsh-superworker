@@ -2,5 +2,14 @@
   "name": "pipeline",
   "summary": "the pipeline's own instruction sheets: it carries text only and inserts nothing at the close",
   "timing": "close",
-  "action": "insert"
+  "action": "insert",
+  "knobs": {
+    "answer": {
+      "kind": "word",
+      "values": ["technical", "plain"],
+      "default": "plain",
+      "layers": ["global"],
+      "summary": "whether the concept name in a report to a person carries one sentence unfolding it"
+    }
+  }
 }

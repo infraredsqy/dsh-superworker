@@ -130,6 +130,27 @@ describe('the handle names the shipped plugin folder', () => {
     expect(unnamed).not.toContain('test_seconds_limit');
   });
 
+  it('a knob narrowed to the machine layer is still a name the settings verbs take: it sets, it reads back, and the project layer still refuses it', async () => {
+    await handle(false).ledger.init();
+    const superworker = handle(true);
+    // `answer` takes the machine layer alone. A list narrowed to the project layer would leave a knob
+    // doctor prints and `list` shows with no word able to name it, so it has to be here.
+    expect(await superworker.config.keys()).toContain('answer');
+    expect(await superworker.config.get('answer')).toEqual({ value: 'plain', source: 'builtin' });
+
+    await superworker.config.set('answer', 'technical', { global: true });
+    expect(await superworker.config.get('answer')).toEqual({ value: 'technical', source: 'global' });
+
+    // The name is taken now; the layer it does not reach stays refused, and the refusal names the one it does.
+    await expect(superworker.config.set('answer', 'plain', { project: true })).rejects.toThrow(
+      'answer does not take the project layer (it takes: global); nothing was written',
+    );
+    expect(await superworker.config.get('answer')).toEqual({ value: 'technical', source: 'global' });
+
+    await superworker.config.unset('answer', { global: true });
+    expect(await superworker.config.get('answer')).toEqual({ value: 'plain', source: 'builtin' });
+  });
+
   it('the issue-pool guard is in force through the named handle: a pool over its line inserts one node at the close', async () => {
     const nodeId = await heldNodeWithTicket('c1', { issue_pool_weight_limit: 4 });
     seedPool();

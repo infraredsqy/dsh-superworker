@@ -37,7 +37,7 @@ disable-model-invocation: true
 
 多了会耗掉判断力，超出的下一批再摆。
 
-- 摆给用户时说**人话**：这是什么毛病、为什么危险、有哪几条路、各自代价。函数名 / 变量名 / 行号 / 调用链留给条目本身——那是给动手的人读的机器语言。两种语言并存，不互相替代。
+- 摆给用户照 [`./shared/superworker/talking.md`](./shared/superworker/talking.md)：一次一处纠缠、四行齐、概念名按 `config get answer` 那一档出场。函数名 / 变量名 / 行号 / 调用链留给条目本身——那是给动手的人读的机器语言。两种语言并存，不互相替代。
 - 用户定了之后逐条落定；同一批、同一句 reason 的可以 `update <id…>` / `reject <id…>` 一次收，每条 reason 不同的走 `update --from-file`：
   - **简单问题**（单一函数提取、常量替换，约 5 行变动）→ `update <id> --decision autofix --status open --reason "<用户定的内容>"`
   - **复杂问题**（跨多文件、要设计新接口）→ 先把设计写进 `.superworker/issues/specs/<id>.md`，再 `update <id> --decision autofix --status open --plan-path <path> --reason "<用户定的内容>"`

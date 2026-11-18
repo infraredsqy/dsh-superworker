@@ -129,9 +129,11 @@ export interface ConfigNamespace {
   list(at?: ConfigLayer, dir?: string): Promise<Record<string, ConfigReading>>;
   /**
    * The names the settings verbs accept here, sorted: the knob list in force — the core settings plus the
-   * knobs installed plugins declare — narrowed to the names that take the project layer, which is what a
-   * `get` / `set` / `unset` answer is about. A name that has no project layer is the machine's own and is
-   * not on this list: a caller printing the vocabulary prints these names.
+   * knobs installed plugins declare — narrowed to the names that take one of the two wide layers, which is
+   * what a `get` / `set` / `unset` answer is about (those three verbs read and write the project layer and
+   * the machine layer, `--global` naming the second). A name narrowed to the machine layer alone is on this
+   * list too: refusing it here would leave a knob doctor lists and `list` prints with no word able to name
+   * it. A caller printing the vocabulary prints these names.
    */
   keys(dir?: string): Promise<string[]>;
 }
@@ -919,10 +921,12 @@ export function createConfigNamespace(
 
     keys: async (dir?: string) => {
       const specs = await specsHere(rootOf(dir, root));
-      // The settings a get / set / unset answers about: every knob that takes the project layer, in the
-      // order the help lists them (the names sorted). A machine-layer knob is not among them.
+      // The settings a get / set / unset answers about: every knob that takes a wide layer (the project layer
+      // or the machine layer, the two the three verbs reach), in the order the help lists them (the names
+      // sorted). A machine-only knob belongs here too — `--global` is the word that names it.
+      const wide = ['project', 'global'] as const;
       return Object.keys(specs)
-        .filter((name) => acceptedLayers(specs[name]!).includes('project'))
+        .filter((name) => acceptedLayers(specs[name]!).some((layer) => (wide as readonly string[]).includes(layer)))
         .sort();
     },
   };

@@ -211,17 +211,28 @@ test('Self-contained: the three core skills each carry the sheets they reference
   }
 })
 
-test('The two copies of a shared sheet are byte-identical: subagents.md is kept in both sw-conduct and sw-route, zh and en each paired', () => {
-  /* The placement rule ("each skill carries the sheets it references") keeps this page duplicated
+test('The copies of a shared sheet are byte-identical: subagents.md and talking.md each kept in both sw-conduct and sw-route, zh and en each paired', () => {
+  /* The placement rule ("each skill carries the sheets it references") keeps these pages duplicated
    * on purpose — the guard here is that the copies never drift. A link cannot replace the second
    * copy: the sheet has to travel inside the method's own folder. */
   const plugins = shippedPluginsDir()
   for (const lang of ['zh', 'en']) {
-    const pages = ['sw-conduct', 'sw-route'].map(
-      (method) => join(plugins, 'pipeline', 'skills', lang, method, 'shared', 'superworker', 'subagents.md'),
+    for (const sheet of ['subagents.md', 'talking.md']) {
+      const pages = ['sw-conduct', 'sw-route'].map(
+        (method) => join(plugins, 'pipeline', 'skills', lang, method, 'shared', 'superworker', sheet),
+      )
+      for (const page of pages) assert.ok(existsSync(page), `${lang}: ${page} is not on disk`)
+      assert.deepEqual(readFileSync(pages[0]), readFileSync(pages[1]), `${lang}: the two ${sheet} copies drifted apart byte-wise`)
+    }
+    /* The issue plugin's discuss sheet carries the same page: its reader is a person too, and the
+     * issue plugin is installed on its own, so the page travels inside its own folder as well. */
+    const discuss = join(plugins, 'issue', 'skills', lang, 'sw-issue-discuss', 'shared', 'superworker', 'talking.md')
+    assert.ok(existsSync(discuss), `${lang}: ${discuss} is not on disk`)
+    assert.deepEqual(
+      readFileSync(discuss),
+      readFileSync(join(plugins, 'pipeline', 'skills', lang, 'sw-conduct', 'shared', 'superworker', 'talking.md')),
+      `${lang}: sw-issue-discuss's talking.md drifted from the copy sw-conduct carries`,
     )
-    for (const page of pages) assert.ok(existsSync(page), `${lang}: ${page} is not on disk`)
-    assert.deepEqual(readFileSync(pages[0]), readFileSync(pages[1]), `${lang}: the two subagents.md copies drifted apart byte-wise`)
   }
 })
 

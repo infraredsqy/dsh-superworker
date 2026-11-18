@@ -537,11 +537,9 @@ long quotes or old readings were moved into the body — **do not rush to delete
 node's `run.md` is the node-level receipt: what was done, the change list, the decision list, the
 known unresolved items; the round's detail is already in the report set, so pointers are enough.
 
-**Words for a human** (whether at a close, a stop or a checkpoint): say the design consequence in
-plain words, with no variable names, function names or code-level numbers in the headline; a
-technical report a subagent hands back is translated before it is reported, never forwarded
-whole. Every problem says three things: what happened → the effect on the goal → what call is
-needed.
+**Words for a human** (whether at a close, a stop or a checkpoint) follow
+[`shared/superworker/talking.md`](shared/superworker/talking.md): report one tangle, all four lines,
+the concept name at the setting `config get answer` reads.
 
 ## Close out
 

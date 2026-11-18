@@ -41,10 +41,11 @@ the whole set with one `update --from-file`. What is left over is what really ne
 
 More burns the judgement, so what is over goes into the next batch.
 
-- Putting it to the user means **plain words**: what this trouble is, why it is dangerous, which
-  roads there are, and what each of them costs. Function names / variable names / line numbers /
-  call chains stay with the entry itself — that is the machine language for whoever does the work.
-  The two languages live side by side and do not stand in for each other.
+- Putting it to the user follows [`./shared/superworker/talking.md`](./shared/superworker/talking.md):
+  one tangle at a time, all four lines, the concept name at the setting `config get answer` reads.
+  Function names / variable names / line numbers / call chains stay with the entry itself — that is
+  what the one doing the work reads. The two registers live side by side and do not stand in for
+  each other.
 - Once the user has settled it, settle each entry; one batch sharing one reason can close with
   `update <id…>` / `reject <id…>` in one call, and rulings whose reason differs per entry go
   through `update --from-file`:

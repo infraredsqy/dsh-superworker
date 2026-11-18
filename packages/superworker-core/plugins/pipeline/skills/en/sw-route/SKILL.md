@@ -122,7 +122,9 @@ what it always meant — the copy the user nodded at — so compatibility costs 
 
 ### Step 1: read the docs and the context
 
-1. Read `shared/superworker/toolcraft.md` and `shared/superworker/philosophy.md`
+1. Read `shared/superworker/toolcraft.md` and `shared/superworker/philosophy.md`; talk to the user
+   by `shared/superworker/talking.md` (one tangle at a time, four lines, the concept name at the
+   setting `config get answer` reads)
 2. Read the project's docs/ and spec
 3. When building or changing a graph, `config get test_tier` reads this project's test tier
    (`full` / `minimal`; factory default `full`, the same as `config list` prints). When this

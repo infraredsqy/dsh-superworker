@@ -64,7 +64,7 @@ DAG 与项目文档（docs/、spec）直接读；**工程代码不读**——实
 
 ### 第一步：读文档与上下文
 
-1. 读 `shared/superworker/toolcraft.md` 与 `shared/superworker/philosophy.md`
+1. 读 `shared/superworker/toolcraft.md` 与 `shared/superworker/philosophy.md`；跟用户说话照 `shared/superworker/talking.md`（一次一处纠缠、四行、概念名按 `config get answer` 那一档）
 2. 读项目 docs/、spec
 3. 建或改图时，`config get test_tier` 读这个项目的测试档（`full` / `minimal`；出厂默认 `full`，同 `config list` 印的那样）。它还没被这个项目改过、而这一趟又需要 `minimal` 时，问一次、只问一次，并给出建议：demo／快速迭代原型 → `minimal`；产品级、要长期维护 → `full`，最终由用户定。拍板后用 `config set test_tier minimal` 写进项目的 `.superworker/config.json`。两档各是什么、谁读它，见 [`../sw-conduct/SKILL.md`](../sw-conduct/SKILL.md) 的「测试档与验证」表；它是项目级的，不进 spec。**不写进项目根的 `AGENTS.md`／`CLAUDE.md`**——设置只住 `.superworker/config.json` 与全局那份。worktree 档同理，走 `config set worktree_mode`。纯查图不问
 4. 读 DAG，也读线：先 `dag --help` 确认命令全集，再列一遍图看骨架；`cycle list` 与 `cycle current` 说出哪条线在服务中、各线 tags 盖着什么——线的事这一步就进场，第三步跟节点一起定
