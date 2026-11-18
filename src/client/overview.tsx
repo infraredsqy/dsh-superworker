@@ -323,22 +323,23 @@ function WindowPane(props: {
       press()
     },
   }
-  /* The states of the main window, one drawing per fact and the person's gate first. A gate — a
-   * checkpoint or a manual node, the reading does not say which and this drawing never asks — is why
-   * its conversation stopped, so the window breathes and draws nothing else: no veil, no mark, the
-   * rows still saying what is on the table for the reader. A child is drawn only while it runs, so
-   * none of these ever reaches it. */
+  /* The states a window wears, one drawing per fact and the person's gate first. A gate — a checkpoint
+   * or a manual node, the reading does not say which and this drawing never asks — is why its
+   * conversation stopped, so the window breathes and draws nothing else: no veil, no mark, the rows
+   * still saying what is on the table for the reader. The rest reach both windows: a leg that stopped
+   * with its work still owed is a ghost, and it is drawn broken exactly like the conversation this
+   * panel lives in — the debt is the same debt whoever left it. */
   const atGate = pane.waiting === true
   /* The veil answers the conversation being over and nothing else: its rows stay where they stand,
    * said dimmer. It is not a verdict on the work, so it is read off `settled` alone — and a broken
    * leg wears it too, because a broken leg is a conversation that stopped. */
-  const veiled = props.main && pane.settled === true && !atGate
+  const veiled = pane.settled === true && !atGate
   /* The check is the record's delivery and nothing else. A conversation that merely went quiet has
    * not handed anything in, and earns no mark at all. */
   const handed = props.main && !atGate && pane.delivered === true
   /* The broken leg: work is owed, nobody is doing it, and the conversation did not just yield to a
    * leg of its own. It wears the panel's failed glyph and the one word that says so. */
-  const broken = props.main && !atGate && !handed && pane.alert === true
+  const broken = !atGate && !handed && pane.alert === true
   /* The one thing a window's cell says: the verdict mark on the main window (the check for work
    * handed in, the failed glyph and its word for a break). The ring is not a verdict — it says the
    * conversation is still moving, so both windows wear it while they run. */
@@ -353,6 +354,14 @@ function WindowPane(props: {
    * check does not carry it: its fact is the record's delivery, and "it closed the turn itself
    * without handing the work in" would be the one sentence a delivered window must never say. */
   const reason = broken ? t(endingWordOf(pane.ending)) : undefined
+  /* How the conversation stopped, said on the caption line when it did not close its own turn: at a
+   * gate there is no mark to hover — the breath is the only drawing — so this is where the reader
+   * finds out that the conversation the gate is waiting on is no longer running, and why. A window
+   * whose last turn the model closed itself says nothing here: the record's own word about the work is
+   * the one sentence such a window must not have shouted over. */
+  const stopped = props.main && pane.settled === true && pane.ending !== undefined && pane.ending.kind !== 'completed'
+    ? t(endingWordOf(pane.ending))
+    : undefined
   /* The ring says "still moving" on both windows — the conversation this panel lives in is as much a
    * thing that runs as a leg it dispatched, and a reader who has to look for the spinner only on some
    * windows learns to stop looking. Only two windows wear none: one whose conversation stopped, and
@@ -383,9 +392,10 @@ function WindowPane(props: {
               <span className="superworker-num">{elapsedOf(t, pane.elapsedSeconds)}</span>
             </span>
           </p>
-          {readings === null ? null : (
+          {readings === null && stopped === undefined ? null : (
             <p className="superworker-oplate-m">
-              <span>{readings}</span>
+              {readings === null ? null : <span>{readings}</span>}
+              {stopped === undefined ? null : <span>{stopped}</span>}
             </p>
           )}
           {moving ? <i className="superworker-oring" aria-hidden="true" style={{ width: RING_SIZE, height: RING_SIZE }} /> : null}

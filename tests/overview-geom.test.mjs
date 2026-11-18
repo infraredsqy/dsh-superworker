@@ -29,6 +29,8 @@ import {
   MARK_CHECK_STROKE,
   MAIN_FLOOR_W,
   MAIN_MAX_W,
+  CHILD_FLOOR_W,
+  GAP_X_MIN,
   MARK_FAIL,
   MARK_FAIL_STROKE,
   PLATE_OUT,
@@ -514,12 +516,33 @@ test('a child never grows past the rows it actually holds', () => {
 })
 
 test('a stage too narrow for two windows draws the main window alone, and no rail for the column that left', () => {
-  const p = place(STAGES[0], 5)
+  /* 520 is under the pair's floors (240 + 240) once the lane and the probe are taken out: the column
+   * leaves whole. */
+  const p = layoutOverview({ stage: { width: 520, height: 480 }, mainRows: 6, childRows: rowsFor(2) })
   assert.deepEqual(p.children, [], 'the children column did not leave')
   assert.ok(p.main.width >= 200, 'the main window collapsed')
-  /* Five live children, and no column beside them: a rail whose bars index windows that are not
-     drawn is the empty frame on the stage's left — it leaves with the column it indexes. */
+  /* Two live children, and no column beside them: a rail whose bars index windows that are not
+   * drawn is the empty frame on the stage's left — it leaves with the column it indexes. */
   assert.equal(p.railVisible, false, 'a rail stood for a column the stage could not seat')
+})
+
+test('a narrow stage seats the pair at their floors rather than dropping the column: the ground gives way', () => {
+  /* 640 is under the pair's documented minimums (340 + 330) and over their floors. The old rule
+   * dropped the column here, which drew a pipeline with legs as a pipeline with none — silently. */
+  const p = layoutOverview({ stage: { width: 640, height: 480 }, mainRows: 4, childRows: rowsFor(2) })
+  assert.equal(p.children.length, 2, 'a stage that can hold the pair at their floors drew no column')
+  assert.ok(p.main.width >= MAIN_FLOOR_W, `the main window fell to ${p.main.width}, under its floor`)
+  for (const box of p.children) {
+    assert.ok(box.width >= CHILD_FLOOR_W, `a child fell to ${box.width}, under its floor`)
+    assert.ok(box.width > 0 && box.left >= 0, 'a child has no box on the stage')
+    assert.ok(box.left + box.width <= 640, 'a child runs off the stage')
+  }
+  /* The ground between the two windows gave way to what the pair needs, and not more. */
+  const gap = p.children[0].left - (p.main.left + p.main.width)
+  assert.ok(gap >= 0, `the two windows overlap by ${-gap}`)
+  assert.ok(gap <= GAP_X_MIN, `the ground kept ${gap}, over the least the design keeps`)
+  /* The rail stands with the column it indexes, in the lane the field still reserves. */
+  assert.equal(p.railVisible, true, 'the rail left with a column that stayed')
 })
 
 /* The stage heights a short window gives the pane — below the field's tallest, and below what its

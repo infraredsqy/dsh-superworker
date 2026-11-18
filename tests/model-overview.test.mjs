@@ -430,8 +430,83 @@ test('a running window never alerts: a debt is about work nobody is doing', () =
   assert.equal('alert' in child.children[0], false, 'a running child was accused of being stranded')
 })
 
-test('precedence: a gate beats a delivery beats a debt — gated, delivered and stranded reads waiting only', () => {
-  const all = factScene({
+test('a ghost: a leg that stopped with its work still owed keeps its window, drawn broken', () => {
+  /* The case the reading used to lose. The leg's session is no longer running, its claim is still on
+   * disk and the record still holds its cell, so nothing will settle it by itself: its window is the
+   * only place the debt can be read. It stays, and it stays broken. */
+  const reading = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
+    nodeOf: { 'c-1': OWED_NODE },
+    owedSessions: ['c-1'],
+    strandedNodes: [OWED_NODE],
+    events: { 'c-1': [said(5, undefined, '写到一半就停了')] },
+  })
+  assert.deepEqual(reading.children.map((w) => w.id), ['c-1'], 'a leg that died owing work left no window at all')
+  assert.equal(reading.children[0].settled, true, 'the ghost reads as still moving')
+  assert.equal(reading.children[0].alert, true, 'the ghost owes work and said nothing about it')
+  assert.deepEqual(reading.children[0].rows.map((row) => row.text), ['写到一半就停了'], 'the ghost lost the rows it died with')
+})
+
+test('a ghost resting between rounds is drawn quietly: the debt is not proved broken by the pause alone', () => {
+  /* Its node is still held, and no claim says its session died — the leg simply is not moving at this
+   * instant. The window stays (the reader can see the work on the table) and it accuses nobody. */
+  const resting = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
+    nodeOf: { 'c-1': OWED_NODE },
+    owedSessions: ['c-1'],
+    events: { 'c-1': [said(5, undefined, '这一轮说完了'), { type: 'turn/end', time: 6, data: { reason: { kind: 'completed' } } }] },
+  })
+  assert.equal(resting.children.length, 1, 'a leg resting between rounds left the page')
+  assert.equal(resting.children[0].settled, true, 'the resting leg reads as moving')
+  assert.equal('alert' in resting.children[0], false, 'a leg that is merely resting was called broken')
+
+  /* The same leg, its last turn stopped by hand: now the debt is proved. */
+  const killed = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
+    nodeOf: { 'c-1': OWED_NODE },
+    owedSessions: ['c-1'],
+    events: { 'c-1': [{ type: 'turn/end', time: 6, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }] },
+  })
+  assert.equal(killed.children[0].alert, true, 'a leg stopped by hand with work owed read as resting')
+  assert.deepEqual(killed.children[0].ending, { kind: 'aborted', cause: 'user' })
+})
+
+test('no ghost: a leg that stopped owing nothing leaves with its window', () => {
+  const reading = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
+    nodeOf: { 'c-1': OWED_NODE },
+    events: { 'c-1': [said(5, undefined, '写完了')] },
+  })
+  assert.deepEqual(reading.children, [], 'a finished leg that owes nothing stayed on the page')
+
+  /* And a stopped session no node names is nobody's debt either. */
+  const untied = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
+    owedSessions: [],
+    strandedNodes: [OWED_NODE],
+    events: { 'c-1': [said(5, undefined, '我是个工具性子 agent')] },
+  })
+  assert.deepEqual(untied.children, [], 'a stopped session no node names was drawn as a debt')
+})
+
+test('a ghost stands after the moving legs, so the cap folds a watched leg before a debt', () => {
+  /* Six children: five still running and one ghost. The cap keeps five, and the one it lets go is a
+   * leg that is still being watched — the debt is what the reader has to act on. */
+  const children = ['c-1', 'c-2', 'c-3', 'c-4', 'c-5', 'c-6']
+  const byId = { [MAIN]: mainRow(MAIN) }
+  for (const id of children) byId[id] = childRow(id, MAIN, id !== 'c-1')
+  const reading = readOverview({
+    sessions: snapshot([MAIN, ...children], byId),
+    nodeOf: { 'c-1': OWED_NODE },
+    owedSessions: ['c-1'],
+    events: { 'c-1': [said(5, undefined, '停在这里')] },
+  })
+  assert.equal(reading.children.length, 5, 'the cap did not hold at five')
+  assert.deepEqual(reading.children.map((w) => w.id).slice(-1), ['c-1'], 'the ghost was the window the cap folded away')
+  assert.equal(reading.hiddenChildren, 1, 'the folded-away leg was not counted')
+})
+
+test('precedence: a gate beats a delivery beats a debt — gated, delivered and stranded reads waiting only', () => {  const all = factScene({
     ending: turnEnd(9, 'aborted', 'user'),
     waiting: [MAIN],
     delivered: [MAIN],

@@ -171,9 +171,10 @@ export interface OverviewWindow {
    * Whether this window's conversation is over: true when the session list's
    * running bit is not true. It says the rows will not move again — nothing
    * more. A conversation stops for many reasons, and only {@link delivered}
-   * says the piece of work was handed in. The main window is the only one that
-   * can carry it today — a child is a window only while it is still running, so
-   * the reading never produces a settled child. Absent means it is running.
+   * says the piece of work was handed in. A child carries it only as a **ghost**
+   * — a leg that stopped while the record still owes its work, which keeps its
+   * window so the debt has somewhere to be read; a leg that is still moving
+   * carries nothing. Absent means it is running.
    */
   readonly settled?: boolean
   /**
@@ -190,7 +191,8 @@ export interface OverviewWindow {
    * it, it failed — or it ended with the debt still held while no leg of this
    * pipeline is moving at all. A conversation that merely yielded to work of its
    * own (waiting for a leg it dispatched) is not this: the pipeline is still
-   * moving, so nothing is stuck.
+   * moving, so nothing is stuck. A ghost leg carries it too — a leg that stopped
+   * while the record still owes its work is the case a ghost exists for.
    */
   readonly alert?: boolean
   /**
@@ -219,16 +221,18 @@ export interface OverviewReading {
    * named one that moved last. Absent when the record names none of the list's
    * sessions: the stage stays empty rather than showing a conversation the
    * pipeline never mentioned. It is the only window that can carry
-   * {@link OverviewWindow.settled}, {@link OverviewWindow.delivered},
-   * {@link OverviewWindow.waiting} and {@link OverviewWindow.alert}.
+   * {@link OverviewWindow.waiting}, and the only one the gate and the delivery are
+   * read for.
    */
   readonly main: OverviewWindow | null
   /**
    * The child windows, oldest first: the sessions the list still calls running
-   * that the record names, plus the main session's own running children — at
-   * most five, taken anew at every read. A child that ended is not here, and
-   * neither is one with nothing readable: its window leaves the page by the
-   * client's leave animation.
+   * that the record names, plus the main session's own running children, plus the
+   * **ghosts** — legs that stopped while the record still owes their work, which
+   * keep their window so that debt is somewhere to be read — at most five, taken
+   * anew at every read. A child that ended owing nothing is not here, and neither
+   * is one with nothing readable: its window leaves the page by the client's leave
+   * animation.
    */
   readonly children: readonly OverviewWindow[]
   /**
@@ -304,6 +308,17 @@ export interface OverviewInput {
    * caller, which has the three facts; this module only reads the debt off it.
    */
   readonly strandedNodes?: readonly unknown[] | undefined
+  /**
+   * The sessions whose node the record **still owes**: its word is not `completed`, and a
+   * line still holds it. The caller reads this off the project's own nodes.
+   *
+   * It is what keeps a leg's window after the leg stopped. A leg whose note names it and
+   * whose node is still on the table is the pipeline's current work whatever the
+   * conversation is doing — resting between rounds, waiting to be picked up, or dead —
+   * and a window that vanishes with the conversation leaves the reader with a pipeline
+   * that has no legs at all. Absent, no leg outlives its run.
+   */
+  readonly owedSessions?: readonly unknown[] | undefined
   /**
    * The moment this reading is taken at, in epoch milliseconds (a moment string is
    * read the same way, the convention every other moment on this input follows).
@@ -1014,6 +1029,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const waiting = waitingOf(input)
   const delivered = namedSet(input.deliveredSessions)
   const stranded = namedSet(input.strandedNodes)
+  const owed = namedSet(input.owedSessions)
   /* Whether any leg of this pipeline is still alive right now: a conversation
      that yielded while these move is waiting on its own work, not broken. A
      caller that named nothing judges across the whole list it handed over. */
@@ -1036,17 +1052,28 @@ export function readOverview(input: OverviewInput): OverviewReading {
       }),
     }
   const anchors = dispatchAnchorsOf(mainId === undefined ? undefined : input.events?.[mainId])
-  /* The seats the column can take: the sessions the record names and the list calls running — the
-     relay's legs, whose parent links point wherever the last trigger stood — plus the main session's
-     own running children, which is the whole admission when the caller says nothing about the
-     pipeline. A finished session is no seat however its dispatch row stands: its window leaves the
-     page by the client's leave animation, and the reading keeps no finished one. */
+  /* The seats the column can take, in two kinds. A **running** leg: the sessions the record names and
+     the list calls running — the relay's legs, whose parent links point wherever the last trigger stood
+     — plus the main session's own running children, which is the whole admission when the caller says
+     nothing about the pipeline. A **ghost**: a leg the record names whose node it still owes
+     (`owedSessions`) but whose conversation is not running — resting between rounds, or dead. Nothing
+     will settle such a leg next unless something prompts it, and the window it keeps is the only place
+     that debt can be read; letting the window go with the conversation is how a broken leg becomes
+     invisible. A stopped session whose node is not owed is still no seat: it left its work behind, and
+     its window goes with it. */
   const running: string[] = []
+  const ghosts: string[] = []
   if (mainId !== undefined) {
     for (const id of order) {
       if (id === mainId) continue
       const row: OverviewSessionRow | undefined = rows[id]
-      if (row === undefined || row.running !== true) continue
+      if (row === undefined) continue
+      /* A ghost needs no parent link and no running bit — that is exactly what the dead leg lost — only
+         the record's own word that the node is still on the table. */
+      if (row.running !== true) {
+        if (owed.has(id)) ghosts.push(id)
+        continue
+      }
       const admitted = named === undefined || named.has(id) || row.parentId === mainId
       if (!admitted) continue
       running.push(id)
@@ -1059,11 +1086,29 @@ export function readOverview(input: OverviewInput): OverviewReading {
   for (const id of running) {
     const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id], at)
     if (window.title === null && window.rows.length === 0) continue
-    /* A seat is drawn only while it runs, so it carries no state of its own: the gate, the delivery
-       and the debt are verdicts about work at rest, and the main window is where they are read. The
-       ending rides along all the same — it is a fact about the conversation, not about the work. */
+    /* A seat that is still moving carries no state of its own: the gate, the delivery and the debt are
+       verdicts about work at rest, and the main window is where those are read. The ending rides along
+       all the same — it is a fact about the conversation, not about the work. */
     const ending = endingOf(input.events?.[id])
     seats.push(ending === undefined ? window : { ...window, ending })
+  }
+  /* The ghosts stand after the moving seats, so a cap that has to fold something away folds a leg that
+     is still being watched before it folds a debt nobody else is going to draw. What a ghost says is
+     the thing the reader has to act on — this leg is not moving and the record still holds its work —
+     and it says "broken" only when the debt is proved: the caller's stranded judgment (the claim is on
+     disk and the session is gone), or a last turn the conversation did not close itself. A leg resting
+     between rounds keeps its window quietly, which is the truth about it. */
+  for (const id of ghosts) {
+    const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id], at)
+    if (window.title === null && window.rows.length === 0) continue
+    const ending = endingOf(input.events?.[id])
+    const broken = stranded.has(input.nodeOf?.[id] ?? '') || (ending !== undefined && ending.kind !== 'completed')
+    seats.push({
+      ...window,
+      settled: true,
+      ...(broken ? { alert: true } : {}),
+      ...(ending === undefined ? {} : { ending }),
+    })
   }
   const drawn = seats.slice(-WINDOW_CAP)
   return {

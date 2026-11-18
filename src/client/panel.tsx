@@ -351,6 +351,18 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     return out
   }, [nodeOf, project])
 
+  /* The sessions whose node the record still owes: the node's word is not `completed` and a line is
+   * holding it, which is the project's own `running` reading. Such a leg keeps its window after its
+   * conversation stops — resting between rounds, or dead — because the work is still on the table and
+   * the window is where that is read; a leg whose node is handed in leaves with its conversation. */
+  const owedSessions = React.useMemo((): readonly string[] => {
+    const out: string[] = []
+    for (const [session, nodeId] of Object.entries(nodeOf)) {
+      if (project?.nodeById[nodeId]?.running === true) out.push(session)
+    }
+    return out
+  }, [nodeOf, project])
+
   /* The sessions whose node the record calls delivered: the node's state is `completed`. The gate
    * still wins over this in the overview's own reading (a delivered checkpoint owes a person a word,
    * not a check), so nothing has to be subtracted here. When every node is delivered the whole
@@ -397,11 +409,12 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       waitingSessions,
       deliveredSessions,
       strandedNodes,
+      owedSessions,
       /* The moment the frame was read at: the end a running window's span is measured to. A window
        * that stopped is measured to its own last word instead, so nothing here keeps counting. */
       at: at.getTime(),
     })
-  }, [reading, events, live, nodeOf, props.sessions, sessionId, notes, waitingSessions, deliveredSessions, strandedNodes, at])
+  }, [reading, events, live, nodeOf, props.sessions, sessionId, notes, waitingSessions, deliveredSessions, strandedNodes, owedSessions, at])
 
   /* The overview's empty stage: the record is in hand and yet no window stands. Which of the three
    * it is is what the stage says — a workspace with no node at all, one whose record names no

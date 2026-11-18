@@ -613,6 +613,149 @@ test('a running child turns the ring, and wears neither the veil nor a check', {
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
+/** The record a ghost comes from: the panel's own node delivered, and a second node the line is still
+ * holding, whose launch cell was written and whose note names a session that is not running any more.
+ * The debt is on the record; only the leg's conversation is gone. */
+const recordOfADeadLeg = () => ({
+  ...record(),
+  '.superworker/ideas.json': json({
+    nodes: {
+      n0: {
+        title: 'the driven node',
+        description: 'the piece the main conversation drives',
+        tags: [],
+        mode: 'auto',
+        status: 'completed',
+        created_at: '2026-01-08T00:00:00.000Z',
+        completed_at: '2026-01-09T00:00:00.000Z',
+        dependencies: [],
+      },
+      n1: {
+        title: 'the leg that died',
+        description: 'a piece of work the line still holds',
+        tags: [],
+        mode: 'auto',
+        status: 'todo',
+        created_at: '2026-01-08T00:00:00.000Z',
+        dependencies: [],
+      },
+    },
+  }),
+  '.superworker/state.json': json({
+    cycles: [
+      {
+        id: 'c0',
+        title: 'a line',
+        status: 'active',
+        tags: [],
+        created_at: '2026-01-08T00:00:00.000Z',
+        updated_at: '2026-01-09T00:00:00.000Z',
+        policies: {},
+        holding: [{ id: 'n1', since: '2026-01-08T00:00:00.000Z' }],
+        path: [{ node: 'n0', started_at: '2026-01-08T00:00:00.000Z', ended_at: '2026-01-09T00:00:00.000Z', result: 'delivered' }],
+      },
+    ],
+  }),
+  '.superworker/meta/sessions/n1.json': json({ run: [{ session: 'c1', at: '2026-01-08T00:00:00.000Z' }] }),
+  '.superworker/meta/launch/c0/n1/prompt.txt': 'go\n',
+  '.superworker/meta/launch/c0/n1/started': '2026-01-08T00:00:00.000Z',
+})
+
+test('a leg that died owing work keeps its window, and that window is the broken one', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('dispatched it, and it never came back.', 100)])
+  service.set('c1', [read('a.ts', 200), { type: 'turn/end', time: 300, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }])
+  const mounted = await mountBuiltPanel({
+    record: recordOfADeadLeg(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: false, title: 'the leg that died' }])),
+    /* The host's own roster: the main conversation is alive, the leg is not. That is what makes the
+     * claim on disk a stranded one. */
+    agents: { list: () => [{ id: 'm1' }] },
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  const ghost = container.querySelector('[data-window="c1"]')
+  assert.equal(ghost !== null, true, 'a leg that died with its work still owed was not drawn at all')
+  assert.ok(ghost.className.includes('is-child'), 'the dead leg was drawn as the main window')
+
+  /* The conversation is over, so its rows stand still and are said dimmer. */
+  assert.ok(ghost.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'the dead leg’s rows are not veiled')
+  assert.equal(ghost.querySelectorAll('.superworker-orow').length, 1, 'the dead leg lost the rows it died with')
+
+  /* The broken drawing: the panel's failed glyph and the one word, with the reason on its title. */
+  const mark = ghost.querySelector('.superworker-omark')
+  assert.equal(mark !== null, true, 'the dead leg wears no failed glyph')
+  assert.ok(mark.className.includes('is-fail'), 'the dead leg wears the finished check instead')
+  assert.equal(mark.getAttribute('title'), zh['overview.ending.user'], 'the mark does not say why the conversation stopped')
+  assert.equal(ghost.querySelector('.superworker-omark-w')?.textContent, zh['overview.state.broken'], 'the dead leg says no word')
+
+  /* It is not moving any more, so the ring is gone with the motion. */
+  assert.equal(ghost.querySelector('.superworker-oring'), null, 'a stopped leg still turns its ring')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the same leg, its work handed in: no ghost, and its window goes with the conversation', { skip: bundleSkip }, async () => {
+  /* The same scene with the record saying the node was delivered and the line no longer holding it:
+   * the debt is gone, so nothing keeps the window. This is the pair the ghost rule exists for — the
+   * debt, never the death. */
+  const record = recordOfADeadLeg()
+  record['.superworker/ideas.json'] = json({
+    nodes: {
+      n0: {
+        title: 'the driven node',
+        description: 'the piece the main conversation drives',
+        tags: [],
+        mode: 'auto',
+        status: 'completed',
+        created_at: '2026-01-08T00:00:00.000Z',
+        completed_at: '2026-01-09T00:00:00.000Z',
+        dependencies: [],
+      },
+      n1: {
+        title: 'the leg that died',
+        description: 'a piece of work the line still holds',
+        tags: [],
+        mode: 'auto',
+        status: 'completed',
+        created_at: '2026-01-08T00:00:00.000Z',
+        completed_at: '2026-01-09T00:00:00.000Z',
+        dependencies: [],
+      },
+    },
+  })
+  record['.superworker/state.json'] = json({
+    cycles: [
+      {
+        id: 'c0',
+        title: 'a line',
+        status: 'active',
+        tags: [],
+        created_at: '2026-01-08T00:00:00.000Z',
+        updated_at: '2026-01-09T00:00:00.000Z',
+        policies: {},
+        holding: [],
+        path: [{ node: 'n1', started_at: '2026-01-08T00:00:00.000Z', ended_at: '2026-01-09T00:00:00.000Z', result: 'delivered' }],
+      },
+    ],
+  })
+  const service = fakeSessionsService()
+  service.set('m1', [said('dispatched it, and it delivered.', 100)])
+  const mounted = await mountBuiltPanel({
+    record,
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: false, title: 'the leg that died' }])),
+    agents: { list: () => [{ id: 'm1' }] },
+  })
+  await stageAt(mounted, 1024, 720)
+  assert.equal(mounted.container.querySelector('[data-window="c1"]') === null, true, 'a finished leg that owes nothing kept its window')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
 test('a dispatched child is tied to its own row: two children, two lines, each on its dispatch row', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
   service.set('m1', [
@@ -715,8 +858,8 @@ test('the column left the stage: an anchored child draws no window and no line',
     sessionsService: service,
     useSessions: (select) => select(snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])),
   })
-  /* The narrow stage: two windows cannot both keep their smallest sizes, so the column leaves. */
-  await stageAt(mounted, 640, 480)
+  /* The narrow stage: 500 leaves the pair less than their floors, so the column leaves. */
+  await stageAt(mounted, 500, 480)
   const { container } = mounted
   assert.ok(container.querySelector('[data-window="c1"]') === null, 'the column was drawn on the narrow stage')
   assert.ok(container.querySelector('.superworker-olinks') === null, 'a line was drawn to a window that is not there')
@@ -737,10 +880,10 @@ test('the rail leaves with the column it indexes: no empty frame stands in the l
       { id: 'c2', running: true, title: 'the second child' },
     ])),
   })
-  /* The narrow stage again, with two running children: the column leaves, and the rail — two dim
-     bars indexing windows that are not drawn — is the empty frame on the stage's left. It leaves
-     with the column; the stage keeps only the main window and its own blank. */
-  await stageAt(mounted, 640, 480)
+  /* The narrow stage again, with two running children: 520 is under the pair's floors once the lane
+     and the probe are out, so the column leaves — and the rail, two dim bars indexing windows that are
+     not drawn, is the empty frame on the stage's left. The stage keeps only the main window. */
+  await stageAt(mounted, 520, 480)
   const { container } = mounted
   assert.equal(container.querySelectorAll('[data-window]').length, 1, 'the narrow stage drew more than the main window')
   assert.equal(container.querySelector('.superworker-orail'), null, 'a rail stood for a column that is not there')

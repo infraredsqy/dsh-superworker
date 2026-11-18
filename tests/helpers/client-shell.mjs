@@ -62,7 +62,7 @@ async function specOf(window) {
  * re-renders the mounted panel with the same props, so a case that holds a mutable snapshot can move
  * it and redraw.
  */
-export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session', useSessions, sessionsService, workspaces, settingsForm, onConsultSetup, openSession }) {
+export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session', useSessions, sessionsService, workspaces, settingsForm, onConsultSetup, openSession, agents }) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div></body></html>', {
     url: 'http://127.0.0.1/',
     pretendToBeVisual: true,
@@ -100,8 +100,10 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
     sandboxPolicy: { workspaceRoot },
     /* No further services on this stand-in: every reading the panel asks for above answers from the
      * workspace-files port, and a service that is missing is a reading the panel has words for
-     * rather than an error. */
-    get: () => undefined,
+     * rather than an error. The one exception is the agent registry: the stranded judgment asks it
+     * who is alive, and a host that cannot answer says nobody is (that is the whole reading), so a
+     * case that wants the judgment has to hand a roster over. */
+    get: (name) => (name === 'agents' ? agents : undefined),
     provide: () => undefined,
   })
 

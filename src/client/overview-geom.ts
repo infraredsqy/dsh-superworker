@@ -71,6 +71,18 @@ export const CHILD_MIN_W = 330
  */
 export const MAIN_FLOOR_W = 240
 
+/**
+ * The narrowest a child window stands while the stage has the room for it.
+ *
+ * A child's own cell reads narrower than the main window's: its title line carries one label, the
+ * readings and the number — no nameplate prose — and its feed's insets (24 + 20) leave 176 of row
+ * text at 220. Kept under {@link MAIN_FLOOR_W} on purpose: the main window is the bigger of the two
+ * wherever the pair stands, and two equal windows would read as peers. A stage too narrow for the
+ * pair at these floors drops the column; one that fits the pair only where the ground between them
+ * gives way keeps its column, and the ground gives way instead.
+ */
+export const CHILD_FLOOR_W = 220
+
 /** The ground between the two windows: it breathes with the stage inside these ends. */
 export const GAP_X_MIN = 96
 export const GAP_X_MAX = 150
@@ -184,7 +196,12 @@ export function layoutOverview(input: {
      more: a short stage gets a short field, not a field that hangs off the bottom. */
   const fieldHeight = Math.min(FIELD_MAX_H, Math.max(0, stage.height - FIELD_PAD * 2))
 
-  const gapX = Math.max(GAP_X_MIN, Math.min(GAP_X_MAX, Math.round(availW * 0.1)))
+  /* The ground between the two windows gives way before the column does, the way the ground between
+     two children gives way on a short stage: a pair standing at its floors needs only what it needs,
+     and a stage narrower than the pair's *minimums* used to drop the column whole — a pipeline with
+     legs drawn as a pipeline with none. */
+  const preferredGapX = Math.max(GAP_X_MIN, Math.min(GAP_X_MAX, Math.round(availW * 0.1)))
+  const gapX = Math.max(0, Math.min(preferredGapX, availW - MAIN_FLOOR_W - CHILD_FLOOR_W))
   const rest = availW - gapX
   let mainW: number
   let childW: number
@@ -199,10 +216,16 @@ export function layoutOverview(input: {
     childW = Math.round(CHILD_MAX_W * k)
     shownGapX = gapX
   }
-  /* The column stands for live children only, and only where two windows can both keep their
-     smallest sizes: with no child, or on a stage too narrow for the pair, the ground between two
-     windows is not kept for a window that is not there. */
-  const childrenShown = childRows.length > 0 && availW >= MAIN_MIN_W && mainW >= MAIN_MIN_W && childW >= CHILD_MIN_W
+  /* The column stands for live children only, and only where two windows can both keep their floors:
+     their documented minimums where the stage has the room, and their readable floors where it does
+     not. */
+  const childrenShown = childRows.length > 0 && availW >= MAIN_FLOOR_W + CHILD_FLOOR_W
+  if (childrenShown && (mainW < MAIN_FLOOR_W || childW < CHILD_FLOOR_W)) {
+    /* Neither window goes under the width its own cell still reads at: on a stage whose share already
+       clears both floors nothing moves, and where it does not, the pair is pulled apart to them. */
+    mainW = Math.max(MAIN_FLOOR_W, Math.min(mainW, rest - CHILD_FLOOR_W))
+    childW = Math.max(CHILD_FLOOR_W, rest - mainW)
+  }
   /* The rail is the column's own index: it stands only where the column stands. Two dim bars in a
      lane whose column left the stage are the empty frame on the stage's left — the rail leaves with
      the column it indexes, and the lane it kept goes back to being the stage's own blank. */
