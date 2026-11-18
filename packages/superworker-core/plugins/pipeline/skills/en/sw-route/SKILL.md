@@ -37,10 +37,15 @@ So every node has five things settled the moment it is built:
 
 - **A clear intent**: write what it does, and write where the change actually lands. Name the
   landing place in the project's own vocabulary, and say what this pass includes and what it
-  leaves out. Function names, file paths, line counts, call order and implementation steps never
+  leaves out. Function names, call order and implementation steps never
   go into the spec: the executing side has the spec read-only, it is both the ground for doing
   the work and the criterion for the review, and implementation detail written into it dates it
-  and tampers with the criterion
+  and tampers with the criterion. **Folders and file names are fine** — that is how a person
+  names the place when asking for the change, and it drifts slowly enough through a refactor to
+  save a whole round of working on the wrong thing
+- **Two files: intention and spec**: one node writes two of them, split as the next section
+  describes. **The intention is the copy the user nodded at, and the agent leaves it alone**; the
+  spec is the intention unfolded at one moment, and the executing side may change it
 - **A single scope**: the landing place the spec names has exactly one referent in the project.
   When the wording carries more than one referent, the spec says which one; if that cannot be
   said, do not write the node down yet
@@ -68,6 +73,50 @@ the spec is written too much.
 Layering by data → API → UI is sound practice; there are two hard constraints only: every node has
 a verification boundary of its own, so it can be independently confirmed right once done; and the
 spec is read-only to downstream.
+
+### intention.md and spec.md
+
+Two files, two layers of one thing. Written as one, the agent reads both layers as a single one and
+takes the cheapest reading of it — that is where "the criterion went stale and nobody noticed" comes
+from.
+
+| | `intention.md` | `spec.md` |
+|---|---|---|
+| Answers | what is wanted, what is not, and **why** | where the change lands, and what counts as done |
+| Who changes it | the user alone | the conductor and any subagent |
+| When the world moves | **it does not** | it goes stale, and follows |
+| The test | does it still hold once new modules, pages or data files appear | which moment's state does it rest on |
+
+**What goes in the intention.** The principle this node exists to keep — "code only ever runs on
+events", "this feature belongs to the real editor; the mock page is the comparison copy". It
+describes the world we want, not the one on disk today. Prose or bullets both work, and the shape is
+not the requirement; the one requirement is that **a reader can answer "why", not merely "what"**.
+Check it once: if these words describe how things look right now, they belong in the spec — move them
+there.
+
+**Why the agent leaves the intention alone.** It is the copy the user nodded at. Changing it turns the
+user's requirement into whatever the agent decided to do, and every criterion, review and acceptance
+after that rests on the altered version with nobody able to see the ground moved. When the world moves,
+when the criterion stops covering it, or when the intention itself turns out to be wrong — the move is
+to stop and bring the user the new state beside the intention.
+
+**What goes in the spec.** The landing place, the completion rule, the edges. It is the intention
+unfolded as of the day it was written: it carries that day's module count, that day's list, that
+day's reading. **That is unavoidable, and it is not a defect** — what matters is that a reader can
+tell which moment's state it rests on. Wherever a number, a list or an enumeration is written, write
+it so the executing side can tell whether it has gone stale.
+
+**The spec may change, and it may not bloat.** When the work shows the criterion no longer covers the
+state on disk — change it, rather than following the letter of it or quietly loosening it. The change
+travels in the node's own commit, and `git diff` shows it plainly. **History is not rewritten here**:
+no "it was A, now it is B, because…" — git already holds that; writing today's value correctly is
+enough.
+
+**A green spec does not mean the intention was met.** When the criterion no longer covers the
+intention, that piece of work is still missing, and it counts as a delivery defect.
+
+**A node with no `intention.md`** (the older ones): read `spec.md` whole as the intention. That is
+what it always meant — the copy the user nodded at — so compatibility costs no second road.
 
 ## The flow
 
@@ -243,7 +292,8 @@ picks one road" table: small work with a light verification is marked `light`; t
 `standard`.
 
 **Three: whether the spec passes the executing side's gate.** Only work entering the graph has to
-pass this gate: a node landing in the pipeline has to satisfy those from "Nodes and downstream" — a
+pass this gate: a node landing in the pipeline has to satisfy those from "Nodes and downstream" — an
+intention that answers "why", a
 scope written with a single referent, a size one session can carry, and one executable completion
 rule. When any one of them is not satisfied, change the node or split it first, and write it down
 only after the user nods.
@@ -306,14 +356,16 @@ message; they run in the order you gave and come back together.
    an edge onto a node already on the graph takes `dag depend <node> --on a,b,c`, one write
 4. Writing it down: put the batch in a rows file (`title` / `description` / `mode` / `weight` /
    `tags` / `depends_on`, optionally a `ref`) and run one `dag add --from-file` — it prints each
-   node's id and spec path per row. Then write each spec.md by id: the file does not exist yet, so
-   write it directly and do not read it first; rows that do not depend on each other can go in one
-   message. Check yourself once: a scope written with a single
-   referent, a size one round can carry, a completion rule in one section (an executable command /
-   script / probe); when the discussion really rejected a practice, add the "what is not done"
-   section as well; the debt-clearing kind adds one `method: ` line (the name comes from
-   `doctor`) and its scope; anything with function names, file paths or line counts written in
-   gets deleted
+   node's id and spec path per row. Then write two files per id, `intention.md` and `spec.md`;
+   neither exists yet, so write them directly and do not read them first; rows that do not depend
+   on each other can go in one message. The intention carries what is wanted, what is not, and why;
+   the spec carries the landing place, the completion rule and the edges. Check yourself once: the
+   intention's lines describe the world we want (keep them) or the one on disk today (move them into
+   the spec); a scope written with a single referent, a size one round can carry, a completion rule
+   in one section (an executable command / script / probe); when the discussion really rejected a
+   practice, add the "what is not done" section as well; the debt-clearing kind adds one `method: `
+   line (the name comes from `doctor`) and its scope; anything with function names or implementation
+   steps written in gets deleted
 5. The session a node is born in is not yours to write: the tool records it itself when the node
    is built (`dag info`'s `sessions.discussion`, or `session show <node>`). To trace it back
    — judging whether this node is the user's own intent, or a spec written crooked, or a situation

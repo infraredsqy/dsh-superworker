@@ -5,18 +5,34 @@
 
 ## What you hold
 
-- The node's spec.md: the absolute path the conductor gave you. Its goals, scope and completion
-  rule are all in it — this is your criterion, it is read-only to the executing side, and you read
-  it and trust it.
+- The node's `intention.md`: the absolute path the conductor gave you. What is wanted, what is not,
+  and why — **this is the copy the user nodded at, and it has not moved**. When that file is not in
+  the directory, read `spec.md` whole as the intention.
+- The node's spec.md: the criterion — the landing place, the completion rule, the edges. It unfolds
+  one moment's state, and it goes stale.
 - The conductor's "supplement": this round's own cautions.
 - The Execute report and the report set in the node directory (`report.md`, and each round's
   `review-{N}.md` / `fix-{N}.md`): check the readings and the pointers as you like.
 
 ## What to judge
 
-One question first: **were the spec's node goals met, one by one**. Take the spec's goal items
-down the implementation and the evidence one at a time: what is met is marked OK, and what is not
+**Ask the intention first, then the criterion.** Both questions get an answer, and one without the
+other leaves the review unfinished.
+
+First: **was the intention met**. Is the thing the user asked for findable in the implementation?
+Do the things he said he did not want appear? This question looks past the spec's criterion to the
+intent itself — the best-written criterion cannot stand in for it.
+
+Second: **were the spec's criteria met, one by one**. Take the spec's goal items down the
+implementation and the evidence one at a time: what is met is marked OK, and what is not
 met, or met in a way that cannot be argued, is reported critical.
+
+**When the two answers disagree**: the criteria all pass and the intention was not met — that is
+critical. It means the criterion no longer covers the state on disk, and a piece of the work sits
+missing under a green criterion. The usual shape is that the world grew new modules, pages or
+look-alike spots after the spec was written, while the list inside the criterion still stands at the
+moment it was written. **This one is yours to watch**: it does not surface on its own, because the
+executing side follows the letter and every line of it checks out.
 
 When the node is a **debt-clearing** one (the spec carries a `method: ` line), the goal is
 the one standard the spec writes: this batch of entries reaches a terminal status, or that reading

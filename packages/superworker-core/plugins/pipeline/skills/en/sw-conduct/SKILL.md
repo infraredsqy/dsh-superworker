@@ -303,12 +303,16 @@ instruction list --project <absolute path to the project root>
 3. `dag open <id>` for the `spec.md` path, and read it; a missing file means this node has no
    requirements written yet — stop and ask the user to write the spec through sw-route, since
    filling in requirements is not this flow's job
-4. a `method: <skill name>` line in the spec → read `~/.dsh/skills/<name>/SKILL.md`, and the
+4. read `intention.md` in the same directory when it is there: that is the copy the user nodded at,
+   and **you leave it alone**. When it is not, read `spec.md` whole as the intention — that is how
+   the older nodes are, and reading them costs no second road. With both in hand you hold what is
+   wanted and what counts as done, which are two different things
+5. a `method: <skill name>` line in the spec → read `~/.dsh/skills/<name>/SKILL.md`, and the
    "Method" section settles who runs this node
-5. read the files named under the spec's "References" and "Up- and downstream" sections (those are
+6. read the files named under the spec's "References" and "Up- and downstream" sections (those are
    this node's real inputs)
-6. read the project's CLAUDE.md and the docs under docs/ that bear on this node
-7. read `config get test_tier`, `config get worktree_mode` and `config get max_agents`, and record
+7. read the project's CLAUDE.md and the docs under docs/ that bear on this node
+8. read `config get test_tier`, `config get worktree_mode` and `config get max_agents`, and record
    them in `run.md`'s "Facts checked"; which nodes this line holds at once, and what `parallel`
    is, are in the readings of `cycle current` (one `Node:` line per node, `parallel` on the
    `Policy:` line)
@@ -331,6 +335,14 @@ instruction list --project <absolute path to the project root>
   kind, mark it "derived" — a requirement can be changed only where the user and the goal docs
   put it, in the first two kinds; a constraint you derived yourself usually has a number recorded
   in the wrong place, and finding that out late in execution doubles the cost.
+- **Does the spec's criterion still cover the state on disk**: wherever the spec writes a number, a
+  list or an enumeration ("three modules", "not one left", "every endpoint"), hold it against the
+  tree as it is now. Once the world has grown something new since it was written and those numbers
+  have gone stale, the criterion follows — change `spec.md` and put the current numbers right;
+  **`intention.md` stays put**, it has not moved. Record the current value on one line under
+  "Autonomous decisions", and leave out how it used to read. When the criterion cannot be moved, or
+  when it is unclear whether the thing that grew counts, stop and lay the intention and the new
+  state in front of the user together.
 - **Where the completion rule is**: the spec must carry a section with an executable completion
   rule — a command, a script, a probe that yields a pass / fail reading. When there is none, or
   it is all "design it a bit" / "tune it" — things that cannot be judged — stop and ask the user
