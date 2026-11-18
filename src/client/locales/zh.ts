@@ -257,6 +257,8 @@ export const zh = {
   'overview.ending.interrupted': '进程中断',
   'overview.ending.failed': '出错结束',
   'overview.ending.other': '没有交代',
+  /* The name a window whose title the record does not name is announced by: what pressing it does. */
+  'overview.window.aria': '打开这个会话',
 
   /* ── When an operation is refused ─────────────────────────────────────────────────────────── */
   /* Each code from `src/host/failure.ts` and `src/client/failure.ts` reads as one of these.

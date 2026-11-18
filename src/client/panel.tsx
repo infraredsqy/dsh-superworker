@@ -30,7 +30,7 @@ import type { PanelPort } from './data.ts'
 import { NO_WORKSPACES, workspaceOf, type WorkspaceSource } from './workspaces.ts'
 import { NO_WINDOWS, type SessionWindows } from './session-events.ts'
 import { READING_CAPACITY } from './overview-geom.ts'
-import { OverviewPane } from './overview.tsx'
+import { OverviewPane, type WindowGo } from './overview.tsx'
 import { OverviewEmptyStage } from './overview-empty.tsx'
 import { MapPane, type CardGo } from './map.tsx'
 import { ConfigPane } from './config.tsx'
@@ -271,6 +271,21 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       open: openSession,
     }
   }, [notes, knownSessions, openSession])
+
+  /* The press on a window: the same two questions the map's cards are admitted by, asked of a session
+   * instead of a node — DSH's navigation gateway has to be here, and the conversation has to be one
+   * this machine's session list still holds. A window is drawn out of that list (the main one from the
+   * sessions the record names, a child from the main conversation's own children), so the roster is
+   * what keeps a press off a conversation the list has already let go: a child's last breath on the
+   * page, while its leave animation runs and its session is no longer there to open. */
+  const windowGo = React.useMemo<WindowGo | null>(() => {
+    if (openSession === undefined) return null
+    const known = knownSessions ?? NO_SESSIONS
+    return {
+      targetOf: (session) => (session.length > 0 && known.has(session) ? session : null),
+      open: openSession,
+    }
+  }, [knownSessions, openSession])
 
   const reading = load.phase === 'ok' ? load.reading : null
   const project = React.useMemo(
@@ -566,7 +581,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
             {overview === null
               ? null
               : emptyWords === null
-                ? <OverviewPane reading={overview} at={at} />
+                ? <OverviewPane reading={overview} at={at} go={windowGo} />
                 : <OverviewEmptyStage words={emptyWords} busy={consulting} onConsult={consultSetup} />}
           </PaneFrame>
 

@@ -56,10 +56,13 @@ async function specOf(window) {
  * answers the host's consult-setup endpoint for a case that presses the empty stage's action: it is
  * handed `{ sessionId, workspaceRoot }` and may answer with a promise (a case holding the call open
  * to judge the button mid-flight); every call is recorded on `consulted`, so a case can read which
- * workspace the press named. `rerender` re-renders the mounted panel with the same props, so a case
- * that holds a mutable snapshot can move it and redraw.
+ * workspace the press named. `openSession` is DSH's navigation gateway, the same hand the seat passes
+ * down; without it every press on the panel is inert, which is what a deployment with no gateway
+ * really draws (the sessions service it switches through is the stand-in `uiWorkspace`). `rerender`
+ * re-renders the mounted panel with the same props, so a case that holds a mutable snapshot can move
+ * it and redraw.
  */
-export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session', useSessions, sessionsService, workspaces, settingsForm, onConsultSetup }) {
+export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session', useSessions, sessionsService, workspaces, settingsForm, onConsultSetup, openSession }) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div></body></html>', {
     url: 'http://127.0.0.1/',
     pretendToBeVisual: true,
@@ -194,13 +197,13 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
   await act(async () => {
     /* `windows` is the panel api's own forwarding face over the context's `sessions` service — the
      * same object the slot's inject hands the real panel. */
-    reactRoot.render(React.createElement(panel.Panel, { port, sessionId, prefs: panel.prefs, useSessions, workspaces, windows: panel.windows }))
+    reactRoot.render(React.createElement(panel.Panel, { port, sessionId, prefs: panel.prefs, useSessions, workspaces, windows: panel.windows, openSession }))
   })
   await settle()
 
   const rerender = async () => {
     await act(async () => {
-      reactRoot.render(React.createElement(panel.Panel, { port, sessionId, prefs: panel.prefs, useSessions, workspaces, windows: panel.windows }))
+      reactRoot.render(React.createElement(panel.Panel, { port, sessionId, prefs: panel.prefs, useSessions, workspaces, windows: panel.windows, openSession }))
     })
     await settle()
   }

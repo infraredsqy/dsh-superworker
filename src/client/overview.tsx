@@ -35,6 +35,11 @@
  * breath belongs to the gate alone, so a window that sent work out and is waiting for it back says
  * nothing but its ring.
  *
+ * A window answers a press with the conversation it stands for — the move the map's cards already
+ * make — and its whole face is the target, because a finger has nowhere small to land. Whether a
+ * window may be pressed at all is the panel's admission (`WindowGo`): a conversation this machine
+ * cannot open keeps the drawing and nothing else, so no press can ever go nowhere.
+ *
  * A window's id is wiring, not words: it rides a `data-window` attribute and never prints.
  */
 import * as React from 'react'
@@ -72,6 +77,17 @@ import type { WordKey } from './locales/index.ts'
 
 /** How long the leave animation runs; the removal waits a breath past it. The span itself lives in the sheet. */
 const LEAVE_SPAN_MS = 260
+
+/**
+ * What one press on a window may do: the map's own two hands (`CardGo`), asked of a session instead
+ * of a node — a window *is* a conversation, and whether this machine can open it is the panel's
+ * reading (`panel.tsx`), never this drawing's.
+ */
+export interface WindowGo {
+  /** Where the window's conversation goes, or null when this machine cannot open it: a window that stays a drawing. */
+  targetOf(session: string): string | null
+  open(target: string): void
+}
 
 /** What each row kind says. */
 const ROW_WORDS: Readonly<Record<OverviewRowKind, WordKey>> = {
@@ -276,12 +292,37 @@ function WindowPane(props: {
   readonly enter: boolean
   readonly leave: boolean
   readonly fresh: boolean
+  /** Where a press on this window goes; null when nothing on this machine may be pressed. */
+  readonly go: WindowGo | null
 }): React.ReactElement {
   const t = useT()
   const { box, window: pane } = props
   const readings = readingsOf(t, pane)
   const head = props.main ? MAIN_HEAD : CHILD_HEAD
   const foot = props.main ? MAIN_FOOT : CHILD_FOOT
+  /* The conversation this window stands for, admitted by the panel: a window this machine cannot open
+   * stays the drawing it was — no role, no tab stop, no press, no cursor. */
+  const target = props.go === null ? null : props.go.targetOf(pane.id)
+  const press = (): void => {
+    if (target !== null) props.go?.open(target)
+  }
+  /* A press travels the browser's own activation road — `click`, which a mouse, a pen, a finger and a
+   * keyboard all end at; `mousedown` alone would be the mouse's road only. The pane wears the button
+   * role instead of being a `<button>` because it holds block content (a nameplate, a feed of rows, a
+   * verdict mark) that a button may not legally contain, and its box, ink and motion are the
+   * geometry's. The whole face is the target: the nameplate, the title line, the rows, and the mark
+   * standing over them are all children here, so even the mark's own hover title never eats a press. */
+  const pressable: React.HTMLAttributes<HTMLElement> = target === null ? {} : {
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': pane.title ?? t('overview.window.aria'),
+    onClick: press,
+    onKeyDown: (event: React.KeyboardEvent<HTMLElement>): void => {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      event.preventDefault()
+      press()
+    },
+  }
   /* The states of the main window, one drawing per fact and the person's gate first. A gate — a
    * checkpoint or a manual node, the reading does not say which and this drawing never asks — is why
    * its conversation stopped, so the window breathes and draws nothing else: no veil, no mark, the
@@ -324,11 +365,12 @@ function WindowPane(props: {
     props.enter ? 'is-enter' : '',
     props.leave ? 'is-leave' : '',
     atGate ? 'is-wait' : '',
+    target === null ? '' : 'is-go',
   ]
     .filter((one) => one.length > 0)
     .join(' ')
   return (
-    <section className={cls} data-window={pane.id} style={{ left: box.left, top: box.top, width: box.width, height: box.height }}>
+    <section className={cls} data-window={pane.id} style={{ left: box.left, top: box.top, width: box.width, height: box.height }} {...pressable}>
       {props.main ? (
         /* The nameplate is this window's title line, so its own right end carries the two facts a
          * child's title line carries: how long the conversation has run, and the ring while it still
@@ -414,6 +456,8 @@ function WindowPane(props: {
 export function OverviewPane(props: {
   readonly reading: OverviewReading
   readonly at: Date
+  /** Where a press on a window goes: the panel's admission and DSH's own navigation gateway. */
+  readonly go: WindowGo | null
 }): React.ReactElement {
   const { reading, at } = props
   const bodyRef = React.useRef<HTMLDivElement | null>(null)
@@ -632,6 +676,7 @@ export function OverviewPane(props: {
             enter={enteredRef.current.has(reading.main.id)}
             leave={leaving.has(reading.main.id)}
             fresh={freshIds.has(reading.main.id)}
+            go={props.go}
           />
         )}
         {reading.children.map((one, i) => {
@@ -647,6 +692,7 @@ export function OverviewPane(props: {
               enter={enteredRef.current.has(one.id)}
               leave={leaving.has(one.id)}
               fresh={freshIds.has(one.id)}
+              go={props.go}
             />
           )
         })}
@@ -678,6 +724,7 @@ export function OverviewPane(props: {
               enter={false}
               leave
               fresh={false}
+              go={props.go}
             />
           )
         })}

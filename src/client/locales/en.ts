@@ -230,6 +230,8 @@ export const en: Readonly<Record<WordKey, string>> = {
   'overview.ending.interrupted': 'The process interrupted it',
   'overview.ending.failed': 'It ended in an error',
   'overview.ending.other': 'Ended without word',
+  /* The name a window whose title the record does not name is announced by: what pressing it does. */
+  'overview.window.aria': 'Open this conversation',
 
   /* ── When an operation is refused ─────────────────────────────────────────────────────────── */
   /* The tool's own reason and the transport's own message are carried out verbatim: no lookup table
