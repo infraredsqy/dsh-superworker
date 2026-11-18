@@ -3,13 +3,15 @@
  * What comes in is the session-list snapshot the browser already holds plus each session's own
  * events; what comes out is only the reading. The cases below pin the invariants the spec names:
  * which windows survive the alive bit and the cap, that the five are taken anew when one ends or
- * one arrives, and that a failed tool call folds into a fail row.
+ * one arrives, what a window says about its conversation — how its last turn ended, and the four
+ * facts the drawing reads (settled, waiting, delivered, alert) — and that a failed tool call folds
+ * into a fail row.
  *
  *   node --test tests/model-overview.test.mjs
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readOverview } from '../src/model/index.ts'
+import { endingOf, readOverview } from '../src/model/index.ts'
 
 /* ---- the inputs' smallest honest shapes ---------------------------------- */
 
@@ -167,16 +169,13 @@ test('one child ends: the five are taken anew from those still alive, in arrival
   assert.deepEqual(reading.children.map((w) => w.id), ['c-1', 'c-2', 'c-4', 'c-5', 'c-6'])
 })
 
-/* ---- the window's own bits: running, done, waiting -----------------------
+/* ---- which sessions stand a window up: the alive bit ---------------------
  *
  * A child is a window only while the list says it is running. One that ended is
  * not drawn and not counted: the window it had is taken off the page by the
  * client's leave animation, so the reading never carries a finished child — a
  * finished child's dispatch row still being on the screen stands nothing up.
- * The main window is the only one ever done (it is the conversation this panel
- * lives in), done exactly when the list's running bit is not true; and it is the
- * only one that carries the person-gate fact, which the caller hands over after
- * reading the record's own gate.
+ * Which facts a window carries is the next section's business.
  */
 
 /** The main log a child hangs off: the call, the catalogue it wrote, and the answer that names it. */
@@ -212,7 +211,7 @@ test('a child that ended is no window, even while its dispatch row is still draw
   assert.deepEqual(kept.children, [], 'a dispatch row still on the screen stood a finished child up as a window')
 })
 
-test('a child still running is a window whatever its dispatch row does, and carries no done bit', () => {
+test('a child still running is a window whatever its dispatch row does, and carries no settled or done bit', () => {
   const read = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, true) }),
     /* No catalogue and no answer: nothing anchors this child, and the capacity keeps no row anyway. */
@@ -220,7 +219,9 @@ test('a child still running is a window whatever its dispatch row does, and carr
     capacity: 1,
   })
   assert.deepEqual(read.children.map((w) => w.id), ['c-1'], 'a running child lost its window for want of an anchor row')
-  assert.equal('done' in read.children[0], false, "a child window carries the main window's done bit")
+  /* It is a window because it is running: no settled (it is not stopped) and no retired done. */
+  assert.equal('settled' in read.children[0], false, 'a running child window carries the settled bit')
+  assert.equal('done' in read.children[0], false, "a child window carries the retired done bit")
 })
 
 test('a child that ended with no dispatch anchor at all is no window: nothing stands it up', () => {
@@ -228,41 +229,6 @@ test('a child that ended with no dispatch anchor at all is no window: nothing st
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
   })
   assert.deepEqual(read.children, [])
-})
-
-test('the main window is done exactly when the list says its session is not running', () => {
-  /* The list's running bit is the whole fact: not running, and the window is done — the conversation
-   * this panel lives in has stopped, and its rows are said quieter rather than removed. */
-  const idle = mainAlone()
-  assert.equal(idle.main.done, true, 'a main window whose session stopped does not read as done')
-  const running = readOverview({
-    sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN, { running: true }) }),
-  })
-  assert.equal(running.main.done, false, 'a running main window reads as done')
-  const besideChild = oneChild([said(5, undefined, '它回来了')])
-  assert.equal(besideChild.main.done, true, 'the main window read as running beside a finished child')
-})
-
-test('the waiting bit lands on the main window, from the fact the caller hands over', () => {
-  /* The caller read the record's own gate: this session's node is a checkpoint. The reading carries
-   * that word alone, and it does not touch the running fact — the drawing reads the gate first. */
-  const atGate = readOverview({
-    sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }),
-    waitingSessions: [MAIN],
-  })
-  assert.equal(atGate.main.waiting, true, 'the session the caller named at a checkpoint does not read as waiting')
-  assert.equal(atGate.main.done, true, 'the gate rewrote the running bit')
-
-  const plain = mainAlone()
-  assert.equal('waiting' in plain.main, false, 'a window nobody named at a gate reads as waiting')
-
-  /* The gate is the main window's reading: a child named at one carries nothing. */
-  const child = readOverview({
-    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, true) }),
-    waitingSessions: ['c-1'],
-  })
-  assert.equal('waiting' in child.children[0], false, 'a child window carries the person gate')
-  assert.equal(child.main.waiting, undefined, 'the gate landed on the child instead of the window it names')
 })
 
 test('a finished child takes no slot in the cap: the five are running children alone', () => {
@@ -278,6 +244,207 @@ test('a finished child takes no slot in the cap: the five are running children a
     'the five drawn are not the running children alone',
   )
   assert.equal(read.hiddenChildren, 0, 'a finished child was counted as a running one the cap folded away')
+})
+
+/* ---- how the last turn ended --------------------------------------------
+ *
+ * DSH's own `turn/end` reason, folded to its `kind` and — on a cancellation —
+ * the `cause` under it. The fact is carried verbatim: this reading judges
+ * nothing about it, the drawing words it. The last one in the log wins, since a
+ * log holds every turn the conversation ran; a kind this reading has never seen
+ * is still an ending and is never read as `completed`; and a log with no
+ * `turn/end`, or one nothing can be read off, names no ending at all — which is
+ * not the same as "it ended well".
+ */
+
+/** One turn's end the way DSH writes it: the reason, and a cancellation's own cause under it. */
+function turnEnd(time, kind, cause) {
+  return {
+    type: 'turn/end',
+    time,
+    data: { reason: { kind, ...(cause === undefined ? {} : { reason: { kind: cause } }) } },
+  }
+}
+
+test('the last turn/end wins: the ending is what the conversation did last', () => {
+  assert.deepEqual(endingOf([turnEnd(1, 'completed'), turnEnd(2, 'aborted', 'user')]), { kind: 'aborted', cause: 'user' })
+  /* A turn that ended well after a cancelled one: the cancellation is history, not the ending. */
+  assert.deepEqual(endingOf([turnEnd(1, 'aborted', 'parent'), turnEnd(2, 'completed')]), { kind: 'completed' })
+})
+
+test('the cause rides only an aborted turn, and only when the log spells one', () => {
+  assert.deepEqual(endingOf([turnEnd(1, 'aborted', 'user')]), { kind: 'aborted', cause: 'user' })
+  assert.deepEqual(endingOf([turnEnd(1, 'aborted')]), { kind: 'aborted' }, 'a cause nobody wrote was invented')
+})
+
+test('interrupted and error are carried as they are, never folded to completed', () => {
+  assert.deepEqual(endingOf([turnEnd(1, 'interrupted')]), { kind: 'interrupted' })
+  assert.deepEqual(endingOf([turnEnd(1, 'error')]), { kind: 'error' })
+})
+
+test('no turn/end, or one nothing can be read off: no ending at all, and nothing throws', () => {
+  assert.equal(endingOf([said(1, undefined, '一句话')]), undefined, 'a log with no turn/end named an ending')
+  assert.equal(endingOf([]), undefined)
+  assert.equal(endingOf(undefined), undefined)
+  assert.equal(endingOf([{ type: 'turn/end' }]), undefined, 'an ending with no data named a kind')
+  assert.equal(endingOf([{ type: 'turn/end', data: 'nonsense' }]), undefined)
+  assert.equal(endingOf([{ type: 'turn/end', data: { reason: 5 } }]), undefined)
+  assert.equal(endingOf([{ type: 'turn/end', data: { reason: {} } }]), undefined, 'an ending with no kind named one')
+})
+
+/* ---- the main window's facts: settled, waiting, delivered, alert ----------
+ *
+ * The main window is the one these facts decide the drawing for. `settled` says
+ * one thing alone — the list's running bit is not true, so the rows will not
+ * move again; it is not a verdict on the work, and the retired `done` bit is
+ * gone. `waiting` is the caller's person's gate (a checkpoint, or a manual
+ * node), and `delivered` is the record's word that the work is handed in — the
+ * one fact the check is drawn on. `alert` is the narrow one: work is owed (the
+ * caller's stranded nodes), and the conversation either did not end by itself
+ * or ended with the debt still held while no leg of the pipeline moves. The
+ * order is the drawing's order: a gate, then a delivery, then a debt. A gated
+ * window is never also handed in or broken, and a conversation that yielded to
+ * a leg of its own is a pipeline in motion rather than a broken one.
+ */
+
+/** The node the scene's main session works: the one word that makes a debt possible. */
+const OWED_NODE = 'n-owed'
+
+/**
+ * The main session working one node, with its log's last ending, the caller's
+ * record-side words, and — when given — a second named session still running to
+ * the side. The pipeline names MAIN and the panel sits in it, so MAIN is the
+ * main window however the leg is doing; the leg only decides whether anything
+ * is still moving.
+ */
+function factScene({ running = false, ending, waiting, delivered, stranded, runningLeg } = {}) {
+  const byId = { [MAIN]: mainRow(MAIN, { running }) }
+  const ids = [MAIN]
+  const pipeline = [MAIN]
+  if (runningLeg !== undefined) {
+    byId[runningLeg] = { id: runningLeg, running: true, displayTitle: `leg ${runningLeg}`, retainedBy: {} }
+    ids.push(runningLeg)
+    pipeline.push(runningLeg)
+  }
+  return readOverview({
+    sessions: snapshot(ids, byId),
+    pipelineSessions: pipeline,
+    sessionId: MAIN,
+    nodeOf: { [MAIN]: OWED_NODE },
+    ...(ending === undefined ? {} : { events: { [MAIN]: [ending] } }),
+    ...(waiting === undefined ? {} : { waitingSessions: waiting }),
+    ...(delivered === undefined ? {} : { deliveredSessions: delivered }),
+    ...(stranded === undefined ? {} : { strandedNodes: stranded }),
+  })
+}
+
+test('settled replaces done: a stopped conversation says its rows will not move, nothing more', () => {
+  /* The list's running bit is the whole fact: not running, and the window is settled — the
+   * conversation this panel lives in has stopped, and its rows are said quieter rather than removed. */
+  const idle = factScene()
+  assert.equal(idle.main.settled, true, 'a main window whose session stopped does not read as settled')
+  assert.equal('done' in idle.main, false, 'the retired done bit is still on the window')
+  assert.equal('delivered' in idle.main, false, 'a quiet conversation was read as handed in')
+
+  const running = factScene({ running: true })
+  assert.equal('settled' in running.main, false, 'a running main window reads as settled')
+  assert.equal('done' in running.main, false, 'the retired done bit is still on a running window')
+
+  /* The main window beside a finished child is still the stopped one. */
+  const besideChild = oneChild([said(5, undefined, '它回来了')])
+  assert.equal(besideChild.main.settled, true, 'the main window read as running beside a finished child')
+  assert.equal('done' in besideChild.main, false, 'the retired done bit is still on a stopped window')
+})
+
+test('waiting lands on the main window, from the fact the caller hands over', () => {
+  /* The caller read the record's own gate: this session's node is a checkpoint. The reading carries
+   * that word alone, and it does not touch the running fact — the drawing reads the gate first. */
+  const both = factScene({ waiting: [MAIN], delivered: [MAIN] })
+  assert.equal(both.main.waiting, true, 'the session the caller named at a checkpoint does not read as waiting')
+  assert.equal('delivered' in both.main, false, 'a gated window was also drawn as handed in')
+  assert.equal(both.main.settled, true, 'the gate rewrote the running bit')
+
+  const plain = mainAlone()
+  assert.equal('waiting' in plain.main, false, 'a window nobody named at a gate reads as waiting')
+
+  /* The gate is the caller's word about one session, not a mood every window catches: a window the
+   * caller never named carries nothing, and the named one is still the main window. */
+  const beside = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN) }),
+    waitingSessions: [MAIN],
+  })
+  assert.equal(beside.main.waiting, true, 'the gate did not land on the window it names')
+  assert.equal('waiting' in beside.children[0], false, 'the gate spilled onto a window the caller never named')
+})
+
+test("delivered lands from the record's word alone: the check is drawn on it, and it is no alert", () => {
+  const reading = factScene({ delivered: [MAIN] })
+  assert.equal(reading.main.delivered, true, 'a session the record calls delivered does not read as handed in')
+  assert.equal('alert' in reading.main, false, 'a delivered window was drawn as broken')
+  assert.equal('waiting' in reading.main, false, 'a delivered window carries the person gate')
+  /* The record's judgment, not the conversation's: its log said nothing about it. */
+  assert.equal('ending' in reading.main, false, 'a delivery invented an ending')
+})
+
+test('alert: a killed turn on a stranded node is a broken leg at once, even while a leg still runs', () => {
+  const reading = factScene({ ending: turnEnd(9, 'aborted', 'user'), stranded: [OWED_NODE], runningLeg: 'leg-1' })
+  assert.equal(reading.main.alert, true, 'a leg killed with its node still owed read as nothing wrong')
+  assert.deepEqual(reading.main.ending, { kind: 'aborted', cause: 'user' }, 'the ending was not carried verbatim')
+})
+
+test('alert: a completed turn on a stranded node with the pipeline quiet is the phantom dispatch', () => {
+  /* It says it is done, nothing was handed in, and no named session is running: the debt is standing
+   * and nobody is working it. */
+  const reading = factScene({ ending: turnEnd(9, 'completed'), stranded: [OWED_NODE] })
+  assert.equal(reading.main.alert, true, 'a quiet pipeline with the debt still held read as nothing wrong')
+})
+
+test('no alert: a completed turn that yielded to its own running leg is a pipeline in motion', () => {
+  const reading = factScene({ ending: turnEnd(9, 'completed'), stranded: [OWED_NODE], runningLeg: 'leg-1' })
+  assert.equal('alert' in reading.main, false, 'a conversation that yielded to its own leg was called broken')
+})
+
+test('no alert: a stopped turn that owes nothing is no broken leg', () => {
+  const reading = factScene({ ending: turnEnd(9, 'aborted', 'user') })
+  assert.equal('alert' in reading.main, false, 'a conversation that owes nothing was called broken')
+})
+
+test('no alert on an unreadable ending: an unknown ending is never accused', () => {
+  /* The node is stranded, but the log carries no turn/end to read: there is nothing to go on, and a
+   * debt is not proved broken by a silence. */
+  const reading = factScene({ stranded: [OWED_NODE] })
+  assert.equal('alert' in reading.main, false, 'a window with no turn/end to read was accused')
+})
+
+test('a running window never alerts: a debt is about work nobody is doing', () => {
+  const reading = factScene({ running: true, ending: turnEnd(9, 'completed'), stranded: [OWED_NODE] })
+  assert.equal('alert' in reading.main, false, 'a running window was accused of being stranded')
+  assert.equal('settled' in reading.main, false, 'the running bit was rewritten by the debt')
+
+  /* The same on a child: running, its node owed by a line, and nothing to read off its log. */
+  const child = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN) }),
+    nodeOf: { 'c-1': OWED_NODE },
+    strandedNodes: [OWED_NODE],
+  })
+  assert.equal('alert' in child.children[0], false, 'a running child was accused of being stranded')
+})
+
+test('precedence: a gate beats a delivery beats a debt — gated, delivered and stranded reads waiting only', () => {
+  const all = factScene({
+    ending: turnEnd(9, 'aborted', 'user'),
+    waiting: [MAIN],
+    delivered: [MAIN],
+    stranded: [OWED_NODE],
+  })
+  assert.equal(all.main.waiting, true, 'the gate lost to the facts below it')
+  assert.equal('delivered' in all.main, false, 'a gated window also read as handed in')
+  assert.equal('alert' in all.main, false, 'a gated window also read as broken')
+
+  /* The next rung: the same scene without the gate would have alerted, and reads as handed in alone. */
+  const delivered = factScene({ ending: turnEnd(9, 'aborted', 'user'), delivered: [MAIN], stranded: [OWED_NODE] })
+  assert.equal(delivered.main.delivered, true, 'the delivery lost to the debt below it')
+  assert.equal('alert' in delivered.main, false, 'a delivered window also read as broken')
 })
 
 test("the nameplate reads the node's own words: title, weight, mode, each the engine's way", () => {
