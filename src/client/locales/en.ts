@@ -201,12 +201,16 @@ export const en: Readonly<Record<WordKey, string>> = {
   /* ── The overview ─────────────────────────────────────────────────────────────────────────── */
   /* The stage's empty state: what the record says when no window can be drawn. Three situations,
    * three sentences — a record with no node, one that names no session yet, and one whose sessions
-   * are none of them drawable now — because they are different things to know; the action under
-   * all three is the same, so it is said once. */
+   * are none of them drawable now — because they are different things to know. The stage says which
+   * one it is and nothing more: the move is the standing corner's doors, which need no sentence. */
   'overview.empty.no-nodes': 'This workspace has no nodes yet.',
-  'overview.empty.no-session': 'This workspace currently has no nodes.',
+  'overview.empty.no-session': 'The nodes are here; none has started.',
   'overview.empty.no-window': 'No running session can be recognised right now.',
-  'overview.empty.link': 'Start a new session to add nodes',
+  /* The standing corner: two doors and their fold. The words name the two skills' own work — the
+   * graph's and the line's — and are heard only, never drawn: the doors answer with glyphs. */
+  'overview.launch.pin': 'Launch',
+  'overview.launch.route': 'Open a graph session',
+  'overview.launch.conduct': 'Open a line session',
   /* A window's own readings line and its rows' verbs. The two person-waiting modes reuse the gate
    * words, so only the third mode needs a word of its own here. */
   'overview.weight.light': 'light',

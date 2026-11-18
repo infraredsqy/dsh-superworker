@@ -22,8 +22,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { canonicalWorkspaceRoot, executorOf, openNodeSession, openSetupSession } from '../src/host/executor.ts'
-import { SETUP_PROMPT } from 'superworker-core'
+import { canonicalWorkspaceRoot, executorOf, openConductSession, openNodeSession, openRouteSession } from '../src/host/executor.ts'
 import { pinHome } from './helpers/env.mjs'
 import { clearPlacement, placeOneSkill } from './helpers/skill-placement.mjs'
 import { until, flush } from './helpers/wait.mjs'
@@ -204,7 +203,7 @@ test('Probe: no agent registry, it refuses naming agents, and builds nothing', a
   assert.equal(agents.created.length, 0)
 })
 
-test('The setup consult: one session under this workspace, attached to it, the engine\'s setup sentence verbatim as its first instruction', async () => {
+test('The standing corner: one session per door under this workspace, attached to it, the bare invocation verbatim as its first instruction', async () => {
   mkdirSync(join(tmpdir(), 'superworker-executor-'), { recursive: true })
   const root = mkdtempSync(join(tmpdir(), 'superworker-executor-', 'ws-'))
   const attached = []
@@ -216,18 +215,20 @@ test('The setup consult: one session under this workspace, attached to it, the e
   const agents = fakeAgents()
   const { ctx } = context({ files: {}, agents: agents.registry, sessions: {}, workspaceRegistry })
 
-  const outcome = await openSetupSession(ctx, 's1', root)
+  const route = await openRouteSession(ctx, 's1', root)
+  const conduct = await openConductSession(ctx, 's1', root)
 
-  assert.equal(outcome.ok, true, JSON.stringify(outcome))
-  assert.equal(agents.created.length, 1, 'the empty stage\'s action opens exactly one session')
-  const record = agents.created[0]
-  assert.equal(outcome.session, record.options.sessionId, 'the answer names the session it minted')
-  assert.equal(record.options.meta.cwd, realpathSync(root), 'cwd must be this workspace root: the agent reads the workspace it was handed')
-  assert.deepEqual(attached, [record.options.sessionId], 'the consult road attaches the session, as the migration consult does')
-  assert.equal(record.followups.length, 1, 'exactly one first instruction')
-  assert.equal(record.followups[0].role, 'user')
-  assert.equal(record.followups[0].content[0].type, 'text')
-  assert.equal(record.followups[0].content[0].text, SETUP_PROMPT, 'the sentence is the engine\'s own, not one character changed')
+  assert.equal(route.ok, true, JSON.stringify(route))
+  assert.equal(conduct.ok, true, JSON.stringify(conduct))
+  assert.equal(agents.created.length, 2, 'each door opens exactly one session')
+  assert.equal(route.session, agents.created[0].options.sessionId, 'the answer names the session it minted')
+  assert.equal(agents.created[0].options.meta.cwd, realpathSync(root), 'cwd must be this workspace root: the agent reads the workspace it was handed')
+  assert.deepEqual(attached, agents.created.map((record) => record.options.sessionId), 'the consult road attaches the session, as the migration consult does')
+  assert.equal(agents.created[0].followups.length, 1, 'exactly one first instruction')
+  assert.equal(agents.created[0].followups[0].role, 'user')
+  assert.equal(agents.created[0].followups[0].content[0].type, 'text')
+  assert.equal(agents.created[0].followups[0].content[0].text, '/sw-route', 'the graph door opens on the bare invocation, not one word around it')
+  assert.equal(agents.created[1].followups[0].content[0].text, '/sw-conduct', 'the line door opens on the bare invocation, not one word around it')
   assert.equal(
     existsSync(join(root, '.superworker', 'meta', 'sessions', 'n1.json')),
     false,
@@ -235,12 +236,14 @@ test('The setup consult: one session under this workspace, attached to it, the e
   )
 })
 
-test('Probe: the setup consult asks the same question first, refusing by the same code when there is no agent registry', async () => {
+test('Probe: the standing corner asks the same question first, refusing by the same code when there is no agent registry', async () => {
   const agents = fakeAgents()
   const { ctx } = context({ files: {}, agents })
   const noAgents = { ...ctx, get(name) { return name === 'sessions' ? {} : undefined } }
-  const outcome = await openSetupSession(noAgents, 's1', 'C:\\ws')
+  const outcome = await openRouteSession(noAgents, 's1', 'C:\\ws')
+  const conduct = await openConductSession(noAgents, 's1', 'C:\\ws')
   assert.deepEqual(outcome, { ok: false, code: 'no-session-service', detail: 'agents' })
+  assert.deepEqual(conduct, { ok: false, code: 'no-session-service', detail: 'agents' })
   assert.equal(agents.created.length, 0)
 })
 

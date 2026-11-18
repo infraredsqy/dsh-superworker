@@ -48,13 +48,13 @@
  * caller that wants to watch its sessions passes `onOpened` instead of wrapping
  * the open.
  *
- * The consult sessions the panel's two nothing-to-draw notices open are sibling opens in this
- * file as well ({@link openConsultSession}, {@link openSetupSession}): they share the sides above —
- * the session-side probe, the standing preset, the workspace attach, the tool arm — and drop the
- * record-facing halves (no launch prompt to read, no note to write), because a workspace with only
- * the old record directory and one with no session to draw have neither to offer. The two differ in
- * one thing only: which fixed sentence the engine hands the session ({@link CONSULT_PROMPT} and
- * {@link SETUP_PROMPT}).
+ * The consult sessions the panel opens are sibling opens in this file as well ({@link
+ * openConsultSession}, {@link openRouteSession}, {@link openConductSession}): they share the sides
+ * above — the session-side probe, the standing preset, the workspace attach, the tool arm — and
+ * drop the record-facing halves (no launch prompt to read, no note to write), because a workspace
+ * with only the old record directory and one with nothing on its stage have neither to offer. The
+ * migration consult's sentence is the engine's ({@link CONSULT_PROMPT}); the standing corner's two
+ * doors open on bare skill invocations, spelled beside their openers.
  */
 import { randomUUID } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
@@ -64,7 +64,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentRegistry, AgentSetup } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createUserMessage } from '@deepseek-ai/dsh-llm/message'
-import { CONSULT_PROMPT, SETUP_PROMPT, type Executor } from 'superworker-core'
+import { CONSULT_PROMPT, type Executor } from 'superworker-core'
 import { LAUNCH_PROMPT_FILE, RECORD_LAUNCH } from './contract.ts'
 import type { RecordFailure, RecordRefusalCode } from './failure.ts'
 import { isAbsent, readWholeFile, type SuperworkerScope } from './records.ts'
@@ -460,15 +460,38 @@ export function openConsultSession(
 }
 
 /**
- * Open the consult session the overview's empty stage hands a person: the record names no session
- * the panel can draw, so the engine's fixed setup sentence ({@link SETUP_PROMPT}) goes in as the
- * session's first instruction and the agent reads this workspace into its first node. Same probe,
- * same refusals, same silence after a landed open — only the sentence differs.
+ * The overview's standing corner opens two doors, each on a bare skill invocation: the session that
+ * opens carries the skill, and every question a setup or a start could ask — whether the graph
+ * needs drawing at all, which line to drive — is that skill's own opening conversation, never this
+ * half's. A sentence composed here would be a second place that spells what the pipeline is for;
+ * the bare invocation is the reader's own command, and the skill that answers it spells the rest.
  */
-export function openSetupSession(
+const ROUTE_PROMPT = '/sw-route'
+const CONDUCT_PROMPT = '/sw-conduct'
+
+/**
+ * Open the standing corner's route door: one session of this host's own, at the named workspace,
+ * whose first instruction is the bare `/sw-route` invocation — the graph's own door, drawn nodes,
+ * edges, lines and starts alike.
+ */
+export function openRouteSession(
   ctx: Context,
   sessionId: SessionId,
   workspaceRoot: string,
 ): Promise<SessionOpenOutcome> {
-  return openConsult(ctx, sessionId, workspaceRoot, SETUP_PROMPT)
+  return openConsult(ctx, sessionId, workspaceRoot, ROUTE_PROMPT)
+}
+
+/**
+ * Open the standing corner's conduct door, the line's own door: same road as the route door, the
+ * bare `/sw-conduct` as the first instruction. The skill's own boot table asks what a bare start
+ * must ask — an empty graph brakes toward the route door, several lines stand as candidates for
+ * the reader to name one — so this open carries no reading of the record and judges nothing.
+ */
+export function openConductSession(
+  ctx: Context,
+  sessionId: SessionId,
+  workspaceRoot: string,
+): Promise<SessionOpenOutcome> {
+  return openConsult(ctx, sessionId, workspaceRoot, CONDUCT_PROMPT)
 }

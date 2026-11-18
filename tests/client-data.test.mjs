@@ -18,7 +18,7 @@ import { createPanelPort } from '../src/client/data.ts'
 function fakeNamespace(answer = { ok: true, value: { workspaceRoot: 'C:\\ws' } }) {
   const calls = []
   const namespace = {}
-  for (const method of ['watch', 'read', 'readSessions', 'addInstruction', 'archiveInstruction', 'reviveInstruction', 'removeInstruction', 'readConfig', 'setConfig', 'openNodeSession', 'consultMigration', 'consultSetup']) {
+  for (const method of ['watch', 'read', 'readSessions', 'addInstruction', 'archiveInstruction', 'reviveInstruction', 'removeInstruction', 'readConfig', 'setConfig', 'openNodeSession', 'consultMigration', 'consultRoute', 'consultConduct']) {
     namespace[method] = async (...values) => {
       calls.push({ method, values })
       return answer
@@ -177,19 +177,24 @@ test('the open-session seam: the endpoint is openNodeSession, cycle and node pas
   )
 })
 
-test('the setup-consult seam: the endpoint is consultSetup(sessionId, workspaceRoot), and a landed call says nothing', async () => {
+test('the standing corner seam: the endpoints are consultRoute/consultConduct(sessionId, workspaceRoot), and a landed call says nothing', async () => {
   const { calls, namespace } = fakeNamespace({ ok: true, value: { ok: true, session: 'session-minted' } })
   const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
 
-  const outcome = await port.consultSetup('s1', 'C:\\picked')
+  const route = await port.consultRoute('s1', 'C:\\picked')
+  const conduct = await port.consultConduct('s1', 'C:\\picked')
 
-  assert.deepEqual(outcome, { ok: true, text: '' }, 'a landed consult has nothing to print: the session it opens is the whole effect')
-  assert.deepEqual(calls, [{ method: 'consultSetup', values: ['s1', 'C:\\picked'] }])
+  assert.deepEqual(route, { ok: true, text: '' }, 'a landed consult has nothing to print: the session it opens is the whole effect')
+  assert.deepEqual(conduct, { ok: true, text: '' })
+  assert.deepEqual(calls, [
+    { method: 'consultRoute', values: ['s1', 'C:\\picked'] },
+    { method: 'consultConduct', values: ['s1', 'C:\\picked'] },
+  ])
 
   const refused = fakeNamespace({ ok: true, value: { ok: false, code: 'no-session-service', detail: 'agents' } })
   const other = createPanelPort({ get: (name) => (name === 'remote.superworker' ? refused.namespace : undefined) })
   assert.deepEqual(
-    await other.consultSetup('s1', ''),
+    await other.consultConduct('s1', ''),
     { ok: false, code: 'no-session-service', detail: 'agents' },
     'the host half\'s refusal code crosses as it is, the panel spells the words',
   )

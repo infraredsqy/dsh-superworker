@@ -6,11 +6,11 @@
  * `overview-geom.ts`'s answer, written onto each box inline; the one row height arrives as
  * `--superworker-orow-h` on the field, the nameplate's probe as `--superworker-plate-out`, and the
  * feed's own insets, the verdict mark and the broken leg's one word as the numbers the pane writes
- * inline. What lives here is tier, ink and motion, all on the tokens. The motions are six, each
- * bound to one fact; three of them loop by themselves — the walking tie, the waiting border and the
- * small ring — and the tie and the ring state their own still form here, while the border leans on
- * the global reduced-motion rule in `tokens.css`. The waiting border answers one fact only: the
- * window at a person's gate. */
+ * inline. What lives here is tier, ink and motion, all on the tokens. The motions are seven, each
+ * bound to one fact; three of them loop by themselves — the walking tie, the waiting border and
+ * the small ring — and the tie and the ring state their own still form here, while the border and
+ * the corner's fold lean on the global reduced-motion rule in `tokens.css`. The waiting border
+ * answers one fact only: the window at a person's gate. */
 
 /* ---- The stage ------------------------------------------------------------ */
 .superworker-page .superworker-overview {
@@ -32,8 +32,8 @@
 /* The record is in hand and no window can stand on it: not one node, no session it ever named, or
  * none of the named ones this machine holds now. Nothing is drawn in a window's place — a stand-in
  * window would be the one thing this panel must never invent — so the stage says which situation
- * it is and carries the one move that changes it, centred where the windows would have stood. It
- * is the whole-stage notice's own shape (one sentence, one secondary action) at this cell's size. */
+ * it is, and says nothing more: the move that changes any of the three is the standing corner
+ * below, which is on the pane in every state. */
 .superworker-page .superworker-oempty {
   flex: 1 1 auto;
   display: flex;
@@ -48,6 +48,79 @@
   margin: 0;
   font: var(--dsw-font-s-14);
   color: var(--dsw-alias-label-caption);
+}
+
+/* ---- The standing corner --------------------------------------------------- */
+/* Two doors and their fold, on the pane's own bottom-right edge, in every state the stage can be
+ * in. Each door opens one session whose first word is the bare skill invocation — the graph's, the
+ * line's — so the corner reads no state to decide whether opening is allowed; the one fact it
+ * reads greys the line's door when the record holds nothing that could ever be worked again.
+ * Collapsed it is one quiet disc, so an empty stage keeps its emptiness; the doors stand up over
+ * it while it is open, and the whole corner stands down while a door's call is out. It hangs on
+ * the pane, so the pane is its positioned ancestor — one rule, and the stage's own field is
+ * untouched. */
+.superworker-page .superworker-ohost {
+  position: relative;
+}
+.superworker-page .superworker-ofab {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.superworker-page .superworker-ofab-door,
+.superworker-page .superworker-ofab-pin {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 0;
+  border-radius: 50%;
+  corner-shape: round;
+  color: var(--superworker-ink-2);
+  cursor: pointer;
+  /* The disc floats over the stage's windows, so it is the soft elevation material and nothing
+   * else: the material carries its own hairline, and a border beside it would say it twice. */
+  box-shadow: var(--dsw-elevation-soft);
+  touch-action: manipulation;
+}
+.superworker-page .superworker-ofab-door:hover:not(:disabled),
+.superworker-page .superworker-ofab-pin:hover:not(:disabled) {
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--superworker-ink-1);
+}
+/* The doors fold by standing up: opacity and a short rise. The global reduced-motion rule in
+ * `tokens.css` spends the travel away and keeps the fold instant — the doors still arrive, they
+ * just do not travel. */
+.superworker-page .superworker-ofab-door {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(6px);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s;
+  pointer-events: none;
+}
+.superworker-page .superworker-ofab.is-open .superworker-ofab-door {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: auto;
+}
+/* Nothing to work: the line's door keeps its seat and loses its light — the dimmest ink that
+ * still clears the mark floor, so a grey door is still a door, only not this round's. */
+.superworker-page .superworker-ofab-door:disabled {
+  color: var(--superworker-ink-3);
+  cursor: default;
+}
+.superworker-page .superworker-ofab svg {
+  display: block;
 }
 
 /* ---- The lines between windows -------------------------------------------- */

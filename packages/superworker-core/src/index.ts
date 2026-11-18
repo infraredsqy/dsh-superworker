@@ -117,11 +117,6 @@ export {
 } from './legacy';
 export type { MigrationRefusal, MigrationReading } from './legacy';
 
-/* The other fixed sentence the panel hands a session it opens: the setup word, for a workspace
-   whose record names no session to draw. Same rule as the one above — the sentence is spelled
-   here, and the panel only opens the door. */
-export { SETUP_PROMPT } from './setup';
-
 export type { CleanTempEntry, CleanTempOptions, CleanTempReport } from './tempclean';
 
 export type {

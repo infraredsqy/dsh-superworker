@@ -1369,14 +1369,40 @@ const recordWithoutNodes = () => ({
   '.superworker/meta/sessions/n0.json': json({ run: [] }),
 })
 
-/** The empty stage's two pieces, read where the reader sees them: nothing when none stands. */
+/** The record with its one node back at the start: never run, never delivered — workable. */
+const recordUnstarted = () => ({
+  ...recordWithoutNotes(),
+  '.superworker/ideas.json': json({
+    nodes: {
+      n0: {
+        title: 'the driven node',
+        description: 'the piece the main conversation drives',
+        tags: [],
+        mode: 'auto',
+        status: 'todo',
+        created_at: '2026-01-08T00:00:00.000Z',
+        dependencies: [],
+      },
+    },
+  }),
+})
+
+/** The empty stage's one sentence, read where the reader sees it: nothing when no stage stands. */
 function emptyStage(mounted) {
   const stage = mounted.container.querySelector('#pane-overview .superworker-oempty')
   if (stage === null) return null
+  return { said: stage.querySelector('p')?.textContent ?? '' }
+}
+
+/** The standing corner's three pieces, read where the reader sees them. */
+function launchCorner(mounted) {
+  const corner = mounted.container.querySelector('#pane-overview .superworker-ofab')
+  if (corner === null) return null
   return {
-    said: stage.querySelector('p')?.textContent ?? '',
-    link: stage.querySelector('.superworker-btn')?.textContent ?? '',
-    button: stage.querySelector('.superworker-btn'),
+    corner,
+    pin: corner.querySelector('.superworker-ofab-pin'),
+    route: corner.querySelector('.superworker-ofab-door.is-route'),
+    conduct: corner.querySelector('.superworker-ofab-door.is-conduct'),
   }
 }
 
@@ -1387,7 +1413,7 @@ function defer() {
   return { promise, resolve }
 }
 
-test('the stage with no window says which of the three situations it is; all three carry the one move', { skip: bundleSkip }, async () => {
+test('the stage with no window says which of the three situations it is; the corner carries the one move for all of them', { skip: bundleSkip }, async () => {
   /* (a) The record names no session at all: a fresh clone, or a workspace just initialised. */
   const unstarted = await mountBuiltPanel({
     record: recordWithoutNotes(),
@@ -1395,12 +1421,19 @@ test('the stage with no window says which of the three situations it is; all thr
     useSessions: (select) => select(snapshotOf([])),
   })
   assert.deepEqual(
-    { said: emptyStage(unstarted)?.said, link: emptyStage(unstarted)?.link },
-    { said: zh['overview.empty.no-session'], link: zh['overview.empty.link'] },
+    { said: emptyStage(unstarted)?.said },
+    { said: zh['overview.empty.no-session'] },
     'a record that names no session says something else',
   )
   assert.equal(unstarted.container.querySelectorAll('[data-window]').length, 0, 'a stand-in window was drawn')
   assert.ok(unstarted.container.querySelector('#pane-overview .superworker-ofield') === null, 'the empty stage still drew a window field')
+  /* The corner stands on the pane in every state. Its line door is dark here — the record's one
+   * node has already delivered, so a line has nothing left to drive — while the graph door is the
+   * one door every state may press. */
+  const unstartedCorner = launchCorner(unstarted)
+  assert.notEqual(unstartedCorner, null, 'the standing corner is missing from the empty stage')
+  assert.equal(unstartedCorner.conduct.disabled, true, 'the line door stayed lit with nothing left to work')
+  assert.equal(unstartedCorner.route.disabled, false, 'the graph door did not stay pressable')
   await unstarted.unmount()
   assert.deepEqual(unstarted.consoleErrors, [], 'there is an error in the console')
 
@@ -1414,8 +1447,8 @@ test('the stage with no window says which of the three situations it is; all thr
     }),
   })
   assert.equal(emptyStage(gone)?.said, zh['overview.empty.no-window'], 'a record whose named session is gone says something else')
-  assert.equal(emptyStage(gone)?.link, zh['overview.empty.link'], 'the two situations carry different actions')
   assert.equal(gone.container.querySelectorAll('[data-window]').length, 0, 'a stranger was drawn instead of nothing')
+  assert.notEqual(launchCorner(gone), null, 'the standing corner is missing while a stage sentence stands')
   await gone.unmount()
   assert.deepEqual(gone.consoleErrors, [], 'there is an error in the console')
 
@@ -1426,7 +1459,6 @@ test('the stage with no window says which of the three situations it is; all thr
     useSessions: (select) => select(snapshotOf([])),
   })
   assert.equal(emptyStage(bare)?.said, zh['overview.empty.no-nodes'], 'a record with no node says something else')
-  assert.equal(emptyStage(bare)?.link, zh['overview.empty.link'], 'the three situations do not share one action')
   await bare.unmount()
   assert.deepEqual(bare.consoleErrors, [], 'there is an error in the console')
 })
@@ -1446,48 +1478,63 @@ test('a stage with a window draws no empty state', { skip: bundleSkip }, async (
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test('the empty stage\'s action hands this workspace to an agent: consultSetup, the action standing down while it is out', { skip: bundleSkip }, async () => {
+test('the standing corner: a press unfolds the doors, a door opens that door\'s session, and the corner stands down while the call is out', { skip: bundleSkip }, async () => {
   const gate = defer()
   const mounted = await mountBuiltPanel({
-    record: recordWithoutNotes(),
+    record: recordUnstarted(),
     sessionsService: fakeSessionsService(),
     useSessions: (select) => select(snapshotOf([])),
-    onConsultSetup: () => gate.promise,
+    onConsult: ({ door }) => (door === 'route' ? gate.promise : { ok: true, session: 'consult-check-session' }),
   })
-  const button = emptyStage(mounted)?.button
-  assert.notEqual(button, null, 'the empty stage carries no action')
+  const corner = launchCorner(mounted)
+  assert.notEqual(corner, null, 'the standing corner is missing')
+  assert.equal(corner.corner.classList.contains('is-open'), false, 'the corner stood unfolded')
+  assert.equal(corner.conduct.disabled, false, 'the line door stayed dark with a node still to work')
+  assert.equal(corner.route.disabled, false, 'the graph door did not stay pressable')
 
+  /* Fold open: the pin stands the doors up over it. */
   await mounted.act(async () => {
-    button.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
+    corner.pin.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
+  })
+  assert.equal(corner.corner.classList.contains('is-open'), true, 'the pin did not unfold the doors')
+
+  /* The route door answers with the door it named, this session, and the root the selector gave. */
+  await mounted.act(async () => {
+    corner.route.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
   })
   assert.deepEqual(
     mounted.consulted,
-    [{ sessionId: 'render-check-session', workspaceRoot: '' }],
-    'the press did not reach the host half with this session and the root the selector gave',
+    [{ door: 'route', sessionId: 'render-check-session', workspaceRoot: '' }],
+    'the press did not reach the host half with the door, this session and the root the selector gave',
   )
-  assert.equal(button.disabled, true, 'the action stayed pressable while the call was out')
+  assert.equal(corner.route.disabled, true, 'the doors stayed pressable while the call was out')
+  assert.equal(corner.pin.disabled, true, 'the fold stayed pressable while the call was out')
+  assert.equal(corner.corner.classList.contains('is-open'), false, 'the corner stayed unfolded after its press')
 
   await mounted.act(async () => {
     gate.resolve({ ok: true, session: 'consult-check-session' })
     await flush()
   })
-  assert.equal(button.disabled, false, 'the action never came back after the call settled')
+  assert.equal(corner.route.disabled, false, 'the doors never came back after the call settled')
   assert.ok(mounted.container.querySelector('.superworker-page > .superworker-innone') === null, 'a landed consult wrote a note line: it has nothing to say')
   assert.equal(mounted.consulted.length, 1, 'one press opened more than one session')
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test('a refused setup consult says why on the panel\'s note line', { skip: bundleSkip }, async () => {
+test('a refused door says why on the panel\'s note line', { skip: bundleSkip }, async () => {
   const mounted = await mountBuiltPanel({
-    record: recordWithoutNotes(),
+    record: recordUnstarted(),
     sessionsService: fakeSessionsService(),
     useSessions: (select) => select(snapshotOf([])),
-    onConsultSetup: () => ({ ok: false, code: 'no-session-service', detail: 'agents' }),
+    onConsult: () => ({ ok: false, code: 'no-session-service', detail: 'agents' }),
   })
-  const button = emptyStage(mounted)?.button
+  const corner = launchCorner(mounted)
   await mounted.act(async () => {
-    button.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
+    corner.pin.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
+  })
+  await mounted.act(async () => {
+    corner.conduct.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
     await flush()
   })
   const note = mounted.container.querySelector('.superworker-page > .superworker-innone')
@@ -1497,7 +1544,7 @@ test('a refused setup consult says why on the panel\'s note line', { skip: bundl
     zh['failure.no-session-service'].replace('{detail}', 'agents'),
     'the refusal does not read as the lookup table\'s sentence for its code',
   )
-  assert.equal(button.disabled, false, 'the action stayed down after a refused call')
+  assert.equal(corner.conduct.disabled, false, 'the doors stayed down after a refused call')
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })

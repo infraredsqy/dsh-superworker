@@ -52,17 +52,18 @@ async function specOf(window) {
  * `sessions` service, `workspaces` is the workspace-list source — all three optional, all three
  * forwarded the way the real seat forwards them. `settingsForm` replaces the stand-in settings
  * document the boot attaches (a case that needs the write round trip held open passes one built with
- * `deferred`); it comes back as `form`, so the case can answer what stands queued. `onConsultSetup`
- * answers the host's consult-setup endpoint for a case that presses the empty stage's action: it is
- * handed `{ sessionId, workspaceRoot }` and may answer with a promise (a case holding the call open
- * to judge the button mid-flight); every call is recorded on `consulted`, so a case can read which
- * workspace the press named. `openSession` is DSH's navigation gateway, the same hand the seat passes
+ * `deferred`); it comes back as `form`, so the case can answer what stands queued. `onConsult`
+ * answers the host's standing-corner doors for a case that presses one: it is handed
+ * `{ door, sessionId, workspaceRoot }` (`door` is `route` or `conduct`) and may answer with a
+ * promise (a case holding the call open to judge a door mid-flight); every call is recorded on
+ * `consulted`, so a case can read which door the press opened and which workspace it named.
+ * `openSession` is DSH's navigation gateway, the same hand the seat passes
  * down; without it every press on the panel is inert, which is what a deployment with no gateway
  * really draws (the sessions service it switches through is the stand-in `uiWorkspace`). `rerender`
  * re-renders the mounted panel with the same props, so a case that holds a mutable snapshot can move
  * it and redraw.
  */
-export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session', useSessions, sessionsService, workspaces, settingsForm, onConsultSetup, openSession, agents }) {
+export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session', useSessions, sessionsService, workspaces, settingsForm, onConsult, openSession, agents }) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div></body></html>', {
     url: 'http://127.0.0.1/',
     pretendToBeVisual: true,
@@ -109,7 +110,7 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
 
   /** The face the generated remote client would hand out: every call answers `{ ok, value }`. */
   const asked = []
-  /* Every consult-setup call a case's press made, and the answer that case chose to give it. */
+  /* Every standing-corner press a case made, with the door it named and the answer that case chose to give it. */
   const consulted = []
   const wrapped = (run) => async (...values) => {
     try {
@@ -137,9 +138,13 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
       })()
       return Object.assign(stream, { dispose: () => { controller.abort() } })
     },
-    consultSetup: wrapped((sessionId, workspaceRoot) => {
-      consulted.push({ sessionId, workspaceRoot })
-      return onConsultSetup === undefined ? { ok: true, session: 'consult-check-session' } : onConsultSetup({ sessionId, workspaceRoot })
+    consultRoute: wrapped((sessionId, workspaceRoot) => {
+      consulted.push({ door: 'route', sessionId, workspaceRoot })
+      return onConsult === undefined ? { ok: true, session: 'consult-check-session' } : onConsult({ door: 'route', sessionId, workspaceRoot })
+    }),
+    consultConduct: wrapped((sessionId, workspaceRoot) => {
+      consulted.push({ door: 'conduct', sessionId, workspaceRoot })
+      return onConsult === undefined ? { ok: true, session: 'consult-check-session' } : onConsult({ door: 'conduct', sessionId, workspaceRoot })
     }),
   }
 

@@ -227,12 +227,16 @@ export const zh = {
   /* ── The overview ─────────────────────────────────────────────────────────────────────────── */
   /* The stage's empty state: what the record says when no window can be drawn. Three situations,
    * three sentences — a record with no node, one that names no session yet, and one whose sessions
-   * are none of them drawable now — because they are different things to know; the action under
-   * all three is the same, so it is said once. */
+   * are none of them drawable now — because they are different things to know. The stage says which
+   * one it is and nothing more: the move is the standing corner's doors, which need no sentence. */
   'overview.empty.no-nodes': '这个工作区还没有节点。',
-  'overview.empty.no-session': '该工作区当前没有节点。',
+  'overview.empty.no-session': '节点都在，还没有一个开始。',
   'overview.empty.no-window': '当前没有可识别的运行中会话。',
-  'overview.empty.link': '启动接入节点的新会话',
+  /* The standing corner: two doors and their fold. The words name the two skills' own work — the
+   * graph's and the line's — and are heard only, never drawn: the doors answer with glyphs. */
+  'overview.launch.pin': '启动',
+  'overview.launch.route': '开一个改图会话',
+  'overview.launch.conduct': '开一个推线会话',
   /* A window's own readings line and its rows' verbs. The two person-waiting modes reuse the gate
    * words — the same fact said the same way on every view — so only the third mode needs a word of
    * its own here. */

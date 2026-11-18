@@ -3,8 +3,9 @@
  * readings and preferences, and the assembly of each pane.
  *
  * Each pane's own layout is its own document: the map `map.tsx` (with its layout engine in
- * `map-layout.ts`), the overview `overview.tsx` (with its layout in `overview-geom.ts` and the
- * session-event windows in `session-events.ts`; its empty stage is `overview-empty.tsx`), detail
+ * `map-layout.ts`), the overview `overview.tsx` (with its layout in `overview-geom.ts`, the
+ * session-event windows in `session-events.ts`, its empty stage in `overview-empty.tsx`, and its
+ * standing launch corner in `overview-launch.tsx`), detail
  * `detail.tsx`, instruction book `notes.tsx`, project settings `config.tsx`, and the issue pane
  * `pool.tsx`; the modal is `delete-confirm.tsx`; the legacy-directory notice that replaces the whole
  * stage is `legacy.tsx`; the reading widgets shared by the map, detail, and instruction book are in
@@ -22,7 +23,7 @@ import { everySourceIs, readOverview, readProject, readSessions, strandedCycleOf
 import type { PrefField, PrefsSource, ViewId } from './prefs.ts'
 import { clampSide, DEFAULT_SOURCE, PANEL_PREF_FIELDS, VIEW_IDS, VIEW_WORDS } from './prefs.ts'
 import { useT } from './locale.ts'
-import { failureWord, legacyNoticeWords, overviewEmptyWords, type OverviewEmpty } from './words.ts'
+import { failureWord, legacyNoticeWords, overviewEmptySaid, type OverviewEmpty } from './words.ts'
 import type { Outcome } from './failure.ts'
 import type { Load as LoadOf, Note } from './outcome.ts'
 import { writeToNote } from './outcome.ts'
@@ -32,6 +33,7 @@ import { NO_WINDOWS, type SessionWindows } from './session-events.ts'
 import { READING_CAPACITY } from './overview-geom.ts'
 import { OverviewPane, type WindowGo } from './overview.tsx'
 import { OverviewEmptyStage } from './overview-empty.tsx'
+import { OverviewLaunch } from './overview-launch.tsx'
 import { MapPane, type CardGo } from './map.tsx'
 import { ConfigPane } from './config.tsx'
 import { DeleteConfirm } from './delete-confirm.tsx'
@@ -435,7 +437,8 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
    * session that ever ran here, or one whose named sessions this machine cannot draw now — and they
    * are kept apart because they are different things to know. The distinction is judged from the
    * record side (the reading names the nodes, the notes name the sessions); whether any window
-   * stands at all is the overview's own `main`. */
+   * stands at all is the overview's own `main`. The stage says and does nothing more: the move that
+   * changes any of the three is the corner's standing doors, on the pane in every state. */
   const emptyKind: OverviewEmpty | null = overview === null || overview.main !== null || !sessionsRead
     ? null
     : noNodes
@@ -443,7 +446,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       : Object.keys(notes).length === 0
         ? 'no-session'
         : 'no-window'
-  const emptyWords = emptyKind === null ? null : overviewEmptyWords(t, emptyKind)
+  const emptySaid = emptyKind === null ? null : overviewEmptySaid(t, emptyKind)
 
   /* The event windows the overview holds open: every window the reading names, plus the sessions that
    * could still become one — the leg's dispatched workers, whose own last turn decides whether their
@@ -509,9 +512,22 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     consult(() => port.consultMigration(sessionId ?? '', workspaceRoot))
   }, [consult, port, sessionId, workspaceRoot])
 
-  const consultSetup = React.useCallback(() => {
-    consult(() => port.consultSetup(sessionId ?? '', workspaceRoot))
+  /* The standing corner's two doors, each a bare skill invocation for a first word: the graph's and
+   * the line's own sessions. What the session then asks — whether the graph needs drawing, which
+   * line to drive — is the skill's own opening conversation, so neither door carries a reading of
+   * the record; the one judgment behind them is `runnable`, below, and it only greys a door. */
+  const consultRoute = React.useCallback(() => {
+    consult(() => port.consultRoute(sessionId ?? '', workspaceRoot))
   }, [consult, port, sessionId, workspaceRoot])
+
+  const consultConduct = React.useCallback(() => {
+    consult(() => port.consultConduct(sessionId ?? '', workspaceRoot))
+  }, [consult, port, sessionId, workspaceRoot])
+
+  /* Whether the record still holds a node that could ever be worked: any cell not yet delivered and
+   * not shelved out of the game. It is the line door's light, and nothing more — which line to
+   * drive, or whether a second may run while one runs, is the session's own question to ask. */
+  const runnable = project !== null && project.nodes.some((node) => node.state === 'todo')
 
   /* The change made on the panel: the changed value leads, then it is written back to the settings
    * document — both sides read the same form, so the settings page's row moves on the spot too.
@@ -617,14 +633,16 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
         <div className="superworker-frame is-fill" id="frame">
           {/* The overview's pane draws the session's windows over one stage: the reading above
               carries the windows and their rows, this cell only stands the pane under its tab. No
-              window to draw is an empty stage with its own sentence and its own move, never a
-              stand-in window: the law is "draw nothing that is not there". */}
-          <PaneFrame id="overview" active={tab === 'overview'} noNodes={false} fill>
+              window to draw is an empty stage with its own sentence, never a stand-in window: the
+              law is "draw nothing that is not there". The standing corner hangs on the pane's own
+              edge in every state — doors first, then the stage's sentence. */}
+          <PaneFrame id="overview" active={tab === 'overview'} noNodes={false} fill className="superworker-ohost">
             {overview === null
               ? null
-              : emptyWords === null
+              : emptySaid === null
                 ? <OverviewPane reading={overview} at={at} go={windowGo} />
-                : <OverviewEmptyStage words={emptyWords} busy={consulting} onConsult={consultSetup} />}
+                : <OverviewEmptyStage said={emptySaid} />}
+            <OverviewLaunch runnable={runnable} busy={consulting} onRoute={consultRoute} onConduct={consultConduct} />
           </PaneFrame>
 
           <MapPane

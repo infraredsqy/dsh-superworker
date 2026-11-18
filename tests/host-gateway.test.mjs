@@ -38,7 +38,8 @@ const ENDPOINTS = [
   'readSessions',
   'openNodeSession',
   'consultMigration',
-  'consultSetup',
+  'consultRoute',
+  'consultConduct',
 ]
 
 const wired = await Promise.all([

@@ -72,8 +72,10 @@ export interface PanelPort {
   openNodeSession(sessionId: string, workspaceRoot: string, cycle: string, node: string): Promise<Outcome>
   /** Hand a legacy record directory's migration to an agent: the host opens the session that does it. */
   consultMigration(sessionId: string, workspaceRoot: string): Promise<Outcome>
-  /** Hand this workspace's setup to an agent (read it, draw its first node): the host opens the session that does it. */
-  consultSetup(sessionId: string, workspaceRoot: string): Promise<Outcome>
+  /** Open the standing corner's route door: one session whose first word is the bare `/sw-route`. */
+  consultRoute(sessionId: string, workspaceRoot: string): Promise<Outcome>
+  /** Open the standing corner's conduct door: one session whose first word is the bare `/sw-conduct`. */
+  consultConduct(sessionId: string, workspaceRoot: string): Promise<Outcome>
 }
 
 /** What one endpoint call yields before the two branches are unfolded: the value, or why not. */
@@ -165,7 +167,8 @@ const REMOTE_PARAM_ORDER: Readonly<Record<string, readonly string[]>> = {
   setConfig: ['sessionId', 'workspaceRoot', 'key', 'value'],
   openNodeSession: ['sessionId', 'workspaceRoot', 'cycle', 'node'],
   consultMigration: ['sessionId', 'workspaceRoot'],
-  consultSetup: ['sessionId', 'workspaceRoot'],
+  consultRoute: ['sessionId', 'workspaceRoot'],
+  consultConduct: ['sessionId', 'workspaceRoot'],
 }
 
 /** The arguments this endpoint call receives: laid out per the parameter table; keys absent from it are dropped. */
@@ -323,10 +326,15 @@ function portFromCall(source: PanelPort['source'], call: PortCall, stream?: Stre
        * there, so a re-read could only repeat this panel's own notice. */
       return openOutcome(answer)
     },
-    async consultSetup(sessionId, workspaceRoot) {
-      const answer = await call<SessionOpenOutcome>('consultSetup', { sessionId, workspaceRoot })
-      /* And the same silence: the session that reads this workspace into its first node appears in
-       * DSH, which is the whole effect; the stage's own sentence would read the same on a re-read. */
+    async consultRoute(sessionId, workspaceRoot) {
+      const answer = await call<SessionOpenOutcome>('consultRoute', { sessionId, workspaceRoot })
+      /* And the same silence: the session the door opens appears in DSH, which is the whole
+       * effect — what it is asked to do is the skill's own opening conversation, so a re-read
+       * could only repeat this corner's own state. */
+      return openOutcome(answer)
+    },
+    async consultConduct(sessionId, workspaceRoot) {
+      const answer = await call<SessionOpenOutcome>('consultConduct', { sessionId, workspaceRoot })
       return openOutcome(answer)
     },
   }
@@ -414,7 +422,7 @@ function absentPort(): PanelPort {
     throw new RefusedError({ code: 'not-connected' })
   }
   const refusedWrite = async (): Promise<Outcome> => ({ ok: false, code: 'no-write-channel' })
-  return { source: 'none', watch: () => () => undefined, read: missing, readSessions: missing, say: refusedWrite, write: refusedWrite, readConfig: missing, setConfig: refusedWrite, openNodeSession: refusedWrite, consultMigration: refusedWrite, consultSetup: refusedWrite }
+  return { source: 'none', watch: () => () => undefined, read: missing, readSessions: missing, say: refusedWrite, write: refusedWrite, readConfig: missing, setConfig: refusedWrite, openNodeSession: refusedWrite, consultMigration: refusedWrite, consultRoute: refusedWrite, consultConduct: refusedWrite }
 }
 
 /**
