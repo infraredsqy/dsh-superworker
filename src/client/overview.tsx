@@ -15,11 +15,20 @@
  * - breathing border — the main window's node stands at a person's gate: it is waiting for the reader
  *   to say yes. It loops by itself; being seen is its whole job.
  *
- * The main window's three states are read from two facts the reading carries, one state each, and
- * the gate stands first: at the person gate (`waiting` — a checkpoint) it wears the amber breathing
- * border and no veil and no check; the session not running (`done`) it wears the veil over its rows
- * and the check in the middle of the process band; otherwise it draws as it runs. The check and the
- * veil are the main window's alone now — a child that finished is no longer a window at all.
+ * The main window's state is one drawing per fact, and the person's gate stands first. At a gate
+ * (`waiting` — a checkpoint or a manual node; the drawing never asks which, and nothing here keys a
+ * state to one of those two modes) it wears the amber breathing border and nothing else: no veil, no
+ * mark. Otherwise the veil follows `settled` alone — the conversation is over, the rows stay where
+ * they stand, said dimmer — and the mark follows the record's own verdict, never the quiet: the
+ * check belongs to `delivered`, and `alert` — work owed, nobody doing it, and the conversation not
+ * ended by itself — wears the panel's failed glyph in the fail ink with the one word that says so.
+ * A conversation that merely went quiet, with no verdict on the record, draws no mark at all. The
+ * broken drawing — its failed glyph and its one word — carries the `ending` fact as its title, DSH's
+ * own `turn/end` reason, which is how a reader finds out what actually happened.
+ *
+ * The veil and the mark are the main window's alone — a child that finished is no longer a window at
+ * all. "Veiled" follows `settled` alone, so a broken leg is veiled like any stopped conversation
+ * (it is one) while the gate is not: what it waits on is still the reader's to see.
  *
  * A running child turns the small ring in its cell, half the border's pace — that is the whole of
  * what "still moving" says. Neither the ring nor any other fact reaches for the border: the amber
@@ -29,7 +38,7 @@
  * A window's id is wiring, not words: it rides a `data-window` attribute and never prints.
  */
 import * as React from 'react'
-import type { OverviewReading, OverviewRowKind, OverviewWindow } from '../model/index.ts'
+import type { OverviewEnding, OverviewReading, OverviewRowKind, OverviewWindow } from '../model/index.ts'
 import { clock } from '../model/index.ts'
 import {
   CHILD_FOOT,
@@ -41,12 +50,11 @@ import {
   MAIN_HEAD,
   MARK_CHECK,
   MARK_CHECK_STROKE,
-  MARK_FAIL,
-  MARK_FAIL_STROKE,
   MARK_SCRIM,
   RAIL_LEFT,
   ROW_H,
   SPILL_DOTS,
+  layoutBroken,
   layoutLink,
   layoutMark,
   layoutOverview,
@@ -93,6 +101,28 @@ function modeWordOf(mode: string): WordKey {
 function readingsOf(t: Translate, window: OverviewWindow): string | null {
   if (window.weight === null || window.mode === null) return null
   return `${t(WEIGHT_WORDS[window.weight])} · ${t(modeWordOf(window.mode))}`
+}
+
+/**
+ * How a conversation's last turn ended, in the reader's words: the one map the reason is read by.
+ *
+ * The kind and the cause are DSH's own strings (`OverviewEnding`), carried off `turn/end` verbatim,
+ * so this is a reading of exact words and never a guess: a turn the model closed itself, a
+ * cancellation and the cause it names (the hand, the host's disposal — and any other cause the
+ * vocabulary grows), a turn the log left open when the process died, and a failed one. An ending
+ * this table has never seen, and a log that carries none at all, both read as "ended without word":
+ * an unknown ending is still an ending, and nothing here ever dresses it as `completed`.
+ */
+function endingWordOf(ending: OverviewEnding | undefined): WordKey {
+  if (ending?.kind === 'completed') return 'overview.ending.completed'
+  if (ending?.kind === 'aborted') {
+    if (ending.cause === 'user') return 'overview.ending.user'
+    if (ending.cause === 'disposed') return 'overview.ending.disposed'
+    return 'overview.ending.other'
+  }
+  if (ending?.kind === 'interrupted') return 'overview.ending.interrupted'
+  if (ending?.kind === 'error') return 'overview.ending.failed'
+  return 'overview.ending.other'
 }
 
 /** The row's own mark, one small drawing per kind, the way the state marks are drawn. */
@@ -159,9 +189,11 @@ function KindMark(props: { readonly kind: OverviewRowKind }): React.ReactElement
 }
 
 /**
- * The mark a finished window wears: the panel's own check, or — when the window's last word was a
- * failure — the panel's existing failed mark. Both are drawn in the same 12-unit box; the size and
- * the pen that land on screen are `overview-geom.ts`'s, so the one drawing serves both marks.
+ * The mark the main window's record verdict wears: the panel's own check for work handed in, or —
+ * for a broken leg — the panel's existing failed mark. Both are drawn in the same 12-unit box; the
+ * size and the pen that land on screen are `overview-geom.ts`'s, so the one drawing serves both
+ * marks. The mark states the verdict alone; how the conversation's last turn ended is the title the
+ * caller gives the two drawings, never a third mark of its own.
  */
 function FinishedMark(props: { readonly failed: boolean; readonly stroke: number }): React.ReactElement {
   if (props.failed) {
@@ -196,7 +228,7 @@ function Feed(props: {
   readonly room: number
   /** Whether this window's newest row arrived on this beat. */
   readonly fresh: boolean
-  /** Whether the window's session has stopped: its rows stay where they stand, said dimmer. */
+  /** Whether the window's conversation is over: its rows stay where they stand, said dimmer. */
   readonly veiled: boolean
   readonly head: number
   readonly foot: number
@@ -241,28 +273,36 @@ function WindowPane(props: {
   const readings = readingsOf(t, pane)
   const head = props.main ? MAIN_HEAD : CHILD_HEAD
   const foot = props.main ? MAIN_FOOT : CHILD_FOOT
-  const last = pane.rows[pane.rows.length - 1]
-  const failed = last !== undefined && last.kind === 'fail'
-  /* The three states of the main window, one fact each and the gate first: a checkpoint is why its
-   * conversation stopped, so it is drawn as waiting — never veiled and never checked, the rows still
-   * saying what is on the table for the reader. Otherwise a window whose session is not running is
-   * finished: its rows stay where they stand, veiled, under the one mark. A child is drawn only
-   * while it runs, so neither state ever reaches it. */
+  /* The states of the main window, one drawing per fact and the person's gate first. A gate — a
+   * checkpoint or a manual node, the reading does not say which and this drawing never asks — is why
+   * its conversation stopped, so the window breathes and draws nothing else: no veil, no mark, the
+   * rows still saying what is on the table for the reader. A child is drawn only while it runs, so
+   * none of these ever reaches it. */
   const atGate = pane.waiting === true
-  const finished = props.main && pane.done === true && !atGate
-  /* The one thing a window's cell says now: the check (or, when its last word was a failure, the
-   * panel's own failed mark) on the finished main window, and the small ring while a child is still
+  /* The veil answers the conversation being over and nothing else: its rows stay where they stand,
+   * said dimmer. It is not a verdict on the work, so it is read off `settled` alone — and a broken
+   * leg wears it too, because a broken leg is a conversation that stopped. */
+  const veiled = props.main && pane.settled === true && !atGate
+  /* The check is the record's delivery and nothing else. A conversation that merely went quiet has
+   * not handed anything in, and earns no mark at all. */
+  const handed = props.main && !atGate && pane.delivered === true
+  /* The broken leg: work is owed, nobody is doing it, and the conversation did not just yield to a
+   * leg of its own. It wears the panel's failed glyph and the one word that says so. */
+  const broken = props.main && !atGate && !handed && pane.alert === true
+  /* The one thing a window's cell says: the verdict mark on the main window (the check for work
+   * handed in, the failed glyph and its word for a break), and the small ring while a child is still
    * moving. The main window wears no ring — it is the conversation being read. */
-  const mark = finished
-    ? layoutMark({
-      width: box.width,
-      height: box.height,
-      head,
-      foot,
-      size: failed ? MARK_FAIL : MARK_CHECK,
-      stroke: failed ? MARK_FAIL_STROKE : MARK_CHECK_STROKE,
-    })
-    : undefined
+  const verdict = broken ? layoutBroken({ width: box.width, height: box.height, head, foot }) : undefined
+  const mark = verdict !== undefined
+    ? verdict.mark
+    : handed
+      ? layoutMark({ width: box.width, height: box.height, head, foot, size: MARK_CHECK, stroke: MARK_CHECK_STROKE })
+      : undefined
+  /* How the conversation's last turn ended, said in the reader's own words: the title on the broken
+   * drawing's mark and on its word, so the reason is one hover away instead of being guessed at. The
+   * check does not carry it: its fact is the record's delivery, and "it closed the turn itself
+   * without handing the work in" would be the one sentence a delivered window must never say. */
+  const reason = broken ? t(endingWordOf(pane.ending)) : undefined
   const ring = !props.main ? layoutRing({ width: box.width }) : undefined
   const cls = [
     'superworker-opane',
@@ -294,14 +334,15 @@ function WindowPane(props: {
         window={pane}
         room={box.rowsRoom}
         fresh={props.fresh}
-        veiled={finished}
+        veiled={veiled}
         head={head}
         foot={foot}
       />
       {mark === undefined ? null : (
         <span
-          className={`superworker-omark${failed ? ' is-fail' : ''}`}
+          className={`superworker-omark${broken ? ' is-fail' : ''}`}
           aria-hidden="true"
+          title={reason}
           style={{
             left: mark.left,
             top: mark.top,
@@ -310,7 +351,23 @@ function WindowPane(props: {
             '--superworker-seal-scrim': `${MARK_SCRIM}px`,
           } as React.CSSProperties}
         >
-          <FinishedMark failed={failed} stroke={mark.stroke} />
+          <FinishedMark failed={broken} stroke={mark.stroke} />
+        </span>
+      )}
+      {verdict === undefined ? null : (
+        /* The one word a broken window says, under its glyph and inside the mark's own scrim: the
+         * mark alone would say "failed" about a conversation, and what is owed is the word. */
+        <span
+          className="superworker-omark-w"
+          title={reason}
+          style={{
+            left: verdict.word.left,
+            top: verdict.word.top,
+            width: verdict.word.width,
+            height: verdict.word.height,
+          }}
+        >
+          {t('overview.state.broken')}
         </span>
       )}
       {ring === undefined ? null : (

@@ -5,7 +5,7 @@
  * This sheet holds no layout number of its own: where a window stands and how big it is are
  * `overview-geom.ts`'s answer, written onto each box inline; the one row height arrives as
  * `--superworker-orow-h` on the field, the nameplate's probe as `--superworker-plate-out`, and the
- * feed's own insets, the completed window's mark and the running ring as the numbers the pane writes
+ * feed's own insets, the verdict mark and the broken leg's one word as the numbers the pane writes
  * inline. What lives here is tier, ink and motion, all on the tokens. The motions are six, each
  * bound to one fact; three of them loop by themselves — the walking tie, the waiting border and the
  * small ring — and the tie and the ring state their own still form here, while the border leans on
@@ -213,10 +213,11 @@
   animation: superworker-orow-in 0.2s ease both;
 }
 
-/* Breathing border — the window's node stands at a person's gate (a checkpoint: delivered and not
- * yet approved), so the reader is what it waits on. The one motion that loops by itself; being seen
- * is its whole job. A window waiting on work it sent out keeps its ring and does not breathe: one
- * border, one fact. */
+/* Breathing border — the window's node stands at a person's gate, so the reader is what it waits on.
+ * The one motion that loops by itself; being seen is its whole job. The gate is one fact with two
+ * doors — a checkpoint waiting to be approved, or a manual node nobody has started — and the border
+ * is drawn for the fact, never for the mode: which door it is, the nameplate's readings say. A
+ * window waiting on work it sent out keeps its ring and does not breathe: one border, one fact. */
 @keyframes superworker-opane-breathe {
   0%,
   100% {
@@ -289,10 +290,12 @@
 /* ---- The feed -------------------------------------------------------------- */
 /* Bottom-justified, cut by the window's own height: what falls off the top fades, and no scrollbar
  * ever appears. The row height is the field's `--superworker-orow-h` (`ROW_H` in the geometry); the
- * insets are the pane's own, from `FEED_LEFT` / `FEED_RIGHT` there. The main window whose session has
- * stopped wears `is-veiled`: its rows stay exactly where they stand, blurred and pressed to three
- * tenths, which is the A case of the completed-window design — nothing moves, the window just stops
- * speaking. A waiting window is not veiled: what it waits on is still the reader's to see. */
+ * insets are the pane's own, from `FEED_LEFT` / `FEED_RIGHT` there. The main window whose
+ * conversation is over wears `is-veiled`: its rows stay exactly where they stand, blurred and
+ * pressed to three tenths, which is the A case of the completed-window design — nothing moves, the
+ * window just stops speaking. The veil answers the conversation being over and nothing else, so a
+ * broken window wears it too (it stopped) and a window at a person's gate does not: what a gate
+ * waits on is still the reader's to see. */
 .superworker-page .superworker-ofeed {
   position: absolute;
   overflow: hidden;
@@ -356,22 +359,28 @@
   unicode-bidi: isolate;
 }
 
-/* ---- The finished main window's mark -------------------------------------- */
-/* The check, over the middle of the process band. Its box, its size and its pen are the pane's own
+/* ---- The main window's verdict mark --------------------------------------- */
+/* The record's verdict, over the middle of the process band: the check for work handed in, the
+ * panel's existing failed glyph for a broken leg. Its box, its size and its pen are the pane's own
  * inline numbers, from `overview-geom.ts`; this sheet draws only the ink. Under it stands a disc of
  * the window's own ground, so a 44px mark never melts into the blurred rows behind it (the size is
  * written in as `--superworker-seal-scrim`, the same way the field hands in its row height).
  *
- * The ink is reading ink, never the success green: green reaches only 2.3:1 on the light palette,
- * under this panel's own 3:1 floor for a mark the reader resolves on its own, while reading ink
- * clears it in both. A window whose last word was a failure wears the panel's existing failed mark
- * in the warn ink instead — shape first, colour second. Only the main window is ever finished: a
- * child that ended has left the page by its leave animation. */
+ * The ink is reading ink for the check, never the success green: green reaches only 2.3:1 on the
+ * light palette, under this panel's own 3:1 floor for a mark the reader resolves on its own, while
+ * reading ink clears it in both. A broken leg wears the warn ink instead — the same ink the fail
+ * rows in the feed already wear — because shape first, colour second, and a break is a case a
+ * person has to move on. Only the main window is ever marked: a child that ended has left the page
+ * by its leave animation.
+ *
+ * The mark answers the pointer, and only for its `title`: the reason a conversation ended is said
+ * in words on hover, and a mark that swallowed the pointer would have no way to say it. Nothing
+ * under the mark is pressable — the rows are a reading, not a control. */
 .superworker-page .superworker-omark {
   position: absolute;
   display: block;
   color: var(--superworker-ink-1);
-  pointer-events: none;
+  pointer-events: auto;
 }
 .superworker-page .superworker-omark::before {
   content: '';
@@ -397,6 +406,23 @@
 }
 .superworker-page .superworker-omark.is-fail {
   color: var(--dsw-alias-state-warn-primary);
+}
+
+/* ---- The one word a broken window says ------------------------------------ */
+/* Under the failed glyph, centred on it, inside the mark's own scrim and in the same warn ink: the
+ * glyph says "stopped badly" and this says which leg broke, in the one word the reader has for it.
+ * Its box is the geometry's (`BROKEN_WORD_*`), written inline like every other box on the stage; it
+ * is the mark's caption, so it never moves on its own, and it carries the same `title` the mark
+ * does. */
+.superworker-page .superworker-omark-w {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: var(--dsw-font-xxs-12);
+  font-weight: 500;
+  color: var(--dsw-alias-state-warn-primary);
+  white-space: nowrap;
 }
 
 /* ---- A running window's ring ---------------------------------------------- */

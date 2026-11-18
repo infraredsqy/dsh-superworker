@@ -236,6 +236,16 @@ export const zh = {
   'overview.row.dispatch': '派出',
   'overview.row.fail': '失败',
   'overview.row.tool': '调用',
+  /* The one word a broken window says, and the reasons a conversation's last turn ended with — each
+   * carried verbatim off DSH's own `turn/end`, so the reader is told how it stopped rather than left
+   * to guess. `other` is also the word for an ending the log does not carry. */
+  'overview.state.broken': '断了',
+  'overview.ending.completed': '自己收的尾，没交出结果',
+  'overview.ending.user': '被手动停下',
+  'overview.ending.disposed': '宿主退出时中断',
+  'overview.ending.interrupted': '进程中断',
+  'overview.ending.failed': '出错结束',
+  'overview.ending.other': '没有交代',
 
   /* ── When an operation is refused ─────────────────────────────────────────────────────────── */
   /* Each code from `src/host/failure.ts` and `src/client/failure.ts` reads as one of these.
