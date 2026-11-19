@@ -24,10 +24,17 @@
 
 /* The stage's frame: it covers the stage whole, so a window's box — already stated in stage
  * coordinates by `overview-geom.ts` — lands where the reading says without the offset being added a
- * second time. Its own box is never inline; the panes inside it are. */
+ * second time. Its own box is never inline; the panes inside it are.
+ *
+ * The field is the painting layer and may not be touched: the rail drawn behind it is the line's
+ * switch, and the windows inside it are the press targets. The field stands later in the drawing,
+ * so it covers the rail's whole lane — a frame that answered the pointer would swallow every press
+ * on a bar and the rail would be a picture of a switch. Each piece that really answers a press says
+ * so on its own rule. */
 .superworker-page .superworker-ofield {
   position: absolute;
   inset: 0;
+  pointer-events: none;
 }
 
 /* ---- A stage with no window to draw --------------------------------------- */
@@ -204,6 +211,9 @@
   font: var(--dsw-font-xxxs-11);
   line-height: 12px;
   color: var(--superworker-ink-3);
+  /* The count is a reading, never a control (`aria-hidden`): it answers no press, so the press that
+   * falls on its box belongs to whatever stands behind it. */
+  pointer-events: none;
 }
 .superworker-page .superworker-ospill i {
   display: block;
@@ -277,6 +287,11 @@
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-md);
   overflow: visible;
+  /* A window takes the pointer back from the field, whole face: the nameplate, the title line, the
+   * rows and the verdict mark are children here, so every part of the drawing opens the conversation
+   * behind it. The field's `none` reaches this box by inheritance; this rule is where a window says
+   * it is a control, and a leaving one says the opposite on its own rule. */
+  pointer-events: auto;
 }
 .superworker-page .superworker-opane.is-wait {
   border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 34%, transparent);
