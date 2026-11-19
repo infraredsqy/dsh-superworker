@@ -6,11 +6,13 @@
  * `overview-geom.ts`'s answer, written onto each box inline; the one row height arrives as
  * `--superworker-orow-h` on the field, the nameplate's probe as `--superworker-plate-out`, and the
  * feed's own insets, the verdict mark and the broken leg's one word as the numbers the pane writes
- * inline. What lives here is tier, ink and motion, all on the tokens. The motions are seven, each
- * bound to one fact; three of them loop by themselves — the walking tie, the waiting border and
- * the small ring — and the tie and the ring state their own still form here, while the border and
- * the corner's fold lean on the global reduced-motion rule in `tokens.css`. The waiting border
- * answers one fact only: the window at a person's gate. */
+ * inline. What lives here is tier, ink and motion, all on the tokens. Three motions, each bound to
+ * one fact, and three of them loop by themselves — the walking tie, the waiting border and the
+ * small ring — and the tie and the ring state their own still form here, while the border and the
+ * corner's fold lean on the global reduced-motion rule in `tokens.css`. The waiting border answers
+ * one fact only: the window at a person's gate. Nothing plays a window in: it is drawn where the
+ * geometry puts it, and only a leaving window's box moves.
+ */
 
 /* ---- The stage ------------------------------------------------------------ */
 .superworker-page .superworker-overview {
@@ -280,38 +282,23 @@
   touch-action: manipulation;
 }
 
-/* ---- The four motions ----------------------------------------------------- */
-/* A window is a thing with extent, so it arrives and leaves by folding, never by teleporting: out
- * is down first — the rows collapse into the title line — then sideways, the sliver it left
- * shrinking to nothing; in is the same road walked backwards. The road is why a seat the line
- * re-takes after a stop reads as the same window opening again rather than a new one landing where
- * the old one died. The keyframes read the pane's own numbers as vars (`--superworker-pane-*`,
- * written inline beside the box), because a box that lives in inline styles cannot be keyframed to
- * any other way. */
-
-/* Enter — the window set gained a window: sideways from nothing, then down to its rows. The fill
- * is `backwards` on purpose: the last frame's values are the pane's own inline ones, and `both`
- * would freeze the box at the size it entered with, overriding every later reading of it. */
-@keyframes superworker-opane-unfold {
-  0% {
-    width: 0;
-    height: var(--superworker-pane-fold, 45px);
-    opacity: 0;
-  }
-  45% {
-    width: var(--superworker-pane-w);
-    height: var(--superworker-pane-fold, 45px);
-    opacity: 1;
-  }
-  100% {
-    width: var(--superworker-pane-w);
-    height: var(--superworker-pane-h);
-    opacity: 1;
-  }
-}
-.superworker-page .superworker-opane.is-enter {
-  animation: superworker-opane-unfold 0.3s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
-}
+/* ---- The three motions ---------------------------------------------------- */
+/* A window leaves by folding — down first, the rows collapsing into the title line, then sideways,
+ * the sliver it left shrinking to nothing. That is the one motion a window's box makes, and it says
+ * the one fact a box can say: this window is gone from the set.
+ *
+ * Nothing plays a window in. A joining window is drawn at the box the geometry gives it and stays
+ * there: an entrance would have to be played from a box the window never stood at — a width it never
+ * had, a place it never was — and that invented first frame is what a reader saw as a window flying
+ * out of the stage's corner. A window says what it says by standing, so it stands.
+ *
+ * A reflow is not a motion either. The boxes are the geometry's reading of one stage and one set of
+ * rows; two consecutive readings of the same stage differ only because the content did, and the
+ * drawing follows the numbers straight away. Spending travel between two boxes made a re-measure
+ * (a workspace switching under the pane) look like the whole set sliding and shrinking at once.
+ *
+ * The leave's keyframes read the pane's own numbers as vars (`--superworker-pane-*`, written inline
+ * beside the box), because a box that lives in inline styles cannot be keyframed any other way. */
 
 /* Leave — the set lost one: the rows fold up into the title line, then the sliver folds away
  * sideways. It clips while it goes (`overflow: hidden`), or the fold would spill the rows it is
@@ -336,9 +323,6 @@
 .superworker-page .superworker-opane.is-leave {
   animation: superworker-opane-fold 0.32s ease forwards;
   overflow: hidden;
-  /* The fold is the one motion this pane makes; a reflow transition still running when the leave
-   * begins would outrank it (a transition beats an animation), so the leave turns it off. */
-  transition: none;
   pointer-events: none;
 }
 /* Leave, for whoever reads with motion off: a plain fade where the pane stands, no geometry
@@ -352,13 +336,10 @@
   }
 }
 
-/* A standing pane reflows with the set — a window joining or leaving moves its neighbours' boxes,
- * and those moves are transitions, not jumps: the reading states the boxes, the sheet spends the
- * travel between them. Enter and leave are keyframes instead (above), and the two never meet: a
- * pane mounts into its animation, and a pane leaving has just turned its transition off. */
-.superworker-page .superworker-opane {
-  transition: left 0.2s ease, top 0.2s ease, width 0.2s ease, height 0.2s ease;
-}
+/* A standing pane follows the geometry without travel. Its box is the reading of one stage and one
+ * set of rows; when the stage moves — a workspace switching under the pane, a window widening — the
+ * drawing takes the new numbers at once. Sliding and stretching the boxes between two readings spends
+ * four hundred milliseconds showing a stage that never existed, and it lands every window late. */
 
 /* Fresh row — one window's newest row is not the row it was. */
 @keyframes superworker-orow-in {
@@ -673,19 +654,13 @@
   }
 }
 /* Reduced motion: the ring stops and stays a dashed ring — the panel's own still form for work in
- * hand (the state mark's) — while the check, which never moved, is untouched. The folds go plain
- * too: a leaving pane fades where it stands, an entering one simply is, and a standing pane's
- * reflow steps with the reading instead of spending travel on it. */
+ * hand (the state mark's) — while the check, which never moved, is untouched. A leaving pane fades
+ * where it stands instead of folding, and every window simply is: the drawing has no other travel
+ * to spend, so nothing else here has a still form to state. */
 @media (prefers-reduced-motion: reduce) {
   .superworker-page .superworker-oring {
     animation: none;
     border-style: dashed;
-  }
-  .superworker-page .superworker-opane {
-    transition: none;
-  }
-  .superworker-page .superworker-opane.is-enter {
-    animation: none;
   }
   .superworker-page .superworker-opane.is-leave {
     animation: superworker-opane-out 0.22s ease both;

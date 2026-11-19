@@ -6,16 +6,21 @@
  * out with `overview-geom`, and draws. Each motion is bound to exactly one fact, and the facts are
  * diffed between consecutive readings, never invented:
  *
- * - enter — the window set gained a window: it unfolds, sideways first and then down to its rows;
  * - leave — the set lost one; the pane folds as it lingers — the rows up into the title line, then
  *   the sliver away sideways — and when the span has run, the page loses it. A child that ended
  *   leaves this way: the reading stops drawing it the moment its session stops running, so it is
- *   never kept as a finished window — and a seat the line re-takes later comes back the same road,
- *   which is why a re-seated window reads as the same window opening again, not a jump;
+ *   never kept as a finished window;
  * - fresh row — one window's newest row is not the row it was (growth, or the cut that replaced
  *   the top row when the newest arrived);
  * - breathing border — the main window's node stands at a person's gate: it is waiting for the reader
  *   to say yes. It loops by itself; being seen is its whole job.
+ *
+ * A window joining the set is not a motion: it is simply there, at the box the geometry gives it.
+ * Its arrival has nothing to say that its own drawing does not, and an entrance has to be played
+ * from a box — which is a size and a place the window has not stood at yet. That is the whole of
+ * why nothing animates in. For the same reason a wholesale replacement is not a set that lost a
+ * window: when the main window is a different conversation, the old panes are not held for a fold,
+ * they are gone, and the new ones are simply here.
  *
  * A window's state is one drawing per fact, and the person's gate stands first. At a gate
  * (`waiting` — a checkpoint or a manual node; the drawing never asks which, and nothing here keys a
@@ -320,7 +325,6 @@ function WindowPane(props: {
   readonly window: OverviewWindow
   readonly at: Date
   readonly main: boolean
-  readonly enter: boolean
   readonly leave: boolean
   readonly fresh: boolean
   /** Where a press on this window goes; null when nothing on this machine may be pressed. */
@@ -393,7 +397,6 @@ function WindowPane(props: {
   const cls = [
     'superworker-opane',
     props.main ? 'is-main' : 'is-child',
-    props.enter ? 'is-enter' : '',
     props.leave ? 'is-leave' : '',
     atGate ? 'is-wait' : '',
     broken ? 'is-broken' : '',
@@ -497,8 +500,8 @@ function WindowPane(props: {
 
 /**
  * The overview pane over the reading of one moment. The motion facts ride the beat the reading
- * changes: enter on first sight, leave on a vanished id (held until the leave's span has run),
- * fresh on a replaced newest row, breathing on the person gate.
+ * changes: leave on a vanished id (held until the leave's span has run), fresh on a replaced newest
+ * row, breathing on the person gate. A window joining is not one of them: it is simply there.
  */
 export function OverviewPane(props: {
   readonly reading: OverviewReading
@@ -549,33 +552,45 @@ export function OverviewPane(props: {
     [reading],
   )
 
-  /* Enter: a window that has joined wears the mark for as long as it stands here — the animation
-   * fills once and stays. The set is read while drawing (each pane asks whether it has entered);
-   * the leave effect sheds a leaving window's mark, so a return is an entrance again. */
-  const enteredRef = React.useRef<Set<string>>(new Set())
-  for (const id of currentIds) enteredRef.current.add(id)
+  /* The conversation this pane is about. A different one on a later beat is not a set that lost a
+   * window: the whole cast is another one, every pane stands for something else now. Nothing is held
+   * to fold there — a fold says "one window left this set", and no such window left; without this the
+   * switch played every old pane's fold at once, which is the contraction a reader saw. */
+  const mainId = reading.main?.id
 
-  /* Leave: the ids that vanished keep their last box for the leave's span, then the page loses them. */
+  /* Leave: the ids that vanished keep their last box for the leave's span, then the page loses them.
+   * The comparison is the previous beat's ids against this one's, held in a ref: state is what the
+   * drawing reads, the ref is what the diff reads, and they are never asked to be the same thing. */
   const [leaving, setLeaving] = React.useState<ReadonlySet<string>>(new Set())
   const timers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const heldIds = React.useRef<ReadonlySet<string>>(currentIds)
+  const heldMain = React.useRef<string | undefined>(mainId)
   React.useEffect(() => {
+    const before = heldIds.current
+    heldIds.current = currentIds
+    /* A replaced set has nothing to leave: drop what was held, say nothing, and draw the new cast. */
+    const swappedNow = heldMain.current !== mainId
+    heldMain.current = mainId
+    if (swappedNow) {
+      for (const timer of timers.current.values()) clearTimeout(timer)
+      timers.current.clear()
+      setLeaving((held) => (held.size === 0 ? held : new Set()))
+      return
+    }
+    /* A window back before its span ran keeps standing: its leave is cancelled, not replayed. */
+    for (const id of currentIds) {
+      const known = timers.current.get(id)
+      if (known === undefined) continue
+      clearTimeout(known)
+      timers.current.delete(id)
+    }
     setLeaving((held) => {
       const kept = [...held].filter((id) => !currentIds.has(id))
-      if (kept.length === held.size) return held
-      for (const id of held) {
-        if (kept.includes(id)) continue
-        const timer = timers.current.get(id)
-        if (timer !== undefined) {
-          clearTimeout(timer)
-          timers.current.delete(id)
-        }
-      }
-      return new Set(kept)
+      return kept.length === held.size ? held : new Set(kept)
     })
-    for (const id of [...enteredRef.current]) {
-      if (currentIds.has(id)) continue
-      /* The leaving window sheds its enter mark: if it comes back, it is an entrance again. */
-      enteredRef.current.delete(id)
+    const gone = [...before].filter((id) => !currentIds.has(id))
+    if (gone.length === 0) return
+    for (const id of gone) {
       if (timers.current.has(id)) continue
       const timer = setTimeout(() => {
         timers.current.delete(id)
@@ -587,14 +602,13 @@ export function OverviewPane(props: {
         })
       }, LEAVE_SPAN_MS)
       timers.current.set(id, timer)
-      setLeaving((held) => {
-        if (held.has(id)) return held
-        const next = new Set(held)
-        next.add(id)
-        return next
-      })
     }
-  }, [currentIds])
+    setLeaving((held) => {
+      const next = new Set(held)
+      for (const id of gone) next.add(id)
+      return next.size === held.size ? held : next
+    })
+  }, [currentIds, mainId])
   React.useEffect(
     () => () => {
       for (const timer of timers.current.values()) clearTimeout(timer)
@@ -720,7 +734,6 @@ export function OverviewPane(props: {
             window={reading.main}
             at={at}
             main
-            enter={enteredRef.current.has(reading.main.id)}
             leave={leaving.has(reading.main.id)}
             fresh={freshIds.has(reading.main.id)}
             go={props.go}
@@ -736,7 +749,6 @@ export function OverviewPane(props: {
               window={one}
               at={at}
               main={false}
-              enter={enteredRef.current.has(one.id)}
               leave={leaving.has(one.id)}
               fresh={freshIds.has(one.id)}
               go={props.go}
@@ -768,7 +780,6 @@ export function OverviewPane(props: {
               window={window}
               at={at}
               main={false}
-              enter={false}
               leave
               fresh={false}
               go={props.go}

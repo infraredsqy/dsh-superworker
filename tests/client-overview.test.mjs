@@ -1,5 +1,5 @@
-/* The overview on the built panel: the reading drawn as windows, the four motion marks each bound
- * to its fact, and the three states a window can be in.
+/* The overview on the built panel: the reading drawn as windows, the motion marks each bound to its
+ * fact, and the three states a window can be in.
  *
  * The session list arrives the way the seat hands it over (a `useSessions` hook over a snapshot the
  * case holds and moves), and the event windows arrive through a stand-in for DSH's `sessions`
@@ -7,7 +7,9 @@
  *
  * - the windows and their words: the node's own nameplate on the main window, running children
  *   only, a child that ended no window at all, and no session id printed anywhere;
- * - enter — a window joining the set carries the mark;
+ * - a window joining the set is simply drawn: it stands at the geometry's box and wears no entrance
+ *   mark, and a set that is replaced whole (another workspace's record under the pane) leaves no
+ *   pane behind to fold;
  * - leave — a window leaving carries the mark, and after the leave's span the page has lost it;
  *   a child that ends is exactly that: the reading stops drawing it, and the animation takes it away;
  * - fresh row — the arrival's two readings carry the mark, on that row alone: a gained row even
@@ -219,9 +221,11 @@ test('the overview draws the reading: the node nameplate on the main window, run
   assert.ok(!main.className.includes('is-wait'), 'a main window whose newest row is a dispatch row breathes: the border answers the gate alone')
   assert.ok(!child.className.includes('is-wait'), 'a child whose newest row is a read breathes')
 
-  /* Enter marks on first sight: both windows joined the set on this beat. */
-  assert.ok(main.className.includes('is-enter'), 'the main window carries no enter mark')
-  assert.ok(child.className.includes('is-enter'), 'a joining child carries no enter mark')
+  /* No entrance: a window joining is drawn at its box and said nothing more. An entrance would
+   * have to play from a box the window never stood at, and that invented first frame is what flew
+   * in from the stage's corner. */
+  assert.ok(!main.className.includes('is-enter'), 'the main window plays an entrance it was never given')
+  assert.ok(!child.className.includes('is-enter'), 'a joining child plays an entrance it was never given')
 
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
@@ -271,7 +275,7 @@ test('the field is the stage frame at the origin, and every pane stands at the g
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test('enter: a window joining the set carries the mark', { skip: bundleSkip }, async () => {
+test('a window joins by being drawn: it stands at its box and wears no entrance mark', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
   let snap = snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])
   const mounted = await mountBuiltPanel({
@@ -288,7 +292,52 @@ test('enter: a window joining the set carries the mark', { skip: bundleSkip }, a
   await mounted.rerender()
   const second = container(mounted).querySelector('[data-window="c2"]')
   assert.notEqual(second, null, 'the joining child did not become a window')
-  assert.ok(second.className.includes('is-enter'), 'the joining child carries no enter mark')
+  assert.ok(!second.className.includes('is-enter'), 'the joining child plays an entrance: it is drawn where it stands')
+  /* The box it takes on its first drawing is the geometry's, with no entrance to travel from. */
+  const placement = layoutOverview({ stage: { width: 1024, height: 720 }, mainRows: 2, childRows: [1, 0] })
+  assert.equal(second.style.width, `${placement.children[1].width}px`, 'the joining child is not at the width the geometry gives it')
+  assert.equal(second.style.height, `${placement.children[1].height}px`, 'the joining child is not at the height the geometry gives it')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a replaced set is another cast, not windows that left: nothing is held to fold', { skip: bundleSkip }, async () => {
+  /* What a workspace switch looks like from inside this pane: the record under it is another one, so
+   * the conversation it is about is another one. That is not "one window left the set" — no window
+   * left, the whole cast is different — and holding the old panes for their fold made the switch play
+   * every fold at once, which is the contraction that read as the stage shrinking. */
+  const twoNodes = {
+    ...record(),
+    '.superworker/ideas.json': json({
+      nodes: {
+        n0: { title: 'the first workspace cell', tags: [], mode: 'auto', status: 'completed', created_at: '2026-01-08T00:00:00.000Z', completed_at: '2026-01-09T00:00:00.000Z', dependencies: [] },
+        n1: { title: 'the second workspace cell', tags: [], mode: 'auto', status: 'completed', created_at: '2026-01-08T00:00:00.000Z', completed_at: '2026-01-09T00:00:00.000Z', dependencies: [] },
+      },
+    }),
+    '.superworker/meta/sessions/n0.json': json({ run: [{ session: 'm1', at: '2026-01-09T00:00:00.000Z' }] }),
+    '.superworker/meta/sessions/n1.json': json({ run: [{ session: 'm2', at: '2026-01-09T00:00:00.000Z' }] }),
+  }
+  const service = fakeSessionsService()
+  service.set('m1', [said('the first workspace own words.', 1000)])
+  service.set('m2', [said('the second workspace own words.', 2000)])
+  let snap = { ids: ['m1'], byId: { m1: { id: 'm1', running: true, displayTitle: 'the first conversation' } } }
+  const mounted = await mountBuiltPanel({
+    record: twoNodes,
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  assert.notEqual(container.querySelector('[data-window="m1"]'), null, 'the first conversation is not drawn')
+
+  /* Another record under the pane: its own conversation, and the old one not its business. */
+  snap = { ids: ['m2'], byId: { m2: { id: 'm2', running: true, displayTitle: 'the second conversation' } } }
+  await mounted.rerender()
+  assert.notEqual(container.querySelector('[data-window="m2"]'), null, 'the second conversation is not drawn')
+  /* The old pane is gone at once. A held pane would still be on the page, wearing the leave mark. */
+  assert.equal(container.querySelector('[data-window="m1"]'), null, 'the previous workspace\'s window was held to fold on a set that was replaced')
+  assert.equal(container.querySelectorAll('.superworker-opane.is-leave').length, 0, `the replaced set holds ${container.querySelectorAll('.superworker-opane.is-leave').length} panes mid-fold`)
+
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
