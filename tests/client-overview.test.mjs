@@ -11,6 +11,9 @@
  *   it (its box is the geometry's, its source point is that row), while the main window has no source
  *   at all — it is the conversation the pane is about, so it never travels; and a set that is replaced
  *   whole (another workspace's record under the pane) leaves no pane behind to fold;
+ * - one arrival, one flight: the aim is read on the joining beat and a re-measure under it never
+ *   re-aims it, and a seat the reading loses for a beat and hands straight back is the same window
+ *   standing — it does not fly out a second time;
  * - leave — a window leaving carries the mark, and after the leave's span the page has lost it;
  *   a child that ends is exactly that: the reading stops drawing it, and the animation takes it away;
  * - fresh row — the arrival's two readings carry the mark, on that row alone: a gained row even
@@ -94,6 +97,7 @@ const record = () => ({
   '.superworker/issues/issues.json': json({ version: 1, issues: {} }),
   '.superworker/meta/sessions/n0.json': json({ run: [{ session: 'm1', at: '2026-01-09T00:00:00.000Z' }] }),
 })
+
 
 /** The same record, with the node at a person's gate: delivered, and that delivery not yet approved. */
 const recordAtCheckpoint = () => ({
@@ -327,6 +331,92 @@ test('a joining child grows out of the dispatch row that opened it', { skip: bun
   assert.match(bornY, /^-?\d+px$/u, `the joining child grows from no source point in y: ${bornY}`)
   /* It grows from the main window's right edge — where the line leaves — not from the stage corner. */
   assert.equal(Number.parseInt(bornX, 10), placement.main.left + placement.main.width - box.left, 'the child grows from somewhere other than the row that dispatched it')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a flight is aimed on the joining beat, and the stage moving under it does not re-aim it', { skip: bundleSkip }, async () => {
+  /* What the reader saw: the child flew out of the dispatch row, jumped back to it and flew out
+   * again. A flight's start frame is a shift against the box the window stands in, so re-reading it
+   * every beat re-aims a flight already in the air — and a real dispatch moves the stage three times
+   * while the flight plays: the child's own first rows land (its box grows upward), then the parent's
+   * feed writes the next row (the anchored row rises). None of that says the window came from
+   * somewhere else. So the aim is read once, on the joining beat, and the cases pins that both
+   * numbers stand still while the window travels. */
+  const service = fakeSessionsService()
+  service.set('m1', [...dispatchRun('c1', 'd1', 'the job', 100), said('it is out.', 200)])
+  let snap = snapshotOf([])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  assert.equal(container(mounted).querySelector('[data-window="c1"]'), null, 'the child is drawn before it runs')
+  snap = snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])
+  await mounted.rerender()
+  const child = container(mounted).querySelector('[data-window="c1"]')
+  assert.notEqual(child, null, 'the joining child is not drawn')
+  const aimed = {
+    x: child.style.getPropertyValue('--superworker-born-x'),
+    y: child.style.getPropertyValue('--superworker-born-y'),
+    s: child.style.getPropertyValue('--superworker-born-s'),
+  }
+  const stoodAt = child.style.top
+  assert.match(aimed.x, /^-?\d+px$/u, `the child grows from no source point in x: ${aimed.x}`)
+
+  /* The child's own first row lands: its box grows and its top rises under the flight. */
+  await mounted.act(async () => {
+    service.set('c1', [read('a.ts', 3000)])
+  })
+  /* Then the parent writes the next row: the row this child grew out of rises up the feed. */
+  await mounted.act(async () => {
+    service.set('m1', [...dispatchRun('c1', 'd1', 'the job', 100), said('it is out.', 200), said('and now wait.', 400)])
+  })
+  const flown = container(mounted).querySelector('[data-window="c1"]')
+  assert.notEqual(flown, null, 'the travelling child is not drawn')
+  assert.ok(flown.className.includes('is-born'), 'the child lost its entrance before the span ran')
+  assert.notEqual(flown.style.top, stoodAt, 'the stage did not move under the flight — the case proves nothing')
+  assert.equal(flown.style.getPropertyValue('--superworker-born-x'), aimed.x, 'the flight was re-aimed in x by a re-measure under it')
+  assert.equal(flown.style.getPropertyValue('--superworker-born-y'), aimed.y, 'the flight was re-aimed in y by a re-measure under it — the window flies out twice')
+  assert.equal(flown.style.getPropertyValue('--superworker-born-s'), aimed.s, 'the flight was re-sized under it')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a seat the reading loses for one beat and hands back is the same window standing: no second flight', { skip: bundleSkip }, async () => {
+  /* The session list keeps a child in two projections — the parent's own catalog, and the child's
+   * scope while one is materialized — and their running bits need not agree on every frame while a
+   * scope is being made. A child can therefore drop out of the reading for a beat and come straight
+   * back. It is the same window, still standing where it stood: playing its arrival again said it
+   * had just come, and the reader saw the unbroken window fly out a second time. */
+  const service = fakeSessionsService()
+  service.set('m1', [...dispatchRun('c1', 'd1', 'the job', 100)])
+  let snap = snapshotOf([])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  snap = snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])
+  await mounted.rerender()
+  const before = container(mounted).querySelector('[data-window="c1"]')
+  assert.notEqual(before, null, 'the joining child is not drawn')
+  assert.ok(before.className.includes('is-born'), 'the arriving child plays no entrance at all')
+
+  /* One beat without it: the list's running bit dips, so the reading drops the seat. */
+  snap = snapshotOf([])
+  await mounted.rerender()
+  /* And the next beat hands it back — inside the leave's span, so the window never actually left. */
+  snap = snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])
+  await mounted.rerender()
+  const back = container(mounted).querySelector('[data-window="c1"]')
+  assert.notEqual(back, null, 'the returning seat is not drawn')
+  assert.ok(!back.className.includes('is-leave'), 'the returning seat is still folding')
+  assert.ok(!back.className.includes('is-born'), 'the window flew out a second time without ever leaving the stage')
+  assert.equal(back.style.getPropertyValue('--superworker-born-y'), '', 'the returning window was handed a source point again')
+  assert.equal(back.style.top, before.style.top, 'the returning window does not stand where it stood')
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })

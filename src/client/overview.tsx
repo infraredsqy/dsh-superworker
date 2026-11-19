@@ -357,8 +357,9 @@ function WindowPane(props: {
   readonly main: boolean
   readonly leave: boolean
   readonly fresh: boolean
-  /** Where this window grows from when it has just joined, or nothing when it was already here. */
-  readonly born: { readonly x: number; readonly y: number } | undefined
+  /** The flight this window is flying — shift, size, and where it is aimed — or nothing when it did
+   *  not just join; the start frame is read once, on the joining beat, and never re-read. */
+  readonly born: { readonly dx: number; readonly dy: number; readonly s: number } | undefined
   /** Where a press on this window goes; null when nothing on this machine may be pressed. */
   readonly go: WindowGo | null
 }): React.ReactElement {
@@ -403,11 +404,15 @@ function WindowPane(props: {
    * leg of its own. It is drawn by its frame, not by a mark inside it — the whole window is the one
    * drawing, and a red border is read sooner than any glyph. */
   const broken = !atGate && !handed && pane.alert === true
-  /* The veil answers one fact: this conversation wants the reader to act, so its rows are context and
-   * step back. Three verdicts wear it — work handed in, a break, a person's gate — and the frame's ink
-   * is what tells them apart; a window still running is the only one whose rows are the subject. The
-   * gate is read off its own fact rather than off `settled`, because a gate is a person being owed
-   * whether or not the conversation behind it happens to be quiet. */
+  /* The veil answers one fact: this conversation has a verdict, and the verdict is what the reader
+   * acts on — so its rows are context and step back. Three verdicts wear it — work handed in, a
+   * break, a person's gate — and the frame's ink is what tells them apart. The veil follows the
+   * verdict and never the stop alone: a window whose conversation has finished before the record has
+   * spoken about it (the beat between a last turn and the settle that follows it, or a stop nothing
+   * was ever written down for) has said nothing yet, and its rows are all it has to say — fading them
+   * left a window that looked finished, veiled, with no mark on it at all. The gate is read off its
+   * own fact rather than off `settled`, because a gate is a person being owed whether or not the
+   * conversation behind it happens to be quiet. */
   const veiled = atGate || pane.settled === true
   /* The mark a window's cell carries: the check for work handed in, the pause for a word owed to a
    * person. Both take the band's middle, the same 44 square and the same pen, because they are one
@@ -438,7 +443,9 @@ function WindowPane(props: {
   const ring = !props.main && moving ? layoutRing({ width: box.width }) : undefined
   /* A window that just joined grows out of the point it came from: how far it must travel to stand
    * where the geometry puts it, and how small it starts on the way. A child grows from the dispatch
-   * row that opened it; the main window and any unanchored child have no source and only fade. */
+   * row that opened it; the main window and any unanchored child have no source and only fade. The
+   * three numbers are read once, by the stage, on the beat the window joined — a flight already in
+   * the air is not re-aimed by a re-measure under it (`flightOf`). */
   const born = props.born
   const cls = [
     'superworker-opane',
@@ -471,9 +478,9 @@ function WindowPane(props: {
         ...(born === undefined
           ? {}
           : {
-            '--superworker-born-x': `${Math.round(born.x - box.left)}px`,
-            '--superworker-born-y': `${Math.round(born.y - box.top)}px`,
-            '--superworker-born-s': `${Math.min(0.28, 44 / Math.max(1, box.width))}`,
+            '--superworker-born-x': `${born.dx}px`,
+            '--superworker-born-y': `${born.dy}px`,
+            '--superworker-born-s': `${born.s}`,
           }),
       } as React.CSSProperties}
       {...pressable}
@@ -618,12 +625,32 @@ export function OverviewPane(props: {
    * switch played every old pane's fold at once, which is the contraction a reader saw. */
   const mainId = reading.main?.id
 
+  /* The windows that have already arrived on this stage. An entrance is played for a window's
+   * arrival, and a window that is still standing has already arrived: a reading that drops it for a
+   * beat — the session list's two projections disagreeing about a child's running bit while its
+   * scope is being made, a seat falling out of the five-window cap and back — is no second arrival,
+   * and playing one said the window had just come when the reader was still looking at it. The name
+   * leaves this set when the window's fold has run, which is the moment the stage really lost it. */
+  const arrivedOnce = React.useRef<Set<string>>(new Set())
   const heldIds = React.useRef<ReadonlySet<string>>(currentIds)
   const heldMain = React.useRef<string | undefined>(mainId)
 
   /* The last box and the last reading each id drew from: what a leaving pane has to draw with. */
   const boxesRef = React.useRef<Map<string, OverviewBox>>(new Map())
   const windowsRef = React.useRef<Map<string, OverviewWindow>>(new Map())
+
+  /* The flight each window is already flying, read once on the beat it joins and never re-read while
+   * it travels.
+   *
+   * A flight's start frame is a difference against the box the window stands in, so re-reading it on
+   * every beat re-aims a flight already in the air: the stage's own reading moves under it while it
+   * plays — the child's first rows land and its box grows, the parent's feed writes the next row and
+   * the anchor rises — and each of those is the geometry saying something new about where the window
+   * *ends*, never about where it came from. The reader saw exactly that: a window that flew out,
+   * jumped back to the row it started from, and flew out again. The source point is the joining
+   * beat's reading of the line; the shift and the size are that one beat's, and the mark is dropped
+   * with the join mark itself (the enter span below). */
+  const flying = React.useRef<Map<string, { readonly dx: number; readonly dy: number; readonly s: number }>>(new Map())
 
   /* The windows that left on THIS beat, read during render rather than from the leave state.
    *
@@ -714,20 +741,25 @@ export function OverviewPane(props: {
       timers.current.clear()
       for (const timer of enterTimers.current.values()) clearTimeout(timer)
       enterTimers.current.clear()
+      arrivedOnce.current.clear()
+      flying.current.clear()
       setLeaving((held) => (held.size === 0 ? held : new Set()))
       setJoined((held) => (held.size === 0 ? held : new Set()))
       return
     }
     /* The beat's arrivals hold their mark for the entrance's own span, then shed it. Without the
      * span the mark would be dropped on the next render — the growth would be cancelled mid-frame by
-     * whatever redrew the stage, which is every pushed frame. */
-    const arrived = [...currentIds].filter((id) => !before.has(id))
+     * whatever redrew the stage, which is every pushed frame. Only a window that had not arrived
+     * before is an arrival: one the reading lost for a beat and handed back is still standing. */
+    const arrived = [...currentIds].filter((id) => !before.has(id) && !arrivedOnce.current.has(id))
     if (arrived.length > 0) {
       for (const id of arrived) {
+        arrivedOnce.current.add(id)
         const known = enterTimers.current.get(id)
         if (known !== undefined) clearTimeout(known)
         const timer = setTimeout(() => {
           enterTimers.current.delete(id)
+          flying.current.delete(id)
           setJoined((held) => {
             if (!held.has(id)) return held
             const next = new Set(held)
@@ -756,10 +788,27 @@ export function OverviewPane(props: {
     })
     const gone = [...before].filter((id) => !currentIds.has(id))
     if (gone.length === 0) return
+    /* A window on its way out keeps no join mark: it is leaving, not arriving, and a return before
+     * its fold has run is the same window standing again — the mark's absence is what keeps that
+     * return from playing the arrival a second time. */
+    for (const id of gone) {
+      const entering = enterTimers.current.get(id)
+      if (entering === undefined) continue
+      clearTimeout(entering)
+      enterTimers.current.delete(id)
+      flying.current.delete(id)
+    }
+    setJoined((held) => {
+      const kept = [...held].filter((id) => !gone.includes(id))
+      return kept.length === held.size ? held : new Set(kept)
+    })
     for (const id of gone) {
       if (timers.current.has(id)) continue
       const timer = setTimeout(() => {
         timers.current.delete(id)
+        /* The fold has run: the stage has really lost this window, so a later return is a new
+         * arrival and may fly again. */
+        arrivedOnce.current.delete(id)
         setLeaving((held) => {
           if (!held.has(id)) return held
           const next = new Set(held)
@@ -891,6 +940,22 @@ export function OverviewPane(props: {
     return out
   }, [links])
 
+  /* The shift and the size a window's flight starts at, read off the joining beat and kept for the
+   * span it plays (`flying` above). */
+  const flightOf = (id: string, box: OverviewBox): { readonly dx: number; readonly dy: number; readonly s: number } | undefined => {
+    const held = flying.current.get(id)
+    if (held !== undefined) return held
+    const born = births.get(id)
+    if (born === undefined) return undefined
+    const mark = {
+      dx: Math.round(born.x - box.left),
+      dy: Math.round(born.y - box.top),
+      s: Math.min(0.28, 44 / Math.max(1, box.width)),
+    }
+    flying.current.set(id, mark)
+    return mark
+  }
+
   return (
     <div className="superworker-overview" ref={bodyRef}>
       {placement.railVisible ? (
@@ -976,7 +1041,7 @@ export function OverviewPane(props: {
               leave={leavingIds.includes(one.id)}
               fresh={freshIds.has(one.id)}
               /* A child grows out of the row that dispatched it, and only on the beat it joined. */
-              born={joined.has(one.id) ? births.get(one.id) : undefined}
+              born={joined.has(one.id) ? flightOf(one.id, box) : undefined}
               go={props.go}
             />
           )
