@@ -4,6 +4,8 @@
 /.superworker/
 # anchored: the build output is the root's own lib/, not any source directory named lib (tools/lib/)
 /lib/
+# `tsc -b` (the typecheck script's first leg) drops its incremental state here on every run
+*.tsbuildinfo
 # The in-repo engine package (packages/superworker-core) builds its own product into dist/ — its tsdown
 # config names it — and vitest's coverage output lands beside it; the /lib/ anchor above covers the
 # host half only. `node_modules/` and `.tmp/` are already ignored at any depth, and `.superworker/` is

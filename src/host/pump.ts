@@ -21,6 +21,12 @@
  * same reading sends nothing at all. A subscriber's first frame goes out
  * immediately, so a panel that opens gets its reading without asking twice.
  *
+ * A notice is counted, not signalled: a follower spends most of its life holding a
+ * frame that is still crossing to the browser, where no amount of waking would
+ * reach it. So each follower reads the count before it reads the records and asks
+ * for whatever happened since — which is what lets two panels on one workspace,
+ * and the very first frame of a panel that opened mid-run, both stay current.
+ *
  * The pump never throws into an event bus or a stream: a read that fails is one
  * frame carrying the refusal, and the next notice tries again.
  */
@@ -47,6 +53,17 @@ class Root {
   #subscribers = 0
   #watcher: FSWatcher | undefined
   #timer: ReturnType<typeof setTimeout> | undefined
+  /**
+   * How many notices this root has sounded, ever.
+   *
+   * A notice is a *level*, not an edge: a follower is only registered as a waiter between asking
+   * for its next frame and getting it, and the rest of the time — while the frame it just took is
+   * crossing to the browser — it is in nobody's list. Waking a set that the follower is not in
+   * would drop the notice outright, and the follower would then wait for one that already passed.
+   * So a follower reads this count before it reads the records, and asks for anything that
+   * happened since; see {@link Root.next}.
+   */
+  #pulse = 0
 
   constructor(path: string) {
     this.path = path
@@ -90,9 +107,22 @@ class Root {
     this.#timer.unref?.()
   }
 
-  /** Resolve on the next notice, or when the stream is cancelled — whichever comes first. */
-  next(signal: AbortSignal): Promise<void> {
+  /** What {@link Root.next} is asked against: the notice count as it stood before the records were read. */
+  get pulse(): number {
+    return this.#pulse
+  }
+
+  /**
+   * Resolve on the next notice, or when the stream is cancelled — whichever comes first.
+   *
+   * A notice that landed while the caller was away (holding a frame, shipping it) is not waited
+   * for twice: `seen` is the count the caller read the records at, and anything past it resolves
+   * at once. That is what makes a notice survive the gap between two frames.
+   * @param seen - The {@link Root.pulse} value the caller last read the records at.
+   */
+  next(seen: number, signal: AbortSignal): Promise<void> {
     if (signal.aborted) return Promise.resolve()
+    if (this.#pulse !== seen) return Promise.resolve()
     return new Promise<void>((resolve) => {
       const waiter = (): void => {
         signal.removeEventListener('abort', waiter)
@@ -104,6 +134,9 @@ class Root {
   }
 
   #wake(): void {
+    /* Counted before anyone is resolved: a follower that is mid-frame right now reads this count
+       on its way back and finds the notice waiting for it, rather than missing it by a hair. */
+    this.#pulse += 1
     const waiters = [...this.#waiters]
     this.#waiters.clear()
     for (const waiter of waiters) waiter()
@@ -206,6 +239,11 @@ export class RecordsPump {
          nothing and must not wait for a file change to see its own workspace. */
       for (;;) {
         if (signal.aborted) return
+        /* Read the notice count *before* the records: a notice that lands while this read is in
+           flight, or while the frame below is crossing to the browser, moves the count past this
+           value and `next` returns at once. Taken after, such a notice would be read as already
+           answered and the follower would sleep through it. */
+        const seen = node.pulse
         const frame = await this.#frameOf(root, read, signal)
         const stamp = stampOf(frame)
         if (stamp !== previous) {
@@ -213,7 +251,7 @@ export class RecordsPump {
           yield frame
         }
         if (signal.aborted) return
-        await node.next(signal)
+        await node.next(seen, signal)
       }
     } finally {
       node.release()

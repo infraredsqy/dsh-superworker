@@ -166,6 +166,88 @@ test('cancelling the stream ends the loop and gives the workspace back', async (
   assert.equal(frames.length, 1, 'a frame arrived after the stream was cancelled')
 })
 
+/**
+ * A frame held the way the carrier holds one: the consumer takes it and does not come back for the
+ * next until the gate opens. That stretch is where a real frame is crossing to the browser, and the
+ * follower is registered as a waiter for none of it — so it is the one window a notice can fall
+ * into. `for await` alone never opens this window: it asks for the next frame on the same beat.
+ */
+function heldConsumer(pump, root, read, signal) {
+  const frames = []
+  let open
+  const shipped = new Promise((resolve) => {
+    open = resolve
+  })
+  let holding = false
+  const run = (async () => {
+    for await (const frame of pump.follow(root, read, signal)) {
+      frames.push(frame)
+      if (!holding) {
+        holding = true
+        await shipped
+      }
+    }
+  })()
+  return { frames, run, ship: () => open() }
+}
+
+test('a notice that lands while a frame is in flight is not lost: the follower finds it on the way back', async () => {
+  const { root } = workspace()
+  const bus = fakeBus()
+  const pump = new RecordsPump(bus.ctx)
+  const controller = new AbortController()
+  const state = { mark: 'one', fails: false }
+  const held = heldConsumer(pump, root, steered(root, state), controller.signal)
+  try {
+    await until(() => held.frames.length === 1, 'the first frame')
+    /* The panel is holding that first frame. The pipeline writes its records right now — which is
+     * exactly what happens to a panel opened while a run is starting. */
+    state.mark = 'two'
+    pump.stir(root)
+    /* Long enough for the coalesce timer to fire while nobody is registered as a waiter at all. */
+    await drainFor(300)
+    assert.equal(held.frames.length, 1, 'a frame arrived while the consumer had not asked for one')
+    /* The frame finished crossing; the follower comes back for the next one. */
+    held.ship()
+    await until(() => held.frames.length === 2, 'the notice that landed mid-frame, answered on the way back')
+    assert.equal(held.frames[1].reading.mark, 'two', 'the follower slept through a notice it was not awake for')
+  } finally {
+    controller.abort()
+    held.ship()
+    await held.run
+    pump.dispose()
+  }
+})
+
+test('two panels on one workspace both stay current, even when one is mid-frame as the notice lands', async () => {
+  const { root } = workspace()
+  const bus = fakeBus()
+  const pump = new RecordsPump(bus.ctx)
+  const controller = new AbortController()
+  const state = { mark: 'one', fails: false }
+  /* One window holding a frame, one window idle and waiting: a wake reaches the waiting one, and
+   * the holding one has to find the notice itself. Both are the same workspace and the same root. */
+  const held = heldConsumer(pump, root, steered(root, state), controller.signal)
+  const idle = []
+  const other = (async () => {
+    for await (const frame of pump.follow(root, steered(root, state), controller.signal)) idle.push(frame)
+  })()
+  try {
+    await until(() => held.frames.length === 1 && idle.length === 1, 'the first frame in both windows')
+    state.mark = 'two'
+    bus.fire('session/event')
+    await until(() => idle.length === 2, 'the waiting window saw the change')
+    held.ship()
+    await until(() => held.frames.length === 2, 'the window that was mid-frame saw the change too')
+    assert.equal(held.frames[1].reading.mark, 'two', 'one window got the notice and the other lost it')
+  } finally {
+    controller.abort()
+    held.ship()
+    await Promise.all([held.run, other])
+    pump.dispose()
+  }
+})
+
 test('disposing the pump stops every wake, so an unloaded line leaves nothing armed', async () => {
   const { root, dir } = workspace()
   const { ctx } = fakeBus()
