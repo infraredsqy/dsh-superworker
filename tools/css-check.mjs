@@ -584,7 +584,7 @@ const MARKS = [
    * colour the panel's other ring leads with. */
   { what: 'overview completed window · the check', where: '.superworker-omark', property: 'color', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-layer-1', tier: 'A' },
   { what: 'overview broken window · the frame', where: '.superworker-opane.is-broken', property: 'border-color', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-base', tier: null },
-  { what: 'overview broken window · the fault line', where: '.superworker-ofault', property: 'color', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'overview broken window · the fault line', where: '.superworker-ofault-n', property: 'color', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
   { what: 'overview running window · the ring head', where: '.superworker-oring', property: 'border-top-color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-1', tier: null },
   { what: 'the theme\'s own idle point (the basis of the 1.5 floor)', where: null, property: null, ink: 'var(--dsw-alias-state-idle-primary)', ground: '--dsw-alias-bg-base', tier: null },
 ]

@@ -480,12 +480,12 @@
 /* ---- The feed -------------------------------------------------------------- */
 /* Bottom-justified, cut by the window's own height: what falls off the top fades, and no scrollbar
  * ever appears. The row height is the field's `--superworker-orow-h` (`ROW_H` in the geometry); the
- * insets are the pane's own, from `FEED_LEFT` / `FEED_RIGHT` there. The window whose conversation is
- * over and whose frame says nothing wears `is-veiled`: its rows stay exactly where they stand,
- * blurred and pressed to three tenths, which is the A case of the completed-window design — nothing
- * moves, the window just stops speaking. A framed window wears none of it: at a person's gate the
- * rows are what the reader has to give their word on, and in a red frame they are how far the leg got
- * before it stopped — blur would hide the one thing each frame is asking about. */
+ * insets are the pane's own, from `FEED_LEFT` / `FEED_RIGHT` there. A window whose conversation is
+ * over wears `is-veiled`: its rows stay exactly where they stand, blurred and pressed to three
+ * tenths, because the rows are then context — the frame says what happened and the press opens the
+ * conversation for anyone who wants the detail. One veil serves all three endings (delivered, a
+ * break, a person's gate) and the frame's ink tells them apart. A running window wears none of it:
+ * while a leg moves, its rows are the reading. */
 .superworker-page .superworker-ofeed {
   position: absolute;
   overflow: hidden;
@@ -619,13 +619,29 @@
 /* The fault line: the panel's failed glyph and one short word beside it, centred on the band's
  * middle in the frame's own ink — the frame is what says the state, and this line is the whole of
  * "why", kept to a few syllables in every language because the conversation behind the press carries
- * the detail. The rows around it stay readable; the line sits over them, not instead of them. */
+ * the detail.
+ *
+ * The outer box is the geometry's: the band's whole width, so the line centres on the same middle
+ * the check takes. It paints nothing. The inner box is the notice, and it carries a ground of the
+ * window's own layer: a word laid straight over rows is read against whatever text happens to pass
+ * under it, veil or no veil, and a notice this drawing centres over a feed owns the ground it stands
+ * on. The band is a pill rather than a full-width stripe so the notice reads as one object instead of
+ * repainting the window's band, and its radius is the shared scale's. */
 .superworker-page .superworker-ofault {
   position: absolute;
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: none;
+}
+.superworker-page .superworker-ofault-n {
+  display: flex;
+  align-items: center;
   gap: 6px;
+  max-width: 100%;
+  padding: 0 10px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-layer-1);
   font: var(--dsw-font-xs-13);
   font-weight: 500;
   color: var(--dsw-alias-state-error-primary);

@@ -528,7 +528,7 @@ test('the main window whose session has stopped: veiled rows and the check, noth
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test("the main window at a person's gate stops as a checkpoint: it breathes amber, unveiled and unchecked", { skip: bundleSkip }, async () => {
+test("the main window at a person's gate stops as a checkpoint: it breathes amber, veiled and unchecked", { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
   /* An output row, not a dispatch row: the only thing that can make this window breathe is the gate. */
   service.set('m1', [said('delivered, waiting for the person.', 100)])
@@ -547,7 +547,9 @@ test("the main window at a person's gate stops as a checkpoint: it breathes ambe
   assert.notEqual(main, null, 'the main window is not drawn')
 
   assert.ok(main.className.includes('is-wait'), 'the window whose node is a checkpoint does not breathe')
-  assert.ok(!main.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'the checkpoint window is veiled')
+  /* The gate's own fact is what the reader acts on, so the rows step back behind it — one veil for
+   * every ending, and the frame's ink (amber here) is what says which ending it is. */
+  assert.ok(main.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'the checkpoint window keeps its rows sharp beside the gate it is asking about')
   assert.equal(main.querySelector('.superworker-omark'), null, 'the checkpoint window wears the finished check')
   assert.equal(main.querySelectorAll('.superworker-orow').length, 1, 'the checkpoint window lost its rows')
   assert.equal(main.querySelector('.superworker-oring'), null, 'the checkpoint window turns a ring')
@@ -679,9 +681,10 @@ test('a leg that died owing work keeps its window, and that window is the broken
   assert.equal(ghost !== null, true, 'a leg that died with its work still owed was not drawn at all')
   assert.ok(ghost.className.includes('is-child'), 'the dead leg was drawn as the main window')
 
-  /* The conversation is over, but its frame is what says so: the rows stay sharp, because they are how
-   * far the leg got before it stopped, and the frame is asking the reader to deal with exactly that. */
-  assert.equal(ghost.querySelector('.superworker-ofeed').className.includes('is-veiled'), false, 'the dead leg’s rows are blurred behind the frame that already says what happened')
+  /* The conversation is over, but its frame is what says so. The rows step back behind it: they are
+   * how far the leg got, kept in place and said dimmer, so the one word the window says is read on its
+   * own ground instead of over passing text. */
+  assert.ok(ghost.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'the dead leg’s rows stay sharp behind the notice the frame is already asking about')
   assert.equal(ghost.querySelectorAll('.superworker-orow').length, 1, 'the dead leg lost the rows it died with')
   /* A row is a reading, not a tooltip: its whole text lives in the conversation the window opens, and
    * a hover full of paths over a long thought is noise on a page read at a glance. */
@@ -695,7 +698,12 @@ test('a leg that died owing work keeps its window, and that window is the broken
   assert.equal(ghost.querySelector('.superworker-omark'), null, 'the dead leg wears a mark inside a frame that already says it')
   const fault = ghost.querySelector('.superworker-ofault')
   assert.equal(fault !== null, true, 'the dead leg says no word')
-  assert.equal(fault.textContent, zh['overview.fault.user'], 'the dead leg’s word is not how its turn ended')
+  /* The notice owns a ground of its own. The outer box is the geometry's — it only centres — and the
+   * inner one is what the word stands on; without it the red is read straight over whatever rows are
+   * passing under it, which is the whole point of the ground. */
+  const notice = fault.querySelector('.superworker-ofault-n')
+  assert.notEqual(notice, null, 'the fault line paints no ground, so its word is read over the rows')
+  assert.equal(notice.textContent, zh['overview.fault.user'], 'the dead leg’s word is not how its turn ended')
   assert.equal(fault.querySelector('svg') === null, false, 'the fault line carries no glyph')
   assert.equal(ghost.getAttribute('title'), null, 'the frame still carries a hover of its own')
 

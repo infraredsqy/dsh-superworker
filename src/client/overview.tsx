@@ -33,11 +33,16 @@
  * the conversation behind the press carries the detail, which is why no hover and no caption repeats
  * it.
  *
- * The veil is what a stopped conversation wears instead of a state: its rows stay where they stand,
- * said dimmer. A framed window wears none of it — not the gate, and not the break: the rows are the
- * evidence the frame is asking about, what is on the table for the reader's word or how far the leg
- * got before it stopped, and blur is the one thing that would hide them. So the veil survives for
- * the window that ended with nothing owed and nothing delivered, and the check sits over it.
+ * The veil is what a stopped conversation wears: its rows stay where they stand, said dimmer. It
+ * answers one fact and only one — the conversation is no longer the live subject — so a window that
+ * stopped owing work is veiled exactly like one that stopped delivered or one waiting at a person's
+ * gate, and the frame's own ink is what tells those apart: the check for work handed in, the red
+ * frame and its one word for a break, the amber breath for a gate. A running window is the only one
+ * whose rows stay sharp, because there they are the reading itself.
+ *
+ * A notice drawn over a feed — the fault line a break carries — stands on a band of the window's own
+ * ground. That is the rule for anything this drawing centres over rows: the rows are context, and a
+ * word laid straight over passing text is read against whatever happens to sit under it.
  *
  * The check and the veil are the main window's alone — a child that finished is no longer a window
  * at all.
@@ -351,10 +356,9 @@ function WindowPane(props: {
   }
   /* The states a window wears, one drawing per fact and the person's gate first. A gate — a checkpoint
    * or a manual node, the reading does not say which and this drawing never asks — is why its
-   * conversation stopped, so the window breathes and draws nothing else: no veil, no mark, the rows
-   * still saying what is on the table for the reader. The rest reach both windows: a leg that stopped
-   * with its work still owed is a ghost, and it is drawn broken exactly like the conversation this
-   * panel lives in — the debt is the same debt whoever left it. */
+   * conversation stopped, so the window breathes amber and carries no check. The rest reach both
+   * windows: a leg that stopped with its work still owed is a ghost, and it is drawn broken exactly
+   * like the conversation this panel lives in — the debt is the same debt whoever left it. */
   const atGate = pane.waiting === true
   /* The check is the record's delivery and nothing else. A conversation that merely went quiet has
    * not handed anything in, and earns no mark at all. */
@@ -363,12 +367,12 @@ function WindowPane(props: {
    * leg of its own. It is drawn by its frame, not by a mark inside it — the whole window is the one
    * drawing, and a red border is read sooner than any glyph. */
   const broken = !atGate && !handed && pane.alert === true
-  /* The veil answers the conversation being over and nothing else: its rows stay where they stand,
-   * said dimmer. A window whose frame already carries a state wears none of it — at the gate the
-   * amber breath and here the red frame — because those two rows are the evidence the reader came
-   * for: what is on the table for their word, or how far the leg got before it stopped. Blurring
-   * them would hide the one thing the frame is asking about. */
-  const veiled = pane.settled === true && !atGate && !broken
+  /* The veil answers one fact: this conversation wants the reader to act, so its rows are context and
+   * step back. Three verdicts wear it — work handed in, a break, a person's gate — and the frame's ink
+   * is what tells them apart; a window still running is the only one whose rows are the subject. The
+   * gate is read off its own fact rather than off `settled`, because a gate is a person being owed
+   * whether or not the conversation behind it happens to be quiet. */
+  const veiled = atGate || pane.settled === true
   /* The one mark a window's cell carries: the check for work handed in. */
   const mark = handed
     ? layoutMark({ width: box.width, height: box.height, head, foot, size: MARK_CHECK, stroke: MARK_CHECK_STROKE })
@@ -466,14 +470,18 @@ function WindowPane(props: {
         </span>
       )}
       {fault === undefined ? null : (
-        /* The one line a broken window says: the glyph, the short word, nothing else — the rows
-         * around it stay readable, because they are how far the leg got. */
+        /* The one line a broken window says: the glyph, the short word, nothing else. The outer box
+         * is the geometry's — the band's whole width, so the line centres where the check does — and
+         * the inner one is the notice itself: it carries the ground, so the word never stands on the
+         * rows passing behind it. */
         <span
           className="superworker-ofault"
           style={{ left: fault.left, top: fault.top, width: fault.width, height: fault.height }}
         >
-          <FaultMark />
-          <span>{t(faultWordOf(pane.ending))}</span>
+          <span className="superworker-ofault-n">
+            <FaultMark />
+            <span>{t(faultWordOf(pane.ending))}</span>
+          </span>
         </span>
       )}
       {ring === undefined ? null : (
