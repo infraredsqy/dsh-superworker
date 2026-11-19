@@ -623,20 +623,23 @@
   unicode-bidi: isolate;
 }
 
-/* ---- The main window's check --------------------------------------------- */
-/* The record's verdict, over the middle of the process band: the check for work handed in. Its box,
- * its size and its pen are the pane's own inline numbers, from `overview-geom.ts`; this sheet draws
- * only the ink. Under it stands a disc of the window's own ground, so a 44px mark never melts into
- * the blurred rows behind it (the size is written in as `--superworker-seal-scrim`, the same way the
- * field hands in its row height).
+/* ---- The verdict a window's body carries -------------------------------- */
+/* The record's verdict, over the middle of the process band. Two shapes, one square: the check for
+ * work handed in, the pause for a word owed to a person. Both take 44 and the band's middle from
+ * `overview-geom.ts`, so the eye that learned where a verdict lives never has to look twice. Under
+ * them stands a disc of the window's own ground, so the mark never melts into the blurred rows
+ * behind it (the size is written in as `--superworker-seal-scrim`, the same way the field hands in
+ * its row height).
  *
- * The ink is reading ink, never the success green: green reaches only 2.3:1 on the light palette,
- * under this panel's own 3:1 floor for a mark the reader resolves on its own, while reading ink
- * clears it in both. A break is not a mark at all — the window's own frame wears it (`.is-broken`) —
- * because a break is a case a person has to move on, and it must be seen before anything is read.
- * Only the main window is ever checked: a child that delivered has nothing left to stand here for.
+ * The check's ink is reading ink, never the success green: green reaches only 2.3:1 on the light
+ * palette, under this panel's own 3:1 floor for a mark the reader resolves on its own, while reading
+ * ink clears it in both. The pause wears the theme's warn hue — the colour this panel already keeps
+ * for "a person has to move" — and it is a *shape*, two bars, never a ring: the turning ring is the
+ * other thing on this stage that is round, and the two facts must never be told apart by ink alone.
+ * A break is not a mark at all — the window's own frame wears it — because a break is a case a
+ * person has to move on, and it must be seen before anything is read.
  *
- * The check swallows no pointer: it is a child of the window, so a press on it is a press on the
+ * The mark swallows no pointer: it is a child of the window, so a press on it is a press on the
  * window, and the reason a broken frame stopped is the frame's own title, not a title of the mark's.
  */
 .superworker-page .superworker-omark {
@@ -644,6 +647,9 @@
   display: block;
   color: var(--superworker-ink-1);
   pointer-events: auto;
+}
+.superworker-page .superworker-omark.is-gate {
+  color: var(--dsw-alias-state-warn-primary);
 }
 .superworker-page .superworker-omark::before {
   content: '';

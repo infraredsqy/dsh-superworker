@@ -589,11 +589,14 @@ const MARKS = [
   { what: 'overview rail bar · a step with nobody on it', where: '.superworker-orail button.is-broken b', property: 'background', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-base', tier: null },
   { what: 'overview feed row · failed', where: '.superworker-orow.is-fail', property: 'color', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
   /* The completed window's check is a mark the reader resolves on its own, and it is reading ink
-   * on purpose: the success hue does not clear the A floor on the light palette. A break is the
-   * window's own frame, in the theme's error hue — the one ink this page keeps for a break — read
-   * for the record like the warn family above. The running ring's head is the link ink, the same
-   * colour the panel's other ring leads with. */
+   * on purpose: the success hue does not clear the A floor on the light palette. The pause a window
+   * at a person's gate wears stands in that same square and takes the theme's warn hue — the colour
+   * this panel keeps for "a person has to move" — read for the record like the rest of that family.
+   * A break is the window's own frame, in the theme's error hue — the one ink this page keeps for a
+   * break — and the running ring's head is the link ink, the same colour the panel's other ring
+   * leads with. */
   { what: 'overview completed window · the check', where: '.superworker-omark', property: 'color', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-layer-1', tier: 'A' },
+  { what: 'overview gated window · the pause', where: '.superworker-omark.is-gate', property: 'color', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
   { what: 'overview broken window · the frame', where: '.superworker-opane.is-broken', property: 'border-color', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-base', tier: null },
   { what: 'overview broken window · the fault line', where: '.superworker-ofault-n', property: 'color', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
   { what: 'overview running window · the ring head', where: '.superworker-oring', property: 'border-top-color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-1', tier: null },

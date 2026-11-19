@@ -303,10 +303,11 @@ export function layoutOverview(input: {
 }
 
 /* ---- The marks a window can carry ---------------------------------------- */
-/* Two fillings: the delivered window's check over its body, and the small ring that says the window
- * is still moving, in its head. A break is not a mark — the window's own frame wears it, so the stage
- * states no box for it. Sizes and positions are the design's own table, stated here so the drawing
- * reads them and neither the component nor the sheet keeps a copy. */
+/* Two fillings: the delivered window's check over its body, the pause a window held at a person's
+ * gate wears in the same square, and the small ring that says the window is still moving, in its
+ * head. A break is not a mark — the window's own frame wears it, so the stage states no box for it.
+ * Sizes and positions are the design's own table, stated here so the drawing reads them and neither
+ * the component nor the sheet keeps a copy. */
 
 /** The feed's own insets: the band its rows stand in, and the box a window's mark centres on. */
 export const FEED_LEFT = 24

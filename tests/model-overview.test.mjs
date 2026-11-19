@@ -1005,6 +1005,35 @@ test('a pick the list no longer holds is no pick: the fallback answers', () => {
   assert.deepEqual(reading.legs.map((leg) => leg.id), [conductor, fast], 'the rail lost a step it was offering')
 })
 
+test('the panel\'s own step keeps its bar while the reader stands on another one: the way back', () => {
+  /* The switch must not be a one-way door. A reader presses a finished step that owes nobody a look,
+   * and that step's own bar is the only bar the reading would otherwise offer — the panel's own
+   * conversation is neither running nor owed, so the ordinary rule drops it and the stage is stuck.
+   * The step this page belongs to is offered while the record names it, which is what keeps a way
+   * back to the conversation the reader came from. */
+  const conductor = 'session-conductor'
+  const done = 'session-done-leg'
+  const reading = readOverview({
+    sessions: snapshot([conductor, done], {
+      [conductor]: pipelineRow(conductor, { updatedAt: '2026-11-17T06:20:15.000Z' }),
+      [done]: pipelineRow(done, { updatedAt: '2026-11-17T06:20:40.000Z' }),
+    }),
+    pipelineSessions: [conductor, done],
+    sessionId: conductor,
+    shownSession: done,
+    nodeOf: { [conductor]: 'n-conductor', [done]: 'n-done' },
+    nodes: {
+      'n-conductor': { title: '场记：开场记录', mode: 'auto' },
+      'n-done': { title: '收尾：一张总单', mode: 'auto' },
+    },
+    /* Both delivered: neither owes anybody a word, so neither stands on the rail by the ordinary
+     * rule. Only the page's own step is offered, and it is enough to come back. */
+    deliveredSessions: [conductor, done],
+  })
+  assert.equal(reading.main.id, done, 'the stage is not the step the reader picked')
+  assert.deepEqual(reading.legs.map((leg) => leg.id), [conductor, done], 'the rail offers no way back to the conversation the reader came from')
+})
+
 /* ---- the record's parallel legs -------------------------------------------
  *
  * A relay opens each leg after the one before it reads "closed", and a restart

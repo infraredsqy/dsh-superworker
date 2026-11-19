@@ -1247,10 +1247,18 @@ export function readOverview(input: OverviewInput): OverviewReading {
      and then that leg is the main window: the rail is how a reader asks to read it, so it is offered
      here like any other. */
   const legIds: string[] = []
+  /* The step this page itself belongs to is always offered while the record names it — the reader's
+     way home. A switch takes the stage off the panel's own conversation, and every other step that
+     owes nobody a look has left the rail by then; without this the pick would be a one-way door into
+     a finished leg, with nothing to press to come back. */
+  const self = text(input.sessionId)
   for (const id of rowIds) {
     const offered = id === mainId
       ? isLeg(id)
-      : movingLegs.includes(id) || standing.includes(id) || waiting.has(id)
+      : movingLegs.includes(id)
+        || standing.includes(id)
+        || waiting.has(id)
+        || (self !== undefined && id === self && isLeg(id))
     if (offered && !legIds.includes(id)) legIds.push(id)
   }
   for (const id of standing) if (!legIds.includes(id)) legIds.push(id)

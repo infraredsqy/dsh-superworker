@@ -266,6 +266,26 @@ function FinishedMark(props: { readonly stroke: number }): React.ReactElement {
 }
 
 /**
+ * The mark a window held at a person's gate wears: the panel's own drawing for "a word is owed", the
+ * very one the map's cards and the detail rows stand up, drawn in the check's square. Two bars and
+ * not a circle — the turning ring already means "still moving", and the two marks are read at a
+ * glance from across the stage, so they may never be told apart by ink alone.
+ */
+function GatedMark(props: { readonly stroke: number }): React.ReactElement {
+  return (
+    <svg viewBox="0 0 12 12" aria-hidden="true">
+      <path
+        d="M4.6 2.6v6.8M7.4 2.6v6.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={props.stroke}
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+/**
  * The fault line's glyph: the panel's own failed drawing, the same one a failed row wears — a
  * reader who has met it in a feed meets it again here with the same meaning. Its size is the
  * geometry's (`FAULT_MARK`), and the line it stands in is the geometry's too.
@@ -389,9 +409,19 @@ function WindowPane(props: {
    * gate is read off its own fact rather than off `settled`, because a gate is a person being owed
    * whether or not the conversation behind it happens to be quiet. */
   const veiled = atGate || pane.settled === true
-  /* The one mark a window's cell carries: the check for work handed in. */
-  const mark = handed
-    ? layoutMark({ width: box.width, height: box.height, head, foot, size: MARK_CHECK, stroke: MARK_CHECK_STROKE })
+  /* The mark a window's cell carries: the check for work handed in, the pause for a word owed to a
+   * person. Both take the band's middle, the same 44 square and the same pen, because they are one
+   * verdict at two shapes — the reader who learned where the check stands finds the gate there too,
+   * and the shape alone tells the two apart. A break states none: its frame is the whole drawing. */
+  const mark = handed || atGate
+    ? layoutMark({
+      width: box.width,
+      height: box.height,
+      head,
+      foot,
+      size: MARK_CHECK,
+      stroke: MARK_CHECK_STROKE,
+    })
     : undefined
   /* The one line a broken window says: the fault's glyph and its short word, centred on the band's
    * middle — the same middle the check takes, so the eye that learned where a verdict lives finds
@@ -484,7 +514,7 @@ function WindowPane(props: {
       />
       {mark === undefined ? null : (
         <span
-          className="superworker-omark"
+          className={`superworker-omark${handed ? '' : ' is-gate'}`}
           aria-hidden="true"
           style={{
             left: mark.left,
@@ -494,7 +524,7 @@ function WindowPane(props: {
             '--superworker-seal-scrim': `${MARK_SCRIM}px`,
           } as React.CSSProperties}
         >
-          <FinishedMark stroke={mark.stroke} />
+          {handed ? <FinishedMark stroke={mark.stroke} /> : <GatedMark stroke={mark.stroke} />}
         </span>
       )}
       {fault === undefined ? null : (

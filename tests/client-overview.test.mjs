@@ -20,7 +20,9 @@
  *   whose newest row is a dispatch row keeps its ring and draws no border;
  * - the main window's three states, one fact each: running draws as it runs; not running under no
  *   gate is finished — rows in place under the veil and the check; at a person's gate (a checkpoint
- *   the record's own gate reading names) it breathes amber, with no veil and no check;
+ *   the record's own gate reading names) it breathes amber over its veiled rows, under the pause
+ *   mark — the check's own square, two bars instead of one stroke, so the gate is never read as
+ *   "handed in" nor as the turning ring beside it;
  * - a running child turns the small ring, and wears neither veil nor check.
  * - the press — a window opens the conversation it stands for: the main window its own, a child its
  *   own, and a tap a touch can make anywhere on the window, the verdict mark over it included; a
@@ -688,7 +690,7 @@ test('the main window whose session has stopped: veiled rows and the check, noth
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test("the main window at a person's gate stops as a checkpoint: it breathes amber, veiled and unchecked", { skip: bundleSkip }, async () => {
+test("the main window at a person's gate stops as a checkpoint: it breathes amber, veiled, under the pause", { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
   /* An output row, not a dispatch row: the only thing that can make this window breathe is the gate. */
   service.set('m1', [said('delivered, waiting for the person.', 100)])
@@ -710,7 +712,13 @@ test("the main window at a person's gate stops as a checkpoint: it breathes ambe
   /* The gate's own fact is what the reader acts on, so the rows step back behind it — one veil for
    * every ending, and the frame's ink (amber here) is what says which ending it is. */
   assert.ok(main.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'the checkpoint window keeps its rows sharp beside the gate it is asking about')
-  assert.equal(main.querySelector('.superworker-omark'), null, 'the checkpoint window wears the finished check')
+  /* The gate carries a mark of its own, in the check's square — and it is *not* the check and *not*
+   * the ring: a person is owed a word, which is neither "handed in" nor "still moving". */
+  const gated = main.querySelector('.superworker-omark')
+  assert.notEqual(gated, null, 'the window at a gate says nothing in the band where every verdict stands')
+  assert.ok(gated.className.includes('is-gate'), 'the gate mark is drawn in the check’s own ink')
+  assert.notEqual(gated.querySelector('svg'), null, 'the gate mark has no drawing')
+  assert.equal(gated.style.width, '44px', `the gate's square is ${gated.style.width}, not the check's 44`)
   assert.equal(main.querySelectorAll('.superworker-orow').length, 1, 'the checkpoint window lost its rows')
   assert.equal(main.querySelector('.superworker-oring'), null, 'the checkpoint window turns a ring')
 
@@ -1213,7 +1221,11 @@ test('a step at a person\'s gate keeps its bar, in the warn ink, and pressing it
   assert.equal(gated === null, false, 'the step at the gate did not come to the stage')
   assert.ok(gated.className.includes('is-main'), 'the step at the gate was drawn as a child')
   assert.ok(gated.className.includes('is-wait'), 'the stage does not say a person is owed a word')
-  assert.equal(gated.querySelector('.superworker-omark'), null, 'the step at the gate wears the check as if it were done with the reader')
+  /* The step the reader switched to carries the same gate mark the stage always draws for a word
+   * owed — the switch changes which step is read, never how a step is drawn. */
+  const pause = gated.querySelector('.superworker-omark')
+  assert.notEqual(pause, null, 'the step the reader switched to says nothing in the band where every verdict stands')
+  assert.ok(pause.className.includes('is-gate'), 'the switched-to gate is drawn in the check’s ink')
 
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
