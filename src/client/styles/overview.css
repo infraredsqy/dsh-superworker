@@ -378,6 +378,26 @@
   animation: superworker-opane-grown 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
 }
 
+/* A window's first box is a provisional one, and reaching the real one is spent on the way — the one
+ * box change that travels. The rows that fill a window are its own conversation's, and the pane can
+ * only read them once the session windows are held open: so the panel opens with its windows
+ * measured over nothing, a title line each, and they expand into place as the rows land. Without
+ * this the reader watched a flat bar snap to a full window — the jump that gave the panel its "still
+ * loading" look, on the main window and on every child alike.
+ *
+ * The easing is the entrance's own, so a window that both arrives and grows reads as one motion. The
+ * mark is raised for the span one growth takes and dropped again (`overview.tsx` reads the change and
+ * holds the name): every later box is a re-measure or a row landing, and those follow the geometry
+ * straight away — the note under this one is about exactly that. A pane on its way out keeps its
+ * fold: the leave's keyframes are what its box is doing then. */
+.superworker-page .superworker-opane.is-grow:not(.is-leave) {
+  transition:
+    left 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),
+    top 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),
+    width 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
 /* Leave — the set lost one: the rows fold up into the title line, then the sliver folds away
  * sideways. It clips while it goes (`overflow: hidden`), or the fold would spill the rows it is
  * folding over. When the span has run, the page loses it. */

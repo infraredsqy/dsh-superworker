@@ -113,6 +113,17 @@ const SETTLE_SPAN_MS = 200
  * window that kept the mark would replay its growth every time anything else redrew the stage. */
 const ENTER_SPAN_MS = 260
 
+/** How long a window's first box is allowed to take in reaching its real numbers — the span the
+ *  sheet's expansion runs, and a breath past it so a second batch of rows joins the same growth. */
+/** How long the opening's growth is spent for: a breath past the sheet's own expansion, so a second
+ *  batch of rows landing right behind the first belongs to the same growth rather than snapping. */
+const GROW_SPAN_MS = 360
+
+/** How long a window may stand in its provisional box at the longest. A window that never reads a row
+ *  is written off after this: what the opening waits for is the panel's own read of the sessions, and
+ *  that is over by now — a re-measure after it must never be spent. */
+const OPENING_MAX_MS = 3000
+
 /**
  * What one press on a window may do: the map's own two hands (`CardGo`), asked of a session instead
  * of a node — a window *is* a conversation, and whether this machine can open it is the panel's
@@ -360,6 +371,9 @@ function WindowPane(props: {
   /** The flight this window is flying — shift, size, and where it is aimed — or nothing when it did
    *  not just join; the start frame is read once, on the joining beat, and never re-read. */
   readonly born: { readonly dx: number; readonly dy: number; readonly s: number } | undefined
+  /** Whether this window is still reaching its real box: its first box is measured over no rows, so
+   *  the growth out of it is spent on the way rather than snapped. */
+  readonly grow: boolean
   /** Where a press on this window goes; null when nothing on this machine may be pressed. */
   readonly go: WindowGo | null
 }): React.ReactElement {
@@ -452,6 +466,7 @@ function WindowPane(props: {
     props.main ? 'is-main' : 'is-child',
     props.leave ? 'is-leave' : '',
     born === undefined ? '' : 'is-born',
+    props.grow ? 'is-grow' : '',
     atGate ? 'is-wait' : '',
     broken ? 'is-broken' : '',
     target === null ? '' : 'is-go',
@@ -790,13 +805,21 @@ export function OverviewPane(props: {
     if (gone.length === 0) return
     /* A window on its way out keeps no join mark: it is leaving, not arriving, and a return before
      * its fold has run is the same window standing again — the mark's absence is what keeps that
-     * return from playing the arrival a second time. */
+     * return from playing the arrival a second time. Its opening is over too: a window that comes
+     * back is read again, and its rows arrive with it. */
     for (const id of gone) {
+      openings.current.delete(id)
+      const openingTimer = openingTimers.current.get(id)
+      if (openingTimer !== undefined) {
+        clearTimeout(openingTimer.timer)
+        openingTimers.current.delete(id)
+      }
       const entering = enterTimers.current.get(id)
-      if (entering === undefined) continue
-      clearTimeout(entering)
-      enterTimers.current.delete(id)
-      flying.current.delete(id)
+      if (entering !== undefined) {
+        clearTimeout(entering)
+        enterTimers.current.delete(id)
+        flying.current.delete(id)
+      }
     }
     setJoined((held) => {
       const kept = [...held].filter((id) => !gone.includes(id))
@@ -835,6 +858,8 @@ export function OverviewPane(props: {
       for (const timer of enterTimers.current.values()) clearTimeout(timer)
       enterTimers.current.clear()
       clearTimeout(settleTimer.current)
+      for (const scheduled of openingTimers.current.values()) clearTimeout(scheduled.timer)
+      openingTimers.current.clear()
     },
     [],
   )
@@ -956,6 +981,57 @@ export function OverviewPane(props: {
     return mark
   }
 
+  /* A window's first box is a provisional one. The rows that fill it are its own conversation's, and
+   * the pane cannot read them until the session windows are held open — so every window first stands
+   * measured over nothing, a title line, and reaches its real numbers a beat later. That growth is
+   * the one box change worth spending on the way: the panel opens with its windows expanding into
+   * place instead of snapping from a flat bar to a full one (the sheet's own note says why only this
+   * one bit of travel is allowed).
+   *
+   * So the mark covers a window's **opening**: it is on from the first beat the window stands, and it
+   * stays until the rows it was waiting for have landed and their growth has had its span — a breath
+   * past that, and the pane is drawn by the geometry alone, exactly like every window after its
+   * opening. The arm has to be on the pane *before* the change it is there for: a commit that grows
+   * the box with nothing to travel from is the jump this is here to end. A window that never reads a
+   * row keeps the arm only as long as the opening could plausibly last, so a re-measure later is
+   * never spent. */
+  const openings = React.useRef<Map<string, { readonly at: number; rowsAt?: number }>>(new Map())
+  const openingTimers = React.useRef<Map<string, { readonly until: number; readonly timer: ReturnType<typeof setTimeout> }>>(new Map())
+  const [, setOpeningPass] = React.useState(0)
+  const rowsIn = new Map<string, number>()
+  if (reading.main !== null) rowsIn.set(reading.main.id, reading.main.rows.length)
+  for (const one of reading.children) rowsIn.set(one.id, one.rows.length)
+  const opening: string[] = []
+  {
+    const now = Date.now()
+    for (const id of currentIds) {
+      let held = openings.current.get(id)
+      if (held === undefined) {
+        held = { at: now }
+        openings.current.set(id, held)
+      }
+      if (held.rowsAt === undefined && (rowsIn.get(id) ?? 0) > 0) held.rowsAt = now
+      if (held.rowsAt === undefined ? now - held.at >= OPENING_MAX_MS : now - held.rowsAt >= GROW_SPAN_MS) continue
+      opening.push(id)
+      /* The rows landing is what shortens this window's deadline, so the timer is re-read from the
+       * deadline it was set for rather than only when there is none: a stale 3s wait would hold the
+       * mark long past the opening and spend a re-measure the reader did not ask for. */
+      const until = held.rowsAt === undefined ? held.at + OPENING_MAX_MS : held.rowsAt + GROW_SPAN_MS
+      const scheduled = openingTimers.current.get(id)
+      if (scheduled !== undefined) {
+        if (scheduled.until === until) continue
+        clearTimeout(scheduled.timer)
+      }
+      /* The span running out is what sheds the mark: a class left standing would spend the next
+       * change too, and only the opening's growth is allowed to travel. */
+      const timer = setTimeout(() => {
+        openingTimers.current.delete(id)
+        setOpeningPass((pass) => pass + 1)
+      }, Math.max(0, until - now) + 40)
+      openingTimers.current.set(id, { until, timer })
+    }
+  }
+
   return (
     <div className="superworker-overview" ref={bodyRef}>
       {placement.railVisible ? (
@@ -1023,6 +1099,7 @@ export function OverviewPane(props: {
             /* The main window has no source: it is the conversation this pane is about, so it was
              * already here. Its own appearance fades in; it never travels. */
             born={undefined}
+            grow={opening.includes(reading.main.id)}
             go={props.go}
           />
         )}
@@ -1042,6 +1119,7 @@ export function OverviewPane(props: {
               fresh={freshIds.has(one.id)}
               /* A child grows out of the row that dispatched it, and only on the beat it joined. */
               born={joined.has(one.id) ? flightOf(one.id, box) : undefined}
+              grow={opening.includes(one.id)}
               go={props.go}
             />
           )
@@ -1076,6 +1154,7 @@ export function OverviewPane(props: {
               leave
               fresh={false}
               born={undefined}
+              grow={false}
               go={props.go}
             />
           )

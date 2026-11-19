@@ -14,6 +14,9 @@
  * - one arrival, one flight: the aim is read on the joining beat and a re-measure under it never
  *   re-aims it, and a seat the reading loses for a beat and hands straight back is the same window
  *   standing — it does not fly out a second time;
+ * - one opening: a window stands measured over no rows while its own session windows are being read,
+ *   and the growth into the box those rows need is spent once, on the way — every later box follows
+ *   the geometry;
  * - leave — a window leaving carries the mark, and after the leave's span the page has lost it;
  *   a child that ends is exactly that: the reading stops drawing it, and the animation takes it away;
  * - fresh row — the arrival's two readings carry the mark, on that row alone: a gained row even
@@ -796,6 +799,60 @@ test('a window stopped before the record spoke: its rows stay sharp, and no mark
   assert.equal(main.className.includes('is-broken'), false, 'a quiet stop wears the break’s frame')
   assert.equal(main.className.includes('is-wait'), false, 'a quiet stop breathes like a gate')
   assert.equal(main.querySelector('.superworker-oring'), null, 'a stopped window turns a ring')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a window opening into its real box: the growth is spent on the way, once', { skip: bundleSkip }, async () => {
+  /* What the reader saw on opening the panel: every window stood measured over nothing — its rows
+   * are its own conversation's, and they cannot be read until the session windows are held open — so
+   * it was a flat bar, and it snapped to a full window a beat later. The growth out of that first box
+   * is the one box change the sheet spends, and it is spent once: every later box is a re-measure or
+   * a row landing, and those follow the geometry straight away. */
+  const service = fakeSessionsService()
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([])),
+  })
+  await stageAt(mounted, 1024, 720)
+  const flat = container(mounted).querySelector('[data-window="m1"]')
+  assert.notEqual(flat, null, 'the main window is not drawn')
+  /* The arm is on while the box is still the provisional one — it has to be, or the commit that
+   * grows the box arrives with nothing to travel from and the reader sees the jump again. */
+  assert.ok(flat.className.includes('is-grow'), 'a window standing in its provisional box is not armed to expand')
+  assert.equal(flat.querySelectorAll('.superworker-orow').length, 0, 'the first box was not the provisional one — the case proves nothing')
+  const flatHeight = flat.style.height
+
+  /* The rows land, and the box grows with them. */
+  await mounted.act(async () => {
+    service.set('m1', [said('one.', 100), said('two.', 200), said('three.', 300)])
+  })
+  const grown = container(mounted).querySelector('[data-window="m1"]')
+  assert.notEqual(grown.style.height, flatHeight, 'the window did not grow — the case proves nothing')
+  assert.ok(grown.className.includes('is-grow'), 'the window jumped into its real box instead of expanding into it')
+
+  /* The sheet is what spends it, and it is an ease-out expansion on the box. */
+  const sheet = readFileSync(new URL('../src/client/styles/overview.css', import.meta.url), 'utf8')
+  const rule = cssBlocks(stripComments(sheet), { descend: 'all' })
+    .filter((block) => block.kind === 'rule' && block.prelude.includes('.superworker-opane.is-grow'))
+    .at(0)
+  assert.notEqual(rule, undefined, 'no rule spends the opening growth')
+  assert.match(rule.body, /transition:[^;]*height/u, 'the opening growth transitions no height')
+  assert.match(rule.body, /cubic-bezier\(0\.22,\s*0\.61,\s*0\.36,\s*1\)/u, 'the opening growth is not eased out')
+
+  /* The opening is over once the rows have landed and their growth has had its span: from there the
+   * window follows the geometry, so a later row landing travels nothing. */
+  await mounted.act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 420))
+  })
+  assert.ok(!grown.className.includes('is-grow'), 'the expansion mark outlived the opening')
+  const stoodAt = grown.style.height
+  await mounted.act(async () => {
+    service.set('m1', [said('one.', 100), said('two.', 200), said('three.', 300), said('four.', 400)])
+  })
+  assert.notEqual(grown.style.height, stoodAt, 'the later row did not move the box — the case proves nothing')
+  assert.ok(!grown.className.includes('is-grow'), 'a later row landing borrowed the opening expansion')
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
