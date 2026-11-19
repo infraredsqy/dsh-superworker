@@ -225,11 +225,12 @@ function refused(failure: Failure): Outcome {
  * be unfolded here — reading only the envelope would report a refused open as a landed one and the
  * panel's note line would stay silent about the reason. A landed open says nothing at all: the
  * session appearing in DSH is the whole effect and its session id is a navigation address, never a
- * word the panel shows.
+ * word the panel shows — so the id rides the outcome for the caller to navigate by, and no part of
+ * it reaches the note line.
  */
 function openOutcome(answer: Answer<SessionOpenOutcome>): Outcome {
   if (!answer.ok) return refused(answer.failure)
-  return answer.value.ok ? { ok: true, text: '' } : refused(answer.value)
+  return answer.value.ok ? { ok: true, text: '', session: answer.value.session } : refused(answer.value)
 }
 
 /**

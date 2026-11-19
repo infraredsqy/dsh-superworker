@@ -66,7 +66,12 @@ export function failureOf(error: unknown): Failure {
   return { code: 'transport-failed', detail: error instanceof Error ? error.message : String(error) }
 }
 
-/** What a write-side call hands back: the tool's own output on success, a refusal on failure. */
+/**
+ * What a write-side call hands back: the tool's own output on success, a refusal on failure.
+ *
+ * A write that opened a session also carries where it opened: a session id is an address the panel
+ * can navigate to, never a word it shows. Absent on every write that opened nothing.
+ */
 export type Outcome =
-  | { readonly ok: true; readonly text: string }
+  | { readonly ok: true; readonly text: string; readonly session?: string }
   | { readonly ok: false; readonly code: FailureCode; readonly detail?: string }

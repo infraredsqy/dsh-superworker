@@ -1525,6 +1525,63 @@ test('the standing corner: a press unfolds the doors, a door opens that door\'s 
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
+test('a door press lands the panel in the session it opened, and a refused one navigates nowhere', { skip: bundleSkip }, async () => {
+  const went = []
+  const mounted = await mountBuiltPanel({
+    record: recordUnstarted(),
+    sessionsService: fakeSessionsService(),
+    useSessions: (select) => select(snapshotOf([])),
+    /* Each door answers with its own session, so the case can tell which conversation was opened
+     * apart from which one was navigated to. */
+    onConsult: ({ door }) => ({ ok: true, session: `${door}-session` }),
+    openSession: (id) => { went.push(id) },
+  })
+  const corner = launchCorner(mounted)
+  await mounted.act(async () => {
+    corner.pin.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
+  })
+  /* Pressing a door is asking to be in that conversation: opening it and going there are one move,
+   * and the session the panel lands in is the one that door just opened — not merely some session. */
+  await mounted.act(async () => {
+    corner.route.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
+    await flush()
+  })
+  assert.deepEqual(went, ['route-session'], 'the graph door opened a session and left the reader behind')
+
+  await mounted.act(async () => {
+    corner.pin.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
+  })
+  await mounted.act(async () => {
+    corner.conduct.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
+    await flush()
+  })
+  assert.deepEqual(went, ['route-session', 'conduct-session'], 'the line door opened a session and left the reader behind')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a refused door navigates nowhere: there is no session to be carried into', { skip: bundleSkip }, async () => {
+  const went = []
+  const mounted = await mountBuiltPanel({
+    record: recordUnstarted(),
+    sessionsService: fakeSessionsService(),
+    useSessions: (select) => select(snapshotOf([])),
+    onConsult: () => ({ ok: false, code: 'no-session-service', detail: 'agents' }),
+    openSession: (id) => { went.push(id) },
+  })
+  const corner = launchCorner(mounted)
+  await mounted.act(async () => {
+    corner.pin.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
+  })
+  await mounted.act(async () => {
+    corner.route.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
+    await flush()
+  })
+  assert.deepEqual(went, [], 'a refused door carried the reader off to a session that was never opened')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
 test('a refused door says why on the panel\'s note line', { skip: bundleSkip }, async () => {
   const mounted = await mountBuiltPanel({
     record: recordUnstarted(),

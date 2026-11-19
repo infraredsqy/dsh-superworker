@@ -177,15 +177,18 @@ test('the open-session seam: the endpoint is openNodeSession, cycle and node pas
   )
 })
 
-test('the standing corner seam: the endpoints are consultRoute/consultConduct(sessionId, workspaceRoot), and a landed call says nothing', async () => {
+test('the standing corner seam: the endpoints are consultRoute/consultConduct(sessionId, workspaceRoot), and a landed call hands back where it opened and nothing to print', async () => {
   const { calls, namespace } = fakeNamespace({ ok: true, value: { ok: true, session: 'session-minted' } })
   const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
 
   const route = await port.consultRoute('s1', 'C:\\picked')
   const conduct = await port.consultConduct('s1', 'C:\\picked')
 
-  assert.deepEqual(route, { ok: true, text: '' }, 'a landed consult has nothing to print: the session it opens is the whole effect')
-  assert.deepEqual(conduct, { ok: true, text: '' })
+  /* Two things at once, and they are not the same thing: nothing to print (`text` is empty — the
+   * session it opens is the whole effect), and where it opened, which the panel navigates by. The
+   * id is an address, never a word shown to a reader. */
+  assert.deepEqual(route, { ok: true, text: '', session: 'session-minted' }, 'a landed consult must print nothing and still say where it opened')
+  assert.deepEqual(conduct, { ok: true, text: '', session: 'session-minted' })
   assert.deepEqual(calls, [
     { method: 'consultRoute', values: ['s1', 'C:\\picked'] },
     { method: 'consultConduct', values: ['s1', 'C:\\picked'] },

@@ -499,14 +499,29 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
    * the overview's empty stage. The whole move is the host opening an agent session, so this loop
    * deliberately carries no read-again: a landed call changes nothing on this panel (the work
    * happens in the session it opens, and a re-read could only repeat the same notice), and only a
-   * refusal has a word for the note line. One hand for both, because the two differ in which door
-   * they open and never in what the panel does with the answer. */
+   * refusal has a word for the note line. What a landed call does do is carry the panel into the
+   * session it just opened. One hand for all of them, because they differ in which door they open
+   * and never in what the panel does with the answer. */
   const consult = React.useCallback((open: () => Promise<Outcome>) => {
     if (consulting) return
     setConsulting(true)
     setNote(null)
-    void writeToNote(open, { note: (next) => setNote(next) }).finally(() => setConsulting(false))
-  }, [consulting])
+    /* Pressing a door is asking to be in that conversation: the session it opens is where the work
+     * now is, so the panel goes there, the same as a card or a window press does. The outcome
+     * carries the id for exactly this, and the call is made once — the note line's reading of it
+     * and the navigation both hang off the one answer.
+     *
+     * The roster check the cards and windows make is deliberately not made here: those press on a
+     * conversation the browser's session list already holds, while this one was minted by the host
+     * a moment ago and may not be in that list yet. Asking would refuse the very navigation that
+     * was just asked for. */
+    const opened = open()
+    void opened.then(
+      (outcome) => { if (outcome.ok && outcome.session !== undefined) openSession?.(outcome.session) },
+      () => undefined,
+    )
+    void writeToNote(() => opened, { note: (next) => setNote(next) }).finally(() => setConsulting(false))
+  }, [consulting, openSession])
 
   const consultMigration = React.useCallback(() => {
     consult(() => port.consultMigration(sessionId ?? '', workspaceRoot))
