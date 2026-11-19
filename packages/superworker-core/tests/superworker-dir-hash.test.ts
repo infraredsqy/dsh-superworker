@@ -1,21 +1,21 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { hashDirectory } from './helpers/hash-dir.ts';
 
 /**
- * How the `.superworker` hash invariant works: the directory hash is stable for "the same tree" and
- * sensitive to a change of any single byte in a record. The repo-root .superworker must be untouched before
- * and after the whole suite — vitest's globalSetup enforces that invariant at the end
- * (tests/global-setup.ts); what is locked here is the hashing function underneath it.
- * It skips the three kinds of directory superworker manages itself (top-level worktrees/meta, temp at
- * any depth): parallel cycles writing caches, locks and probes there is normal work and must not go
- * red, while a record file that changes must.
+ * The hashing function the `.superworker` invariant is built on: stable for "the same tree",
+ * sensitive to any single byte of a record. The invariant itself — the repo-root .superworker
+ * untouched before and after the whole suite — is enforced once, by vitest's globalSetup
+ * (tests/global-setup.ts); what is locked here is only the function underneath it, over trees this
+ * file builds and removes.
+ *
+ * The skip rules are the part worth pinning: the three kinds of directory superworker manages
+ * itself (top-level worktrees/meta, temp at any depth) stay out, so a parallel cycle writing
+ * caches, locks and probes cannot trip the guard, while a record file that changes still does.
+ * Those rules are what decide whether the guard cries wolf or sleeps through a real write.
  */
-
-const repoRecordDir = fileURLToPath(new URL('../../../.superworker', import.meta.url));
 
 function makeTempTree(): string {
   const root = mkdtempSync(join(tmpdir(), 'superworker-hash-'));
@@ -75,19 +75,6 @@ describe('directory hash', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
-
-  it('every engine operation lands in a temporary directory: the repo-root .superworker is not touched', () => {
-    const before = hashDirectory(repoRecordDir);
-    const workdir = mkdtempSync(join(tmpdir(), 'superworker-engine-'));
-    try {
-      mkdirSync(join(workdir, '.superworker', 'nodes'), { recursive: true });
-      writeFileSync(join(workdir, '.superworker', 'state.json'), '{"cycles":[]}\n');
-      writeFileSync(join(workdir, '.superworker', 'nodes', 'x.md'), 'probe');
-    } finally {
-      rmSync(workdir, { recursive: true, force: true });
-    }
-    expect(hashDirectory(repoRecordDir)).toBe(before);
   });
 
   it('changes in the self-managed areas do not change the hash: top-level worktrees/meta and temp at any depth', () => {
