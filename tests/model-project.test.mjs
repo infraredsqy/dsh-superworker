@@ -205,8 +205,8 @@ test('the human gate: one word + that moment, and a cell needing nobody has no s
   assert.equal(hand.nodeById.m.gate.kind, 'manual')
   assert.equal(hand.nodeById.m.gate.since, null, 'the record has no such moment: empty, nothing made up')
 
-  /* A checkpoint's gate reads this node's own record alone: delivered, and this delivery not approved
-   * by a person. Where the line has walked since says nothing about that delivery. */
+  /* A checkpoint's gate: delivered, this delivery not approved, and no dependent picked up at or
+   * after the delivery. With no dependent at all, nothing proves the checkpoint released the line. */
   const checkpoint = readProject(record({
     nodes: { cp: node({ mode: 'checkpoint', status: 'completed', completed_at: '2026-03-10T09:20:00.000Z' }) },
     cycles: [cycle({ path: [step('cp', '2026-03-10T08:00:00.000Z', '2026-03-10T09:00:00.000Z', 'completed')] })],
@@ -242,7 +242,7 @@ test('the human gate: one word + that moment, and a cell needing nobody has no s
       ],
     })],
   }))
-  assert.equal(moved.nodeById.cp.gate.kind, 'checkpoint', 'the cycle moving on does not clear the gate: unapproved means still gated')
+  assert.equal(moved.nodeById.cp.gate.kind, 'checkpoint', 'a cycle moving on to a node that does not depend on it proves nothing: the gate stands')
   assert.equal(moved.nodeById.after.gate, null, 'an auto cell needs no person')
 
   const shapes = readProject(record({
@@ -270,6 +270,52 @@ test('the human gate: one word + that moment, and a cell needing nobody has no s
     nodes: { cp: node({ mode: 'checkpoint' }) },
   }))
   assert.equal(running.nodeById.cp.gate, null, 'a checkpoint not yet delivered: the gate is not on it')
+})
+
+/* The rehearsal: approved in conversation and carried out by `advance`, the delivery has no
+ * `approved_at` on disk. A dependent cannot start before its dependency was delivered, so the
+ * dependent's pickup is the record's own proof the checkpoint released the line. */
+test('the rehearsal: a checkpoint with no approved_at, its dependent picked up after the delivery: the gate is closed', () => {
+  const reading = readProject(record({
+    nodes: {
+      cp: node({ mode: 'checkpoint', status: 'completed', completed_at: '2026-11-19T14:57:02.000Z' }),
+      dep: node({ dependencies: ['cp'] }),
+    },
+    cycles: [cycle({
+      path: [
+        step('cp', '2026-11-19T14:00:00.000Z', '2026-11-19T14:57:02.000Z', 'completed'),
+        step('dep', '2026-11-19T17:51:21.000Z', null, null),
+      ],
+    })],
+    at: new Date('2026-11-19T18:00:00.000Z'),
+  }))
+
+  assert.equal(reading.nodeById.cp.gate, null, 'a dependent started after the delivery: the checkpoint no longer holds the line')
+})
+
+test('a dependent a cycle takes hold of after the delivery: the gate is closed by the wait alone', () => {
+  const reading = readProject(record({
+    nodes: {
+      cp: node({ mode: 'checkpoint', status: 'completed', completed_at: '2026-11-19T14:57:02.000Z' }),
+      dep: node({ dependencies: ['cp'] }),
+    },
+    cycles: [cycle({ holding: [{ id: 'dep', since: '2026-11-19T17:51:21.000Z' }] })],
+    at: new Date('2026-11-19T18:00:00.000Z'),
+  }))
+
+  assert.equal(reading.nodeById.cp.gate, null, 'a dependent a cycle holds after the delivery: the pickup proves the block was released')
+})
+
+test('a dependent picked up before the delivery proves nothing: the checkpoint gate stands', () => {
+  const reading = readProject(record({
+    nodes: {
+      cp: node({ mode: 'checkpoint', status: 'completed', completed_at: '2026-03-10T09:20:00.000Z' }),
+      dep: node({ dependencies: ['cp'] }),
+    },
+    cycles: [cycle({ path: [step('dep', '2026-03-10T08:00:00.000Z', null, null)] })],
+  }))
+
+  assert.equal(reading.nodeById.cp.gate.kind, 'checkpoint', 'a pickup that cannot be after the delivery says nothing: the gate stands')
 })
 
 test('the cycle: what it holds, what steps it walked, who under it waits on a person', () => {

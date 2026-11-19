@@ -69,12 +69,14 @@ interface NodeFacts {
   readonly firstStep: StepReading | undefined
   /** The last step that came to rest, with its own verdict; absent when no step has come to rest. */
   readonly lastVerdict: StepReading | undefined
+  /** The earliest moment one of its dependents was picked up, from the whole batch's steps and holds; `null` when none has been. */
+  readonly dependentPickedUpAt: Date | null
   /** This node's dependencies that nobody in the batch has completed: the batch's one completed set decided them. */
   readonly openDependencies: readonly string[]
 }
 
-/** One node's facts before the batch-wide completed set is out. */
-type NodeSeed = Omit<NodeFacts, 'openDependencies'>
+/** One node's facts before the batch-wide ones are out: the completed set, and who waits on whom. */
+type NodeSeed = Omit<NodeFacts, 'openDependencies' | 'dependentPickedUpAt'>
 
 /**
  * @throws A TypeError when the input is not a moment: with an unspeakable moment, no word of the reading counts.
@@ -254,14 +256,50 @@ function readFacts(
 
   /* The batch's one completed set: every node reads its open dependencies off this, so the answer is the same for all of them and costs one walk. */
   const completed = new Set(seeds.filter((seed) => seed.state === 'completed').map((seed) => seed.id))
+  /* Who waits on whom, read off the nodes' own dependency lists: a dependency no node carries simply names nobody. */
+  const dependents = new Map<string, string[]>()
+  for (const [id, node] of Object.entries(source)) {
+    for (const dependency of node.dependencies ?? []) collect(dependents, dependency, id)
+  }
+  const seedById = new Map(seeds.map((seed) => [seed.id, seed]))
   return seeds.map((seed) => ({
     ...seed,
+    dependentPickedUpAt: pickedUpAtOf(seed.id, dependents, seedById),
     openDependencies: (seed.node.dependencies ?? []).filter((dependency) => !completed.has(dependency)),
   }))
 }
 
+/**
+ * When one of this node's dependents was first picked up: the earliest step started on any of
+ * them, or the earliest hold taken on any of them; `null` when none has been picked up.
+ *
+ * The moments arrive already cut by the moment of reading, so they are compared as given. A
+ * pickup moment is the record's own proof that the dependent's wait ended — see
+ * {@link gateOf}'s checkpoint branch.
+ */
+function pickedUpAtOf(
+  id: string,
+  dependents: ReadonlyMap<string, readonly string[]>,
+  seedById: ReadonlyMap<string, NodeSeed>,
+): Date | null {
+  let earliest: Date | null = null
+  for (const dependent of dependents.get(id) ?? []) {
+    const seed = seedById.get(dependent)
+    if (seed === undefined) continue
+    const moments: Date[] = []
+    if (seed.firstStep?.startedAt != null) moments.push(seed.firstStep.startedAt)
+    for (const item of seed.held) {
+      if (item.holding.since !== null) moments.push(item.holding.since)
+    }
+    for (const moment of moments) {
+      if (earliest === null || moment.getTime() < earliest.getTime()) earliest = moment
+    }
+  }
+  return earliest
+}
+
 function readNode(facts: NodeFacts, at: Date): NodeReading {
-  const { id, node, state, steps, held, firstStep, lastVerdict, openDependencies } = facts
+  const { id, node, state, steps, held, firstStep, lastVerdict, dependentPickedUpAt, openDependencies } = facts
   const completedAt = cutAt(toMoment(node.completed_at), at)
   const approvedAt = cutAt(toMoment(node.approved_at), at)
   const startedAt = firstStep?.startedAt ?? null
@@ -285,6 +323,7 @@ function readNode(facts: NodeFacts, at: Date): NodeReading {
     startedAt,
     completedAt,
     approvedAt,
+    dependentPickedUpAt,
   })
   /* The one moment this card speaks of: the gate's, else the pick-up, else the step's end, else the
    * delivery, else the creation. Judged here so a board prints it instead of picking again. */
@@ -332,6 +371,7 @@ function gateOf(facts: {
   readonly startedAt: Date | null
   readonly completedAt: Date | null
   readonly approvedAt: Date | null
+  readonly dependentPickedUpAt: Date | null
 }): GateReading | null {
   if (facts.state === 'shelved') {
     return { kind: 'shelved', since: facts.parkedSince }
@@ -339,8 +379,22 @@ function gateOf(facts: {
   if (facts.mode === 'manual' && facts.state !== 'completed') {
     return { kind: 'manual', since: facts.startedAt }
   }
-  /* A checkpoint's gate reads this node's own record only: delivered, and this delivery not approved. Where the line has walked since says nothing about it. */
-  if (facts.mode === 'checkpoint' && facts.state === 'completed' && !approvedDelivery(facts.completedAt, facts.approvedAt)) {
+  /* A checkpoint's gate closes once the line has walked past it: delivered, this delivery not
+   * approved, and no dependent picked up at or after the delivery. A dependent cannot start before
+   * its dependency was delivered, so its pickup is the record's own proof that the block was
+   * released. The engine writes `approved_at` only when a cycle goes out of service and back into
+   * service, so a checkpoint approved in conversation and carried out by `advance` leaves no
+   * approval on disk; the line's walk is what proves that delivery is through. */
+  const walkedPast =
+    facts.completedAt !== null &&
+    facts.dependentPickedUpAt !== null &&
+    facts.dependentPickedUpAt.getTime() >= facts.completedAt.getTime()
+  if (
+    facts.mode === 'checkpoint' &&
+    facts.state === 'completed' &&
+    !approvedDelivery(facts.completedAt, facts.approvedAt) &&
+    !walkedPast
+  ) {
     return { kind: 'checkpoint', since: facts.completedAt }
   }
   return null
