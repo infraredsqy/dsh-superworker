@@ -508,6 +508,31 @@ export function layoutLink(input: {
  * the widest count the cap can produce. */
 export const SPILL_W = 40
 
+/**
+ * Where a window that joined this beat came from, in stage pixels: the point it grows out of.
+ *
+ * The main window has no such point, and that is the whole asymmetry this states. It is the
+ * conversation this pane is about — the pipeline's own subject, already the frame the drawing stands
+ * in — so it was always there and has nowhere to arrive from; a source handed back for it would be an
+ * invented place, which is exactly the sliver in the stage's corner the reader saw. A child does have
+ * one: the dispatch row that opened it, which is a real row of the main conversation's own feed, so
+ * the window grows along the line that already ties it there.
+ *
+ * The source is the line's own leaving point ({@link layoutLink}), so the tie and the growth agree by
+ * construction: where a reader sees the line start is where the window came from. A child with no line
+ * — its dispatch row cut off the top, or an unanchored window — has no source either, and is simply
+ * drawn.
+ */
+export function layoutBirth(input: {
+  /** Whether this is the pane's main window: it never has a source. */
+  readonly main: boolean
+  /** The line to the window that is being drawn, when there is one. */
+  readonly link: OverviewLink | undefined
+}): { readonly x: number; readonly y: number } | undefined {
+  if (input.main || input.link === undefined) return undefined
+  return { x: input.link.fromX, y: input.link.fromY }
+}
+
 /** The badge's own height, and the ground it keeps between itself and the column's top. */
 export const SPILL_H = 12
 export const SPILL_GAP = 10

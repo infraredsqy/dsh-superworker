@@ -43,6 +43,7 @@ import {
   ROW_H,
   SPILL_GAP,
   SPILL_H,
+  layoutBirth,
   layoutLink,
   layoutMark,
   layoutOverview,
@@ -287,7 +288,40 @@ test('no anchor, no line: an absent row, a row off the drawn list, a row cut by 
   assert.equal(layoutLink({ ...base, rowIndex: 0, child: { ...child, left: p.main.left } }), undefined, 'a line ran backwards into the main window')
 })
 
-/* ---- the dot stands on the row it names, counted up from the pane's bottom -------------- */
+/* ---- a window's source: the main window has none, a child has its row --------------------- */
+
+/* The two windows are not the same kind of thing, and this is where that asymmetry is stated. The
+ * main window is the conversation this pane is about, so it was always here: a source for it would be
+ * a place invented for the occasion, and that invented place is the sliver in the stage's corner a
+ * reader saw a window fly in from. A child does have one — the dispatch row that opened it — and it
+ * is the line's own leaving point, so the tie and the growth cannot disagree. */
+
+test('the main window has no source at all: it was already the frame the drawing stands in', () => {
+  const p = place(STAGES[1], 5)
+  const child = p.children[0]
+  const link = layoutLink({ main: p.main, child, rowIndex: 0, rowCount: 6, gap: child.left - (p.main.left + p.main.width) })
+  assert.notEqual(link, undefined, 'the fixture drew no line to hand over')
+  /* Even handed a perfectly good line, the main window takes no source from it. */
+  assert.equal(layoutBirth({ main: true, link }), undefined, 'the main window was given somewhere to arrive from')
+  assert.equal(layoutBirth({ main: true, link: undefined }), undefined, 'the main window was given a source with no line')
+})
+
+test("a child's source is the line's own leaving point, so the tie and the growth agree", () => {
+  const p = place(STAGES[1], 5)
+  const child = p.children[0]
+  const link = layoutLink({ main: p.main, child, rowIndex: 2, rowCount: 6, gap: child.left - (p.main.left + p.main.width) })
+  assert.notEqual(link, undefined, 'the fixture drew no line to hand over')
+  const born = layoutBirth({ main: false, link })
+  assert.deepEqual(born, { x: link.fromX, y: link.fromY }, "the child's source is not where the line leaves the main window")
+  /* It is the main window's right edge, on the anchored row's middle — a place on the drawing, never
+     the stage's corner, which is where the old entrance started every window. */
+  assert.equal(born.x, p.main.left + p.main.width, "the child does not grow from the main window's own edge")
+  assert.ok(born.x > 0 && born.y > 0, 'the child grows from the stage origin')
+})
+
+test('no line, no source: an unanchored child is simply drawn, never grown from the corner', () => {
+  assert.equal(layoutBirth({ main: false, link: undefined }), undefined, 'a child with no row grew out of the stage corner')
+})
 
 /* The feed is bottom-justified inside the pane's foot. A window the stage cuts leaves a blank at the
  * top of the stack, and a reading counted down from the window's head drifts by exactly that blank.

@@ -85,6 +85,7 @@ import {
   ROW_H,
   SPILL_DOTS,
   layoutFault,
+  layoutBirth,
   layoutLink,
   layoutMark,
   layoutOverview,
@@ -102,6 +103,10 @@ import type { WordKey } from './locales/index.ts'
 /** How long the leave's fold runs, and a breath past it before the page loses the pane. The fold
  * itself lives in the sheet. */
 const LEAVE_SPAN_MS = 380
+
+/** How long the entrance runs. The mark is held for exactly this span: an entrance is a beat, and a
+ * window that kept the mark would replay its growth every time anything else redrew the stage. */
+const ENTER_SPAN_MS = 260
 
 /**
  * What one press on a window may do: the map's own two hands (`CardGo`), asked of a session instead
@@ -327,6 +332,8 @@ function WindowPane(props: {
   readonly main: boolean
   readonly leave: boolean
   readonly fresh: boolean
+  /** Where this window grows from when it has just joined, or nothing when it was already here. */
+  readonly born: { readonly x: number; readonly y: number } | undefined
   /** Where a press on this window goes; null when nothing on this machine may be pressed. */
   readonly go: WindowGo | null
 }): React.ReactElement {
@@ -394,10 +401,15 @@ function WindowPane(props: {
    * one at a person's gate, where the gate's own breath is already the mark. */
   const moving = !atGate && pane.settled !== true
   const ring = !props.main && moving ? layoutRing({ width: box.width }) : undefined
+  /* A window that just joined grows out of the point it came from: how far it must travel to stand
+   * where the geometry puts it, and how small it starts on the way. A child grows from the dispatch
+   * row that opened it; the main window and any unanchored child have no source and only fade. */
+  const born = props.born
   const cls = [
     'superworker-opane',
     props.main ? 'is-main' : 'is-child',
     props.leave ? 'is-leave' : '',
+    born === undefined ? '' : 'is-born',
     atGate ? 'is-wait' : '',
     broken ? 'is-broken' : '',
     target === null ? '' : 'is-go',
@@ -416,10 +428,18 @@ function WindowPane(props: {
         /* The fold's own numbers, read by the sheet's keyframes from wherever the pane stands: the
          * box it holds now, and the title line it folds down to when it goes. The keyframes are the
          * one place a pane's box may be animated — inline styles cannot be keyframed to, so the box
-         * hands its own values over as vars. */
+         * hands its own values over as vars. An entering window hands over its own way there in the
+         * same place: the shift from its source point, and the size it starts at. */
         '--superworker-pane-w': `${box.width}px`,
         '--superworker-pane-h': `${box.height}px`,
         '--superworker-pane-fold': `${head + foot + BOX_BORDER}px`,
+        ...(born === undefined
+          ? {}
+          : {
+            '--superworker-born-x': `${Math.round(born.x - box.left)}px`,
+            '--superworker-born-y': `${Math.round(born.y - box.top)}px`,
+            '--superworker-born-s': `${Math.min(0.28, 44 / Math.max(1, box.width))}`,
+          }),
       } as React.CSSProperties}
       {...pressable}
     >
@@ -560,9 +580,14 @@ export function OverviewPane(props: {
 
   /* Leave: the ids that vanished keep their last box for the leave's span, then the page loses them.
    * The comparison is the previous beat's ids against this one's, held in a ref: state is what the
-   * drawing reads, the ref is what the diff reads, and they are never asked to be the same thing. */
+   * drawing reads, the ref is what the diff reads, and they are never asked to be the same thing.
+   *
+   * The same diff says which windows joined, which is what an entrance is played for. The first
+   * drawing of the pane joins nothing: the pane appeared, its windows were always part of it. */
   const [leaving, setLeaving] = React.useState<ReadonlySet<string>>(new Set())
+  const [joined, setJoined] = React.useState<ReadonlySet<string>>(new Set())
   const timers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const enterTimers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const heldIds = React.useRef<ReadonlySet<string>>(currentIds)
   const heldMain = React.useRef<string | undefined>(mainId)
   React.useEffect(() => {
@@ -574,8 +599,36 @@ export function OverviewPane(props: {
     if (swappedNow) {
       for (const timer of timers.current.values()) clearTimeout(timer)
       timers.current.clear()
+      for (const timer of enterTimers.current.values()) clearTimeout(timer)
+      enterTimers.current.clear()
       setLeaving((held) => (held.size === 0 ? held : new Set()))
+      setJoined((held) => (held.size === 0 ? held : new Set()))
       return
+    }
+    /* The beat's arrivals hold their mark for the entrance's own span, then shed it. Without the
+     * span the mark would be dropped on the next render — the growth would be cancelled mid-frame by
+     * whatever redrew the stage, which is every pushed frame. */
+    const arrived = [...currentIds].filter((id) => !before.has(id))
+    if (arrived.length > 0) {
+      for (const id of arrived) {
+        const known = enterTimers.current.get(id)
+        if (known !== undefined) clearTimeout(known)
+        const timer = setTimeout(() => {
+          enterTimers.current.delete(id)
+          setJoined((held) => {
+            if (!held.has(id)) return held
+            const next = new Set(held)
+            next.delete(id)
+            return next
+          })
+        }, ENTER_SPAN_MS)
+        enterTimers.current.set(id, timer)
+      }
+      setJoined((held) => {
+        const next = new Set(held)
+        for (const id of arrived) next.add(id)
+        return next.size === held.size ? held : next
+      })
     }
     /* A window back before its span ran keeps standing: its leave is cancelled, not replayed. */
     for (const id of currentIds) {
@@ -613,6 +666,8 @@ export function OverviewPane(props: {
     () => () => {
       for (const timer of timers.current.values()) clearTimeout(timer)
       timers.current.clear()
+      for (const timer of enterTimers.current.values()) clearTimeout(timer)
+      enterTimers.current.clear()
     },
     [],
   )
@@ -691,6 +746,19 @@ export function OverviewPane(props: {
    * the reading draws is still running, so the first is the one moving. */
   const litId = reading.children[0]?.id
 
+  /* Which windows joined on this beat, and the point each grew from — the line's own leaving point,
+   * so the tie and the growth agree by construction. The main window is never one of them: it is the
+   * conversation this pane is about, so it was already there and has nowhere to arrive from. A child
+   * whose row is off the feed has no source either, and is simply drawn. */
+  const births = React.useMemo((): ReadonlyMap<string, { readonly x: number; readonly y: number }> => {
+    const out = new Map<string, { readonly x: number; readonly y: number }>()
+    for (const { id, link } of links) {
+      const born = layoutBirth({ main: false, link })
+      if (born !== undefined) out.set(id, born)
+    }
+    return out
+  }, [links])
+
   return (
     <div className="superworker-overview" ref={bodyRef}>
       {placement.railVisible ? (
@@ -736,6 +804,9 @@ export function OverviewPane(props: {
             main
             leave={leaving.has(reading.main.id)}
             fresh={freshIds.has(reading.main.id)}
+            /* The main window has no source: it is the conversation this pane is about, so it was
+             * already here. Its own appearance fades in; it never travels. */
+            born={undefined}
             go={props.go}
           />
         )}
@@ -751,6 +822,8 @@ export function OverviewPane(props: {
               main={false}
               leave={leaving.has(one.id)}
               fresh={freshIds.has(one.id)}
+              /* A child grows out of the row that dispatched it, and only on the beat it joined. */
+              born={joined.has(one.id) ? births.get(one.id) : undefined}
               go={props.go}
             />
           )
@@ -782,6 +855,7 @@ export function OverviewPane(props: {
               main={false}
               leave
               fresh={false}
+              born={undefined}
               go={props.go}
             />
           )

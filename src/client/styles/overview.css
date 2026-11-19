@@ -6,12 +6,12 @@
  * `overview-geom.ts`'s answer, written onto each box inline; the one row height arrives as
  * `--superworker-orow-h` on the field, the nameplate's probe as `--superworker-plate-out`, and the
  * feed's own insets, the verdict mark and the broken leg's one word as the numbers the pane writes
- * inline. What lives here is tier, ink and motion, all on the tokens. Three motions, each bound to
- * one fact, and three of them loop by themselves — the walking tie, the waiting border and the
- * small ring — and the tie and the ring state their own still form here, while the border and the
- * corner's fold lean on the global reduced-motion rule in `tokens.css`. The waiting border answers
- * one fact only: the window at a person's gate. Nothing plays a window in: it is drawn where the
- * geometry puts it, and only a leaving window's box moves.
+ * inline. What lives here is tier, ink and motion, all on the tokens. Four motions, each bound to one
+ * fact, and three of them loop by themselves — the walking tie, the waiting border and the small
+ * ring — and the tie and the ring state their own still form here, while the border and the corner's
+ * fold lean on the global reduced-motion rule in `tokens.css`. The waiting border answers one fact
+ * only: the window at a person's gate. A joining window travels only when it has a real source to
+ * travel from — a child's dispatch row — and the main window, which has none, only fades.
  */
 
 /* ---- The stage ------------------------------------------------------------ */
@@ -282,23 +282,63 @@
   touch-action: manipulation;
 }
 
-/* ---- The three motions ---------------------------------------------------- */
+/* ---- The four motions ----------------------------------------------------- */
 /* A window leaves by folding — down first, the rows collapsing into the title line, then sideways,
- * the sliver it left shrinking to nothing. That is the one motion a window's box makes, and it says
- * the one fact a box can say: this window is gone from the set.
+ * the sliver it left shrinking to nothing. That is the one motion a window's box makes on its way
+ * out, and it says the one fact a box can say: this window is gone from the set.
  *
- * Nothing plays a window in. A joining window is drawn at the box the geometry gives it and stays
- * there: an entrance would have to be played from a box the window never stood at — a width it never
- * had, a place it never was — and that invented first frame is what a reader saw as a window flying
- * out of the stage's corner. A window says what it says by standing, so it stands.
+ * A window joining is a different fact and takes a different road, because the two windows are not
+ * the same kind of thing. The main window is the conversation this pane is about: it is the
+ * pipeline's own subject, it was already the frame the drawing stands in, and it has nowhere to
+ * arrive from — so it only fades in, and its box never travels. A child does have a source: the
+ * dispatch row that opened it, a real row of that feed. It grows out of the line's own leaving point,
+ * from small to its box, so the reader sees it come from where it actually came from.
+ *
+ * That asymmetry is the whole correction. An entrance played for the main window had to invent a
+ * place for it — a zero-width sliver at the stage's corner — which is what a reader saw flying in.
+ * With the source stated per window, the child's growth is true and the main window's is nothing.
  *
  * A reflow is not a motion either. The boxes are the geometry's reading of one stage and one set of
  * rows; two consecutive readings of the same stage differ only because the content did, and the
  * drawing follows the numbers straight away. Spending travel between two boxes made a re-measure
  * (a workspace switching under the pane) look like the whole set sliding and shrinking at once.
  *
- * The leave's keyframes read the pane's own numbers as vars (`--superworker-pane-*`, written inline
- * beside the box), because a box that lives in inline styles cannot be keyframed any other way. */
+ * The keyframes read the pane's own numbers as vars (`--superworker-pane-*` for the fold, and
+ * `--superworker-born-*` for the entrance), because a box that lives in inline styles cannot be
+ * keyframed any other way. */
+
+/* Enter, for a window with no source — the main window, and a child whose dispatch row is off the
+ * feed. There is no place to come from, so nothing travels: it is simply there, being seen. */
+@keyframes superworker-opane-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* Enter, for a child: it grows out of its source point. The shift is the difference between where
+ * the line leaves the main window and where the child's own top-left corner ends up, so the first
+ * frame stands exactly on the row that dispatched it, and the last frame is the geometry's box with
+ * nothing applied. `both` is safe here only because the last keyframe is `transform: none` and
+ * `opacity: 1` — the resting values the pane would have anyway. */
+@keyframes superworker-opane-grown {
+  from {
+    opacity: 0;
+    transform: translate(var(--superworker-born-x, 0), var(--superworker-born-y, 0)) scale(var(--superworker-born-s, 0.3));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.superworker-page .superworker-opane.is-born {
+  animation: superworker-opane-in 0.18s ease backwards;
+  transform-origin: var(--superworker-born-x, 50%) var(--superworker-born-y, 50%);
+}
+.superworker-page .superworker-opane.is-child.is-born {
+  animation: superworker-opane-grown 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
 
 /* Leave — the set lost one: the rows fold up into the title line, then the sliver folds away
  * sideways. It clips while it goes (`overflow: hidden`), or the fold would spill the rows it is
@@ -655,8 +695,7 @@
 }
 /* Reduced motion: the ring stops and stays a dashed ring — the panel's own still form for work in
  * hand (the state mark's) — while the check, which never moved, is untouched. A leaving pane fades
- * where it stands instead of folding, and every window simply is: the drawing has no other travel
- * to spend, so nothing else here has a still form to state. */
+ * where it stands instead of folding, and a joining one is simply there: no growth, no travel. */
 @media (prefers-reduced-motion: reduce) {
   .superworker-page .superworker-oring {
     animation: none;
@@ -664,5 +703,9 @@
   }
   .superworker-page .superworker-opane.is-leave {
     animation: superworker-opane-out 0.22s ease both;
+  }
+  .superworker-page .superworker-opane.is-born,
+  .superworker-page .superworker-opane.is-child.is-born {
+    animation: superworker-opane-in 0.18s ease backwards;
   }
 }

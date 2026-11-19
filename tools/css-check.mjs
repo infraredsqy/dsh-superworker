@@ -263,11 +263,20 @@ for (const file of [...panelFiles, { path: THEME_SHEET, rules: themeRules }]) {
 const optional = new Set([...[...panelFiles].flatMap(file => [...read(file.path).matchAll(/var\(\s*(--[\w-]+)\s*,/g)].map(([, name]) => name))])
 /* Custom properties the client's TSX writes inline, so no sheet may declare a value for them:
  * the map's card box (`map.tsx`, from `map-layout.ts`'s `CARD_W` / `CARD_H`), and the overview
- * pane's own box (`overview.tsx`, from `overview-geom.ts` — the fold keyframes are the one reader,
- * and a pane that has not been given a box has no business folding). The sheet reads
- * them fallback-less on purpose — the inline style is the only writer, and a CSS-declared copy
+ * pane's own box (`overview.tsx`, from `overview-geom.ts` — the fold and the entrance are the one
+ * reader, and a pane that has not been given a box has no business folding or growing). The sheet
+ * reads them fallback-less on purpose — the inline style is the only writer, and a CSS-declared copy
  * could only drift. */
-const scriptWritten = new Set(['--card-w', '--card-h', '--superworker-pane-w', '--superworker-pane-h'])
+const scriptWritten = new Set([
+  '--card-w',
+  '--card-h',
+  '--superworker-pane-w',
+  '--superworker-pane-h',
+  '--superworker-pane-fold',
+  '--superworker-born-x',
+  '--superworker-born-y',
+  '--superworker-born-s',
+])
 for (const file of panelFiles) {
   for (const rule of file.rules) {
     for (const [property, value] of rule.declarations) {

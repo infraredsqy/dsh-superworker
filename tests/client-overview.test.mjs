@@ -7,9 +7,10 @@
  *
  * - the windows and their words: the node's own nameplate on the main window, running children
  *   only, a child that ended no window at all, and no session id printed anywhere;
- * - a window joining the set is simply drawn: it stands at the geometry's box and wears no entrance
- *   mark, and a set that is replaced whole (another workspace's record under the pane) leaves no
- *   pane behind to fold;
+ * - the two entrances, which are not the same fact: a child grows out of the dispatch row that opened
+ *   it (its box is the geometry's, its source point is that row), while the main window has no source
+ *   at all — it is the conversation the pane is about, so it never travels; and a set that is replaced
+ *   whole (another workspace's record under the pane) leaves no pane behind to fold;
  * - leave — a window leaving carries the mark, and after the leave's span the page has lost it;
  *   a child that ends is exactly that: the reading stops drawing it, and the animation takes it away;
  * - fresh row — the arrival's two readings carry the mark, on that row alone: a gained row even
@@ -221,11 +222,11 @@ test('the overview draws the reading: the node nameplate on the main window, run
   assert.ok(!main.className.includes('is-wait'), 'a main window whose newest row is a dispatch row breathes: the border answers the gate alone')
   assert.ok(!child.className.includes('is-wait'), 'a child whose newest row is a read breathes')
 
-  /* No entrance: a window joining is drawn at its box and said nothing more. An entrance would
-   * have to play from a box the window never stood at, and that invented first frame is what flew
-   * in from the stage's corner. */
-  assert.ok(!main.className.includes('is-enter'), 'the main window plays an entrance it was never given')
-  assert.ok(!child.className.includes('is-enter'), 'a joining child plays an entrance it was never given')
+  /* The first drawing of the pane joins nothing: the pane appeared, and its windows were always part
+   * of it. An entrance is played for a window that joined a set already standing — which is what the
+   * two dedicated cases below judge. */
+  assert.ok(!main.className.includes('is-born'), 'the main window plays an entrance on the pane\'s first drawing')
+  assert.ok(!child.className.includes('is-born'), 'a child plays an entrance on the pane\'s first drawing')
 
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
@@ -275,8 +276,13 @@ test('the field is the stage frame at the origin, and every pane stands at the g
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test('a window joins by being drawn: it stands at its box and wears no entrance mark', { skip: bundleSkip }, async () => {
+test('a joining child grows out of the dispatch row that opened it', { skip: bundleSkip }, async () => {
+  /* The two windows are not the same kind of thing, and their entrances say so. A child has a source:
+   * the row that dispatched it, a real row of the main conversation's feed. It grows out of the
+   * line's own leaving point, so the box it lands on is the geometry's and the point it starts from
+   * is the row's — never a corner of the stage invented for the occasion. */
   const service = fakeSessionsService()
+  service.set('m1', [...dispatchRun('c2', 'd2', 'the second job', 100), said('both of them are out.', 200)])
   let snap = snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])
   const mounted = await mountBuiltPanel({
     record: record(),
@@ -292,11 +298,51 @@ test('a window joins by being drawn: it stands at its box and wears no entrance 
   await mounted.rerender()
   const second = container(mounted).querySelector('[data-window="c2"]')
   assert.notEqual(second, null, 'the joining child did not become a window')
-  assert.ok(!second.className.includes('is-enter'), 'the joining child plays an entrance: it is drawn where it stands')
-  /* The box it takes on its first drawing is the geometry's, with no entrance to travel from. */
-  const placement = layoutOverview({ stage: { width: 1024, height: 720 }, mainRows: 2, childRows: [1, 0] })
-  assert.equal(second.style.width, `${placement.children[1].width}px`, 'the joining child is not at the width the geometry gives it')
-  assert.equal(second.style.height, `${placement.children[1].height}px`, 'the joining child is not at the height the geometry gives it')
+  assert.ok(second.className.includes('is-born'), 'the joining child plays no entrance at all')
+  /* The box it lands on is the geometry's, and the point it grows from is the dispatch row's: the
+   * two numbers the sheet is handed are the shift between them, so the first frame stands on the row
+   * that dispatched it. The expectation is laid out from the rows that were actually drawn, so the
+   * case pins "the box is the geometry's answer", not one arithmetic I did by hand. */
+  const rowsIn = (id) => container(mounted).querySelectorAll(`[data-window="${id}"] .superworker-orow`).length
+  const placement = layoutOverview({
+    stage: { width: 1024, height: 720 },
+    mainRows: rowsIn('m1'),
+    childRows: [rowsIn('c1'), rowsIn('c2')],
+  })
+  const box = placement.children[1]
+  assert.equal(second.style.width, `${box.width}px`, 'the joining child is not at the width the geometry gives it')
+  assert.equal(second.style.height, `${box.height}px`, 'the joining child is not at the height the geometry gives it')
+  assert.equal(second.style.left, `${box.left}px`, 'the joining child is not at the left the geometry gives it')
+  assert.equal(second.style.top, `${box.top}px`, 'the joining child is not at the top the geometry gives it')
+  const bornX = second.style.getPropertyValue('--superworker-born-x')
+  const bornY = second.style.getPropertyValue('--superworker-born-y')
+  assert.match(bornX, /^-?\d+px$/u, `the joining child grows from no source point in x: ${bornX}`)
+  assert.match(bornY, /^-?\d+px$/u, `the joining child grows from no source point in y: ${bornY}`)
+  /* It grows from the main window's right edge — where the line leaves — not from the stage corner. */
+  assert.equal(Number.parseInt(bornX, 10), placement.main.left + placement.main.width - box.left, 'the child grows from somewhere other than the row that dispatched it')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the main window never travels: it has no source to arrive from', { skip: bundleSkip }, async () => {
+  /* The main window is the conversation this pane is about — the pipeline's own subject, already the
+   * frame the drawing stands in. It was here; it has nowhere to fly in from. So it wears no birth
+   * point at all, which is the whole correction: an entrance invented for it is the sliver in the
+   * stage's corner the reader saw. */
+  const service = fakeSessionsService()
+  service.set('m1', [said('the conversation this panel is about.', 100)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([])),
+  })
+  await stageAt(mounted, 1024, 720)
+  const main = container(mounted).querySelector('[data-window="m1"]')
+  assert.notEqual(main, null, 'the main window is not drawn')
+  assert.ok(!main.className.includes('is-born'), 'the main window plays an entrance it has no source for')
+  assert.equal(main.style.getPropertyValue('--superworker-born-x'), '', 'the main window was handed a source point in x')
+  assert.equal(main.style.getPropertyValue('--superworker-born-y'), '', 'the main window was handed a source point in y')
+
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
