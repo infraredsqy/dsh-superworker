@@ -98,6 +98,40 @@ const record = () => ({
   '.superworker/meta/sessions/n0.json': json({ run: [{ session: 'm1', at: '2026-01-09T00:00:00.000Z' }] }),
 })
 
+/** The same record a beat before it speaks for itself: the conversation has ended and the record has
+ *  not settled its node yet — nothing delivered, nobody holding the cell, no gate. That beat is one
+ *  no reader can tell from a stop nothing was ever written down for. */
+const recordBeforeItSpeaks = () => ({
+  ...record(),
+  '.superworker/ideas.json': json({
+    nodes: {
+      n0: {
+        title: 'the driven node',
+        description: 'the piece the main conversation drives',
+        tags: [],
+        mode: 'auto',
+        status: 'todo',
+        created_at: '2026-01-08T00:00:00.000Z',
+        dependencies: [],
+      },
+    },
+  }),
+  '.superworker/state.json': json({
+    cycles: [
+      {
+        id: 'c0',
+        title: 'a line',
+        status: 'active',
+        tags: [],
+        created_at: '2026-01-08T00:00:00.000Z',
+        updated_at: '2026-01-09T00:00:00.000Z',
+        policies: {},
+        holding: [],
+        path: [{ node: 'n0', started_at: '2026-01-08T00:00:00.000Z' }],
+      },
+    ],
+  }),
+})
 
 /** The same record, with the node at a person's gate: delivered, and that delivery not yet approved. */
 const recordAtCheckpoint = () => ({
@@ -735,6 +769,36 @@ function fieldSettling(container) {
   const field = container.querySelector('.superworker-ofield')
   return field !== null && field.className.includes('is-settle')
 }
+
+test('a window stopped before the record spoke: its rows stay sharp, and no mark says what happened', { skip: bundleSkip }, async () => {
+  /* The reader's complaint: the rehearsal wrapped up and the last window wore no check. It was the
+   * beat between the conversation's last turn and the settle that follows it — stopped, delivered
+   * nothing yet — and the veil was drawn for the stop alone. A veiled window claims the frame has
+   * the answer; here the frame has nothing at all, so the rows are the only reading there is. */
+  const service = fakeSessionsService()
+  service.set('m1', [said('a word from the conversation being read.', 100)])
+  const snap = {
+    ids: ['m1'],
+    byId: { m1: { id: 'm1', running: false, displayTitle: 'the main conversation' } },
+  }
+  const mounted = await mountBuiltPanel({
+    record: recordBeforeItSpeaks(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  const main = container(mounted).querySelector('[data-window="m1"]')
+  assert.notEqual(main, null, 'the main window is not drawn')
+  const feed = main.querySelector('.superworker-ofeed')
+  assert.ok(!feed.className.includes('is-veiled'), 'a window with nothing said about it hid its rows behind the veil')
+  assert.equal(main.querySelectorAll('.superworker-orow').length, 1, 'the window lost its rows')
+  assert.equal(main.querySelector('.superworker-omark'), null, 'a window the record has said nothing about wears a mark')
+  assert.equal(main.className.includes('is-broken'), false, 'a quiet stop wears the break’s frame')
+  assert.equal(main.className.includes('is-wait'), false, 'a quiet stop breathes like a gate')
+  assert.equal(main.querySelector('.superworker-oring'), null, 'a stopped window turns a ring')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
 
 test('the main window whose session has stopped: veiled rows and the check, nothing else', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()

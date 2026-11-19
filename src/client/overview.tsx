@@ -413,7 +413,7 @@ function WindowPane(props: {
    * left a window that looked finished, veiled, with no mark on it at all. The gate is read off its
    * own fact rather than off `settled`, because a gate is a person being owed whether or not the
    * conversation behind it happens to be quiet. */
-  const veiled = atGate || pane.settled === true
+  const veiled = atGate || handed || broken
   /* The mark a window's cell carries: the check for work handed in, the pause for a word owed to a
    * person. Both take the band's middle, the same 44 square and the same pen, because they are one
    * verdict at two shapes — the reader who learned where the check stands finds the gate there too,
