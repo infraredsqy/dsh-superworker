@@ -163,6 +163,10 @@ function Entry(props: PanelArgs & { readonly useSessions?: unknown }): React.Rea
     React.createElement(SuperworkerPanel, {
       port: props.port,
       sessionId,
+      /* The seat's own word, when it gave one: a cell that stands in a conversation hands it over,
+       * and the panel's main window reads it ahead of the line. The picked-up fallback above is a
+       * workspace key, not an identity, and is never handed over as this. */
+      ownSession: props.sessionId,
       prefs: props.prefs,
       openSession: props.openSession,
       knownSessions,

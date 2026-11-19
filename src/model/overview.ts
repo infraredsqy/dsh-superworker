@@ -225,11 +225,13 @@ export interface OverviewWindow {
   /**
    * Whether this window stands at a person's gate: the caller named this session
    * as one whose node owes a person a word — a checkpoint (delivered, not
-   * approved) or a manual node nobody has started. That judgment is the record's
-   * own (`readProject`'s node gate); this module only carries the fact the
-   * caller hands over and never re-reads the record for it. Only the main window
-   * carries it, and the drawing reads it before anything else: a window at the
-   * gate is drawn as waiting, never as finished and never as broken.
+   * approved, and the line not yet walked past it) or a manual node nobody has
+   * started — **and** the conversation is at rest. A gate is a stop: a window
+   * still running is being worked, so it is waiting on nobody. That judgment is
+   * the record's own (`readProject`'s node gate); this module only carries the
+   * fact the caller hands over and never re-reads the record for it. Only the main
+   * window carries it, and the drawing reads it before anything else: a window at
+   * the gate is drawn as waiting, never as finished and never as broken.
    */
   readonly waiting?: boolean
 }
@@ -256,7 +258,7 @@ export interface OverviewLeg {
   readonly title: string | null
   /** How many rows its window would draw at this moment — the bar's own length, and no other reading. */
   readonly rows: number
-  /** Whether it stands at a person's gate: the bar's amber ink, the caller's own reading carried as it is. */
+  /** Whether it stands at a person's gate: the bar's amber ink, the caller's own reading carried as it is — worn only at rest, because a step still running is being worked and not waiting on anybody. */
   readonly waiting?: boolean
   /** Whether it owes work nobody is doing: the bar's break ink, carried the same way. */
   readonly alert?: boolean
@@ -337,11 +339,19 @@ export interface OverviewInput {
    */
   readonly pipelineSessions?: readonly unknown[] | undefined
   /**
-   * Which session this panel itself belongs to (DSH's own `sessionId` prop).
-   * It is the main window whenever the record names it — the reader's own
-   * conversation is the one they expect to see, running or not.
+   * Which conversation this panel **stands in**, when the seat says so — DSH's
+   * own `sessionId` for the cell the panel is mounted in. It is the main window
+   * whenever the record names it: the reader's own conversation is the one they
+   * expect to see, running or not.
+   *
+   * A seat that says nothing — the panel's own full page has no conversation of
+   * its own — leaves this absent, and the browser's currently-open conversation
+   * is **not** read in its place. A guess off `retainedBy.mainView` (or the
+   * list's head) is the browser's fact, not the line's: it names whichever tab
+   * the reader last had open, so a refresh would land the stage on an old step
+   * of the pipeline. The stage follows the line instead (see {@link mainIdOf}).
    */
-  readonly sessionId?: unknown
+  readonly ownSession?: unknown
   /**
    * The leg the reader picked on the node rail, by session id: the one conversation
    * the stage draws, whatever the fallback rule would have picked.
@@ -354,14 +364,16 @@ export interface OverviewInput {
   readonly shownSession?: unknown
   /**
    * The sessions whose node stands at a person's gate, both kinds: a
-   * **checkpoint** (delivered, and that delivery not approved yet) and a
-   * **manual** node nobody has started. The panel computes it off the record's
-   * own gate reading (`readProject`'s `node.gate.kind`) — the manual kind only
+   * **checkpoint** (delivered, that delivery not approved yet, and the line not
+   * yet walked past it) and a **manual** node nobody has started. The panel
+   * computes it off the record's own gate reading (`readProject`'s
+   * `node.gate.kind`) — the manual kind only
    * while nobody is working the node, since a gate is a person being owed, not a
    * conversation being quiet — and hands the session ids over; this module only
    * carries the fact, so the gate is never re-read and never invented here. The
-   * main window stands waiting when its session is one of these; absent means
-   * none is.
+   * main window stands waiting when its session is one of these **and its
+   * conversation is at rest** — a gate is a stop, and a window still running is
+   * being worked, not waiting. Absent means none is.
    */
   readonly waitingSessions?: readonly unknown[] | undefined
   /**
@@ -537,12 +549,17 @@ function latestOf(
  *
  * 1. the leg the reader picked on the rail, while the list still holds it — a
  *    person's pick outranks every reading here;
- * 2. the panel's own session, when the record names it: the reader's own
- *    conversation, running or not;
- * 3. else a session the record names that the list still calls running (the
+ * 2. the conversation the panel stands in, when the seat says which one it is:
+ *    the reader's own conversation, running or not. A seat that says nothing is
+ *    not stood in for — the browser's open conversation is no reading of the
+ *    line (see {@link OverviewInput.ownSession});
+ * 3. else the step the record holds: where the line stands right now, which is
+ *    the one reading that does not wait on the browser's liveness bit or its
+ *    last-moved moment;
+ * 4. else a session the record names that the list still calls running (the
  *    newest of them when several are);
- * 4. else the one the record names that moved last;
- * 5. else nothing — no window at all, rather than a conversation the pipeline
+ * 5. else the one the record names that moved last;
+ * 6. else nothing — no window at all, rather than a conversation the pipeline
  *    never mentioned.
  *
  * A named session the list does not hold is no window either, and it is never
@@ -556,19 +573,23 @@ function mainIdOf(
   input: OverviewInput,
   rows: Readonly<Record<string, OverviewSessionRow>>,
   order: readonly string[],
+  held: ReadonlySet<string>,
 ): string | undefined {
   /* The pick is asked of the same list as everything else: a leg that left the
      list is no pick, and the fallback answers instead of a stale id. */
   const shown = text(input.shownSession)
   if (shown !== undefined && rows[shown] !== undefined) return shown
   const named = pipelineOf(input)
-  const self = text(input.sessionId)
-  if (named === undefined) {
-    if (self !== undefined) return rows[self] === undefined ? undefined : self
-    return mainViewOf(rows)
-  }
-  if (self !== undefined && named.has(self)) return rows[self] === undefined ? undefined : self
+  if (named === undefined) return mainViewOf(rows)
   const candidates = [...named].filter((id) => rows[id] !== undefined)
+  const self = text(input.ownSession)
+  if (self !== undefined && named.has(self)) return rows[self] === undefined ? undefined : self
+  /* Where the line stands is a record fact, read before the browser's own: a step a
+     cycle holds right now is the pipeline's work this moment, and the one a reader
+     asking "what is going on" expects. The list's running bit says the same thing
+     one beat later, and its last-moved moment may name a step the line has left. */
+  const working = candidates.filter((id) => held.has(id))
+  if (working.length > 0) return latestOf(working, rows, order)
   const running = candidates.filter((id) => rows[id]?.running === true)
   if (running.length > 0) return latestOf(running, rows, order)
   return candidates.length > 0 ? latestOf(candidates, rows, order) : undefined
@@ -1115,13 +1136,14 @@ function factsOf(input: {
  *
  * The window's state facts are read here and nowhere else ({@link factsOf}):
  * `settled` is the list's running bit not being true, `waiting` is the caller
- * naming this session as one whose node owes a person a word, `delivered` is the
- * caller naming it as a node the record calls completed, and `alert` is a debt
- * nobody is working — the caller's stranded reading, read only while the line
- * stands still (no leg of the pipeline running) and only off a last turn that can
- * be read. The check belongs to `delivered` alone: a conversation going quiet is
- * not a piece of work handed in, and a checkpoint's silence is why the gate is
- * drawn first.
+ * naming this session as one whose node owes a person a word **and the window
+ * being at rest** — a gate is a stop, and a conversation still running is being
+ * worked — `delivered` is the caller naming it as a node the record calls
+ * completed, and `alert` is a debt nobody is working — the caller's stranded
+ * reading, read only while the line stands still (no leg of the pipeline running)
+ * and only off a last turn that can be read. The check belongs to `delivered`
+ * alone: a conversation going quiet is not a piece of work handed in, and a
+ * checkpoint's silence is why the gate is drawn first.
  *
  * While a window's step streams, its two tail rows — each the newest slice of
  * one live buffer, read off the transient chunks the caller hands over — hang
@@ -1139,7 +1161,8 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const rows = rowsOf(input.sessions)
   const order = listedIds(input.sessions)
   const named = pipelineOf(input)
-  const mainId = mainIdOf(input, rows, order)
+  const held = namedSet(input.heldSessions)
+  const mainId = mainIdOf(input, rows, order, held)
   const nodeFor = (id: string): SuperworkerNode | undefined =>
     input.nodeOf === undefined ? undefined : input.nodes?.[input.nodeOf[id] ?? '']
   const main = mainId === undefined ? undefined : rows[mainId]
@@ -1148,7 +1171,11 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const delivered = namedSet(input.deliveredSessions)
   const stranded = namedSet(input.strandedNodes)
   const undelivered = namedSet(input.undeliveredSessions)
-  const held = namedSet(input.heldSessions)
+  /* A person's gate is a **stop**, so the caller's word is read with the one fact the
+     caller cannot see: a window whose conversation is still running is being worked, and
+     it is not waiting on anybody. A pause drawn over a live stream says what the stream
+     contradicts, and a rail bar lit for it says the same thing twice. */
+  const atGate = (id: string): boolean => waiting.has(id) && rows[id]?.running !== true
   /* The rows the list knows without listing: DSH keeps a session's dispatched subagents in its own
      `byId` map — each carrying the `parentId` of the session that dispatched it — while the ordered
      list holds top-level sessions only. A row with no parent link is a top-level session and is drawn
@@ -1243,21 +1270,22 @@ export function readOverview(input: OverviewInput): OverviewReading {
      window's own leg among them — the bar that stands lit — whenever the main is a step of the line.
      Three kinds are offered: a step still running, a step that stopped owing work, and a step **at a
      person's gate** — a finished checkpoint still owes a person a word, and a rail that hid it would
-     be hiding the one thing the record asks the reader to do. The pick can land on a leg that stopped,
-     and then that leg is the main window: the rail is how a reader asks to read it, so it is offered
-     here like any other. */
+     be hiding the one thing the record asks the reader to do. A gate is a stop, though, so only a leg
+     at rest is offered for it: a step still running is being worked. The pick can land on a leg that
+     stopped, and then that leg is the main window: the rail is how a reader asks to read it, so it is
+     offered here like any other. */
   const legIds: string[] = []
   /* The step this page itself belongs to is always offered while the record names it — the reader's
-     way home. A switch takes the stage off the panel's own conversation, and every other step that
-     owes nobody a look has left the rail by then; without this the pick would be a one-way door into
-     a finished leg, with nothing to press to come back. */
-  const self = text(input.sessionId)
+     way home, when the seat says which conversation the panel stands in. A switch takes the stage off
+     that conversation, and every other step that owes nobody a look has left the rail by then; without
+     this the pick would be a one-way door into a finished leg, with nothing to press to come back. */
+  const self = text(input.ownSession)
   for (const id of rowIds) {
     const offered = id === mainId
       ? isLeg(id)
       : movingLegs.includes(id)
         || standing.includes(id)
-        || waiting.has(id)
+        || atGate(id)
         || (self !== undefined && id === self && isLeg(id))
     if (offered && !legIds.includes(id)) legIds.push(id)
   }
@@ -1268,7 +1296,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
       ...windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity, input.live?.[mainId], at),
       ...factsOf({
         settled: main.running !== true,
-        gated: waiting.has(mainId),
+        gated: atGate(mainId),
         delivered: delivered.has(mainId),
         owed: mainWindowDebt,
         moving,
@@ -1300,7 +1328,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
     const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id], at)
     if (window.title === null && window.rows.length === 0) continue
     const ending = endingOf(input.events?.[id])
-    const gated = waiting.has(id)
+    const gated = atGate(id)
     /* The proof is whichever witness spoke: a last turn the conversation did not close itself, or —
        when the log carried no word at all — the caller's stranded judgment (the claim is on disk and
        the session is gone). A turn the conversation closed itself is no proof, whoever still holds
@@ -1321,12 +1349,12 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const legs = legIds.map((id): OverviewLeg => {
     const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id], at)
     const leg: OverviewLeg = { id, title: window.title, rows: window.rows.length }
-    const gated = waiting.has(id)
+    const gated = atGate(id)
     /* A bar says the two verdicts a step can stand in and nothing else: a person's gate in the warn
        ink, a debt nobody is working in the break's. Both are read the way the window's own frame reads
        them — one ink, one fact — so a leg that stopped is no break while another leg of the line still
        runs: the line has not stalled, and the bar and the window could never disagree. A leg still
-       moving wears neither. */
+       moving wears neither, and a gate is only ever worn at rest: a running step is being worked. */
     if (gated) return { ...leg, waiting: true }
     if (rows[id]?.running === true || moving) return leg
     const ending = endingOf(input.events?.[id])

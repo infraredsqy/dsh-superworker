@@ -331,7 +331,7 @@ function factScene({ running = false, ending, waiting, delivered, stranded, held
   return readOverview({
     sessions: snapshot(ids, byId),
     pipelineSessions: pipeline,
-    sessionId: MAIN,
+    ownSession: MAIN,
     nodeOf: { [MAIN]: OWED_NODE },
     ...(ending === undefined ? {} : { events: { [MAIN]: [ending] } }),
     ...(waiting === undefined ? {} : { waitingSessions: waiting }),
@@ -583,7 +583,7 @@ test('a subagent that was cut keeps a seat while its leg owes the work', () => {
   const reading = readOverview({
     sessions: snapshot([MAIN], byId),
     pipelineSessions: [MAIN],
-    sessionId: MAIN,
+    ownSession: MAIN,
     nodeOf: { [MAIN]: OWED_NODE },
     heldSessions: [MAIN],
     events: {
@@ -600,7 +600,7 @@ test('a subagent that was cut keeps a seat while its leg owes the work', () => {
   const alive = readOverview({
     sessions: snapshot([MAIN], { ...byId, 'sub-1': { ...byId['sub-1'], running: true } }),
     pipelineSessions: [MAIN],
-    sessionId: MAIN,
+    ownSession: MAIN,
     nodeOf: { [MAIN]: OWED_NODE },
     heldSessions: [MAIN],
     events: { [MAIN]: [said(1, undefined, '派它去做')], 'sub-1': [said(2, undefined, '正在写')] },
@@ -612,7 +612,7 @@ test('a subagent that was cut keeps a seat while its leg owes the work', () => {
   const done = readOverview({
     sessions: snapshot([MAIN], byId),
     pipelineSessions: [MAIN],
-    sessionId: MAIN,
+    ownSession: MAIN,
     nodeOf: { [MAIN]: OWED_NODE },
     heldSessions: [MAIN],
     events: {
@@ -633,7 +633,7 @@ test('another workspace\'s conversation is no step of this line: it supersedes n
       elsewhere: { id: 'elsewhere', running: true, displayTitle: 'some other conversation', retainedBy: {} },
     }),
     pipelineSessions: [MAIN],
-    sessionId: MAIN,
+    ownSession: MAIN,
     nodeOf: { 'c-1': OWED_NODE },
     undeliveredSessions: ['c-1'],
     strandedNodes: [OWED_NODE],
@@ -778,6 +778,12 @@ test('a snapshot nothing can be read off: an empty reading, and no throw', () =>
  * sessions); a session it never named belongs to something else, however open
  * it is. DSH's `retainedBy.mainView` marker is a browser-side "who holds this
  * open" count and decides nothing while the record side is in hand.
+ *
+ * A seat that says which conversation the panel stands in is a different fact,
+ * and it arrives as `ownSession`: that one is read ahead of the line, because it
+ * is the reader's own conversation. The browser's currently-open session is not
+ * that fact — a guess off `mainView` or the list's head names whichever tab the
+ * reader last had open, so a refresh would land the stage on an old step.
  */
 
 /** A session the record names: its own liveness and last move, read off the list. */
@@ -798,7 +804,7 @@ test('the stale conversation DSH marks as its main view is not drawn: the record
       'c-ours': childRow('c-ours', ours),
     }),
     pipelineSessions: [ours],
-    sessionId: 'session-elsewhere',
+    ownSession: 'session-elsewhere',
     events: {
       [stale]: [said(1, undefined, '一条旧会话的行')],
       [ours]: [said(2, undefined, '这条管道自己的行')],
@@ -812,7 +818,7 @@ test('the stale conversation DSH marks as its main view is not drawn: the record
   assert.equal(reading.hiddenChildren, 0, 'the stale conversation was counted as a folded child')
 })
 
-test("the panel's own session wins among the record-named ones, running or not", () => {
+test("the conversation the seat says the panel stands in wins among the record-named ones, running or not", () => {
   const mine = 'session-mine'
   const other = 'session-other'
   const reading = readOverview({
@@ -821,7 +827,7 @@ test("the panel's own session wins among the record-named ones, running or not",
       [mine]: pipelineRow(mine, { running: false, updatedAt: '2026-11-14T19:33:48.000Z' }),
     }),
     pipelineSessions: [other, mine],
-    sessionId: mine,
+    ownSession: mine,
     events: { [mine]: [said(1, undefined, '我自己的最后一句')], [other]: [said(2, undefined, '另一个会话的行')] },
   })
   assert.equal(reading.main.id, mine, `the main window is ${reading.main.id}, not the panel's own session`)
@@ -837,7 +843,7 @@ test('several historical pipeline sessions and one still running: the running on
   const reading = readOverview({
     sessions: snapshot([...historical, running], byId),
     pipelineSessions: [...historical, running],
-    sessionId: 'session-subagent',
+    ownSession: 'session-subagent',
   })
   assert.equal(reading.main.id, running, `the main window is ${reading.main.id}, not the one still running`)
 })
@@ -855,12 +861,30 @@ test('none of the record-named sessions is running: the one that moved last is d
   assert.equal(reading.main.id, newer, `the main window is ${reading.main.id}, not the one that moved last`)
 })
 
+test('the stage lands where the line stands: the step a cycle holds, whatever the list moved last', () => {
+  /* The refresh a reader sees: the browser hands over a step whose row moved last, while the record
+   * says another one is held right now. The held step is the line's work this moment, so that is the
+   * conversation the stage draws; the list's running bit and last-moved moment answer one beat later,
+   * or name a step the line has already left. */
+  const held = 'session-held'
+  const moved = 'session-moved'
+  const reading = readOverview({
+    sessions: snapshot([moved, held], {
+      [moved]: pipelineRow(moved, { running: false, updatedAt: '2026-11-15T20:00:00.000Z' }),
+      [held]: pipelineRow(held, { running: false, updatedAt: '2026-11-14T19:33:48.000Z' }),
+    }),
+    pipelineSessions: [moved, held],
+    heldSessions: [held],
+  })
+  assert.equal(reading.main.id, held, `the stage is ${reading.main.id}, not the step the record holds`)
+})
+
 test('a record-named session the list does not hold draws nothing: the stale main view is no stand-in', () => {
   const stale = 'session-old'
   const reading = readOverview({
     sessions: snapshot([stale, 'c-old'], { [stale]: mainRow(stale), 'c-old': childRow('c-old', stale) }),
     pipelineSessions: ['session-not-on-this-machine'],
-    sessionId: 'session-not-on-this-machine',
+    ownSession: 'session-not-on-this-machine',
   })
   assert.equal(reading.main, null, 'a window was drawn for a session the list does not hold')
   assert.deepEqual(reading.children, [], 'children were drawn off a session the list does not hold')
@@ -874,7 +898,7 @@ test('the record names no session at all: no window, rather than an unrelated co
       'c-old': childRow('c-old', stale),
     }),
     pipelineSessions: [],
-    sessionId: 'session-subagent',
+    ownSession: 'session-subagent',
     events: { [stale]: [said(1, undefined, '不该出现的行')] },
   })
   assert.deepEqual(reading, { main: null, children: [], legs: [], hiddenChildren: 0 })
@@ -891,7 +915,7 @@ test('another conversation in the same workspace, and its children, are never dr
       'c-stranger': childRow('c-stranger', stranger),
     }),
     pipelineSessions: [ours],
-    sessionId: 'session-elsewhere',
+    ownSession: 'session-elsewhere',
     events: {
       'c-stranger': [said(1, undefined, '别人的子会话的行')],
       c1: [said(2, undefined, '我的子会话的行')],
@@ -914,7 +938,7 @@ test("the main window's anchors are read off its own log, never the conversation
       'c-ours': childRow('c-ours', ours),
     }),
     pipelineSessions: [ours],
-    sessionId: 'session-elsewhere',
+    ownSession: 'session-elsewhere',
     events: {
       /* Both conversations dispatched, each with its own call id. */
       [stale]: [
@@ -967,7 +991,7 @@ test('the leg the reader picked is the stage, ahead of the panel\'s own conversa
       [slow]: pipelineRow(slow, { running: true, updatedAt: '2026-11-17T06:20:41.000Z' }),
     }),
     pipelineSessions: [conductor, fast, slow],
-    sessionId: conductor,
+    ownSession: conductor,
     shownSession: slow,
     nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
     nodes: {
@@ -992,7 +1016,7 @@ test('a pick the list no longer holds is no pick: the fallback answers', () => {
       [fast]: pipelineRow(fast, { running: true, updatedAt: '2026-11-17T06:20:40.000Z' }),
     }),
     pipelineSessions: [conductor, fast],
-    sessionId: conductor,
+    ownSession: conductor,
     /* A leg that just left its list, or an id picked in another workspace: neither is this stage. */
     shownSession: 'session-gone-leg',
     nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast' },
@@ -1019,7 +1043,7 @@ test('the panel\'s own step keeps its bar while the reader stands on another one
       [done]: pipelineRow(done, { updatedAt: '2026-11-17T06:20:40.000Z' }),
     }),
     pipelineSessions: [conductor, done],
-    sessionId: conductor,
+    ownSession: conductor,
     shownSession: done,
     nodeOf: { [conductor]: 'n-conductor', [done]: 'n-done' },
     nodes: {
@@ -1061,7 +1085,7 @@ test('two record-named legs still running are two legs on the rail, and one stag
       [slow]: pipelineRow(slow, { running: true, parentId: conductor, updatedAt: '2026-11-17T06:20:41.000Z' }),
     }),
     pipelineSessions: [conductor, fast, slow],
-    sessionId: conductor,
+    ownSession: conductor,
     nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
     nodes: {
       'n-conductor': { title: '场记：开场记录', mode: 'auto' },
@@ -1107,7 +1131,7 @@ test('a record-named leg the list stopped is a leg while the record still owes i
       [slow]: pipelineRow(slow, { running: true, parentId: conductor, updatedAt: '2026-11-17T06:20:41.000Z' }),
     }),
     pipelineSessions: [conductor, fast, slow],
-    sessionId: slow,
+    ownSession: slow,
     nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
     nodes: {
       'n-conductor': { title: '场记：开场记录', mode: 'auto' },
@@ -1136,7 +1160,7 @@ test('a record-named leg the list stopped is a leg while the record still owes i
       [slow]: pipelineRow(slow, { updatedAt: '2026-11-17T06:20:41.000Z' }),
     }),
     pipelineSessions: [conductor, fast, slow],
-    sessionId: slow,
+    ownSession: slow,
     nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
     nodes: {
       'n-conductor': { title: '场记：开场记录', mode: 'auto' },
@@ -1167,7 +1191,7 @@ test('a step at a person\'s gate keeps its bar while its session is done: the ga
       [gated]: pipelineRow(gated, { updatedAt: '2026-11-17T06:30:00.000Z' }),
     }),
     pipelineSessions: [conductor, gated],
-    sessionId: conductor,
+    ownSession: conductor,
     nodeOf: { [conductor]: 'n-conductor', [gated]: 'n-gated' },
     nodes: {
       'n-conductor': { title: '场记：开场记录', mode: 'auto' },
@@ -1195,7 +1219,7 @@ test('a leg whose conversation began later supersedes the stopped one: only the 
       [next]: pipelineRow(next, { running: true, updatedAt: '2026-11-17T06:20:41.000Z' }),
     }),
     pipelineSessions: [conductor, old, next],
-    sessionId: conductor,
+    ownSession: conductor,
     nodeOf: { [old]: 'n-old', [next]: 'n-next' },
     nodes: { 'n-old': { title: '旧的一格', mode: 'auto' }, 'n-next': { title: '新的一格', mode: 'auto' } },
     undeliveredSessions: [old, next],

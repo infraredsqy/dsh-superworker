@@ -51,6 +51,12 @@ export interface PanelProps {
   readonly port: PanelPort
   /** Which workspace to read, by the session it belongs to; without it nothing can be drawn. */
   readonly sessionId?: string | undefined
+  /**
+   * The conversation the seat says this panel stands in, when it says one: the overview's main
+   * window reads it ahead of the line. Absent on this panel's own full page, which has no
+   * conversation of its own — and the browser's open conversation is not read in its place.
+   */
+  readonly ownSession?: string | undefined
   /** Which settings document holds the panel's own preferences. Factory defaults apply when absent. */
   readonly prefs?: PrefsSource | undefined
   /** Where card clicks go: DSH's navigation gateway. Cards are inert without it. */
@@ -415,16 +421,16 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
    * log, and the streaming step's live tails from its transient chunks — and which nameplate
    * material from the record. Which conversation is the main window is decided by the pipeline's
    * own record: the sessions its node notes name are the only ones this pane may draw, this
-   * screen's own pick leads them, and this panel's own session wins among the rest. DSH's
-   * `retainedBy.mainView` is deliberately not trusted here — it marks whichever conversation the
-   * browser holds open, and an unrelated old one carrying it is exactly how a foreign conversation
-   * got drawn. The rows ride a capacity — what the tallest feed could ever stand; whatever a
-   * smaller box cannot show is the pane's fade, not a scrollbar. */
+   * screen's own pick leads them, then the conversation the seat says the panel stands in, then
+   * where the line stands. DSH's `retainedBy.mainView` is deliberately not trusted here — it marks
+   * whichever conversation the browser holds open, and an unrelated old one carrying it is exactly
+   * how a foreign conversation got drawn. The rows ride a capacity — what the tallest feed could
+   * ever stand; whatever a smaller box cannot show is the pane's fade, not a scrollbar. */
   const overview = React.useMemo((): OverviewReading | null => {
     if (reading === null) return null
     return readOverview({
       sessions: (props.sessions ?? {}) as OverviewSnapshot,
-      sessionId,
+      ownSession: props.ownSession,
       shownSession: pickedLeg ?? undefined,
       pipelineSessions: Object.values(notes),
       events,
@@ -441,7 +447,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
        * that stopped is measured to its own last word instead, so nothing here keeps counting. */
       at: at.getTime(),
     })
-  }, [reading, events, live, nodeOf, props.sessions, sessionId, pickedLeg, notes, waitingSessions, deliveredSessions, strandedNodes, undeliveredSessions, heldSessions, at])
+  }, [reading, events, live, nodeOf, props.sessions, props.ownSession, pickedLeg, notes, waitingSessions, deliveredSessions, strandedNodes, undeliveredSessions, heldSessions, at])
 
   /* A pick names a step still on the table. Once that step has left the rail — delivered, or taken
    * over by a later step — the pick is spent, and the stage keeps the reading's own choice rather

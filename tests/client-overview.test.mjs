@@ -17,12 +17,15 @@
  *   when its text repeats the previous newest (growth), and a swapped newest at a steady count
  *   (the cut);
  * - breathing — the person gate's alone: the main window at a checkpoint wears it, while a window
- *   whose newest row is a dispatch row keeps its ring and draws no border;
+ *   whose newest row is a dispatch row keeps its ring and draws no border; and a gate is a **stop**,
+ *   so the checkpoint a person is working through draws as it runs — no pause over a live stream;
  * - the main window's three states, one fact each: running draws as it runs; not running under no
  *   gate is finished — rows in place under the veil and the check; at a person's gate (a checkpoint
  *   the record's own gate reading names) it breathes amber over its veiled rows, under the pause
  *   mark — the check's own square, two bars instead of one stroke, so the gate is never read as
  *   "handed in" nor as the turning ring beside it;
+ * - where the stage lands: the line's held step, then the one still running — never the conversation
+ *   a browser tab left open, so a refresh mid-run does not put an old step back on the stage;
  * - a running child turns the small ring, and wears neither veil nor check.
  * - the press — a window opens the conversation it stands for: the main window its own, a child its
  *   own, and a tap a touch can make anywhere on the window, the verdict mark over it included; a
@@ -753,6 +756,32 @@ test('the main window still running draws as it runs: no veil, no check, no gate
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
+test('a checkpoint the person is working through is no gate: a running window draws as it runs', { skip: bundleSkip }, async () => {
+  /* The record still calls the checkpoint a delivery owing a person a word (no `approved_at` was
+   * ever written), and the conversation is running again — the person answered, and the step is being
+   * worked. A pause over the live stream would say the one thing the stream contradicts, and the rail
+   * would light the gate's ink for a step that is running. */
+  const service = fakeSessionsService()
+  service.set('m1', [said('the person said go; working through the checkpoint.', 100)])
+  const mounted = await mountBuiltPanel({
+    record: recordAtCheckpoint(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([])),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  const main = container.querySelector('[data-window="m1"]')
+  assert.notEqual(main, null, 'the main window is not drawn')
+  assert.equal(main.className.includes('is-wait'), false, 'a running conversation was drawn at a gate')
+  assert.equal(main.querySelector('.superworker-omark'), null, 'the pause stands over a running conversation')
+  assert.ok(!main.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'a running conversation hid its rows behind a gate veil')
+  assert.notEqual(main.querySelector('.superworker-oring'), null, 'the running conversation turns no ring')
+  assert.equal(container.querySelectorAll('.superworker-orail button.is-need').length, 0, 'the rail lit the gate ink for a step being worked')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
 test('a running child turns the ring, and wears neither the veil nor a check', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
   service.set('m1', [said('start.', 100)])
@@ -1371,6 +1400,38 @@ test('the built panel draws the conversation the record names, not the one DSH h
   assert.equal(main.querySelectorAll('.superworker-orow').length, 1, 'the main window does not draw its one row')
   assert.ok((container.textContent ?? '').includes('this pipeline own words.'), "the main window's row is not its own conversation's")
   assert.ok(!(container.textContent ?? '').includes('an unrelated old conversation.'), "another conversation's rows are on the page")
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a refresh lands the stage where the line stands: the held step, not the conversation the browser kept', { skip: bundleSkip }, async () => {
+  /* The reader reloads the panel's page mid-run: the browser's snapshot still marks the *delivered*
+   * step as its main view (that is the tab the reader last had open), its row moved last, and the
+   * list's running bit is one beat behind. The record says otherwise — a cycle holds the second step
+   * — so that is the line's work, and it is the conversation the stage draws. The delivered step owes
+   * nobody a look: it leaves the rail with its conversation. */
+  const service = fakeSessionsService()
+  service.set('m1', [said('the delivered step.', 100)])
+  service.set('c1', [read('b.ts', 200)])
+  const mounted = await mountBuiltPanel({
+    record: recordWithARunningLeg(),
+    sessionsService: service,
+    useSessions: (select) => select({
+      ids: ['m1', 'c1'],
+      byId: {
+        m1: { id: 'm1', running: false, retainedBy: { mainView: 1 }, updatedAt: '2026-11-20T00:00:00.000Z', displayTitle: 'the delivered step' },
+        c1: { id: 'c1', running: false, parentId: 'm1', updatedAt: '2026-11-19T00:00:00.000Z', displayTitle: 'the step the line holds' },
+      },
+    }),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  const main = container.querySelector('[data-window="c1"]')
+  assert.notEqual(main, null, 'the stage drew the delivered step the browser kept')
+  assert.ok(main.className.includes('is-main'), 'the held step was drawn as a child')
+  assert.equal(container.querySelector('[data-window="m1"]'), null, 'the delivered step stayed on the stage')
+  assert.equal(container.querySelectorAll('.superworker-orail button.is-need').length, 0, 'the rail kept a step the line has left')
 
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
