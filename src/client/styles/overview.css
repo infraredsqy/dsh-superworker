@@ -218,20 +218,40 @@
 }
 
 /* ---- The node rail -------------------------------------------------------- */
-/* One bar per running child, in the reading's order; the first is the lit one. The warn ink is the
- * person gate's: the bar of a window standing at the gate wears it. A bar stands for a child, and the
- * gate is the main window's reading, so no bar lights today — the rule states the ink's one meaning
- * rather than inventing a second one for a child that is merely waiting for an answer. The lane the
- * bars keep is the geometry's (`RAIL_LANE`); the bars only fill it. */
+/* One bar per step of the line still on the table, in the reading's order; the one the stage is
+ * drawing is the lit one. The rail is a switch, never an index: a press on a bar moves the stage to
+ * that step, so each bar is its own button. A bar carries no word — the nameplate on the stage names
+ * the step being read — and the button is the bar's own hit area, which the 2px rule could never be
+ * on its own: the padding is what a finger lands on, and the ground between two bars stays the 9px
+ * the design keeps (2px rule + 8px padding + 1px gap). The warn ink is the person gate's, the break's
+ * ink is work owed with nobody on it, and the ink of the lit bar is simply ink: one fact per ink. The
+ * lane the bars keep is the geometry's (`RAIL_LANE`); the bars only fill it. */
 .superworker-page .superworker-orail {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 1px;
   align-items: flex-start;
   padding: 10px 0;
+}
+.superworker-page .superworker-orail button {
+  display: block;
+  border: 0;
+  margin: 0;
+  padding: 4px 0;
+  background: none;
+  cursor: pointer;
+}
+.superworker-page .superworker-orail button:disabled {
+  cursor: default;
+}
+/* The page's own focus ring, the one every bare control on this panel wears: the theme draws the
+ * outline, this only keeps it inside the button's box. */
+.superworker-page .superworker-orail button:focus-visible {
+  outline-offset: -2px;
+  border-radius: var(--dsw-radius-sm);
 }
 .superworker-page .superworker-orail b {
   display: block;
@@ -240,11 +260,14 @@
   corner-shape: round;
   background: color-mix(in srgb, var(--superworker-ink-1) 26%, transparent);
 }
-.superworker-page .superworker-orail b.is-on {
+.superworker-page .superworker-orail button.is-on b {
   background: var(--superworker-ink-1);
 }
-.superworker-page .superworker-orail b.is-need {
+.superworker-page .superworker-orail button.is-need b {
   background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 70%, transparent);
+}
+.superworker-page .superworker-orail button.is-broken b {
+  background: var(--dsw-alias-state-error-primary);
 }
 
 /* ---- A window ------------------------------------------------------------- */
@@ -374,6 +397,15 @@
   to {
     opacity: 0;
   }
+}
+
+/* The room closing up after a fold. The windows stand where the geometry put them and take a new
+ * reading at once — except in this one case, where the new numbers are the space a folded window
+ * gave back. There the survivors spend the distance instead of snapping across it, so the fold and
+ * the room it frees read as one event. The mark is the pane's own choice (`overview.tsx`), set for
+ * the span and then dropped; a stage that changed for any other reason never wears it. */
+.superworker-page .superworker-ofield.is-settle .superworker-opane:not(.is-leave) {
+  transition: left 0.2s ease, top 0.2s ease, width 0.2s ease, height 0.2s ease;
 }
 
 /* A standing pane follows the geometry without travel. Its box is the reading of one stage and one

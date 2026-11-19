@@ -580,11 +580,13 @@ const MARKS = [
   /* The overview's own marks. The node rail's bars stand in a dense column read as mass — the
    * lane's ground is the page's base, which nothing in the panel paints over — so the rail
    * answers the dense floor, and the bar's ink is read as painted (the colour-mix's alpha
-   * composited over that ground). The warn family keeps the convention above: the theme's own
-   * hue, read for the record. */
-  { what: 'overview rail bar · an idle child', where: '.superworker-orail b', property: 'background', ink: 'color-mix(in srgb, var(--superworker-ink-1) 26%, transparent)', ground: '--dsw-alias-bg-base', tier: 'B' },
-  { what: 'overview rail bar · the lit child', where: '.superworker-orail b.is-on', property: 'background', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-base', tier: 'B' },
-  { what: 'overview rail bar · a child someone must move', where: '.superworker-orail b.is-need', property: 'background', ink: 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 70%, transparent)', ground: '--dsw-alias-bg-base', tier: null },
+   * composited over that ground). Each bar is the inside of its button: the button is the hit
+   * area and paints nothing, the rule inside it is the mark. The warn and error families keep
+   * the convention above: the theme's own hue, read for the record. */
+  { what: 'overview rail bar · an idle step', where: '.superworker-orail b', property: 'background', ink: 'color-mix(in srgb, var(--superworker-ink-1) 26%, transparent)', ground: '--dsw-alias-bg-base', tier: 'B' },
+  { what: 'overview rail bar · the step the stage draws', where: '.superworker-orail button.is-on b', property: 'background', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-base', tier: 'B' },
+  { what: 'overview rail bar · a step at a person\'s gate', where: '.superworker-orail button.is-need b', property: 'background', ink: 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 70%, transparent)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'overview rail bar · a step with nobody on it', where: '.superworker-orail button.is-broken b', property: 'background', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-base', tier: null },
   { what: 'overview feed row · failed', where: '.superworker-orow.is-fail', property: 'color', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
   /* The completed window's check is a mark the reader resolves on its own, and it is reading ink
    * on purpose: the success hue does not clear the A floor on the light palette. A break is the

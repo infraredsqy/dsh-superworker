@@ -109,11 +109,12 @@ const recordAtCheckpoint = () => ({
   }),
 })
 
-/** The session-list snapshot, in the shape the seat's `useSessions` hook hands over. */
-const snapshotOf = (children) => ({
+/** The session-list snapshot, in the shape the seat's `useSessions` hook hands over. `mainRunning` is
+ * the reader's own conversation's bit: a scene read after the line has stopped says false. */
+const snapshotOf = (children, mainRunning = true) => ({
   ids: ['m1', ...children.map((one) => one.id)],
   byId: {
-    m1: { id: 'm1', running: true, retainedBy: { mainView: 1 }, displayTitle: 'the main conversation' },
+    m1: { id: 'm1', running: mainRunning, retainedBy: { mainView: 1 }, displayTitle: 'the main conversation' },
     ...Object.fromEntries(children.map((one) => [
       one.id,
       { id: one.id, running: one.running, parentId: 'm1', displayTitle: one.title },
@@ -216,9 +217,10 @@ test('the overview draws the reading: the node nameplate on the main window, run
   assert.equal(main.querySelectorAll('.superworker-orow').length, 2, 'the main window does not draw its two rows')
   assert.equal(child.querySelectorAll('.superworker-orow').length, 1, 'the child does not draw its one row')
 
-  /* One running child: no node rail. The main window's newest row is a dispatch row, and the amber
-   * border answers the person gate alone — so neither window breathes here. */
-  assert.equal(container.querySelector('.superworker-orail'), null, 'one child drew a node rail')
+  /* One step of the line: no node rail — there is nowhere to switch to, whatever the column holds.
+   * The main window's newest row is a dispatch row, and the amber border answers the person gate
+   * alone — so neither window breathes here. */
+  assert.equal(container.querySelector('.superworker-orail'), null, 'one step of the line drew a node rail')
   assert.ok(!main.className.includes('is-wait'), 'a main window whose newest row is a dispatch row breathes: the border answers the gate alone')
   assert.ok(!child.className.includes('is-wait'), 'a child whose newest row is a read breathes')
 
@@ -402,7 +404,9 @@ test('leave: the pane fades where it stands, and after the span the page has los
     useSessions: (select) => select(snap),
   })
   await stageAt(mounted, 1024, 720)
-  assert.equal(container(mounted).querySelectorAll('.superworker-orail b').length, 2, 'two running children drew a node rail')
+  /* One node, one leg: the rail is the line's switch, and a line with one step has nowhere to switch
+   * to — the children column being full is not what stands a rail up any more. */
+  assert.equal(container(mounted).querySelector('.superworker-orail'), null, 'one leg — nowhere to switch — drew a node rail')
   assert.equal(container(mounted).querySelectorAll('.superworker-olinks path').length, 2, 'two anchored children drew two lines')
   snap = snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])
   await mounted.rerender()
@@ -411,8 +415,9 @@ test('leave: the pane fades where it stands, and after the span the page has los
   assert.ok(leaving.className.includes('is-leave'), 'the leaving pane carries no leave mark')
   /* The tie stands with the pane it ties: the line leaves when the pane does, not a beat early. */
   assert.equal(container(mounted).querySelectorAll('.superworker-olinks path').length, 2, 'the leaving pane lost its line before it left')
-  /* One running child left: the node rail is gone whole — a single window draws no rail. */
-  assert.equal(container(mounted).querySelector('.superworker-orail'), null, 'the rail lingered on one child')
+  /* A child leaving says nothing about the rail: the rail is the line's own switch, not this column's
+   * index — so it stands exactly as it did, and here it was never standing. */
+  assert.equal(container(mounted).querySelector('.superworker-orail'), null, 'the rail came back with the column it no longer indexes')
 
   /* Waiting on the leave's own span: the removal is the component's timer, and jsdom fires no
    * animationend to hang on — the only fact to wait for is the span itself running out. Inside
@@ -509,7 +514,8 @@ test('fresh row: at a steady count the swapped newest row carries the mark', { s
 
 test('breathing belongs to the person gate alone: a child whose newest row is a dispatch row keeps its ring', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
-  /* Two running children, so the node rail stands and its bars can be read. */
+  /* Two running children of one step: the children column is full, and the line has nothing to
+   * switch to — a rail is the switch over the line's steps, not this column's index. */
   const snap = snapshotOf([
     { id: 'c1', running: true, title: 'the first child' },
     { id: 'c2', running: true, title: 'the second child' },
@@ -526,9 +532,9 @@ test('breathing belongs to the person gate alone: a child whose newest row is a 
   const pane = container(mounted).querySelector('[data-window="c1"]')
   assert.ok(!pane.className.includes('is-wait'), 'a window whose newest row is a dispatch row breathes: the amber border answers the gate alone')
   assert.notEqual(pane.querySelector('.superworker-oring'), null, 'a running child waiting on its dispatch lost its ring')
-  /* The rail's warn ink answers the same one fact: a bar lights for the window at the gate, and a
-   * child waiting for an answer stands for nothing there. */
-  assert.equal(container(mounted).querySelectorAll('.superworker-orail b.is-need').length, 0, 'a rail bar lit the gate ink for a child waiting on an answer')
+  /* The rail's warn ink answers the same one fact, on the bars: no step of this line is at a gate,
+   * and a child waiting for an answer is not one — a column of children never lights it. */
+  assert.equal(container(mounted).querySelectorAll('.superworker-orail button.is-need').length, 0, 'a rail bar lit the gate ink for a child waiting on an answer')
   await mounted.act(async () => {
     service.set('c1', [dispatched('a task out', 1000, 'd9'), said('it came back.', 2000)])
   })
@@ -575,6 +581,65 @@ test('a child that ends leaves the page: the pane fades where it stands, and aft
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
+
+test('a fold keeps the room still: the survivors hold their boxes until it has run, then the room closes up', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [...dispatchRun('c1', 'd1', 'one job', 100), ...dispatchRun('c2', 'd2', 'another job', 200)])
+  service.set('c1', [read('a.ts', 200)])
+  service.set('c2', [read('b.ts', 300)])
+  let snap = snapshotOf([
+    { id: 'c1', running: true, title: 'the first child' },
+    { id: 'c2', running: true, title: 'the second child' },
+  ])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  const before = boxOf(container, 'c1')
+  assert.notEqual(before, null, 'the surviving child was not drawn')
+
+  /* The second child's session stops. Its pane folds; the first one must not move while it does —
+   * a survivor that re-measures on the fold's first frame is the tear this pins against. */
+  snap = snapshotOf([
+    { id: 'c1', running: true, title: 'the first child' },
+    { id: 'c2', running: false, title: 'the second child' },
+  ])
+  await mounted.rerender()
+  assert.ok(container.querySelector('[data-window="c2"]')?.className.includes('is-leave'), 'the folded pane carries no leave mark')
+  assert.equal(fieldSettling(container), false, 'the room closed up while the fold was still playing')
+  assert.deepEqual(boxOf(container, 'c1'), before, 'a survivor moved while the fold was still playing')
+  /* One step of the line stands: the rail is not the column's index, so nothing about a child
+   * folding off the stage can stand one up. */
+  assert.equal(container.querySelector('.superworker-orail'), null, 'a child folding off the stage stood a rail up')
+
+  /* Past the fold's span the pane is gone, the room closes up, and the survivor takes the new box —
+   * by a transition the sheet spends, never by a jump. */
+  await mounted.act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 480))
+  })
+  assert.equal(container.querySelector('[data-window="c2"]'), null, 'the page kept the folded pane past its span')
+  assert.notDeepEqual(boxOf(container, 'c1'), before, 'the room never closed up: the survivor kept the stale box')
+  assert.equal(fieldSettling(container), true, 'the room closed up without the settle mark that spends the distance')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+/** The inline box one window stands at, as the geometry wrote it. */
+function boxOf(container, id) {
+  const el = container.querySelector(`[data-window="${id}"]`)
+  if (el === null) return null
+  return { left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height }
+}
+
+/** Whether the stage is spending the room's closing-up rather than snapping to it. */
+function fieldSettling(container) {
+  const field = container.querySelector('.superworker-ofield')
+  return field !== null && field.className.includes('is-settle')
+}
 
 test('the main window whose session has stopped: veiled rows and the check, nothing else', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
@@ -758,41 +823,181 @@ const recordOfADeadLeg = () => ({
   '.superworker/meta/launch/c0/n1/started': '2026-01-08T00:00:00.000Z',
 })
 
-test('a leg that died owing work keeps its window, and that window is the broken one', { skip: bundleSkip }, async () => {
+/** The same line with a second step of its own: n1 is on the table and c1 is working it. */
+const recordWithARunningLeg = () => ({
+  ...recordOfADeadLeg(),
+  '.superworker/meta/sessions/n1.json': json({ run: [{ session: 'c1', at: '2026-01-08T00:00:00.000Z' }] }),
+})
+
+/** The same line, ending at a checkpoint nobody has approved: n1 is delivered and a person is owed. */
+const recordWithAGatedLeg = () => ({
+  ...record(),
+  '.superworker/ideas.json': json({
+    nodes: {
+      n0: {
+        title: 'the driven node',
+        description: 'the piece the main conversation drives',
+        tags: [],
+        mode: 'auto',
+        status: 'completed',
+        created_at: '2026-01-08T00:00:00.000Z',
+        completed_at: '2026-01-09T00:00:00.000Z',
+        dependencies: [],
+      },
+      n1: {
+        title: '闸口：等一声批准',
+        description: 'collects the two hand-ins and waits for a person',
+        tags: [],
+        mode: 'checkpoint',
+        status: 'completed',
+        created_at: '2026-01-08T00:00:00.000Z',
+        completed_at: '2026-01-09T00:00:00.000Z',
+        dependencies: [],
+      },
+    },
+  }),
+  '.superworker/state.json': json({
+    cycles: [
+      {
+        id: 'c0',
+        title: 'a line',
+        status: 'active',
+        tags: [],
+        created_at: '2026-01-08T00:00:00.000Z',
+        updated_at: '2026-01-09T00:00:00.000Z',
+        policies: {},
+        holding: [],
+        path: [
+          { node: 'n0', started_at: '2026-01-08T00:00:00.000Z', ended_at: '2026-01-08T12:00:00.000Z', result: 'delivered' },
+          { node: 'n1', started_at: '2026-01-08T12:00:00.000Z', ended_at: '2026-01-09T00:00:00.000Z', result: 'delivered' },
+        ],
+      },
+    ],
+  }),
+  '.superworker/meta/sessions/n1.json': json({ run: [{ session: 'c1', at: '2026-01-08T12:00:00.000Z' }] }),
+})
+
+/** Two steps on the table at once: m1's node delivered, c1's still being worked. */
+const snapshotOfTwoLegs = () => ({
+  ids: ['m1', 'c1'],
+  byId: {
+    m1: { id: 'm1', running: true, retainedBy: { mainView: 1 }, displayTitle: 'the main conversation' },
+    /* The dispatch's own parent link: the main conversation is the one that opened the next step, and
+     * that bond is exactly what must not put a node's session in the children column. */
+    c1: { id: 'c1', running: true, parentId: 'm1', displayTitle: 'the second step' },
+  },
+})
+
+test('a leg that died owing work keeps its bar, in the break\'s ink, and stands off the stage', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
   service.set('m1', [said('dispatched it, and it never came back.', 100)])
   service.set('c1', [read('a.ts', 200), { type: 'turn/end', time: 300, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }])
   const mounted = await mountBuiltPanel({
     record: recordOfADeadLeg(),
     sessionsService: service,
-    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: false, title: 'the leg that died' }])),
+    /* The reader is in the delivered step's own conversation; the dead leg is the other step. */
+    sessionId: 'm1',
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: false, title: 'the leg that died' }], false)),
     /* The host's own roster: the main conversation is alive, the leg is not. That is what makes the
      * claim on disk a stranded one. */
     agents: { list: () => [{ id: 'm1' }] },
   })
   await stageAt(mounted, 1024, 720)
   const { container } = mounted
-  const ghost = container.querySelector('[data-window="c1"]')
-  assert.equal(ghost !== null, true, 'a leg that died with its work still owed was not drawn at all')
-  assert.ok(ghost.className.includes('is-child'), 'the dead leg was drawn as the main window')
+  /* The dead leg is a step of the line, so what stands for it is a bar on the rail — never a second
+   * window beside the one being read. Two steps on the table is also what gives the rail its job.
+   * Counts, not elements: an assertion that stringifies a jsdom element takes half a minute to fail. */
+  assert.equal(container.querySelectorAll('[data-window]').length, 1, `the stage drew ${container.querySelectorAll('[data-window]').length} windows`)
+  const bars = container.querySelectorAll('.superworker-orail button')
+  assert.equal(bars.length, 2, `the rail offers ${bars.length} bars`)
+  /* The order is the reading's: the step the stage is drawing first, lit; the dead one after it, in
+   * the break's ink. One ink, one fact. */
+  assert.ok(bars[0].className.includes('is-on'), 'the step the stage is drawing is not the lit bar')
+  assert.equal(bars[0].getAttribute('aria-current'), 'true', 'the lit bar does not say it is the current step')
+  assert.ok(bars[1].className.includes('is-broken'), 'the dead leg’s bar says nothing about the work it still owes')
+  assert.equal(bars[1].className.includes('is-on'), false, 'the dead leg’s bar lit as the step on the stage')
+  /* A bar carries no word; the node's own title is the bar's name, for a hover and for a screen reader. */
+  assert.equal(bars[1].getAttribute('title'), 'the leg that died', 'the bar does not name the step it stands for')
+  assert.equal(bars[1].getAttribute('aria-label'), 'the leg that died', 'the bar has no name for a screen reader')
 
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the rail is a switch: a press on a bar draws that step, and never two of them', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('this conversation dispatched the next step.', 100)])
+  service.set('c1', [read('b.ts', 200)])
+  const mounted = await mountBuiltPanel({
+    record: recordWithARunningLeg(),
+    sessionsService: service,
+    /* The reader is in the delivered step's own conversation: this stage is that step, and the
+     * other one is a bar on the rail. */
+    sessionId: 'm1',
+    useSessions: (select) => select(snapshotOfTwoLegs()),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  /* One stage, one step: the second step of the line was dispatched by this very conversation, and it
+   * is still a bar — never a window in the children column. Counts only: a failed assertion that
+   * stringifies a jsdom element is slow enough to look like a hang. */
+  assert.equal(container.querySelectorAll('[data-window]').length, 1, `the stage drew ${container.querySelectorAll('[data-window]').length} windows`)
+  assert.equal(container.querySelector('.superworker-orail') === null, false, 'two steps on the table drew no rail')
+  let bars = container.querySelectorAll('.superworker-orail button')
+  assert.equal(bars.length, 2, `the rail offers ${bars.length} bars`)
+
+  await mounted.act(async () => {
+    bars[1].click()
+  })
+  /* The stage is the step that was pressed, named by its own node, and the other step is nowhere on
+   * the page: the switch moved the stage rather than adding to it, and the step it replaced is not
+   * held to fold — a replaced cast is gone, not a window that left. Counts before elements: an
+   * assertion that stringifies a jsdom element takes half a minute to fail. */
+  assert.equal(container.querySelectorAll('[data-window]').length, 1, `the stage drew ${container.querySelectorAll('[data-window]').length} windows after the switch`)
+  assert.equal(container.querySelectorAll('.superworker-opane.is-leave').length, 0, 'the step that was replaced was held to fold')
+  const second = container.querySelector('[data-window="c1"]')
+  assert.equal(second === null, false, 'the step the reader pressed is not on the stage')
+  assert.ok(second.className.includes('is-main'), 'the pressed step was drawn as a child of the step it replaced')
+  assert.equal(second.querySelector('.superworker-oplate-n')?.textContent, 'the leg that died', 'the nameplate does not read the pressed step\'s node')
+  bars = container.querySelectorAll('.superworker-orail button')
+  assert.equal(bars[0].getAttribute('aria-current'), null, 'the old step is still the lit bar')
+  assert.equal(bars[1].getAttribute('aria-current'), 'true', 'the pressed step\u2019s bar is not the lit one')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the step a reader switches to, dead and owing work: the break is the frame, and one word says why', { skip: bundleSkip }, async () => {
+  /* The same dead leg as above, this time pressed on the rail: on the stage its own window is read
+   * with what it owes, which is the whole reason a stopped leg keeps a bar. */
+  const service = fakeSessionsService()
+  service.set('m1', [said('dispatched it, and it never came back.', 100)])
+  service.set('c1', [read('a.ts', 200), { type: 'turn/end', time: 300, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }])
+  const mounted = await mountBuiltPanel({
+    record: recordOfADeadLeg(),
+    sessionsService: service,
+    /* The reader is in the delivered step's own conversation; the dead leg is the other step. */
+    sessionId: 'm1',
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: false, title: 'the leg that died' }], false)),
+    agents: { list: () => [{ id: 'm1' }] },
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  await mounted.act(async () => {
+    container.querySelectorAll('.superworker-orail button')[1].click()
+  })
+  const ghost = container.querySelector('[data-window="c1"]')
+  assert.notEqual(ghost, null, 'the step the reader pressed is not on the stage')
+  assert.ok(ghost.className.includes('is-main'), 'the dead leg was drawn as a child window')
   /* The conversation is over, but its frame is what says so. The rows step back behind it: they are
    * how far the leg got, kept in place and said dimmer, so the one word the window says is read on its
    * own ground instead of over passing text. */
   assert.ok(ghost.querySelector('.superworker-ofeed').className.includes('is-veiled'), 'the dead leg’s rows stay sharp behind the notice the frame is already asking about')
   assert.equal(ghost.querySelectorAll('.superworker-orow').length, 1, 'the dead leg lost the rows it died with')
-  /* A row is a reading, not a tooltip: its whole text lives in the conversation the window opens, and
-   * a hover full of paths over a long thought is noise on a page read at a glance. */
-  assert.equal(ghost.querySelector('.superworker-orow').getAttribute('title'), null, 'a row carries its full text as a hover again')
-
-  /* The break is the frame's own ink, and the frame is the only thing that says it: no glyph, no word
-   * inside the window, and the reason it stopped on the frame's title. */
-  /* The break is the frame's own ink, and the frame is the only thing that says it: no check, no
-   * hover of the frame's own, and the one word the fault line says. */
   assert.ok(ghost.className.includes('is-broken'), 'the dead leg’s frame says nothing about the work it still owes')
   assert.equal(ghost.querySelector('.superworker-omark'), null, 'the dead leg wears a mark inside a frame that already says it')
   const fault = ghost.querySelector('.superworker-ofault')
-  assert.equal(fault !== null, true, 'the dead leg says no word')
+  assert.notEqual(fault, null, 'the dead leg says no word')
   /* The notice owns a ground of its own. The outer box is the geometry's — it only centres — and the
    * inner one is what the word stands on; without it the red is read straight over whatever rows are
    * passing under it, which is the whole point of the ground. */
@@ -801,7 +1006,6 @@ test('a leg that died owing work keeps its window, and that window is the broken
   assert.equal(notice.textContent, zh['overview.fault.user'], 'the dead leg’s word is not how its turn ended')
   assert.equal(fault.querySelector('svg') === null, false, 'the fault line carries no glyph')
   assert.equal(ghost.getAttribute('title'), null, 'the frame still carries a hover of its own')
-
   /* It is not moving any more, so the ring is gone with the motion. */
   assert.equal(ghost.querySelector('.superworker-oring'), null, 'a stopped leg still turns its ring')
 
@@ -809,10 +1013,10 @@ test('a leg that died owing work keeps its window, and that window is the broken
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test('the same leg, its work handed in: no ghost, and its window goes with the conversation', { skip: bundleSkip }, async () => {
+test('the same leg, its work handed in: no bar, and no window with it', { skip: bundleSkip }, async () => {
   /* The same scene with the record saying the node was delivered and the line no longer holding it:
-   * the debt is gone, so nothing keeps the window. This is the pair the ghost rule exists for — the
-   * debt, never the death. */
+   * the debt is gone, so nothing keeps the bar — the step owes nobody a look, and the rail left with
+   * a single step on the table. */
   const record = recordOfADeadLeg()
   record['.superworker/ideas.json'] = json({
     nodes: {
@@ -863,6 +1067,7 @@ test('the same leg, its work handed in: no ghost, and its window goes with the c
   })
   await stageAt(mounted, 1024, 720)
   assert.equal(mounted.container.querySelector('[data-window="c1"]') === null, true, 'a finished leg that owes nothing kept its window')
+  assert.equal(mounted.container.querySelector('.superworker-orail'), null, 'a delivered leg kept a bar on the rail')
 
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
@@ -980,25 +1185,60 @@ test('the column left the stage: an anchored child draws no window and no line',
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test('the rail leaves with the column it indexes: no empty frame stands in the lane on a narrow stage', { skip: bundleSkip }, async () => {
+test('a step at a person\'s gate keeps its bar, in the warn ink, and pressing it opens that step', { skip: bundleSkip }, async () => {
+  /* A checkpoint delivered its work and stopped: the line owes it nothing, a *person* is still owed a
+   * word. The rail must offer it — the gate is the one thing the record asks the reader to do — and
+   * its bar wears the warn ink, the same ink the window's border wears for the same fact. */
   const service = fakeSessionsService()
-  service.set('c1', [read('a.ts', 300)])
-  service.set('c2', [read('b.ts', 400)])
+  service.set('m1', [said('handed the checkpoint over, and it waits on you.', 100)])
+  service.set('c1', [said('the checkpoint is written.', 200)])
   const mounted = await mountBuiltPanel({
-    record: record(),
+    record: recordWithAGatedLeg(),
     sessionsService: service,
-    useSessions: (select) => select(snapshotOf([
-      { id: 'c1', running: true, title: 'the first child' },
-      { id: 'c2', running: true, title: 'the second child' },
-    ])),
+    sessionId: 'm1',
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: false, title: 'the gate' }], false)),
   })
-  /* The narrow stage again, with two running children: 520 is under the pair's floors once the lane
-     and the probe are out, so the column leaves — and the rail, two dim bars indexing windows that are
-     not drawn, is the empty frame on the stage's left. The stage keeps only the main window. */
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  const bars = container.querySelectorAll('.superworker-orail button')
+  assert.equal(bars.length, 2, `the rail offers ${bars.length} bars`)
+  assert.ok(bars[1].className.includes('is-need'), 'the bar of a step waiting on a person wears no gate ink')
+  assert.equal(bars[1].className.includes('is-broken'), false, 'a step at a gate was drawn as a break')
+  assert.equal(bars[1].getAttribute('title'), '闸口：等一声批准', 'the bar does not name the step it waits on')
+
+  await mounted.act(async () => {
+    bars[1].click()
+  })
+  const gated = container.querySelector('[data-window="c1"]')
+  assert.equal(gated === null, false, 'the step at the gate did not come to the stage')
+  assert.ok(gated.className.includes('is-main'), 'the step at the gate was drawn as a child')
+  assert.ok(gated.className.includes('is-wait'), 'the stage does not say a person is owed a word')
+  assert.equal(gated.querySelector('.superworker-omark'), null, 'the step at the gate wears the check as if it were done with the reader')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the rail keeps its lane on a stage too narrow for a children column, and indexes nothing', { skip: bundleSkip }, async () => {
+  /* 520 is under the pair's floors once the lane and the probe are taken out: a column could not
+   * stand. The rail is the line's switch and not that column's index, so a stage that drops the
+   * column still keeps the bar that moves the stage to another step. */
+  const service = fakeSessionsService()
+  service.set('m1', [said('this conversation dispatched the next step.', 100)])
+  service.set('c1', [read('b.ts', 200)])
+  const mounted = await mountBuiltPanel({
+    record: recordWithARunningLeg(),
+    sessionsService: service,
+    /* The reader is in the delivered step's own conversation: this stage is that step, and the
+     * other one is a bar on the rail. */
+    sessionId: 'm1',
+    useSessions: (select) => select(snapshotOfTwoLegs()),
+  })
   await stageAt(mounted, 520, 480)
   const { container } = mounted
-  assert.equal(container.querySelectorAll('[data-window]').length, 1, 'the narrow stage drew more than the main window')
-  assert.equal(container.querySelector('.superworker-orail'), null, 'a rail stood for a column that is not there')
+  assert.equal(container.querySelectorAll('[data-window]').length, 1, `the narrow stage drew ${container.querySelectorAll('[data-window]').length} windows`)
+  assert.equal(container.querySelector('.superworker-orail') === null, false, 'the rail left with a column it no longer indexes')
+  assert.equal(container.querySelectorAll('.superworker-orail button').length, 2, 'the rail lost a step of the line on a narrow stage')
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })

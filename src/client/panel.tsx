@@ -400,21 +400,32 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
    * from this host's live roster: the one debt the overview can name as owed by nobody. */
   const strandedNodes = React.useMemo((): readonly string[] => Object.keys(stranded), [stranded])
 
+  /* Which step of the line the overview's stage is drawing: the leg the reader picked on the rail,
+   * and nothing else. It is this screen's own state for the same reason the tab is — a person asked
+   * for it — and it is a *pick*, not a second reading: the model hands the session back into its
+   * main-window rule and falls back by itself when the leg it names has left the list. Cleared when
+   * the reader switches workspace: the legs of another record are not this one's to remember. */
+  const [pickedLeg, setPickedLeg] = React.useState<string | null>(null)
+  React.useEffect(() => {
+    setPickedLeg(null)
+  }, [workspaceRoot])
+
   /* The overview's reading at this beat: which windows from the session list the browser already
    * holds, which rows from the event windows `windows` holds open — settled rows from the durable
    * log, and the streaming step's live tails from its transient chunks — and which nameplate
    * material from the record. Which conversation is the main window is decided by the pipeline's
-   * own record: the sessions its node notes name are the only ones this pane may draw, and this
-   * panel's own session wins among them. DSH's `retainedBy.mainView` is deliberately not trusted
-   * here — it marks whichever conversation the browser holds open, and an unrelated old one
-   * carrying it is exactly how a foreign conversation got drawn. The rows ride a capacity — what
-   * the tallest feed could ever stand; whatever a smaller box cannot show is the pane's fade, not
-   * a scrollbar. */
+   * own record: the sessions its node notes name are the only ones this pane may draw, this
+   * screen's own pick leads them, and this panel's own session wins among the rest. DSH's
+   * `retainedBy.mainView` is deliberately not trusted here — it marks whichever conversation the
+   * browser holds open, and an unrelated old one carrying it is exactly how a foreign conversation
+   * got drawn. The rows ride a capacity — what the tallest feed could ever stand; whatever a
+   * smaller box cannot show is the pane's fade, not a scrollbar. */
   const overview = React.useMemo((): OverviewReading | null => {
     if (reading === null) return null
     return readOverview({
       sessions: (props.sessions ?? {}) as OverviewSnapshot,
       sessionId,
+      shownSession: pickedLeg ?? undefined,
       pipelineSessions: Object.values(notes),
       events,
       live,
@@ -430,7 +441,17 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
        * that stopped is measured to its own last word instead, so nothing here keeps counting. */
       at: at.getTime(),
     })
-  }, [reading, events, live, nodeOf, props.sessions, sessionId, notes, waitingSessions, deliveredSessions, strandedNodes, undeliveredSessions, heldSessions, at])
+  }, [reading, events, live, nodeOf, props.sessions, sessionId, pickedLeg, notes, waitingSessions, deliveredSessions, strandedNodes, undeliveredSessions, heldSessions, at])
+
+  /* A pick names a step still on the table. Once that step has left the rail — delivered, or taken
+   * over by a later step — the pick is spent, and the stage keeps the reading's own choice rather
+   * than snapping back to a step that is no longer there. The reading already ignores a pick it
+   * cannot seat; this only keeps the screen's own word from waiting for a return that will not come. */
+  React.useEffect(() => {
+    if (pickedLeg === null || overview === null) return
+    if (overview.legs.some((one) => one.id === pickedLeg)) return
+    setPickedLeg(null)
+  }, [pickedLeg, overview])
 
   /* The overview's empty stage: the record is in hand and yet no window stands. Which of the three
    * it is is what the stage says — a workspace with no node at all, one whose record names no
@@ -448,17 +469,19 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
         : 'no-window'
   const emptySaid = emptyKind === null ? null : overviewEmptySaid(t, emptyKind)
 
-  /* The event windows the overview holds open: every window the reading names, plus the sessions that
-   * could still become one — the leg's dispatched workers, whose own last turn decides whether their
-   * seat stays, and the legs whose cells the record still owes. A window's admission is read off its
-   * own log (`turn/end`, and when it began), so that log has to be open before the window exists.
-   * Only while the overview is the shown pane; re-watching the same ids is nothing, and the ids that
-   * left are released there. */
+  /* The event windows the overview holds open: every window the reading names, every leg its rail
+   * offers — a bar is measured by the rows the leg's window would hold, so that log has to be open
+   * before the bar can be drawn to scale — plus the sessions that could still become one — the leg's
+   * dispatched workers, whose own last turn decides whether their seat stays, and the legs whose
+   * cells the record still owes. A window's admission is read off its own log (`turn/end`, and when
+   * it began), so that log has to be open before the window exists. Only while the overview is the
+   * shown pane; re-watching the same ids is nothing, and the ids that left are released there. */
   const watchIds = React.useMemo((): readonly string[] => {
     const out = new Set<string>()
     const main = overview?.main?.id
     if (main !== undefined) out.add(main)
     for (const one of overview?.children ?? []) out.add(one.id)
+    for (const leg of overview?.legs ?? []) out.add(leg.id)
     if (main !== undefined) {
       const byId = (props.sessions as { readonly byId?: Readonly<Record<string, { readonly parentId?: unknown }>> } | undefined)?.byId ?? {}
       for (const [id, row] of Object.entries(byId)) {
@@ -655,7 +678,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
             {overview === null
               ? null
               : emptySaid === null
-                ? <OverviewPane reading={overview} at={at} go={windowGo} />
+                ? <OverviewPane reading={overview} at={at} go={windowGo} pick={setPickedLeg} />
                 : <OverviewEmptyStage said={emptySaid} />}
             <OverviewLaunch runnable={runnable} busy={consulting} onRoute={consultRoute} onConduct={consultConduct} />
           </PaneFrame>

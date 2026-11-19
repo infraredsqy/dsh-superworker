@@ -104,6 +104,11 @@ import type { WordKey } from './locales/index.ts'
  * itself lives in the sheet. */
 const LEAVE_SPAN_MS = 380
 
+/** How long the survivors take to reach the numbers the folded window freed. A fold says one window
+ * left the set; the room closing up is that same fact seen in the rest of the stage, so it is spent
+ * rather than snapped — but only here, on a leave's own account, never on a re-measure. */
+const SETTLE_SPAN_MS = 200
+
 /** How long the entrance runs. The mark is held for exactly this span: an entrance is a beat, and a
  * window that kept the mark would replay its growth every time anything else redrew the stage. */
 const ENTER_SPAN_MS = 260
@@ -528,6 +533,12 @@ export function OverviewPane(props: {
   readonly at: Date
   /** Where a press on a window goes: the panel's admission and DSH's own navigation gateway. */
   readonly go: WindowGo | null
+  /**
+   * Where a press on a rail bar goes: the leg whose step the stage should draw. The panel owns that
+   * pick and hands it back to the reading, so this drawing decides nothing about it — it only says
+   * which bar was pressed. Absent, the rail is a drawing: its bars are marks, and no press lands.
+   */
+  readonly pick?: ((session: string) => void) | null
 }): React.ReactElement {
   const { reading, at } = props
   const bodyRef = React.useRef<HTMLDivElement | null>(null)
@@ -554,18 +565,17 @@ export function OverviewPane(props: {
   }, [measure])
 
   const mainRows = reading.main?.rows.length ?? 0
-  const childRows = React.useMemo(() => reading.children.map((one) => one.rows.length), [reading])
-  const placement = React.useMemo(
-    () => layoutOverview({ stage, mainRows, childRows }),
-    [stage, mainRows, childRows],
-  )
 
-  /* The windows the five-window cap folded away: counted above the column, and not drawn at all when
-   * there are none, when the column did not stand, or when the stage leaves no ground above it. */
-  const spill = React.useMemo(
-    () => layoutSpill({ children: placement.children, hiddenChildren: reading.hiddenChildren }),
-    [placement, reading.hiddenChildren],
-  )
+  /* Leave: the ids that vanished keep their last box for the leave's span, then the page loses them.
+   * The comparison is the previous beat's ids against this one's, held in a ref: state is what the
+   * drawing reads, the ref is what the diff reads, and they are never asked to be the same thing.
+   *
+   * The same diff says which windows joined, which is what an entrance is played for. The first
+   * drawing of the pane joins nothing: the pane appeared, its windows were always part of it. */
+  const [leaving, setLeaving] = React.useState<ReadonlySet<string>>(new Set())
+  const [joined, setJoined] = React.useState<ReadonlySet<string>>(new Set())
+  const timers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const enterTimers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   const currentIds = React.useMemo(
     () => new Set([reading.main?.id, ...reading.children.map((one) => one.id)].filter((one): one is string => one !== undefined)),
@@ -578,18 +588,91 @@ export function OverviewPane(props: {
    * switch played every old pane's fold at once, which is the contraction a reader saw. */
   const mainId = reading.main?.id
 
-  /* Leave: the ids that vanished keep their last box for the leave's span, then the page loses them.
-   * The comparison is the previous beat's ids against this one's, held in a ref: state is what the
-   * drawing reads, the ref is what the diff reads, and they are never asked to be the same thing.
-   *
-   * The same diff says which windows joined, which is what an entrance is played for. The first
-   * drawing of the pane joins nothing: the pane appeared, its windows were always part of it. */
-  const [leaving, setLeaving] = React.useState<ReadonlySet<string>>(new Set())
-  const [joined, setJoined] = React.useState<ReadonlySet<string>>(new Set())
-  const timers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-  const enterTimers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const heldIds = React.useRef<ReadonlySet<string>>(currentIds)
   const heldMain = React.useRef<string | undefined>(mainId)
+
+  /* The last box and the last reading each id drew from: what a leaving pane has to draw with. */
+  const boxesRef = React.useRef<Map<string, OverviewBox>>(new Map())
+  const windowsRef = React.useRef<Map<string, OverviewWindow>>(new Map())
+
+  /* The windows that left on THIS beat, read during render rather than from the leave state.
+   *
+   * `heldIds` is advanced inside the effect below, so at this point it still names the previous beat:
+   * the difference is exactly the windows the reading just dropped. Waiting for the effect to publish
+   * the same fact would give one painted frame in which the column had already re-measured without
+   * the folding window — the pane would blink out, the survivors would jump, and the fold would then
+   * play in a room that had already moved. Reading it here means the very first render after the
+   * reading changes already holds the slot, so no such frame is ever painted. */
+  /* Recomputed on every render, never memoized: `heldIds` is a ref the effect advances *after* the
+   * commit, so a memoized answer would keep naming the window long after its fold had finished and
+   * the cast would hold the slot forever. Reading the ref here is what makes the diff self-correcting
+   * on the very next render.
+   *
+   * A **changed main window** is asked first: another conversation on the stage is another cast, not
+   * a set that lost a window, so nothing this beat is gone — every pane of the old cast is simply
+   * gone. The effect below drops the hold for the same reason, but it lands after this render, so a
+   * diff that still named the old windows would paint one folded pane of the step the reader just
+   * left — which is exactly the tear a switch shows as a window flying out of the stage. */
+  const swappedMain = heldMain.current !== mainId
+  const goneNow = swappedMain ? [] : [...heldIds.current].filter((id) => !currentIds.has(id))
+  const goneKey = goneNow.join('|')
+  const leavingIds = React.useMemo(
+    () => {
+      const out = [...leaving]
+      for (const id of goneKey === '' ? [] : goneKey.split('|')) if (!out.includes(id)) out.push(id)
+      return out
+    },
+    [leaving, goneKey],
+  )
+
+  /* The cast the column is measured over: the reading's children, plus the ones still folding, held
+   * in the slot each one stood in. A fold is a window on its way out — it is still on the stage while
+   * it plays, so its ground is still taken. Measuring the column without it the instant the reading
+   * drops the window re-measured every survivor on the fold's own first frame: the pane shrank in a
+   * room that had already moved around it, which is the tear a reader saw. */
+  const castOrder = React.useRef<readonly string[]>([])
+  const cast = React.useMemo((): readonly { readonly id: string; readonly rows: number }[] => {
+    const live = reading.children.map((one) => ({ id: one.id, rows: one.rows.length }))
+    const held = leavingIds.filter((id) => !live.some((one) => one.id === id))
+    if (held.length === 0) return live
+    const out: { id: string; rows: number }[] = []
+    for (const id of castOrder.current) {
+      const now = live.find((one) => one.id === id)
+      if (now !== undefined) { out.push(now); continue }
+      if (!held.includes(id)) continue
+      const window = windowsRef.current.get(id)
+      if (window !== undefined) out.push({ id, rows: window.rows.length })
+    }
+    for (const one of live) if (!out.some((kept) => kept.id === one.id)) out.push(one)
+    return out
+  }, [reading, leavingIds])
+  /* The order the column last drew with no fold in flight: what a held window's slot is read from. */
+  if (leavingIds.length === 0) castOrder.current = cast.map((one) => one.id)
+
+  const childRows = React.useMemo(() => cast.map((one) => one.rows), [cast])
+  /* The rail's own count, not the column's: the lane is kept for the line's switch, and a stage that
+   * draws no child at all still keeps it while there is a second step to move to. */
+  const legCount = reading.legs.length
+  const placement = React.useMemo(
+    () => layoutOverview({ stage, mainRows, childRows, legCount }),
+    [stage, mainRows, childRows, legCount],
+  )
+  /* Where a window stands, by id: the cast is the column's own order, so a survivor keeps the box it
+   * drew with and a folded window keeps the one it is folding in. */
+  const boxOf = React.useCallback(
+    (id: string): OverviewBox | undefined => {
+      const index = cast.findIndex((one) => one.id === id)
+      return index < 0 ? undefined : placement.children[index]
+    },
+    [cast, placement],
+  )
+
+  /* The windows the five-window cap folded away: counted above the column, and not drawn at all when
+   * there are none, when the column did not stand, or when the stage leaves no ground above it. */
+  const spill = React.useMemo(
+    () => layoutSpill({ children: placement.children, hiddenChildren: reading.hiddenChildren }),
+    [placement, reading.hiddenChildren],
+  )
   React.useEffect(() => {
     const before = heldIds.current
     heldIds.current = currentIds
@@ -653,6 +736,10 @@ export function OverviewPane(props: {
           next.delete(id)
           return next
         })
+        /* Same batch as the removal: the render that hands out the freed boxes carries the mark. */
+        setSettling(true)
+        clearTimeout(settleTimer.current)
+        settleTimer.current = setTimeout(() => setSettling(false), SETTLE_SPAN_MS)
       }, LEAVE_SPAN_MS)
       timers.current.set(id, timer)
     }
@@ -668,9 +755,22 @@ export function OverviewPane(props: {
       timers.current.clear()
       for (const timer of enterTimers.current.values()) clearTimeout(timer)
       enterTimers.current.clear()
+      clearTimeout(settleTimer.current)
     },
     [],
   )
+
+  /* When the last fold has run, the room closes up: the survivors take the numbers the folded window
+   * freed, and they spend that on the way rather than snapping to it. This is the leave's own second
+   * half, not a re-measure — a stage that changed for another reason still takes its new numbers at
+   * once, exactly as the sheet's own note asks.
+   *
+   * The mark is raised inside the leave's own timer, in the same batch as the removal, so the render
+   * that hands out the new boxes is the render that carries `is-settle`. Setting it from an effect
+   * instead would land one paint too late: the boxes would already have snapped by the time the
+   * transition arrived, and the transition would have nothing left to spend. */
+  const [settling, setSettling] = React.useState(false)
+  const settleTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   /* Fresh row: the newest row is not the one this window showed before, or the feed gained a
    * row (the two readings of the arrival — growth, or the cut's swap). The comparison runs in an
@@ -696,9 +796,8 @@ export function OverviewPane(props: {
     setFreshIds((held) => (held.size === 0 && fresh.size === 0 ? held : fresh))
   }, [reading])
 
-  /* The last box and the last reading each id drew from: what a leaving pane has to draw with. */
-  const boxesRef = React.useRef<Map<string, OverviewBox>>(new Map())
-  const windowsRef = React.useRef<Map<string, OverviewWindow>>(new Map())
+  /* The box and the reading each id drew from on this beat: a leaving pane reads them back below, and
+   * the cast above reads a held window's row count from `windowsRef` after the reading drops it. */
   if (reading.main !== null) {
     boxesRef.current.set(reading.main.id, placement.main)
     windowsRef.current.set(reading.main.id, reading.main)
@@ -734,17 +833,20 @@ export function OverviewPane(props: {
       })
       if (link !== undefined) out.push({ id, link })
     }
-    reading.children.forEach((child, i) => tie(child.id, child, placement.children[i]))
-    for (const id of leaving) {
+    reading.children.forEach((child) => {
+      const box = boxOf(child.id)
+      if (box !== undefined) tie(child.id, child, box)
+    })
+    for (const id of leavingIds) {
       if (currentIds.has(id)) continue
-      tie(id, windowsRef.current.get(id), boxesRef.current.get(id))
+      tie(id, windowsRef.current.get(id), boxOf(id) ?? boxesRef.current.get(id))
     }
     return out
-  }, [reading, placement, leaving, currentIds])
+  }, [reading, placement, boxOf, leavingIds, currentIds])
 
-  /* The rail's lit bar: the first child, which is the one the column is showing in hand — every child
-   * the reading draws is still running, so the first is the one moving. */
-  const litId = reading.children[0]?.id
+  /* The rail's lit bar: the leg the stage is drawing, which is the main window's own step. A leg is
+   * a step of the line, so the lit bar is a step and never the child column's first seat. */
+  const litId = reading.main?.id
 
   /* Which windows joined on this beat, and the point each grew from — the line's own leaving point,
    * so the tie and the growth agree by construction. The main window is never one of them: it is the
@@ -762,21 +864,40 @@ export function OverviewPane(props: {
   return (
     <div className="superworker-overview" ref={bodyRef}>
       {placement.railVisible ? (
-        <div className="superworker-orail" aria-hidden="true" style={{ left: RAIL_LEFT }}>
-          {reading.children.map((one) => (
-            <b
-              key={one.id}
-              /* The lit bar follows the child the column shows in hand. The warn ink is the person
-               * gate's alone: a bar wears it when the window it stands for is the one at the gate, and
-               * a bar for a child never is — which is what keeps one ink meaning one fact. */
-              className={`${one.id === litId ? 'is-on' : ''}${one.waiting === true ? ' is-need' : ''}`.trim()}
-              style={{ width: railBarWidth(one.rows.length, one.id === litId) }}
-            />
-          ))}
+        /* The rail is the line's switch: one bar per step still on the table, the one the stage is
+         * drawing lit. A bar carries no word — the nameplate on the stage is what names the step being
+         * read — so the node's title rides the bar's own name, for a hover and for a screen reader.
+         * A press hands the leg back; the panel is what decides the stage follows it. */
+        <div className="superworker-orail" style={{ left: RAIL_LEFT }}>
+          {reading.legs.map((one) => {
+            const on = one.id === litId
+            const pick = props.pick ?? null
+            return (
+              <button
+                key={one.id}
+                type="button"
+                /* One ink, one fact: the lit bar is the step being read, the warn ink is a person's
+                 * gate, the break's ink is work owed with nobody on it. */
+                className={[
+                  on ? 'is-on' : '',
+                  one.waiting === true ? 'is-need' : '',
+                  one.alert === true ? 'is-broken' : '',
+                ].filter((word) => word.length > 0).join(' ')}
+                style={{ width: railBarWidth(one.rows, on) }}
+                title={one.title ?? undefined}
+                aria-label={one.title ?? undefined}
+                aria-current={on ? 'true' : undefined}
+                disabled={pick === null}
+                onClick={pick === null ? undefined : () => pick(one.id)}
+              >
+                <b aria-hidden="true" />
+              </button>
+            )
+          })}
         </div>
       ) : null}
       <div
-        className="superworker-ofield"
+        className={`superworker-ofield${settling ? ' is-settle' : ''}`}
         style={{
           /* The field is the stage's own frame — the sheet lays it over the whole stage — and the
            * boxes inside it are already in stage coordinates. Writing the field's own left/top here
@@ -802,7 +923,7 @@ export function OverviewPane(props: {
             window={reading.main}
             at={at}
             main
-            leave={leaving.has(reading.main.id)}
+            leave={leavingIds.includes(reading.main.id)}
             fresh={freshIds.has(reading.main.id)}
             /* The main window has no source: it is the conversation this pane is about, so it was
              * already here. Its own appearance fades in; it never travels. */
@@ -810,8 +931,10 @@ export function OverviewPane(props: {
             go={props.go}
           />
         )}
-        {reading.children.map((one, i) => {
-          const box = placement.children[i]
+        {reading.children.map((one) => {
+          /* The box comes from the cast by id, never from the child's index: a window still folding
+           * holds the slot it stood in, so the survivors keep the boxes they drew with. */
+          const box = boxOf(one.id)
           if (box === undefined) return null
           return (
             <WindowPane
@@ -820,7 +943,7 @@ export function OverviewPane(props: {
               window={one}
               at={at}
               main={false}
-              leave={leaving.has(one.id)}
+              leave={leavingIds.includes(one.id)}
               fresh={freshIds.has(one.id)}
               /* A child grows out of the row that dispatched it, and only on the beat it joined. */
               born={joined.has(one.id) ? births.get(one.id) : undefined}
@@ -841,9 +964,11 @@ export function OverviewPane(props: {
             <span className="superworker-num">{`+${reading.hiddenChildren}`}</span>
           </div>
         )}
-        {[...leaving].map((id) => {
+        {leavingIds.map((id) => {
           if (currentIds.has(id)) return null
-          const box = boxesRef.current.get(id)
+          /* Its slot is still in the cast — that is what keeps the room from closing under it — so the
+           * box it folds in is the one the column is measuring right now, not a remembered copy. */
+          const box = boxOf(id) ?? boxesRef.current.get(id)
           const window = windowsRef.current.get(id)
           if (box === undefined || window === undefined) return null
           return (

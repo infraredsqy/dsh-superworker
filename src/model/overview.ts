@@ -234,28 +234,67 @@ export interface OverviewWindow {
   readonly waiting?: boolean
 }
 
+/**
+ * One leg of the line the stage can be switched to: the node rail's entry.
+ *
+ * The stage draws **one** node's conversation — the main window and the sessions
+ * that conversation itself dispatched — and every other leg of the line stands on
+ * the rail as a bar. The rail is a switch, never an index: a press on a bar hands
+ * the leg's session back to the caller, and which conversation the stage draws is
+ * the caller's pick. Nothing is drawn for a leg that was not picked, so two steps
+ * of one line never share a page.
+ *
+ * A leg carries no rows of its own: its window is read when it is picked. What the
+ * bar needs is the one number it has always been drawn from — how many rows that
+ * window would hold — and that is measured here, from the same events, so the
+ * ruler and the window can never disagree.
+ */
+export interface OverviewLeg {
+  /** Which session this leg is: what a press hands back. */
+  readonly id: string
+  /** Its title: the node's own, the same word its window's nameplate prints; absent when it works no node. */
+  readonly title: string | null
+  /** How many rows its window would draw at this moment — the bar's own length, and no other reading. */
+  readonly rows: number
+  /** Whether it stands at a person's gate: the bar's amber ink, the caller's own reading carried as it is. */
+  readonly waiting?: boolean
+  /** Whether it owes work nobody is doing: the bar's break ink, carried the same way. */
+  readonly alert?: boolean
+}
+
 /** The overview's reading at this snapshot. */
 export interface OverviewReading {
   /**
-   * The main window: the conversation this panel's pipeline owns — its own
-   * session when the record names it, else a named one still running, else the
-   * named one that moved last. Absent when the record names none of the list's
-   * sessions: the stage stays empty rather than showing a conversation the
-   * pipeline never mentioned. It is the only window that can carry
-   * {@link OverviewWindow.waiting}, and the only one the gate and the delivery are
-   * read for.
+   * The main window: the conversation this panel's pipeline owns — the one the
+   * reader picked on the rail when there is a pick, else its own session when the
+   * record names it, else a named one still running, else the named one that moved
+   * last. Absent when the record names none of the list's sessions: the stage stays
+   * empty rather than showing a conversation the pipeline never mentioned. It is
+   * the only window that can carry {@link OverviewWindow.waiting}, and the only
+   * one the gate and the delivery are read for.
    */
   readonly main: OverviewWindow | null
   /**
-   * The child windows, oldest first: the sessions the list still calls running
-   * that the record names, plus the main session's own running children, plus the
-   * **ghosts** — legs that stopped while the record still owes their work, which
-   * keep their window so that debt is somewhere to be read — at most five, taken
-   * anew at every read. A child that ended owing nothing is not here, and neither
-   * is one with nothing readable: its window leaves the page by the client's leave
-   * animation.
+   * The child windows, oldest first: the **subagent conversations this main window
+   * dispatched** — the list's running rows whose parent is the main session — plus
+   * the ghosts of a child its own dispatch cut short while the main still owes that
+   * work, at most five, taken anew at every read. A node's own session is never a
+   * child however it was dispatched: it is a leg ({@link legs}), because a pipeline
+   * step is not a subagent of the step that happened to open it. A child that ended
+   * owing nothing is not here, and neither is one with nothing readable: its window
+   * leaves the page by the client's leave animation.
    */
   readonly children: readonly OverviewWindow[]
+  /**
+   * The legs this stage can be switched to, in the reading's own order — the node
+   * rail's entries and never windows. The set is the steps of the line still on the
+   * table: the record-named legs the list calls running, the ones that stopped while
+   * the record still owes their work (a ghost standing where the line stands), the
+   * ones at a person's gate, and the main window's own leg, which is drawn lit. A leg
+   * the record has delivered and left, and that owes nobody a word, is on none of
+   * them: it owes nobody a look either.
+   */
+  readonly legs: readonly OverviewLeg[]
   /**
    * How many **running** children the five-window cap folded away — a count,
    * never a window: 0 is 0. A session dropped for having nothing readable was
@@ -303,6 +342,16 @@ export interface OverviewInput {
    * conversation is the one they expect to see, running or not.
    */
   readonly sessionId?: unknown
+  /**
+   * The leg the reader picked on the node rail, by session id: the one conversation
+   * the stage draws, whatever the fallback rule would have picked.
+   *
+   * It wins over everything — including the panel's own session — because it is the
+   * one thing on this input that a person said. An id the list does not hold is no
+   * pick at all: the stage falls back rather than drawing a conversation this host
+   * cannot see (a leg that just left its list, or a pick made in another workspace).
+   */
+  readonly shownSession?: unknown
   /**
    * The sessions whose node stands at a person's gate, both kinds: a
    * **checkpoint** (delivered, and that delivery not approved yet) and a
@@ -486,12 +535,14 @@ function latestOf(
 /**
  * Which conversation is the main window — the one rule, in the order it reads:
  *
- * 1. the panel's own session, when the record names it: the reader's own
+ * 1. the leg the reader picked on the rail, while the list still holds it — a
+ *    person's pick outranks every reading here;
+ * 2. the panel's own session, when the record names it: the reader's own
  *    conversation, running or not;
- * 2. else a session the record names that the list still calls running (the
+ * 3. else a session the record names that the list still calls running (the
  *    newest of them when several are);
- * 3. else the one the record names that moved last;
- * 4. else nothing — no window at all, rather than a conversation the pipeline
+ * 4. else the one the record names that moved last;
+ * 5. else nothing — no window at all, rather than a conversation the pipeline
  *    never mentioned.
  *
  * A named session the list does not hold is no window either, and it is never
@@ -506,6 +557,10 @@ function mainIdOf(
   rows: Readonly<Record<string, OverviewSessionRow>>,
   order: readonly string[],
 ): string | undefined {
+  /* The pick is asked of the same list as everything else: a leg that left the
+     list is no pick, and the fallback answers instead of a stale id. */
+  const shown = text(input.shownSession)
+  if (shown !== undefined && rows[shown] !== undefined) return shown
   const named = pipelineOf(input)
   const self = text(input.sessionId)
   if (named === undefined) {
@@ -1027,23 +1082,36 @@ function factsOf(input: {
 /**
  * Read the overview's windows and rows off one snapshot.
  *
- * The main window is the conversation this pipeline owns
- * ({@link mainIdOf}): its own session when the record names it, else a named
- * session still running, else the named one that moved last — and no window at
- * all when the record names none, or names only sessions the list does not
- * hold. A child counts as a window while the list's running bit says it is
- * still running and the record names it — or, named or not, its `parentId` is
- * that main session, which is the one admission a caller without a record side
- * has. A child with no readable head and no readable events is no window: the
- * box it would draw says nothing. A child that ended is not drawn and not
- * counted, because the window it had is taken off the page by the client's
- * leave animation — unless the record has not delivered its work and the line
- * has stopped: that leg is where the line stands, and it keeps its seat. A
- * session of another conversation, and any child of one, is never drawn here.
- * Over five child windows the most recent five are taken — taken whole from
- * whoever is running at that moment, never the first five pinned, never a gap
- * filled at the end — and the running ones the five leave out are counted, not
- * drawn: `hiddenChildren` is how many running children the cap folded away.
+ * The main window is the one conversation the stage draws
+ * ({@link mainIdOf}): the leg the reader picked on the rail while the list
+ * still holds it, else this pipeline's own session when the record names it,
+ * else a named session still running, else the named one that moved last — and
+ * no window at all when the record names none, or names only sessions the list
+ * does not hold.
+ *
+ * A child counts as a window while the list's running bit says it is still
+ * running and its `parentId` is that main session — which is the whole
+ * admission a caller without a record side has. A session the record names for
+ * a node is **never** a child, however it was dispatched: it is a leg, because a
+ * step of the line is not a subagent of the step that happened to open it. That
+ * one boundary is what keeps two parallel nodes off one stage. A child with no
+ * readable head and no readable events is no window: the box it would draw says
+ * nothing. A child that ended is not drawn and not counted, because the window it
+ * had is taken off the page by the client's leave animation — unless the main
+ * owes the work it was dispatched for and the line has stopped: that cut is where
+ * the line stands, and it keeps its seat. A session of another conversation, and
+ * any child of one, is never drawn here. Over five child windows the most recent
+ * five are taken — taken whole from whoever is running at that moment, never the
+ * first five pinned, never a gap filled at the end — and the running ones the five
+ * leave out are counted, not drawn: `hiddenChildren` is how many running children
+ * the cap folded away.
+ *
+ * The legs are the rail's entries and no windows at all ({@link OverviewLeg}): the
+ * record-named steps the list still calls running, the ones that stopped while the
+ * record still owes their work, the ones at a person's gate, and the main window's
+ * own leg among them. They are the set a switch chooses from, so a reader can move
+ * the stage to another step of the line without that step ever standing beside the
+ * one it is replacing.
  *
  * The window's state facts are read here and nowhere else ({@link factsOf}):
  * `settled` is the list's running bit not being true, `waiting` is the caller
@@ -1097,19 +1165,25 @@ export function readOverview(input: OverviewInput): OverviewReading {
     return held.has(id) || (node !== undefined && stranded.has(node))
   }
   const mainWindowDebt = mainId === undefined ? false : debtOf(mainId)
-  /* The seats the column can take, in two kinds. A **running** leg: the sessions the record names and
-     the list calls running — the relay's legs, whose parent links point wherever the last trigger stood
-     — plus the main session's own running children, which is the whole admission when the caller says
-     nothing about the pipeline. A **ghost**: a leg the record has not delivered (`undeliveredSessions`)
-     whose conversation is not running — resting between rounds, dead, or gone from the list
-     altogether. Nothing will settle such a leg next unless something prompts it, and the window it
-     keeps is the only place that debt can be read; letting the window go with the conversation is how
-     a broken leg becomes invisible. Two things still take that window away, and both are the same
-     judgment — the stage belongs to where the line stands now: a leg that stopped is no shape of a
-     stall while another leg of the line runs, and a leg whose conversation started after this one's
-     last word has taken its place. A stopped session whose node is delivered is no seat either: it
-     left its work behind, and its window goes with it. */
-  const running: string[] = []
+  /* Whether a session is a step of the line rather than a subagent of one: the record
+     names it for a node. A step of the line is a **leg** — the rail's entries — and
+     never a child of the window that happened to dispatch it, which is what keeps a
+     pipeline's parallel nodes from standing beside each other on one stage. */
+  const isLeg = (id: string): boolean => named !== undefined && named.has(id)
+  /* The seats the column can take, in two kinds. A **child**: a session the main
+     conversation dispatched itself and the list still calls running — this one step's
+     subagents, which is also the whole admission when the caller says nothing about the
+     pipeline. A **ghost child**: one of those the main's own dispatch cut short while the
+     main still owes that work, which keeps its seat so the cut is somewhere to be read.
+     A **leg**: a record-named session still on the table. A running leg is a rail entry
+     and not a seat at all, and so is a leg the record has not delivered
+     (`undeliveredSessions`) whose conversation is not running — resting between rounds,
+     dead, or gone from the list altogether. Nothing will settle such a leg next unless
+     something prompts it, and the bar it keeps is the only place that debt can be read;
+     letting it go with the conversation is how a broken leg becomes invisible. A stopped
+     session whose node is delivered is no leg either: it left its work behind. */
+  const kids: string[] = []
+  const movingLegs: string[] = []
   const ghosts: string[] = []
   if (mainId !== undefined) {
     for (const id of rowIds) {
@@ -1124,10 +1198,11 @@ export function readOverview(input: OverviewInput): OverviewReading {
         else if (parent === mainId && mainWindowDebt && cutShort(input.events?.[id])) ghosts.push(id)
         continue
       }
-      const admitted = parent === mainId
-        || (named === undefined ? order.includes(id) : named.has(id))
-      if (!admitted) continue
-      running.push(id)
+      if (isLeg(id)) {
+        movingLegs.push(id)
+        continue
+      }
+      if (parent === mainId) kids.push(id)
     }
   }
   /* A leg the record has not delivered whose conversation the list no longer holds at all — deleted,
@@ -1139,11 +1214,13 @@ export function readOverview(input: OverviewInput): OverviewReading {
     if (input.nodeOf?.[id] === undefined) continue
     ghosts.push(id)
   }
-  /* A leg that stopped keeps the stage only while nothing came after it: a leg whose conversation
+  /* A leg that stopped keeps its bar only while nothing came after it: a leg whose conversation
      began later took its place, and the line is standing where the newest of them stands. Only this
      line's own conversations count — the session list is every workspace's, and a conversation opened
      afterwards in another one is no step of this pipeline. A leg with no readable word of its own
-     cannot be placed in that order, and stands. */
+     cannot be placed in that order, and stands. A dead **child** is held to one more judgment, the
+     same one the stage has always kept: it stands while the line stands still, because a step still
+     running means that cut is history rather than where the line is. */
   const ofThisLine = (id: string): boolean => parentOf(id) === mainId
     || (named === undefined ? order.includes(id) : named.has(id))
   const supersededBy = (id: string): boolean => {
@@ -1156,12 +1233,27 @@ export function readOverview(input: OverviewInput): OverviewReading {
     }
     return false
   }
-  const standing = running.length > 0 ? [] : ghosts.filter((id) => !supersededBy(id))
   /* Whether anything of this line is still moving: a running leg, or — with no record side at all — a
      session of the list the caller handed over. A pipeline with a leg still running has not stopped,
      which is what keeps the red off every window of it. */
-  const moving = running.length > 0
+  const moving = movingLegs.length > 0 || kids.length > 0
     || (named === undefined ? order : [...named]).some((id) => rows[id]?.running === true)
+  const standing = ghosts.filter((id) => !supersededBy(id) && (isLeg(id) || !moving))
+  /* The legs the rail offers: the steps still on the table, in the reading's own order, with the main
+     window's own leg among them — the bar that stands lit — whenever the main is a step of the line.
+     Three kinds are offered: a step still running, a step that stopped owing work, and a step **at a
+     person's gate** — a finished checkpoint still owes a person a word, and a rail that hid it would
+     be hiding the one thing the record asks the reader to do. The pick can land on a leg that stopped,
+     and then that leg is the main window: the rail is how a reader asks to read it, so it is offered
+     here like any other. */
+  const legIds: string[] = []
+  for (const id of rowIds) {
+    const offered = id === mainId
+      ? isLeg(id)
+      : movingLegs.includes(id) || standing.includes(id) || waiting.has(id)
+    if (offered && !legIds.includes(id)) legIds.push(id)
+  }
+  for (const id of standing) if (!legIds.includes(id)) legIds.push(id)
   const mainWindow = main === undefined || mainId === undefined
     ? null
     : {
@@ -1180,7 +1272,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
      box, not a window, and the running bit alone never stands one up. Dropped here, it is also no
      seat the cap could fold away, so the count keeps counting windows alone. */
   const seats: OverviewWindow[] = []
-  for (const id of running) {
+  for (const id of kids) {
     const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id], at)
     if (window.title === null && window.rows.length === 0) continue
     /* A seat that is still moving carries no state of its own: the gate, the delivery and the debt are
@@ -1189,13 +1281,14 @@ export function readOverview(input: OverviewInput): OverviewReading {
     const ending = endingOf(input.events?.[id])
     seats.push(ending === undefined ? window : { ...window, ending })
   }
-  /* The ghosts stand after the moving seats — there are none while one of them runs, so the cap only
-     meets ghosts when the line has stopped. What a ghost says is the thing the reader has to act on:
-     the line stands here. It says "broken" only when the debt is proved — the caller's stranded
+  /* The dead children stand after the moving seats. What one says is the thing the reader has to act
+     on: the line stands here. It says "broken" only when the debt is proved — the caller's stranded
      judgment (the claim is on disk and the session is gone), or a last turn the conversation did not
      close itself — unless a person is the one owed (a gate), which is a different debt and is drawn
-     as the breath. A leg resting between rounds keeps its window quietly, which is the truth about it. */
+     as the breath. A step resting between rounds keeps its window quietly, which is the truth about
+     it. */
   for (const id of standing) {
+    if (isLeg(id)) continue
     const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id], at)
     if (window.title === null && window.rows.length === 0) continue
     const ending = endingOf(input.events?.[id])
@@ -1217,12 +1310,30 @@ export function readOverview(input: OverviewInput): OverviewReading {
     })
   }
   const drawn = seats.slice(-WINDOW_CAP)
+  const legs = legIds.map((id): OverviewLeg => {
+    const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id], at)
+    const leg: OverviewLeg = { id, title: window.title, rows: window.rows.length }
+    const gated = waiting.has(id)
+    /* A bar says the two verdicts a step can stand in and nothing else: a person's gate in the warn
+       ink, a debt nobody is working in the break's. Both are read the way the window's own frame reads
+       them — one ink, one fact — so a leg that stopped is no break while another leg of the line still
+       runs: the line has not stalled, and the bar and the window could never disagree. A leg still
+       moving wears neither. */
+    if (gated) return { ...leg, waiting: true }
+    if (rows[id]?.running === true || moving) return leg
+    const ending = endingOf(input.events?.[id])
+    const broken = ending === undefined
+      ? stranded.has(input.nodeOf?.[id] ?? '')
+      : ending.kind !== 'completed'
+    return broken ? { ...leg, alert: true } : leg
+  })
   return {
     main: mainWindow,
     children: drawn.map((window) => {
       const dispatchCallId = anchors.get(window.id)
       return dispatchCallId === undefined ? window : { ...window, dispatchCallId }
     }),
+    legs,
     /* Counted off the seats, never off the five the cap kept: what the cap folded away is the
        windows it left out. */
     hiddenChildren: seats.length - drawn.length,

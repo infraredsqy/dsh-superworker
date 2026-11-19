@@ -17,6 +17,7 @@ export type {
   OverviewEnding,
   OverviewEvent,
   OverviewInput,
+  OverviewLeg,
   OverviewReading,
   OverviewRow,
   OverviewRowKind,

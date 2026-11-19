@@ -759,15 +759,15 @@ test('no main view in the list: no overview at all, and nothing throws', () => {
     sessions: snapshot(['c-1'], { 'c-1': childRow('c-1', 'session-gone') }),
     events: { 'c-1': [said(1, undefined, 'hello')] },
   })
-  assert.deepEqual(reading, { main: null, children: [], hiddenChildren: 0 })
+  assert.deepEqual(reading, { main: null, children: [], legs: [], hiddenChildren: 0 })
 })
 
 test('a snapshot nothing can be read off: an empty reading, and no throw', () => {
-  assert.deepEqual(readOverview({ sessions: {} }), { main: null, children: [], hiddenChildren: 0 })
-  assert.deepEqual(readOverview({ sessions: { ids: 'nonsense', byId: 5 } }), { main: null, children: [], hiddenChildren: 0 })
+  assert.deepEqual(readOverview({ sessions: {} }), { main: null, children: [], legs: [], hiddenChildren: 0 })
+  assert.deepEqual(readOverview({ sessions: { ids: 'nonsense', byId: 5 } }), { main: null, children: [], legs: [], hiddenChildren: 0 })
   assert.deepEqual(
     readOverview({ sessions: snapshot(['x'], { x: { retainedBy: 'nonsense' } }) }),
-    { main: null, children: [], hiddenChildren: 0 },
+    { main: null, children: [], legs: [], hiddenChildren: 0 },
   )
 })
 
@@ -877,7 +877,7 @@ test('the record names no session at all: no window, rather than an unrelated co
     sessionId: 'session-subagent',
     events: { [stale]: [said(1, undefined, '不该出现的行')] },
   })
-  assert.deepEqual(reading, { main: null, children: [], hiddenChildren: 0 })
+  assert.deepEqual(reading, { main: null, children: [], legs: [], hiddenChildren: 0 })
 })
 
 test('another conversation in the same workspace, and its children, are never drawn', () => {
@@ -947,19 +947,79 @@ test('a caller that says nothing about the pipeline keeps DSH\'s main view: the 
   assert.deepEqual(said_nothing.main.rows.map((row) => row.full), ['一句话'])
 })
 
+/* ---- the pick on the rail ------------------------------------------------
+ *
+ * The stage draws one step of the line, and a press on the rail is how a reader
+ * asks for another one: the picked session is the first thing the main-window
+ * rule reads, ahead of the panel's own conversation. It is a pick only while the
+ * list still holds it — a leg that just left, or a id from another workspace, is
+ * no pick at all, and the fallback answers rather than an unknown.
+ */
+
+test('the leg the reader picked is the stage, ahead of the panel\'s own conversation', () => {
+  const conductor = 'session-conductor'
+  const fast = 'session-fast-leg'
+  const slow = 'session-slow-leg'
+  const reading = readOverview({
+    sessions: snapshot([conductor, fast, slow], {
+      [conductor]: pipelineRow(conductor, { running: true, updatedAt: '2026-11-17T06:20:15.000Z' }),
+      [fast]: pipelineRow(fast, { running: true, updatedAt: '2026-11-17T06:20:40.000Z' }),
+      [slow]: pipelineRow(slow, { running: true, updatedAt: '2026-11-17T06:20:41.000Z' }),
+    }),
+    pipelineSessions: [conductor, fast, slow],
+    sessionId: conductor,
+    shownSession: slow,
+    nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
+    nodes: {
+      'n-conductor': { title: '场记：开场记录', mode: 'auto' },
+      'n-fast': { title: '快工：一张小抄', mode: 'auto' },
+      'n-slow': { title: '慢工：三段小传', mode: 'auto' },
+    },
+    events: { [slow]: [said(1, undefined, '慢工的行')] },
+  })
+  assert.equal(reading.main.id, slow, `the stage is ${reading.main.id}, not the leg the reader picked`)
+  assert.deepEqual(reading.main.rows.map((row) => row.full), ['慢工的行'], "the stage drew another conversation's rows")
+  assert.deepEqual(reading.children.map((w) => w.id), [], 'a picked leg brought a second step onto the stage')
+  assert.deepEqual(reading.legs.map((leg) => leg.id), [conductor, fast, slow], 'the rail lost a step it was offering')
+})
+
+test('a pick the list no longer holds is no pick: the fallback answers', () => {
+  const conductor = 'session-conductor'
+  const fast = 'session-fast-leg'
+  const reading = readOverview({
+    sessions: snapshot([conductor, fast], {
+      [conductor]: pipelineRow(conductor, { updatedAt: '2026-11-17T06:20:15.000Z' }),
+      [fast]: pipelineRow(fast, { running: true, updatedAt: '2026-11-17T06:20:40.000Z' }),
+    }),
+    pipelineSessions: [conductor, fast],
+    sessionId: conductor,
+    /* A leg that just left its list, or an id picked in another workspace: neither is this stage. */
+    shownSession: 'session-gone-leg',
+    nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast' },
+    nodes: {
+      'n-conductor': { title: '场记：开场记录', mode: 'auto' },
+      'n-fast': { title: '快工：一张小抄', mode: 'auto' },
+    },
+  })
+  assert.equal(reading.main.id, conductor, `the stage is ${reading.main.id} on a pick the list does not hold`)
+  assert.deepEqual(reading.legs.map((leg) => leg.id), [conductor, fast], 'the rail lost a step it was offering')
+})
+
 /* ---- the record's parallel legs -------------------------------------------
  *
  * A relay opens each leg after the one before it reads "closed", and a restart
  * mid-line leaves the parent links pointing wherever the last trigger stood —
  * so the parentage of two legs dispatched side by side groups nothing. The run
  * notes are the one fact about which sessions are this line's work: a leg the
- * list still calls running draws its window off the record's word alone, beside
- * the window the reader sits in, and a leg whose running bit went false draws
- * nothing again — the last completed one is the main window's own rule, and it
- * does not move.
+ * list still calls running is a **leg** — a bar on the rail the reader switches
+ * with — and never a child of the window that happened to dispatch it. That is
+ * what keeps two parallel nodes from standing on one stage: one of them is the
+ * main window, and the other is a bar. A leg whose running bit went false while
+ * the record still owes its work keeps its bar so the debt is somewhere to be
+ * read; the main window's own rule is untouched.
  */
 
-test('two record-named legs still running draw two child windows, whatever their parent links say', () => {
+test('two record-named legs still running are two legs on the rail, and one stage', () => {
   const conductor = 'session-conductor'
   const fast = 'session-fast-leg'
   const slow = 'session-slow-leg'
@@ -967,48 +1027,159 @@ test('two record-named legs still running draw two child windows, whatever their
     sessions: snapshot([conductor, fast, slow], {
       [conductor]: pipelineRow(conductor, { updatedAt: '2026-11-17T06:20:15.000Z' }),
       /* The parent links are the relay's own leftovers: one points at a session that is gone, one
-         at the main — neither admission is what stands these windows up. */
+         at the main — and one of them at the main is exactly the case this rule exists for. */
       [fast]: pipelineRow(fast, { running: true, parentId: 'session-gone-leg', updatedAt: '2026-11-17T06:20:40.000Z' }),
       [slow]: pipelineRow(slow, { running: true, parentId: conductor, updatedAt: '2026-11-17T06:20:41.000Z' }),
     }),
     pipelineSessions: [conductor, fast, slow],
     sessionId: conductor,
-    nodeOf: { [fast]: 'n-fast', [slow]: 'n-slow' },
+    nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
     nodes: {
+      'n-conductor': { title: '场记：开场记录', mode: 'auto' },
       'n-fast': { title: '快工：一张小抄', mode: 'auto' },
       'n-slow': { title: '慢工：三段小传', mode: 'auto' },
     },
     events: { [fast]: [said(1, undefined, '快工的行')], [slow]: [said(2, undefined, '慢工的行')] },
   })
   assert.equal(reading.main.id, conductor, `the main window is ${reading.main.id}, not the reader's own conversation`)
-  assert.deepEqual(reading.children.map((w) => w.id), [fast, slow], `the drawn children are ${reading.children.map((w) => w.id)}`)
   assert.deepEqual(
-    reading.children.map((w) => w.title),
-    ['快工：一张小抄', '慢工：三段小传'],
-    'a parallel leg lost the node nameplate its run note names',
+    reading.children.map((w) => w.id),
+    [],
+    `two steps of the line stood on one stage: ${reading.children.map((w) => w.id)}`,
   )
-  assert.equal(reading.hiddenChildren, 0, 'a drawn leg was counted as one the cap folded away')
+  assert.deepEqual(
+    reading.legs.map((leg) => leg.id),
+    [conductor, fast, slow],
+    `the rail offers ${reading.legs.map((leg) => leg.id)}`,
+  )
+  assert.deepEqual(
+    reading.legs.map((leg) => leg.title),
+    ['场记：开场记录', '快工：一张小抄', '慢工：三段小传'],
+    'a leg lost the node nameplate its run note names',
+  )
+  /* The bar's length is the window's own row count: the ruler is measured off the same events the
+     window would be drawn from, so a leg that has said nothing yet is a short bar and nothing more. */
+  assert.deepEqual(reading.legs.map((leg) => leg.rows), [0, 1, 1], 'a bar is not measured off its own rows')
+  assert.equal(reading.hiddenChildren, 0, 'a leg was counted as a child the cap folded away')
 })
 
-test('a record-named leg whose running bit went false is no child window', () => {
-  /* The slow leg's own session reads not running — whatever still moves inside
-     it is another session's bit, and this reading never chases it. The main
-     window's own rule is untouched: the reader's own conversation still wins
-     among the record-named ones, running or not. */
+test('a record-named leg the list stopped is a leg while the record still owes its work, and no child', () => {
+  /* The fast leg's own session reads not running — whatever still moves inside
+     it is another session's bit, and this reading never chases it. It has not
+     delivered its node, so it keeps its bar; the reader's own conversation still
+     wins the stage among the record-named ones, running or not. */
   const conductor = 'session-conductor'
   const fast = 'session-fast-leg'
   const slow = 'session-slow-leg'
   const reading = readOverview({
     sessions: snapshot([conductor, fast, slow], {
-      [conductor]: pipelineRow(conductor),
-      [fast]: pipelineRow(fast, { running: true, updatedAt: '2026-11-17T06:20:40.000Z' }),
-      [slow]: pipelineRow(slow, { parentId: conductor, updatedAt: '2026-11-17T06:20:41.000Z' }),
+      [conductor]: pipelineRow(conductor, { running: true, updatedAt: '2026-11-17T06:20:15.000Z' }),
+      [fast]: pipelineRow(fast, { updatedAt: '2026-11-17T06:20:40.000Z' }),
+      [slow]: pipelineRow(slow, { running: true, parentId: conductor, updatedAt: '2026-11-17T06:20:41.000Z' }),
     }),
     pipelineSessions: [conductor, fast, slow],
     sessionId: slow,
+    nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
+    nodes: {
+      'n-conductor': { title: '场记：开场记录', mode: 'auto' },
+      'n-fast': { title: '快工：一张小抄', mode: 'auto' },
+      'n-slow': { title: '慢工：三段小传', mode: 'auto' },
+    },
+    undeliveredSessions: [fast, slow],
+    heldSessions: [fast],
+    /* The claim is on disk and the session is gone from this host's roster: the debt is proved. */
+    strandedNodes: ['n-fast'],
   })
   assert.equal(reading.main.id, slow, `the main window is ${reading.main.id}, not the reader's own conversation`)
-  assert.deepEqual(reading.children.map((w) => w.id), [fast], `the drawn children are ${reading.children.map((w) => w.id)}`)
+  assert.deepEqual(reading.children.map((w) => w.id), [], `a stopped step was drawn as a child: ${reading.children.map((w) => w.id)}`)
+  assert.deepEqual(reading.legs.map((leg) => leg.id), [conductor, fast, slow], `the rail offers ${reading.legs.map((leg) => leg.id)}`)
+  assert.equal(reading.legs[0].alert, undefined, 'a leg that already moved on was drawn as the break')
+  /* The line is still moving — two steps of it are running — so the stopped one wears no break ink
+   * yet: one ink, one fact, and the frame on the stage reads the same fact the same way. */
+  assert.equal(reading.legs[1].alert, undefined, 'a leg drawn as the break while another leg of the line still runs')
+  assert.equal(reading.legs[2].waiting, undefined, 'a running leg was drawn at a gate')
+
+  /* The line stops: now the same bar says the same thing the frame would. */
+  const stopped = readOverview({
+    sessions: snapshot([conductor, fast, slow], {
+      [conductor]: pipelineRow(conductor, { updatedAt: '2026-11-17T06:20:15.000Z' }),
+      [fast]: pipelineRow(fast, { updatedAt: '2026-11-17T06:20:40.000Z' }),
+      [slow]: pipelineRow(slow, { updatedAt: '2026-11-17T06:20:41.000Z' }),
+    }),
+    pipelineSessions: [conductor, fast, slow],
+    sessionId: slow,
+    nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
+    nodes: {
+      'n-conductor': { title: '场记：开场记录', mode: 'auto' },
+      'n-fast': { title: '快工：一张小抄', mode: 'auto' },
+      'n-slow': { title: '慢工：三段小传', mode: 'auto' },
+    },
+    undeliveredSessions: [fast, slow],
+    heldSessions: [fast],
+    strandedNodes: ['n-fast'],
+  })
+  /* The line stops: now the same bar says the same thing the frame would — and the step whose node
+   * was delivered has left the rail altogether, because it owes nobody a look. */
+  assert.deepEqual(stopped.legs.map((leg) => leg.id), [fast, slow], `the rail offers ${stopped.legs.map((leg) => leg.id)}`)
+  assert.equal(stopped.legs[0].alert, true, 'a step that stopped owing work wore no break ink once the line stood still')
+  /* The same stop, with no witness to the debt — no stranded claim and no readable last turn — is a
+   * quiet step, not a broken one. */
+  assert.equal(stopped.legs[1].alert, undefined, 'a step whose debt nothing proves was drawn as the break')
+})
+
+test('a step at a person\'s gate keeps its bar while its session is done: the gate is what the reader owes', () => {
+  /* A checkpoint that delivered its work and stopped is still a person being asked: the rail must
+   * offer it, or the one thing the record asks for has no place on the page. */
+  const conductor = 'session-conductor'
+  const gated = 'session-gated-leg'
+  const reading = readOverview({
+    sessions: snapshot([conductor, gated], {
+      [conductor]: pipelineRow(conductor, { updatedAt: '2026-11-17T06:20:15.000Z' }),
+      [gated]: pipelineRow(gated, { updatedAt: '2026-11-17T06:30:00.000Z' }),
+    }),
+    pipelineSessions: [conductor, gated],
+    sessionId: conductor,
+    nodeOf: { [conductor]: 'n-conductor', [gated]: 'n-gated' },
+    nodes: {
+      'n-conductor': { title: '场记：开场记录', mode: 'auto' },
+      'n-gated': { title: '闸口：等一声批准', mode: 'checkpoint' },
+    },
+    /* Delivered and stopped: nothing is owed to the line, and a person is still owed a word. */
+    deliveredSessions: [conductor, gated],
+    waitingSessions: [gated],
+  })
+  assert.deepEqual(reading.legs.map((leg) => leg.id), [conductor, gated], `the rail offers ${reading.legs.map((leg) => leg.id)}`)
+  assert.equal(reading.legs[1].waiting, true, 'a step at a person’s gate drew no gate ink')
+  assert.equal(reading.legs[1].title, '闸口：等一声批准', 'the bar does not name the step at the gate')
+})
+
+test('a leg whose conversation began later supersedes the stopped one: only the line where it stands', () => {
+  /* The old leg stopped owing work, and a later leg of the same line began after its last word: the
+     line stands at the newer one, and the old bar goes with the round it belonged to. */
+  const conductor = 'session-conductor'
+  const old = 'session-old-leg'
+  const next = 'session-next-leg'
+  const reading = readOverview({
+    sessions: snapshot([conductor, old, next], {
+      [conductor]: pipelineRow(conductor, { running: true, updatedAt: '2026-11-17T06:20:15.000Z' }),
+      [old]: pipelineRow(old, { updatedAt: '2026-11-17T06:00:00.000Z' }),
+      [next]: pipelineRow(next, { running: true, updatedAt: '2026-11-17T06:20:41.000Z' }),
+    }),
+    pipelineSessions: [conductor, old, next],
+    sessionId: conductor,
+    nodeOf: { [old]: 'n-old', [next]: 'n-next' },
+    nodes: { 'n-old': { title: '旧的一格', mode: 'auto' }, 'n-next': { title: '新的一格', mode: 'auto' } },
+    undeliveredSessions: [old, next],
+    events: {
+      [old]: [{ type: 'turn/end', time: 1, data: { reason: { kind: 'aborted' } } }],
+      [next]: [said(2, undefined, '我来接手')],
+    },
+  })
+  assert.deepEqual(
+    reading.legs.map((leg) => leg.id),
+    [conductor, next],
+    `the rail kept the round the line has left: ${reading.legs.map((leg) => leg.id)}`,
+  )
 })
 
 /* ---- a window that can say nothing is no window ---------------------------

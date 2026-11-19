@@ -69,7 +69,7 @@ const COUNTS = [
 const rowsFor = (children) => Array.from({ length: children }, (_, i) => 2 + (i % 3))
 
 const place = (stage, children, rows = 6) =>
-  layoutOverview({ stage: { width: stage.width, height: stage.height }, mainRows: rows, childRows: rowsFor(children) })
+  layoutOverview({ stage: { width: stage.width, height: stage.height }, mainRows: rows, childRows: rowsFor(children), legCount: children })
 
 /** The ground this state keeps at each side: the rail's lane while the rail stands, else the stage's own blank. */
 const sideOf = (p) => Math.max(p.railVisible ? RAIL_LANE : 0, FIELD_PAD)
@@ -329,7 +329,7 @@ test('no line, no source: an unanchored child is simply drawn, never grown from 
  * running the layout's own formula again. */
 
 test('1024x900, a feed at the capacity: the window hugs its ten rows, and the dot stands on the row it names', () => {
-  const p = layoutOverview({ stage: { width: 1024, height: 900 }, mainRows: READING_CAPACITY, childRows: [3] })
+  const p = layoutOverview({ stage: { width: 1024, height: 900 }, mainRows: READING_CAPACITY, childRows: [3], legCount: 1 })
   /* The main window is the tallest frame the capacity allows it: 96 (head) + 10 × 24 (the rows) + 20
      (foot) + 2 (the frame) = 358 — twenty-two short of the field's own 380, and one row more would
      have to hang past that end, which is why the capacity stops at ten. */
@@ -354,7 +354,7 @@ test('1024x900, a feed at the capacity: the window hugs its ten rows, and the do
 })
 
 test('1024x300, a capacity feed cut by a short stage: the stack keeps its blank, and the dot stands on the first row it shows', () => {
-  const p = layoutOverview({ stage: { width: 1024, height: 300 }, mainRows: READING_CAPACITY, childRows: [3] })
+  const p = layoutOverview({ stage: { width: 1024, height: 300 }, mainRows: READING_CAPACITY, childRows: [3], legCount: 1 })
   /* The stage gives the field 300 − 2×8 = 284 and no more: the window takes all of it, so ten rows
      asked for and six fit. */
   assert.equal(p.fieldHeight, 284, `the field came out ${p.fieldHeight}`)
@@ -382,7 +382,7 @@ test('1024x300, a capacity feed cut by a short stage: the stack keeps its blank,
 })
 
 test('a feed with room to spare: the same bottom-counted middle, and not the head-counted one', () => {
-  const p = layoutOverview({ stage: { width: 1024, height: 720 }, mainRows: 6, childRows: [3] })
+  const p = layoutOverview({ stage: { width: 1024, height: 720 }, mainRows: 6, childRows: [3], legCount: 1 })
   assert.equal(p.main.rowsRoom, 6, `the window's room came out ${p.main.rowsRoom}`)
   const child = p.children[0]
   const gap = child.left - (p.main.left + p.main.width)
@@ -402,7 +402,7 @@ test('a feed with room to spare: the same bottom-counted middle, and not the hea
 for (const width of [200, 256, 320, 360, 390]) {
   for (const children of [0, 2]) {
     test(`a ${width}px stage with ${children} child(ren): every window narrows with the stage and stays on it`, () => {
-      const p = layoutOverview({ stage: { width, height: 720 }, mainRows: 6, childRows: rowsFor(children) })
+      const p = layoutOverview({ stage: { width, height: 720 }, mainRows: 6, childRows: rowsFor(children), legCount: children })
       const side = sideOf(p)
       for (const box of [p.main, ...p.children]) {
         assert.ok(box.width >= 0, `a window has a negative width: ${box.width}`)
@@ -436,7 +436,7 @@ for (const width of [320, 360, 390, 480]) {
   for (const height of [600, 720]) {
     for (const children of [0, 1]) {
       test(`a phone stage ${width}x${height} with ${children} child(ren): the plate probes its 32 and the group is centred`, () => {
-        const p = layoutOverview({ stage: { width, height }, mainRows: 6, childRows: rowsFor(children) })
+        const p = layoutOverview({ stage: { width, height }, mainRows: 6, childRows: rowsFor(children), legCount: children })
         const side = sideOf(p)
         /* The probe is the design's own 32, not "something above zero": the reservation is what the
            band is measured against, so a phone stage never has to give it up. The 16 is the floor
@@ -475,7 +475,7 @@ for (const width of [320, 360, 390, 480]) {
 test('the wide stages keep the design\'s sizes, the rows and the field this change may not move', () => {
   for (const [width, height] of [[1024, 720], [1440, 900]]) {
     for (const children of [0, 1]) {
-      const p = layoutOverview({ stage: { width, height }, mainRows: 6, childRows: rowsFor(children) })
+      const p = layoutOverview({ stage: { width, height }, mainRows: 6, childRows: rowsFor(children), legCount: children })
       assert.equal(p.main.width, MAIN_MAX_W, `a ${width}px stage narrowed the main window to ${p.main.width}`)
       assert.equal(p.main.height, MAIN_HEAD + 6 * ROW_H + MAIN_FOOT + BOX_BORDER, `the main window is ${p.main.height} tall`)
       assert.equal(p.main.rowsRoom, 6, `the main window's room came out ${p.main.rowsRoom}`)
@@ -494,7 +494,7 @@ test('the wide stages keep the design\'s sizes, the rows and the field this chan
 
 test('the count stands on the column top, its right edge on the column right edge, clear of every window', () => {
   const stage = STAGES[2]
-  const p = layoutOverview({ stage: { width: stage.width, height: stage.height }, mainRows: 6, childRows: rowsFor(5) })
+  const p = layoutOverview({ stage: { width: stage.width, height: stage.height }, mainRows: 6, childRows: rowsFor(5), legCount: 5 })
   assert.equal(p.children.length, 5, `the column drew ${p.children.length} of five children`)
   const spill = layoutSpill({ children: p.children, hiddenChildren: 2 })
   assert.notEqual(spill, undefined, 'the count was not drawn')
@@ -517,12 +517,12 @@ test('the count stands on the column top, its right edge on the column right edg
 })
 
 test('no count to say, no column to stand on, no ground above it: no badge', () => {
-  const p = layoutOverview({ stage: { width: 1440, height: 900 }, mainRows: 6, childRows: rowsFor(5) })
+  const p = layoutOverview({ stage: { width: 1440, height: 900 }, mainRows: 6, childRows: rowsFor(5), legCount: 5 })
   assert.equal(layoutSpill({ children: p.children, hiddenChildren: 0 }), undefined, 'a badge stood with nothing folded away')
   assert.equal(layoutSpill({ children: [], hiddenChildren: 3 }), undefined, 'a badge stood with no column under it')
   /* The column stood, but the stage gave it less than the badge needs above itself: drawing one there
      would lay it across the first window. */
-  const short = layoutOverview({ stage: { width: 1024, height: 200 }, mainRows: 6, childRows: rowsFor(5) })
+  const short = layoutOverview({ stage: { width: 1024, height: 200 }, mainRows: 6, childRows: rowsFor(5), legCount: 5 })
   assert.ok(short.children.length > 0, 'the short stage drew no column at all')
   assert.ok(short.children[0].top < SPILL_GAP + SPILL_H, `the short stage left ${short.children[0].top} above the column`)
   assert.equal(layoutSpill({ children: short.children, hiddenChildren: 2 }), undefined, 'the badge lay across the first window')
@@ -539,7 +539,7 @@ test('the main window grows by exactly one row for one more row, and hugs its co
 test('a child never grows past the rows it actually holds', () => {
   const stage = STAGES[2]
   const p = place(stage, 4)
-  const capped = layoutOverview({ stage: { width: stage.width, height: stage.height }, mainRows: 6, childRows: [1, 9, 9, 9] })
+  const capped = layoutOverview({ stage: { width: stage.width, height: stage.height }, mainRows: 6, childRows: [1, 9, 9, 9], legCount: 4 })
   /* The one-row child is shorter than its equal-share siblings, and both keep their rows inside the box. */
   assert.ok(capped.children[0].height < p.children[0].height, 'a one-row child took a share it cannot fill')
   for (const box of capped.children) {
@@ -548,21 +548,22 @@ test('a child never grows past the rows it actually holds', () => {
   }
 })
 
-test('a stage too narrow for two windows draws the main window alone, and no rail for the column that left', () => {
+test('a stage too narrow for two windows draws the main window alone, and the rail keeps the lane it was given', () => {
   /* 520 is under the pair's floors (240 + 240) once the lane and the probe are taken out: the column
    * leaves whole. */
-  const p = layoutOverview({ stage: { width: 520, height: 480 }, mainRows: 6, childRows: rowsFor(2) })
+  const p = layoutOverview({ stage: { width: 520, height: 480 }, mainRows: 6, childRows: rowsFor(2), legCount: 2 })
   assert.deepEqual(p.children, [], 'the children column did not leave')
   assert.ok(p.main.width >= 200, 'the main window collapsed')
-  /* Two live children, and no column beside them: a rail whose bars index windows that are not
-   * drawn is the empty frame on the stage's left — it leaves with the column it indexes. */
-  assert.equal(p.railVisible, false, 'a rail stood for a column the stage could not seat')
+  /* Two legs and no column beside them: the rail is a switch over the line's steps, so a stage too
+   * narrow for a children column still keeps it — the two are not the same question any more. */
+  assert.equal(p.railVisible, true, 'the rail left with a column it no longer indexes')
+  assert.ok(p.fieldLeft >= RAIL_LANE, `the field starts at ${p.fieldLeft}, inside the rail's lane`)
 })
 
 test('a narrow stage seats the pair at their floors rather than dropping the column: the ground gives way', () => {
   /* 640 is under the pair's documented minimums (340 + 330) and over their floors. The old rule
    * dropped the column here, which drew a pipeline with legs as a pipeline with none — silently. */
-  const p = layoutOverview({ stage: { width: 640, height: 480 }, mainRows: 4, childRows: rowsFor(2) })
+  const p = layoutOverview({ stage: { width: 640, height: 480 }, mainRows: 4, childRows: rowsFor(2), legCount: 2 })
   assert.equal(p.children.length, 2, 'a stage that can hold the pair at their floors drew no column')
   assert.ok(p.main.width >= MAIN_FLOOR_W, `the main window fell to ${p.main.width}, under its floor`)
   for (const box of p.children) {
@@ -587,7 +588,7 @@ for (const width of SHORT_WIDTHS) {
   for (const height of SHORT_HEIGHTS) {
     for (const count of COUNTS) {
       test(`a ${width}x${height} stage, ${count.windows} window(s): the field and every box stay between the stage's two edges`, () => {
-        const p = layoutOverview({ stage: { width, height }, mainRows: 6, childRows: rowsFor(count.children) })
+        const p = layoutOverview({ stage: { width, height }, mainRows: 6, childRows: rowsFor(count.children), legCount: count.children })
         assert.ok(p.fieldHeight <= height, `the field is ${p.fieldHeight} tall on a ${height}px stage`)
         assert.ok(p.fieldTop >= 0, `the field starts above the stage: ${p.fieldTop}`)
         assert.ok(p.fieldTop + p.fieldHeight <= height, `the field ends at ${p.fieldTop + p.fieldHeight}, past ${height}`)
@@ -608,11 +609,15 @@ for (const width of SHORT_WIDTHS) {
   }
 }
 
-test('the node rail exists from two running children, and not before', () => {
+test('the node rail exists from two legs of the line, and not before', () => {
   const stage = STAGES[1]
-  assert.equal(place(stage, 0).railVisible, false, 'one window alone drew a node rail')
-  assert.equal(place(stage, 1).railVisible, false, 'one child drew a node rail')
-  assert.equal(place(stage, 2).railVisible, true, 'two children drew no node rail')
+  assert.equal(place(stage, 0).railVisible, false, 'one stage with nothing to switch to drew a node rail')
+  assert.equal(place(stage, 1).railVisible, false, 'one leg — nowhere to switch — drew a node rail')
+  assert.equal(place(stage, 2).railVisible, true, 'two legs drew no node rail')
+  /* The rail is not the children column's index any more: two legs and no child still get it, and a
+     child alone does not. */
+  assert.equal(layoutOverview({ stage, mainRows: 6, childRows: [], legCount: 2 }).railVisible, true, 'a switchable line drew no rail because no child was drawn')
+  assert.equal(layoutOverview({ stage, mainRows: 6, childRows: rowsFor(2), legCount: 1 }).railVisible, false, 'the rail came back as the children column\'s index')
 })
 
 test('mid stage: no rail bar, at any row count up to the capacity, reaches past the field', () => {
@@ -636,6 +641,7 @@ test('the widest feed any stage can stand is the capacity the reading is cut to'
         stage: { width: stage.width, height: stage.height },
         mainRows: READING_CAPACITY,
         childRows: Array.from({ length: count.children }, () => READING_CAPACITY),
+        legCount: count.children,
       })
       for (const box of [p.main, ...p.children]) worst = Math.max(worst, box.rowsRoom)
     }

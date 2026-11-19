@@ -10,11 +10,10 @@
  * The ground rules this arithmetic holds by, whatever the stage does:
  *
  * - The node rail keeps a lane on the left while it stands, and nothing drawn probes into it. One
- *   window alone, or one child, draws no rail and keeps only the stage's own blank. The rail is the
- *   standing children column's own index: where the column cannot stand, the rail does not stand
- *   either — two dim bars in a lane whose column left the stage are the empty frame a reader cannot
- *   name. The lane itself is kept from two live children, the rail's own threshold, whether or not
- *   the stage ends up seating their column. The main
+ *   conversation alone — one leg to show — draws no rail and keeps only the stage's own blank: there
+ *   is nothing to switch to. The rail is the line's switch over its steps, not an index of the
+ *   children column, so it stands whatever that column does; the lane is kept from two legs, which is
+ *   the same threshold. The main
  *   window's nameplate is the one thing that crosses its own window's left edge; the probe's ground
  *   is reserved out of the band before a window is measured, so the probe is room the layout keeps
  *   on every stage rather than slack a narrow one spends — and one pixel of the rail is never
@@ -112,7 +111,7 @@ const FRAME_SIDE = 0.5
 /** How far the nameplate probes out of the main window's left edge at most. */
 export const PLATE_OUT = 32
 
-/** The rail exists from this many live children up; one window alone has no node rail. */
+/** The rail exists from this many legs up: a stage with one conversation has nothing to switch to. */
 export const RAIL_FROM = 2
 
 /**
@@ -152,7 +151,7 @@ export interface OverviewPlacement {
   readonly children: readonly OverviewBox[]
   /** How far the nameplate probes left of the main window's edge; the rail keeps every pixel left of that. */
   readonly plateOut: number
-  /** Whether the node rail stands: it takes two live children, and a stage that seats their column. */
+  /** Whether the node rail stands: it takes two legs of the line, which is one other step to switch to. */
   readonly railVisible: boolean
 }
 
@@ -180,12 +179,16 @@ export function layoutOverview(input: {
   readonly mainRows: number
   /** Each child's row count, in the reading's order. */
   readonly childRows: readonly number[]
+  /** How many legs the rail offers; the rail stands from two, which is one other step to switch to. */
+  readonly legCount: number
 }): OverviewPlacement {
   const { stage, mainRows, childRows } = input
-  /* The lane is kept from two live children — the rail's own threshold — whether or not the stage
-     ends up seating their column. While it is kept it stays clear on both sides, and that symmetry
-     is what puts the group on the stage's middle; with no lane the stage's own blank is all there is. */
-  const wantRail = childRows.length >= RAIL_FROM
+  /* The lane is kept from two legs — the rail's own threshold — whether or not the stage ends up seating
+     a children column: the rail is a switch over the line's steps, not an index of that column, so a
+     stage too narrow for the column still keeps it. While it is kept it stays clear on both sides, and
+     that symmetry is what puts the group on the stage's middle; with no lane the stage's own blank is
+     all there is. */
+  const wantRail = input.legCount >= RAIL_FROM
   const side = Math.max(wantRail ? RAIL_LANE : 0, FIELD_PAD)
   /* What the stage really has left under the lane it keeps — nothing fabricated: on a stage too
      narrow for even that, the windows take whatever is there and shrink with it. The nameplate's
@@ -226,10 +229,10 @@ export function layoutOverview(input: {
     mainW = Math.max(MAIN_FLOOR_W, Math.min(mainW, rest - CHILD_FLOOR_W))
     childW = Math.max(CHILD_FLOOR_W, rest - mainW)
   }
-  /* The rail is the column's own index: it stands only where the column stands. Two dim bars in a
-     lane whose column left the stage are the empty frame on the stage's left — the rail leaves with
-     the column it indexes, and the lane it kept goes back to being the stage's own blank. */
-  const railVisible = wantRail && childrenShown
+  /* The rail is the line's own switch: it stands wherever there is a second step to move to, and it
+     no longer leaves with the children column, because switching a step was never that column's
+     business. The lane it keeps goes back to being the stage's own blank only when it does not stand. */
+  const railVisible = wantRail
   if (!childrenShown) {
     /* The column leaves whole; the main window takes what the stage next to the rail can give, and
        narrows with the stage rather than running off it. Its floor is the readable one and not the
