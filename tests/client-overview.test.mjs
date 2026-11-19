@@ -1004,6 +1004,42 @@ test('the rail is a switch: a press on a bar draws that step, and never two of t
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
+test('the step on the table and the seat that stopped with it: two windows, one step, and no rail', { skip: bundleSkip }, async () => {
+  /* Filed from the iPad: one node is held by the line, its conversation was stopped by hand, and the
+   * subagent it had dispatched stopped with it. The seat stands beside the step — the cut is where the
+   * line stands — but the rail is the line's switch over **steps**, and one step has nowhere to switch
+   * to: a second bar would be a conversation the stage is already drawing, offered a second time. */
+  const service = fakeSessionsService()
+  service.set('c1', [read('a.ts', 200), { type: 'turn/end', time: 300, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }])
+  service.set('g1', [read('b.ts', 400), { type: 'turn/end', time: 500, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }])
+  const mounted = await mountBuiltPanel({
+    record: recordOfADeadLeg(),
+    sessionsService: service,
+    useSessions: (select) => select({
+      ids: ['m1', 'c1'],
+      byId: {
+        m1: { id: 'm1', running: false, displayTitle: 'the delivered step' },
+        c1: { id: 'c1', running: false, parentId: 'm1', displayTitle: 'the step on the table' },
+        /* A subagent's own session: DSH keeps it in the map without listing it, and its parent is the
+         * step being drawn — which is exactly what makes it a seat of this stage, not a step of the line. */
+        g1: { id: 'g1', running: false, parentId: 'c1', displayTitle: '你这一趟只做一件事：按节点' },
+      },
+    }),
+    /* The claim is on disk and the session is gone from this host's roster: the debt is proved. */
+    agents: { list: () => [{ id: 'm1' }] },
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  assert.equal(container.querySelectorAll('[data-window]').length, 2, `the stage drew ${container.querySelectorAll('[data-window]').length} windows`)
+  const seat = container.querySelector('[data-window="g1"]')
+  assert.notEqual(seat, null, 'the seat where the cut is read left the stage')
+  assert.ok(seat.className.includes('is-broken'), 'the seat stopped by hand says nothing about the work it still owes')
+  assert.equal(container.querySelector('.superworker-orail'), null, 'a seat of the stage stood on the rail as a step of the line')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
 test('the step a reader switches to, dead and owing work: the break is the frame, and one word says why', { skip: bundleSkip }, async () => {
   /* The same dead leg as above, this time pressed on the rail: on the stage its own window is read
    * with what it owes, which is the whole reason a stopped leg keeps a bar. */

@@ -1132,7 +1132,8 @@ function factsOf(input: {
  * record still owes their work, the ones at a person's gate, and the main window's
  * own leg among them. They are the set a switch chooses from, so a reader can move
  * the stage to another step of the line without that step ever standing beside the
- * one it is replacing.
+ * one it is replacing. A **child** is never one of them, however it is drawn: a
+ * seat on the stage is a conversation to read, not a step to switch to.
  *
  * The window's state facts are read here and nowhere else ({@link factsOf}):
  * `settled` is the list's running bit not being true, `waiting` is the caller
@@ -1280,16 +1281,20 @@ export function readOverview(input: OverviewInput): OverviewReading {
      that conversation, and every other step that owes nobody a look has left the rail by then; without
      this the pick would be a one-way door into a finished leg, with nothing to press to come back. */
   const self = text(input.ownSession)
+  /* A **step** of the line is what the rail switches between, and nothing else is. A **seat** — a subagent
+     conversation of the step being drawn, ghost or running — is already on the stage beside that step, and
+     a bar for it would stand one conversation twice on one page, offering a switch to where the reader
+     already is. The stage's seat keeps its window; the rail keeps the steps. */
+  const aStep = (id: string): boolean => isLeg(id) && (movingLegs.includes(id) || standing.includes(id))
   for (const id of rowIds) {
     const offered = id === mainId
       ? isLeg(id)
-      : movingLegs.includes(id)
-        || standing.includes(id)
+      : aStep(id)
         || atGate(id)
         || (self !== undefined && id === self && isLeg(id))
     if (offered && !legIds.includes(id)) legIds.push(id)
   }
-  for (const id of standing) if (!legIds.includes(id)) legIds.push(id)
+  for (const id of standing) if (isLeg(id) && !legIds.includes(id)) legIds.push(id)
   const mainWindow = main === undefined || mainId === undefined
     ? null
     : {

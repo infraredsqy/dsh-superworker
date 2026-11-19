@@ -1116,6 +1116,35 @@ test('two record-named legs still running are two legs on the rail, and one stag
   assert.equal(reading.hiddenChildren, 0, 'a leg was counted as a child the cap folded away')
 })
 
+test('a seat on the stage is no step of the line: a child that stopped with the step being read gets no bar', () => {
+  /* Filed from the iPad: one node on the table, its conversation stopped by hand, and the subagent it
+   * had dispatched stopped with it. Two windows is right — the seat keeps the cut where the line
+   * stands — but the rail switches between **steps**, and a bar for a conversation the stage is
+   * already drawing would stand the same window twice and offer a switch to where the reader is. */
+  const step = 'session-step'
+  const seat = 'session-seat'
+  const still = { type: 'turn/end', time: 9, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }
+  const reading = readOverview({
+    sessions: snapshot([step, seat], {
+      [step]: pipelineRow(step, { updatedAt: '2026-11-17T06:20:15.000Z' }),
+      [seat]: pipelineRow(seat, { parentId: step, updatedAt: '2026-11-17T06:20:40.000Z' }),
+    }),
+    pipelineSessions: [step],
+    nodeOf: { [step]: 'n-step' },
+    nodes: { 'n-step': { title: '收尾：一张总单', mode: 'auto' } },
+    undeliveredSessions: [step],
+    heldSessions: [step],
+    events: { [step]: [still], [seat]: [still] },
+  })
+  assert.deepEqual(reading.children.map((w) => w.id), [seat], 'the seat where the cut is read left the stage')
+  assert.equal(reading.children[0].alert, true, 'the seat stopped by hand said nothing about the work it still owes')
+  assert.deepEqual(
+    reading.legs.map((leg) => leg.id),
+    [step],
+    `the rail stands the stage's own seat as a step: ${reading.legs.map((leg) => leg.id)}`,
+  )
+})
+
 test('a record-named leg the list stopped is a leg while the record still owes its work, and no child', () => {
   /* The fast leg's own session reads not running — whatever still moves inside
      it is another session's bit, and this reading never chases it. It has not
