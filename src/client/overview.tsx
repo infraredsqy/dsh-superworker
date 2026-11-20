@@ -922,6 +922,15 @@ export function OverviewPane(props: {
   const [settling, setSettling] = React.useState(false)
   const settleTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
+  /* The join's own room: a window arriving re-seats everyone else around it in the same beat, and
+   * the survivors spend that move on the way — the same spend a fold's close-up gets (`is-settle`).
+   * The mark is read during the very render that first draws the joiner, so the transition stands on
+   * the panes in the commit that changes their boxes; `joined` then holds it for the entrance's own
+   * span, so a redraw mid-entrance cannot strip the travel mid-flight. A wholesale replacement
+   * substitutes one whole cast for another and arrives in nothing — `arrivedNow` is empty there by
+   * design, and a switch keeps its instant swap. */
+  const joining = arrivedNow.length > 0 || joined.size > 0
+
   /* Fresh row: the newest row is not the one this window showed before, or the feed gained a
    * row (the two readings of the arrival — growth, or the cut's swap). The comparison runs in an
    * effect and lands in state, never while drawing: a host's double render (StrictMode) would run
@@ -1122,7 +1131,7 @@ export function OverviewPane(props: {
         </div>
       ) : null}
       <div
-        className={`superworker-ofield${settling ? ' is-settle' : ''}`}
+        className={`superworker-ofield${settling ? ' is-settle' : ''}${joining ? ' is-join' : ''}`}
         style={{
           /* The field is the stage's own frame — the sheet lays it over the whole stage — and the
            * boxes inside it are already in stage coordinates. Writing the field's own left/top here

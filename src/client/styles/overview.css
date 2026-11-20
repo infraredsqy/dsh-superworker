@@ -456,12 +456,17 @@
   }
 }
 
-/* The room closing up after a fold. The windows stand where the geometry put them and take a new
- * reading at once — except in this one case, where the new numbers are the space a folded window
- * gave back. There the survivors spend the distance instead of snapping across it, so the fold and
- * the room it frees read as one event. The mark is the pane's own choice (`overview.tsx`), set for
- * the span and then dropped; a stage that changed for any other reason never wears it. */
-.superworker-page .superworker-ofield.is-settle .superworker-opane:not(.is-leave) {
+/* The room closing up after a fold, and the room opening for a join. The windows stand where the
+ * geometry put them and take a new reading at once — except when the change is one cast event: a
+ * fold, where the new numbers are the space a folded window gave back, or a join, where they are
+ * the re-seat a joining window asks of everyone else. There the survivors spend the distance
+ * instead of snapping across it, so the event and the room it rearranged read as one. The mark is
+ * the pane's own choice (`overview.tsx`), set for the span and then dropped; a stage that changed
+ * for any other reason — a re-measure, a workspace switching under the panes — never wears it.
+ * The joiner itself is excluded: its arrival already has its flight (`is-born`) and its opening's
+ * own easing (`is-grow`), and one box must not carry two clocks. */
+.superworker-page .superworker-ofield.is-settle .superworker-opane:not(.is-leave),
+.superworker-page .superworker-ofield.is-join .superworker-opane:not(.is-leave):not(.is-born):not(.is-grow) {
   transition: left 0.2s ease, top 0.2s ease, width 0.2s ease, height 0.2s ease;
 }
 
