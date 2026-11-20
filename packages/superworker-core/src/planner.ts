@@ -877,14 +877,16 @@ async function settleAnswers(
 
   // ── the stopping criteria: the gates are exactly the two numbers above ────
   let stopWhy = '';
-  if (carryOn && (!several || filled.length === 0)) {
-    // On a single-node line its close is its whole round: whatever follows on the graph goes through this gate
-    // too. A multi-node line only asks when no slot could be filled: a slot that can be filled carries the line
-    // on by itself.
+  if (carryOn) {
+    // The node's own mode is asked first, always, whatever the line's parallel width is. A
+    // checkpoint that finished owes a person a word, and a slot that *could* be filled does not
+    // answer for them: filling it would carry the line past the one gate it exists to stop at.
+    // So the stop is decided before the slots are read below, and a decided stop fills nothing.
     const [mustStop, why] = stopCriterion(cycle, nodeRow(nodes, nodeId));
     if (mustStop) {
       decision = 'stop';
       stopWhy = why;
+      filled = [];
     }
   }
 

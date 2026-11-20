@@ -235,6 +235,42 @@ describe('planning: when to stop', () => {
     if (carried.action === 'open_node') expect(carried.node_id).toBe(next.id);
   });
 
+  it('a checkpoint stops the line even when the line is wide enough to fill a slot: the gate is a person, a free slot cannot answer for them', async () => {
+    const root = freshRoot();
+    const superworker = open(root);
+    await superworker.ledger.init();
+    /* Both conditions that used to hide the gate, together: the line is two wide, and closing the
+     * gate frees exactly one slot with a cell ready to take it. Before the fix the slot was filled
+     * and `stopCriterion` was never asked, so a `parallel: 2` line ran straight through a checkpoint
+     * without a word to anybody -- measured end to end, not argued from the shape of the code.
+     *
+     * The cell that fills the slot is wired BEHIND the gate on purpose: this close reads as delivered
+     * (`assumeCompleted`), and that is the one way a dependent turns ready at the instant the close is
+     * judged. A cell that owed nothing to this close would sit ready anyway. */
+    const round = await superworker.ledger.dag.add({ title: 'the gate', mode: 'checkpoint' });
+    const sibling = await superworker.ledger.dag.add({ title: 'the sibling' });
+    const behind = await superworker.ledger.dag.add({ title: 'behind the gate', dependencies: [round.id] });
+    await superworker.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
+    await superworker.ledger.cycles.setPolicy('c1', 'parallel', 2);
+    /* The gate and one other cell in hand: one slot sits open while the gate closes. */
+    await superworker.ledger.cycles.hold('c1', round.id);
+    await superworker.ledger.cycles.hold('c1', sibling.id);
+    putSignal(root, 'c1', round.id, 'completed');
+    const stopped = await open(root).conductor.next({ after: round.id });
+    expect(actionOf(stopped)).toBe('stop_pipeline');
+    if (stopped.action === 'stop_pipeline') {
+      expect(stopped.reason).toContain('node mode=checkpoint');
+      expect(stopped.reason).toContain('say continue');
+    }
+    /* The same close on a one-wide line still stops, so the fix did not trade one width for the
+     * other. */
+    await superworker.ledger.cycles.setPolicy('c1', 'parallel', 1);
+    const narrow = await open(root).conductor.next({ after: round.id });
+    expect(actionOf(narrow)).toBe('stop_pipeline');
+    if (narrow.action === 'stop_pipeline') expect(narrow.reason).toContain('node mode=checkpoint');
+    expect(behind.id).toBeTruthy();
+  });
+
   it("a line's own stop_after_nodes tightens the stop: 'walk two nodes then stop' stops at the 2nd, and keeps walking before that", async () => {
     const root = freshRoot();
     const superworker = open(root);

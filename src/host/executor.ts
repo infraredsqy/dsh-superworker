@@ -217,7 +217,10 @@ export function executorOf(
         ...(onOpened === undefined ? {} : { onOpened }),
         ...(request.model === undefined ? {} : { model: request.model }),
       })
-      if (!outcome.ok) throw new Error(outcome.detail ?? outcome.code)
+      /* The refusal travels with its code, not only its detail: `prompt-missing` carries the cell
+       * (`cycle/node`) as its detail, and that sentence alone cannot be told apart from the other
+       * reasons an open refuses. One line, code first. */
+      if (!outcome.ok) throw new Error(`${outcome.code}: ${outcome.detail ?? '(no detail)'}`)
       return { sessionId: outcome.session, host: 'dsh' }
     },
   }
