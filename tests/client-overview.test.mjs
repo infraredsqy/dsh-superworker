@@ -228,6 +228,55 @@ const stageAt = (mounted, width, height) => {
   return mounted.rerender()
 }
 
+/**
+ * What a pane was inserted WITH, caught at the insertion itself.
+ *
+ * The entrance is a motion from a box the window is not standing in, so the only frame that can
+ * carry it is the frame that first draws the window. Reading the DOM after `rerender()` has flushed
+ * the effect cannot tell that frame from the one after it: by then the join mark is set either way,
+ * and the difference between a working entrance and a dead one is exactly which of the two frames
+ * got it. So the insertion is observed — React hands the node to `appendChild` / `insertBefore` with
+ * its attributes already on it, so what those see IS the first painted frame, and jsdom writes the
+ * inline `--superworker-born-*` all the same.
+ *
+ * Only the entries whose `data-window` the caller asked for are kept; every inserted node is walked,
+ * because the pane may arrive inside a wrapper rather than alone.
+ */
+function watchPaneInsertions(mounted) {
+  const seen = []
+  const look = (node) => {
+    if (node === null || node === undefined || node.nodeType !== 1) return
+    const cls = typeof node.className === 'string' ? node.className : ''
+    if (!cls.includes('superworker-opane')) {
+      for (const one of [...(node.querySelectorAll?.('.superworker-opane') ?? [])]) look(one)
+      return
+    }
+    seen.push({
+      id: node.getAttribute('data-window'),
+      cls,
+      bornX: node.style.getPropertyValue('--superworker-born-x'),
+      bornY: node.style.getPropertyValue('--superworker-born-y'),
+    })
+  }
+  const restore = []
+  for (const name of ['appendChild', 'insertBefore']) {
+    const real = mounted.window.Node.prototype[name]
+    mounted.window.Node.prototype[name] = function (node, ...rest) {
+      look(node)
+      return real.call(this, node, ...rest)
+    }
+    restore.push(() => { mounted.window.Node.prototype[name] = real })
+  }
+  return { seen, restore: () => { for (const one of restore) one() } }
+}
+
+/** The `--superworker-born-x/y` a pane stands with, and whether it wears the entrance's own mark. */
+const bornOf = (pane) => ({
+  x: pane.style.getPropertyValue('--superworker-born-x'),
+  y: pane.style.getPropertyValue('--superworker-born-y'),
+  born: pane.className.includes('is-born'),
+})
+
 test('the overview draws the reading: the node nameplate on the main window, running children only, no session id printed', { skip: bundleSkip }, async () => {
   const service = fakeSessionsService()
   service.set('m1', [said('start.', 1000), dispatched('look for conflicts', 2000, 'd1')])
@@ -417,6 +466,149 @@ test('a flight is aimed on the joining beat, and the stage moving under it does 
   assert.equal(flown.style.getPropertyValue('--superworker-born-x'), aimed.x, 'the flight was re-aimed in x by a re-measure under it')
   assert.equal(flown.style.getPropertyValue('--superworker-born-y'), aimed.y, 'the flight was re-aimed in y by a re-measure under it — the window flies out twice')
   assert.equal(flown.style.getPropertyValue('--superworker-born-s'), aimed.s, 'the flight was re-sized under it')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a joining child wears its entrance on the very frame it is first drawn, with a shift that is not nothing', { skip: bundleSkip }, async () => {
+  /* The defect this case pins: the child appeared at its final box, already full size, already in
+   * place — no growth at all. The mark was published from an effect, so the frame that first drew
+   * the window had none, and by the frame that got it the window already stood at the box the flight
+   * was measured against. A shift of zero plays an entrance that shows nothing. */
+  const service = fakeSessionsService()
+  service.set('m1', [...dispatchRun('c2', 'd2', 'the second job', 100), said('both of them are out.', 200)])
+  let snap = snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  assert.equal(container(mounted).querySelector('[data-window="c2"]'), null, 'the second child is there before it runs')
+
+  const watched = watchPaneInsertions(mounted)
+  snap = snapshotOf([
+    { id: 'c1', running: true, title: 'the first child' },
+    { id: 'c2', running: true, title: 'the second child' },
+  ])
+  await mounted.rerender()
+  watched.restore()
+
+  /* The frame the window was first drawn in — not the one after it. */
+  const first = watched.seen.filter((one) => one.id === 'c2')
+  assert.equal(first.length, 1, `the joining child was drawn in ${first.length} insertions`)
+  assert.ok(first[0].cls.includes('is-born'), `the frame that first drew the child has no entrance on it: ${first[0].cls}`)
+  assert.match(first[0].bornX, /^-?\d+px$/u, `the child's first frame carries no shift in x: "${first[0].bornX}"`)
+  assert.match(first[0].bornY, /^-?\d+px$/u, `the child's first frame carries no shift in y: "${first[0].bornY}"`)
+
+  /* A shift of zero is the defect wearing the mark: the window would be drawn where it already is. */
+  const placement = layoutOverview({
+    stage: { width: 1024, height: 720 },
+    mainRows: container(mounted).querySelectorAll('[data-window="m1"] .superworker-orow').length,
+    childRows: ['c1', 'c2'].map((id) => container(mounted).querySelectorAll(`[data-window="${id}"] .superworker-orow`).length),
+  })
+  assert.notEqual(first[0].bornX, '0px', 'the child was handed a zero shift in x: the entrance plays nothing')
+  /* The shift is the row's own leaving point minus the box: it grows out of the line, not the corner,
+   * and it is not aligned with the window it lands on either. */
+  assert.equal(Number.parseInt(first[0].bornX, 10), placement.main.left + placement.main.width - placement.children[1].left, 'the child grows from somewhere other than the row that dispatched it')
+  assert.notEqual(first[0].bornY, '0px', 'the child was handed a zero shift in y: the entrance plays nothing')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a seat the reading loses for one beat and hands back keeps its entrance off, on the frame it returns in', { skip: bundleSkip }, async () => {
+  /* `arrivedOnce`'s own reading, taken at the frame it belongs to: the returns are observed at their
+   * insertion too, because a mark that shows up a frame late is exactly what this fix moved. A window
+   * that was lost for one beat and handed back inside the leave's span never left the stage, so the
+   * frame that draws it again must not carry an entrance. */
+  const service = fakeSessionsService()
+  service.set('m1', [...dispatchRun('c1', 'd1', 'the job', 100)])
+  let snap = snapshotOf([])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  snap = snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])
+  await mounted.rerender()
+  const first = container(mounted).querySelector('[data-window="c1"]')
+  assert.notEqual(first, null, 'the joining child is not drawn')
+  const arrival = bornOf(first)
+  assert.ok(arrival.born, 'the arriving child plays no entrance at all')
+  assert.match(arrival.y, /^-?\d+px$/u, `the arriving child carries no shift in y: "${arrival.y}"`)
+
+  /* One beat without it, then handed straight back — inside the leave's span, so it never left. */
+  snap = snapshotOf([])
+  await mounted.rerender()
+  const watched = watchPaneInsertions(mounted)
+  snap = snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])
+  await mounted.rerender()
+  watched.restore()
+
+  /* Inserted again as the same element or not, the fact is the same: whatever drew it drew it with no
+   * entrance and no source point. */
+  for (const one of watched.seen.filter((pane) => pane.id === 'c1')) {
+    assert.ok(!one.cls.includes('is-born'), `the returning window was drawn with an entrance: ${one.cls}`)
+    assert.equal(one.bornY, '', 'the returning window was handed a source point again')
+  }
+  const back = container(mounted).querySelector('[data-window="c1"]')
+  assert.notEqual(back, null, 'the returning seat is not drawn')
+  assert.ok(!back.className.includes('is-leave'), 'the returning seat is still folding')
+  const returned = bornOf(back)
+  assert.ok(!returned.born, 'the window flew out a second time without ever leaving the stage')
+  assert.equal(returned.y, '', 'the returning window was handed a source point again')
+  assert.equal(back.style.top, first.style.top, 'the returning window does not stand where it stood')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a replaced cast arrives whole in nothing: the new main window appears without travelling, and no old pane folds', { skip: bundleSkip }, async () => {
+  /* Another conversation under the pane is another cast. The window it names was never absent and has
+   * nowhere to come from, so the frame that draws it carries no source point — and the panes of the
+   * cast that was replaced are gone at once rather than held to fold. */
+  const twoNodes = {
+    ...record(),
+    '.superworker/ideas.json': json({
+      nodes: {
+        n0: { title: 'the first workspace cell', tags: [], mode: 'auto', status: 'completed', created_at: '2026-01-08T00:00:00.000Z', completed_at: '2026-01-09T00:00:00.000Z', dependencies: [] },
+        n1: { title: 'the second workspace cell', tags: [], mode: 'auto', status: 'completed', created_at: '2026-01-08T00:00:00.000Z', completed_at: '2026-01-09T00:00:00.000Z', dependencies: [] },
+      },
+    }),
+    '.superworker/meta/sessions/n0.json': json({ run: [{ session: 'm1', at: '2026-01-09T00:00:00.000Z' }] }),
+    '.superworker/meta/sessions/n1.json': json({ run: [{ session: 'm2', at: '2026-01-09T00:00:00.000Z' }] }),
+  }
+  const service = fakeSessionsService()
+  service.set('m1', [said('the first workspace own words.', 1000)])
+  service.set('m2', [said('the second workspace own words.', 2000)])
+  let snap = { ids: ['m1'], byId: { m1: { id: 'm1', running: true, displayTitle: 'the first conversation' } } }
+  const mounted = await mountBuiltPanel({
+    record: twoNodes,
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  assert.notEqual(container(mounted).querySelector('[data-window="m1"]'), null, 'the first conversation is not drawn')
+
+  const watched = watchPaneInsertions(mounted)
+  snap = { ids: ['m2'], byId: { m2: { id: 'm2', running: true, displayTitle: 'the second conversation' } } }
+  await mounted.rerender()
+  watched.restore()
+
+  for (const one of watched.seen.filter((pane) => pane.id === 'm2')) {
+    assert.ok(!one.cls.includes('is-born'), `a window of the new cast was drawn arriving: ${one.cls}`)
+    assert.equal(one.bornX, '', 'a window of the new cast was handed a source point in x')
+  }
+  const second = container(mounted).querySelector('[data-window="m2"]')
+  assert.notEqual(second, null, 'the second conversation is not drawn')
+  const drawn = bornOf(second)
+  assert.ok(!drawn.born, 'the main window plays an entrance it has no source for')
+  assert.equal(drawn.x, '', 'the main window was handed a source point in x')
+  assert.equal(container(mounted).querySelector('[data-window="m1"]'), null, 'the previous cast\'s window was held to fold on a set that was replaced')
+  assert.equal(container(mounted).querySelectorAll('.superworker-opane.is-leave').length, 0, 'the replaced set holds panes mid-fold')
+
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
