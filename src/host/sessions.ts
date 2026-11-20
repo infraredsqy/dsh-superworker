@@ -10,7 +10,7 @@
  * functions. When the directory layer cannot be fetched, an empty reading is
  * returned as usual.
  */
-import { RECORD_LAUNCH, RECORD_SESSIONS } from './contract.ts'
+import { RECORD_LAUNCH, RECORD_SESSIONS, RECORD_SIGNALS } from './contract.ts'
 import { isAbsent, readWholeFile, type SuperworkerScope, type WorkspaceDirectoryEntry, type WorkspaceFilesPort } from './records.ts'
 
 /** What the panel gets when it fetches session notes. */
@@ -40,6 +40,16 @@ export interface SuperworkerSessionsReading {
    * failed) — an unknown is never read as "gone".
    */
   readonly alive: readonly string[] | null
+  /**
+   * The handoff tickets on disk: which node handed a verdict in, valued by the
+   * verdict word the ticket states. A cell absent here has not handed anything
+   * in — its ticket is missing, still `pending` (the mark a re-run leaves), or
+   * unreadable — and that absence is the fact the overview reads a stopped
+   * conversation against: a turn that closed itself with no ticket behind it
+   * stopped **before** handing its work in, which the log alone cannot say (its
+   * last `turn/end` is `completed` either way).
+   */
+  readonly tickets: Readonly<Record<string, string>>
 }
 
 /**
@@ -53,7 +63,7 @@ export async function readSessionNotes(
   port: WorkspaceFilesPort,
   scope: SuperworkerScope,
   signal: AbortSignal,
-): Promise<Omit<SuperworkerSessionsReading, 'claims' | 'alive'>> {
+): Promise<Omit<SuperworkerSessionsReading, 'claims' | 'alive' | 'tickets'>> {
   const reading = { workspaceRoot: scope.workspaceRoot, recordPath: RECORD_SESSIONS }
   let entries: readonly WorkspaceDirectoryEntry[]
   try {
@@ -124,4 +134,80 @@ export async function readClaims(
     }
   }
   return claims
+}
+
+/**
+ * Bring back the handoff tickets on disk: which node handed a verdict in, and
+ * which word it stated.
+ *
+ * The walk is the same shape the claims walk takes — line directories, then the
+ * `<node>.json` ticket files under each — and the value is the ticket's own
+ * `status`, the one field every other reader of a ticket goes through
+ * (`settleGate` in the engine, and the planner before it).
+ *
+ * A ticket still stating `pending` is **not** a handed-in verdict: it is the
+ * mark a re-run leaves, and the engine's own gate refuses to settle one. So
+ * `pending` is dropped rather than carried, and a cell present in this map is a
+ * cell whose work was actually handed in. An unreadable or ill-shaped file is
+ * dropped the same way — the absence of a venue is never read as a verdict, and
+ * the reader on the other side draws a debt off exactly that absence.
+ */
+export async function readTickets(
+  port: WorkspaceFilesPort,
+  scope: SuperworkerScope,
+  signal: AbortSignal,
+): Promise<Record<string, string>> {
+  const tickets: Record<string, string> = {}
+  let lines: readonly WorkspaceDirectoryEntry[]
+  try {
+    lines = (await port.list(scope, RECORD_SIGNALS, signal)).entries
+  } catch (error) {
+    /* Same discipline as the claims half: the layer itself refusing is an endpoint-level failure
+     * and rethrows, while its absence is the ordinary "no line was ever worked here". */
+    if (!isAbsent(error)) throw error
+    return tickets
+  }
+  for (const line of lines) {
+    if (line.type !== 'directory') continue
+    let cells: readonly WorkspaceDirectoryEntry[]
+    try {
+      cells = (await port.list(scope, `${RECORD_SIGNALS}/${line.name}`, signal)).entries
+    } catch {
+      continue
+    }
+    for (const cell of cells) {
+      if (cell.type !== 'file' || !cell.name.endsWith('.json')) continue
+      let raw: string
+      try {
+        raw = await readWholeFile(port, scope, `${RECORD_SIGNALS}/${line.name}/${cell.name}`, signal)
+      } catch {
+        continue
+      }
+      const status = verdictOf(raw)
+      if (status === undefined) continue
+      tickets[cell.name.slice(0, -'.json'.length)] = status
+    }
+  }
+  return tickets
+}
+
+/**
+ * The verdict word one ticket states: its `status`, when it is a word that
+ * actually hands work in.
+ *
+ * `pending` is the re-run's own mark and hands nothing in, and a shape that is
+ * not a JSON object with a string `status` says nothing this reader may use.
+ * Both answer `undefined`, which the caller reads as "no verdict here".
+ */
+function verdictOf(raw: string): string | undefined {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
+  const status = (parsed as { status?: unknown }).status
+  if (typeof status !== 'string' || status.length === 0 || status === 'pending') return undefined
+  return status
 }

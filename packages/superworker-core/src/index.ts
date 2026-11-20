@@ -177,7 +177,8 @@ export type {
 
 /* The record directory's own name, exported rather than respelled: the host half builds its
    workspace-relative source paths from this one constant, so a second spelling of the directory
-   has nowhere to appear. */
-export { RECORD_DIR_NAME } from './paths';
+   has nowhere to appear. The tickets' directory name comes out the same way: the panel reads the
+   handoff tickets to tell a cell that handed its work in from one that stopped before doing so. */
+export { RECORD_DIR_NAME, SIGNALS_DIR_NAME } from './paths';
 
 export type { RecordLocations, RecordPaths } from './paths';

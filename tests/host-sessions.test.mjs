@@ -11,7 +11,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { absentError, fakeWorkspaceFiles } from './helpers/workspace-files-port.mjs'
-import { readClaims, readSessionNotes } from '../src/host/sessions.ts'
+import { readClaims, readSessionNotes, readTickets } from '../src/host/sessions.ts'
 
 /** This file's own cases on top of the shared stand-in: the whole layer absent from the workspace,
  * and files listed but unreadable (plus a directory entry nothing should try to carry over). */
@@ -93,4 +93,53 @@ test('The claims layer absent (never a dispatch): empty comes back, no throw', a
 test('The claims layer refuses as a whole (not absent): same discipline as notes, a failure that is not absence rides up', async () => {
   const port = fakePort({}, { refuse: true })
   await assert.rejects(() => readClaims(port, scope, signal), { message: /refused/u })
+})
+
+/* ---- the handoff tickets: which cell handed a verdict in ------------------- */
+
+test('The tickets layer: a cell whose ticket states a verdict comes in, valued by that verdict word', async () => {
+  const port = fakePort({
+    '.superworker/signals/c-1/n-1.json': JSON.stringify({ cycle: 'c-1', node: 'n-1', status: 'completed', summary: 'done' }),
+    '.superworker/signals/c-1/n-2.json': JSON.stringify({ cycle: 'c-1', node: 'n-2', status: 'stopped', summary: 'gave up' }),
+  })
+  const tickets = await readTickets(port, scope, signal)
+
+  assert.deepEqual(tickets, { 'n-1': 'completed', 'n-2': 'stopped' })
+})
+
+test('A ticket still pending hands nothing in: the re-run mark is dropped, not carried as a verdict', async () => {
+  /* The engine's own settle gate refuses a `pending` ticket, so reading one as handed in would paint a
+   * step that never delivered as finished — the inverse of the bug this whole reading exists for. */
+  const port = fakePort({
+    '.superworker/signals/c-1/n-1.json': JSON.stringify({ cycle: 'c-1', node: 'n-1', status: 'pending' }),
+    '.superworker/signals/c-1/n-2.json': JSON.stringify({ cycle: 'c-1', node: 'n-2', status: 'completed' }),
+  })
+  const tickets = await readTickets(port, scope, signal)
+
+  assert.deepEqual(tickets, { 'n-2': 'completed' })
+})
+
+test('A ticket that says nothing usable is dropped: unparsable, not an object, no status, an empty one', async () => {
+  const port = fakePort({
+    '.superworker/signals/c-1/broken.json': 'not json at all',
+    '.superworker/signals/c-1/list.json': '[1, 2, 3]',
+    '.superworker/signals/c-1/nostatus.json': JSON.stringify({ cycle: 'c-1', node: 'n' }),
+    '.superworker/signals/c-1/blank.json': JSON.stringify({ status: '' }),
+    '.superworker/signals/c-1/real.json': JSON.stringify({ status: 'completed' }),
+  })
+  const tickets = await readTickets(port, scope, signal)
+
+  assert.deepEqual(tickets, { real: 'completed' })
+})
+
+test('The tickets layer absent (no line was ever worked here): empty comes back, no throw', async () => {
+  const port = fakePort({})
+  assert.deepEqual(await readTickets(port, scope, signal), {})
+})
+
+test('The tickets layer refuses as a whole (not absent): the failure rides up, never read as "nothing handed in"', async () => {
+  /* The distinction the whole reading leans on: a layer nobody could read is not a row of cells that
+   * handed nothing in, and quietly answering "no tickets" would paint every delivered step as a break. */
+  const port = fakePort({}, { refuse: true })
+  await assert.rejects(() => readTickets(port, scope, signal), { message: /refused/u })
 })

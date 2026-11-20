@@ -30,7 +30,7 @@ import { parseConfigList, type SuperworkerConfigReading } from './project-config
 import { dispatchCell } from './relay.ts'
 import { readReading } from './records.ts'
 import { aliveAgentIds, workspaceRootOf } from './seams.ts'
-import { readClaims, readSessionNotes, type SuperworkerSessionsReading } from './sessions.ts'
+import { readClaims, readSessionNotes, readTickets, type SuperworkerSessionsReading } from './sessions.ts'
 import { runWords } from './write.ts'
 
 /**
@@ -186,12 +186,13 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    */
   async #frameOf(sessionId: SessionId, workspaceRoot: string, signal: AbortSignal): Promise<SuperworkerFrame> {
     const scope = { sessionId, workspaceRoot }
-    const [reading, notes, claims] = await Promise.all([
+    const [reading, notes, claims, tickets] = await Promise.all([
       readReading(this.ctx.workspaceFiles, scope, signal),
       readSessionNotes(this.ctx.workspaceFiles, scope, signal),
       readClaims(this.ctx.workspaceFiles, scope, signal),
+      readTickets(this.ctx.workspaceFiles, scope, signal),
     ])
-    const sessions: SuperworkerSessionsReading = { ...notes, claims, alive: aliveAgentIds(this.ctx) }
+    const sessions: SuperworkerSessionsReading = { ...notes, claims, tickets, alive: aliveAgentIds(this.ctx) }
     return { workspaceRoot, at: Date.now(), reading, sessions }
   }
 
@@ -319,11 +320,12 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
     const root = await rootFor(this.ctx, sessionId, workspaceRoot)
     const scope = { sessionId, workspaceRoot: root }
     const signal = options?.signal ?? NEVER_ABORT
-    const [reading, claims] = await Promise.all([
+    const [reading, claims, tickets] = await Promise.all([
       readSessionNotes(this.ctx.workspaceFiles, scope, signal),
       readClaims(this.ctx.workspaceFiles, scope, signal),
+      readTickets(this.ctx.workspaceFiles, scope, signal),
     ])
-    return { ...reading, claims, alive: aliveAgentIds(this.ctx) }
+    return { ...reading, claims, tickets, alive: aliveAgentIds(this.ctx) }
   }
 
   /**

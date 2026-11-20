@@ -12,7 +12,7 @@
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { RECORD_DIR_NAME } from 'superworker-core'
+import { RECORD_DIR_NAME, SIGNALS_DIR_NAME } from 'superworker-core'
 import type { SuperworkerReading, RecordSourceKey } from '../model/records.ts'
 import type { SuperworkerSessionsReading } from './sessions.ts'
 
@@ -68,6 +68,18 @@ export const RECORD_SESSIONS = `${RECORD_DIR}/meta/sessions`
  * which cells carry one is read-only and answers "which rounds are out".
  */
 export const RECORD_LAUNCH = `${RECORD_DIR}/meta/launch`
+
+/**
+ * The directory layer holding the handoff tickets, workspace-relative:
+ * `<signals>/<line>/<node>.json`, the verdict sheet one step of work hands back.
+ *
+ * The panel reads this layer for one judgment the conversation's own log cannot make: whether a
+ * node's session stopped **before** handing its work in. The log's last `turn/end` says a turn
+ * closed — the same word whether the step delivered its work or gave up before it — while the
+ * ticket on disk is the record's own proof either way (see `settleGate` in the engine: absent or
+ * still `pending` means nothing was handed in).
+ */
+export const RECORD_SIGNALS = `${RECORD_DIR}/${SIGNALS_DIR_NAME}`
 
 /**
  * The file holding one cell's launch prompt, under the cell's own directory

@@ -15,7 +15,9 @@
   缺省的 `<root>/plugins`；不点名时读法照旧。
 - 句柄的形状是 `{ root: string; ledger; conductor; config; sessions; locations }` —— `root` 是打开时给的项目根，原样保存；
   `locations` 是这个根那份记录树的落点（`RecordLocations { paths; signal; launchPrompt }`）：
-  谁要把一个落点印出来就问它。`.superworker` 的拼法收在 `paths.ts` 的 `RECORD_DIR_NAME`；改名前的旧目录拼法全树只剩
+  谁要把一个落点印出来就问它。`.superworker` 的拼法收在 `paths.ts` 的 `RECORD_DIR_NAME`，票根目录的拼法收在同处的
+  `SIGNALS_DIR_NAME`——两者都导出给宿主半，因为面板要读 `signals/<线>/<节点>.json` 才分得清「这一格交了活」和「
+  它停在交付之前」（会话自己的 `turn/end` 两种情况都是 `completed`，分不出来）；改名前的旧目录拼法全树只剩
   `legacy.ts` 一处——这个名字总得落在某个地方，不收进一个模块就会落到每个模块，要认得旧目录的那几个读法都问它取事实。
 - `superworker.ledger.dag`、`superworker.ledger.cycles`、`superworker.config` 各自的动词、
   `ledger.init` / `ledger.register` / `ledger.cleanTemp`、`superworker.sessions` 与
@@ -38,6 +40,7 @@ LEGACY_DIR_NAME
 LONG_RESULT_LIMIT
 PLUGIN_SKILL_FILE
 RECORD_DIR_NAME
+SIGNALS_DIR_NAME
 SimulatedExecutor
 answer
 describe
