@@ -15,6 +15,7 @@ import type { SuperworkerConfigReading } from '../host/project-config.ts'
 import type { SuperworkerSessionsReading } from '../host/sessions.ts'
 import type { InstructionScope } from '../host/gateway.ts'
 import type { SessionOpenOutcome } from '../host/executor.ts'
+import { report } from './context.ts'
 import { RefusedError, type Failure, type FailureCode, type Outcome } from './failure.ts'
 
 /** The namespace, named after the host-half service key. */
@@ -119,12 +120,88 @@ export function serviceAt(owner: unknown, name: string): Service | undefined {
   }
 }
 
-export function createPanelPort(ctx: unknown): PanelPort {
+/**
+ * The port the panel is handed, plus the one move the rest of this layer needs from it.
+ *
+ * `refresh` re-resolves which layer is available and keeps the better one: the namespace is mounted
+ * asynchronously (see `remote-mount.ts`), so a port created during `apply` starts on whatever the
+ * carrier layer offers and moves to the mounted namespace when that mount lands. Every open channel
+ * is re-opened on the better layer as it moves, so a panel that opened before the mount finished
+ * ends up on the stream rather than staying on the one-frame road for its whole life.
+ */
+export interface LivePanelPort extends PanelPort {
+  /** Re-read the available layers; upgrades in place, and returns whether the layer changed. */
+  refresh(): boolean
+}
+
+/** Which layer is better: a mounted namespace beats the carrier, and anything beats nothing. */
+const RANK: Readonly<Record<PanelPort['source'], number>> = { none: 0, carrier: 1, remote: 2 }
+
+export function createPanelPort(ctx: unknown): LivePanelPort {
+  return livePortOf(ctx, resolvedPort(ctx))
+}
+
+/**
+ * Which port the context can offer right now: the mounted namespace first, the carrier underneath it
+ * (so a deployment without the namespace still reads), and nothing when neither is there.
+ */
+function resolvedPort(ctx: unknown): PanelPort {
   const remote = remoteNamespace(ctx)
   if (remote !== undefined) return remotePort(remote)
   const carrier = serviceAt(ctx, 'connection') as Carrier | undefined
   if (carrier?.rpc !== undefined) return carrierPort(carrier.rpc)
   return absentPort()
+}
+
+/**
+ * Wrap one layer in the live port the panel holds.
+ *
+ * The wrapper exists for the async mount: a layer that arrives after `apply` has to reach a channel
+ * that is already open. Every open channel keeps its own cancellation and its own restart, so the
+ * disposer the panel was handed stays the one it calls and no channel is ever opened twice at once.
+ * @param ctx - The browser-half plugin context, kept for the re-resolution.
+ * @param first - The layer available at assembly time.
+ */
+function livePortOf(ctx: unknown, first: PanelPort): LivePanelPort {
+  let current = first
+  const restarts = new Set<() => void>()
+  return {
+    get source() {
+      return current.source
+    },
+    refresh() {
+      const found = resolvedPort(ctx)
+      if (RANK[found.source] <= RANK[current.source]) return false
+      current = found
+      for (const restart of [...restarts]) restart()
+      return true
+    },
+    watch(sessionId, workspaceRoot, onFrame) {
+      let live = true
+      let off = current.watch(sessionId, workspaceRoot, onFrame)
+      const restart = () => {
+        if (!live) return
+        off()
+        off = current.watch(sessionId, workspaceRoot, onFrame)
+      }
+      restarts.add(restart)
+      return () => {
+        live = false
+        restarts.delete(restart)
+        off()
+      }
+    },
+    read: (sessionId, workspaceRoot) => current.read(sessionId, workspaceRoot),
+    readSessions: (sessionId, workspaceRoot) => current.readSessions(sessionId, workspaceRoot),
+    say: (sessionId, workspaceRoot, text, scope, cycle, node) => current.say(sessionId, workspaceRoot, text, scope, cycle, node),
+    write: (verb, sessionId, workspaceRoot, id) => current.write(verb, sessionId, workspaceRoot, id),
+    readConfig: (sessionId, workspaceRoot) => current.readConfig(sessionId, workspaceRoot),
+    setConfig: (sessionId, workspaceRoot, key, value) => current.setConfig(sessionId, workspaceRoot, key, value),
+    openNodeSession: (sessionId, workspaceRoot, cycle, node) => current.openNodeSession(sessionId, workspaceRoot, cycle, node),
+    consultMigration: (sessionId, workspaceRoot) => current.consultMigration(sessionId, workspaceRoot),
+    consultRoute: (sessionId, workspaceRoot) => current.consultRoute(sessionId, workspaceRoot),
+    consultConduct: (sessionId, workspaceRoot) => current.consultConduct(sessionId, workspaceRoot),
+  }
 }
 
 /** The mounted remote namespace; both lookups are tried. */
@@ -142,6 +219,9 @@ function remoteNamespace(ctx: unknown): Service | undefined {
   }
 }
 
+/** The endpoints the host answers as one stream of items; every other one is a plain call. */
+export const REMOTE_STREAMS: ReadonlySet<string> = new Set(['watch'])
+
 /** Arguments for a read call: all three positions present. */
 function readArgs(sessionId: string, workspaceRoot: string): Readonly<Record<string, unknown>> {
   return { sessionId, workspaceRoot, options: {} }
@@ -154,8 +234,12 @@ function readArgs(sessionId: string, workspaceRoot: string): Readonly<Record<str
  * When an endpoint changes signature, this table changes with it — the layer refuses to lean on the
  * unsourced convention "object key order = endpoint parameter order", whose silent misalignment on
  * a key reorder is debt this layer does not carry.
+ *
+ * Exported because the Client contribution this plugin mounts is built from it (`remote-mount.ts`):
+ * the descriptor's wire fields have to be these names in this order, or the host's gateway judges
+ * the whole endpoint unreadable.
  */
-const REMOTE_PARAM_ORDER: Readonly<Record<string, readonly string[]>> = {
+export const REMOTE_PARAM_ORDER: Readonly<Record<string, readonly string[]>> = {
   watch: ['sessionId', 'workspaceRoot'],
   read: ['sessionId', 'workspaceRoot', 'options'],
   readSessions: ['sessionId', 'workspaceRoot'],
@@ -256,9 +340,13 @@ function portFromCall(source: PanelPort['source'], call: PortCall, stream?: Stre
           return stream('watch', { sessionId, workspaceRoot }, (item) => {
             if (item !== null && typeof item === 'object') onFrame(item as SuperworkerFrame)
           })
-        } catch {
-          /* This deployment mounted the name but cannot open it as a stream: the one-frame road below is
-             the reading this panel still gets, rather than an empty stage that says nothing at all. */
+        } catch (error) {
+          /* The name is mounted but cannot be opened as a stream: the one-frame road below is the
+             reading this panel still gets, rather than an empty stage that says nothing at all. It
+             leaves a trace, because a namespace that was mounted with the wrong descriptor shape
+             looks exactly like a deployment that carries no stream at all — and this line is the
+             only place the two can be told apart. */
+          report('the mounted watch endpoint cannot be opened as a stream, falling back to one read', error)
         }
       }
       /* This deployment carries no stream: one frame, read the old way, and silence after it. The

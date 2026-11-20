@@ -8,8 +8,9 @@
 import * as React from 'react'
 import { report } from './context.ts'
 import { injectAt } from './context.ts'
-import { createPanelPort, serviceAt, type PanelPort } from './data.ts'
+import { createPanelPort, NAMESPACE, REMOTE_PARAM_ORDER, REMOTE_STREAMS, serviceAt, type PanelPort } from './data.ts'
 import { createLocalePort, LocaleProvider, localeOf, type LocaleService, type LocaleSource } from './locale.ts'
+import { mountRemoteNamespace } from './remote-mount.ts'
 import { createSessionWindows, type SessionWindows } from './session-events.ts'
 import { currentSessionOf, knownSessionsOf, sessionsSnapshotOf } from './sessions-view.ts'
 import { registerSeats, SEAT_WORD } from './mount.ts'
@@ -98,7 +99,18 @@ export interface PanelArgs {
 }
 
 export function apply(ctx: unknown): void {
+  /* The port comes first, so the panel has something to read even if the mount below never lands;
+     and the mount comes second, before anything subscribes, so a deployment that can give out the
+     namespace has it in place by the time the panel's first channel opens. */
   const port = createPanelPort(ctx)
+  mountRemoteNamespace(
+    ctx,
+    { namespace: NAMESPACE, order: REMOTE_PARAM_ORDER, streams: REMOTE_STREAMS },
+    /* The mount is asynchronous (the gateway queues it and hands back a promise): when it lands the
+       port moves onto the mounted namespace and re-opens whatever channel is already watching, so a
+       panel opened during that window ends up on the stream instead of the one-frame road. */
+    () => { port.refresh() },
+  )
   const prefs = createPrefsSource()
   /* DSH owns the language preference — its settings page has the row, it remembers the choice, and
    * it falls back to the browser's language and then to English. This attaches to that rather than
