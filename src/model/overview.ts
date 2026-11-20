@@ -131,6 +131,13 @@ export interface OverviewRow {
   /** Which tool call this row folds: DSH's own `callId` carried out verbatim; a row that folds no call carries none. */
   readonly callId?: string
   /**
+   * The moment of the event this row folds, in epoch milliseconds: the row's
+   * identity across redraws, read the same way every beat, so a drawing that
+   * keys on it updates a row in place instead of remounting it. Absent on a
+   * live tail, which is a buffer's newest slice and not an event of its own.
+   */
+  readonly at?: number
+  /**
    * The streaming step's own tail: this row is a live buffer's newest slice, cut anew as the step
    * streams and redrawn at the animation frame, and it folds away when the step's message settles
    * into the ordinary rows above it. Absent on a settled row.
@@ -621,11 +628,11 @@ function firstSentence(full: string): string {
  * PowerShell's tables all do), and a row with no sentence would draw as its
  * word and the separator alone. Its call's row already stands above it.
  */
-function pushRow(rows: OverviewRow[], kind: OverviewRowKind, full: string | undefined): void {
+function pushRow(rows: OverviewRow[], kind: OverviewRowKind, full: string | undefined, at: number | undefined): void {
   if (full === undefined || full.length === 0) return
   const cut = firstSentence(full)
   if (cut.length === 0) return
-  rows.push({ kind, text: cut, full })
+  rows.push({ kind, text: cut, full, ...(at === undefined ? {} : { at }) })
 }
 
 /* ---- the live step's tails --------------------------------------------------
@@ -730,7 +737,7 @@ function contentTextOf(message: Record<string, unknown> | undefined): string | u
  * own words fold to nothing: the feed shows what the conversation is doing,
  * and the reader already knows what they said.
  */
-function foldAssistant(data: Record<string, unknown> | undefined, rows: OverviewRow[]): void {
+function foldAssistant(data: Record<string, unknown> | undefined, rows: OverviewRow[], at: number | undefined): void {
   const message = asRecord(data?.message)
   const content = message?.content
   if (!Array.isArray(content)) return
@@ -742,8 +749,8 @@ function foldAssistant(data: Record<string, unknown> | undefined, rows: Overview
     if (held?.type === 'reasoning' && blockText.length > 0) thinking.push(blockText)
     if (held?.type === 'text' && blockText.length > 0) spoken.push(blockText)
   }
-  pushRow(rows, 'think', thinking.length > 0 ? thinking.join('\n') : undefined)
-  pushRow(rows, 'output', spoken.length > 0 ? spoken.join('\n') : undefined)
+  pushRow(rows, 'think', thinking.length > 0 ? thinking.join('\n') : undefined, at)
+  pushRow(rows, 'output', spoken.length > 0 ? spoken.join('\n') : undefined, at)
 }
 
 /** The call's own arguments, as an object; arguments that are not parsable text read as none. */
@@ -768,6 +775,7 @@ function foldCall(
   data: Record<string, unknown> | undefined,
   rows: OverviewRow[],
   runCalls: Set<string>,
+  at: number | undefined,
 ): void {
   const name = text(data?.name)
   if (name === undefined) return
@@ -782,6 +790,7 @@ function foldCall(
     text: cut,
     full: subject,
     ...(callId === undefined ? {} : { callId }),
+    ...(at === undefined ? {} : { at }),
   })
 }
 
@@ -796,16 +805,17 @@ function foldResult(
   data: Record<string, unknown> | undefined,
   rows: OverviewRow[],
   runCalls: ReadonlySet<string>,
+  at: number | undefined,
 ): void {
   const message = asRecord(data?.message)
   const error = asRecord(data?.error)
   if (error !== undefined) {
-    pushRow(rows, 'fail', text(error.reason) ?? contentTextOf(message) ?? text(error.code) ?? text(error.name))
+    pushRow(rows, 'fail', text(error.reason) ?? contentTextOf(message) ?? text(error.code) ?? text(error.name), at)
     return
   }
   const callId = text(message?.toolCallId) ?? text(asRecord(message?.source)?.callId)
   if (callId === undefined || !runCalls.has(callId)) return
-  pushRow(rows, 'run', contentTextOf(message))
+  pushRow(rows, 'run', contentTextOf(message), at)
 }
 
 /**
@@ -924,9 +934,10 @@ function foldRows(events: readonly OverviewEvent[] | undefined): readonly Overvi
     const type = text(event.type)
     if (type === undefined) continue
     const data = asRecord(event.data)
-    if (type === 'assistant/message') foldAssistant(data, rows)
-    else if (type === 'tool/call') foldCall(data, rows, runCalls)
-    else if (type === 'tool/result') foldResult(data, rows, runCalls)
+    const at = typeof event.time === 'number' && Number.isFinite(event.time) ? event.time : undefined
+    if (type === 'assistant/message') foldAssistant(data, rows, at)
+    else if (type === 'tool/call') foldCall(data, rows, runCalls, at)
+    else if (type === 'tool/result') foldResult(data, rows, runCalls, at)
   }
   return rows
 }

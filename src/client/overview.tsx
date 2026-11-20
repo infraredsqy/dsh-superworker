@@ -114,6 +114,10 @@ const SETTLE_SPAN_MS = 200
  * window that kept the mark would replay its growth every time anything else redrew the stage. */
 const ENTER_SPAN_MS = 260
 
+/** How long a fresh row wears its mark: the entrance's own span, so a beat that lands between two
+ * arrivals cannot strip the mark mid-animation — stripping it was what made the newest row blink. */
+const FRESH_SPAN_MS = 240
+
 /** How long a window's first box is allowed to take in reaching its real numbers — the span the
  *  sheet's expansion runs, and a breath past it so a second batch of rows joins the same growth. */
 /** How long the opening's growth is spent for: a breath past the sheet's own expansion, so a second
@@ -329,18 +333,36 @@ function Feed(props: {
 }): React.ReactElement {
   const t = useT()
   const rows = props.window.rows
+  /* The row's own identity keys it, so an update of a row's words lands in the same box it already
+   * stood in. A key off the list's position remounts the row the moment the list shifts, and the
+   * entrance mark it may carry replays from zero — which reads as a blink on every beat the newest
+   * row's words move. A live tail is the buffer's own slice, one per kind while it stands, so its
+   * kind keys it; a settled row too old to carry its moment falls back to its place; and a
+   * collision — two rows of one moment and kind — yields its place a plus. */
+  const seen = new Set<string>()
+  const keyed = rows.map((row, index) => {
+    const base = row.live === true
+      ? `live:${row.kind}`
+      : row.at === undefined
+        ? `row:${index}`
+        : `${row.at}:${row.kind}:${row.callId ?? ''}`
+    let key = base
+    while (seen.has(key)) key = `${key}+`
+    seen.add(key)
+    return { row, key, last: index === rows.length - 1 }
+  })
   return (
     <div
       className={`superworker-ofeed${rows.length > props.room ? ' is-fade' : ''}${props.veiled ? ' is-veiled' : ''}`}
       style={{ left: FEED_LEFT, right: FEED_RIGHT, top: props.head, bottom: props.foot }}
     >
-      {rows.map((row, at) => (
+      {keyed.map(({ row, key, last }) => (
         /* No hover title on a row: the row is a reading and a press away from the conversation itself,
            and a tooltip full of build paths over a long thought is noise over a page read at a glance
            — the window opens the whole thing for whoever needs it. */
         <div
-          key={at}
-          className={`superworker-orow is-${row.kind}${row.live === true ? ' is-live' : ''}${at === rows.length - 1 && props.fresh ? ' is-fresh' : ''}`}
+          key={key}
+          className={`superworker-orow is-${row.kind}${row.live === true ? ' is-live' : ''}${last && props.fresh ? ' is-fresh' : ''}`}
         >
           <KindMark kind={row.kind} />
           <span className={`superworker-orow-t${row.live === true ? ' is-live' : ''}`}>
@@ -853,6 +875,7 @@ export function OverviewPane(props: {
      * back is read again, and its rows arrive with it. */
     for (const id of gone) {
       openings.current.delete(id)
+      lastRowKeyRef.current.delete(id)
       const openingTimer = openingTimers.current.get(id)
       if (openingTimer !== undefined) {
         clearTimeout(openingTimer.timer)
@@ -906,6 +929,8 @@ export function OverviewPane(props: {
       clearTimeout(settleTimer.current)
       for (const scheduled of openingTimers.current.values()) clearTimeout(scheduled.timer)
       openingTimers.current.clear()
+      for (const scheduled of freshTimers.current.values()) clearTimeout(scheduled)
+      freshTimers.current.clear()
     },
     [],
   )
@@ -931,28 +956,51 @@ export function OverviewPane(props: {
    * design, and a switch keeps its instant swap. */
   const joining = arrivedNow.length > 0 || joined.size > 0
 
-  /* Fresh row: the newest row is not the one this window showed before, or the feed gained a
-   * row (the two readings of the arrival — growth, or the cut's swap). The comparison runs in an
-   * effect and lands in state, never while drawing: a host's double render (StrictMode) would run
-   * the comparison twice and the second pass would find the row it recorded itself — the mark
-   * would be eaten in the very beat it belongs to. The ref is the effect's own memory; state
+  /* Fresh row: the feed's end carries a settled row this window has never shown. The row's own
+   * moment (`at`, the record's) is the identity the judgment reads, so an update of the newest
+   * row's words — a tail settling into its row, a correction landing — keeps the identity and
+   * redraws in place, where replaying the entrance read as a one-frame blink. The mark is held for
+   * its span and shed by a timer, the way `joined` is: a set that mirrored each beat would strip
+   * the mark on the quiet beat between two arrivals, and the class coming back would restart the
+   * animation from its first frame. The comparison runs in an effect and lands in state, never
+   * while drawing: a host's double render (StrictMode) would run the comparison twice and the
+   * second pass would find the row it recorded itself. The ref is the effect's own memory; state
    * commits what the beat saw. */
-  const lastRowRef = React.useRef<Map<string, { full: string; len: number }>>(new Map())
+  const lastRowKeyRef = React.useRef<Map<string, string>>(new Map())
   const [freshIds, setFreshIds] = React.useState<ReadonlySet<string>>(new Set())
+  const freshTimers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   React.useEffect(() => {
-    const fresh = new Set<string>()
+    const arrived = new Set<string>()
     for (const one of [reading.main, ...reading.children]) {
       if (one === null) continue
-      const last = one.rows[one.rows.length - 1]
-      const was = lastRowRef.current.get(one.id)
-      /* The arrival reads two ways: under the room cut the feed only grows, so a row gained is
-       * an arrival even when its text repeats the previous newest row's; past the cut the count
-       * holds and the arrival is the newest row being swapped. */
-      if (was !== undefined && last !== undefined && (last.full !== was.full || one.rows.length > was.len)) fresh.add(one.id)
-      if (last === undefined) lastRowRef.current.delete(one.id)
-      else lastRowRef.current.set(one.id, { full: last.full, len: one.rows.length })
+      const settled = one.rows.filter((row) => row.live !== true)
+      const newest = settled[settled.length - 1]
+      const key = newest === undefined || newest.at === undefined
+        ? ''
+        : `${newest.at}:${newest.kind}:${newest.callId ?? ''}`
+      const was = lastRowKeyRef.current.get(one.id)
+      if (was !== undefined && key !== '' && key !== was) arrived.add(one.id)
+      if (key !== '') lastRowKeyRef.current.set(one.id, key)
     }
-    setFreshIds((held) => (held.size === 0 && fresh.size === 0 ? held : fresh))
+    if (arrived.size === 0) return
+    setFreshIds((held) => {
+      const next = new Set(held)
+      for (const id of arrived) next.add(id)
+      return next
+    })
+    for (const id of arrived) {
+      const known = freshTimers.current.get(id)
+      if (known !== undefined) clearTimeout(known)
+      freshTimers.current.set(id, setTimeout(() => {
+        freshTimers.current.delete(id)
+        setFreshIds((held) => {
+          if (!held.has(id)) return held
+          const next = new Set(held)
+          next.delete(id)
+          return next
+        })
+      }, FRESH_SPAN_MS))
+    }
   }, [reading])
 
   /* The box and the reading each id drew from on this beat: a leaving pane reads them back below, and
