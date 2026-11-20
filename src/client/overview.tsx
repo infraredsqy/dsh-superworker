@@ -746,6 +746,21 @@ export function OverviewPane(props: {
       if (window !== undefined) out.push({ id, rows: window.rows.length })
     }
     for (const one of live) if (!out.some((kept) => kept.id === one.id)) out.push(one)
+    /* A window still folding that `castOrder` never named: one that arrived while an earlier fold was
+     * already in flight, so it was never live on a beat with nothing leaving, and every rebuild since
+     * has walked a list it is not on. It is drawn, so it has to be measured — the column's count is
+     * what decides whether the field seats a children column at all, and a cast that leaves it out
+     * tells the geometry this stage has no children while a child is still standing on it. The field
+     * then measures the room with the column gone, the main window takes the box it stands in when it
+     * is alone, and the folding pane keeps the box it drew its last measured beat in: the two are drawn
+     * on top of each other, which is a frame no single layout produced and no reading describes. Its
+     * slot goes last on purpose: it was never anywhere in this order, and a window on its way out does
+     * not get to push a survivor along. */
+    for (const id of held) {
+      if (out.some((kept) => kept.id === id)) continue
+      const window = windowsRef.current.get(id)
+      if (window !== undefined) out.push({ id, rows: window.rows.length })
+    }
     return out
   }, [reading, leavingIds])
   /* The order the column last drew with no fold in flight: what a held window's slot is read from. */

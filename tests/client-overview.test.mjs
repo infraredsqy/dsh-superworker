@@ -965,6 +965,112 @@ function fieldSettling(container) {
   return field !== null && field.className.includes('is-settle')
 }
 
+/**
+ * The two boxes a pane draws with, as the inline styles spell them: what the geometry handed this
+ * window on this beat.
+ */
+function rectOf(container, id) {
+  const box = boxOf(container, id)
+  if (box === null) return null
+  return { left: parseFloat(box.left), top: parseFloat(box.top), width: parseFloat(box.width), height: parseFloat(box.height) }
+}
+
+/** Whether two boxes claim the same ground: no layout puts two windows on top of each other. */
+function overlapOf(a, b) {
+  if (a === null || b === null) return null
+  const x = Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left)
+  const y = Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top)
+  return x > 0 && y > 0 ? { x, y } : null
+}
+
+/**
+ * A child that arrives while an earlier fold is still in flight, and ends before that fold has run.
+ *
+ * The window in question is the newcomer: it is live on no beat with nothing leaving, so it never
+ * reaches the list the column's slots are rebuilt from. The column therefore measures the stage as if
+ * it were not there, while the pane is still drawn — and the two windows stand on the same ground.
+ *
+ * What is pinned is a relation, not a distance: no two windows may be drawn on one another, and a
+ * window still standing is measured together with the ones it stands beside. The gap's own number is
+ * the geometry's business (`overview-geom.test.mjs` holds that table); a case here that named it would
+ * break the moment the stage's breathing gap was retuned, which is a change this behaviour survives.
+ */
+test('a window that arrives mid-fold and leaves again is still measured while it is drawn', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [...dispatchRun('cA', 'dA', 'the first job', 100), ...dispatchRun('cX', 'dX', 'the next job', 200)])
+  service.set('cA', [read('a.ts', 200)])
+  service.set('cX', [read('x.ts', 300)])
+  let snap = snapshotOf([
+    { id: 'cA', running: true, title: 'the first child' },
+    { id: 'cX', running: true, title: 'the next child' },
+  ])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+
+  /* `cA` ends first: its pane folds, and `cX` keeps standing. */
+  snap = snapshotOf([{ id: 'cX', running: true, title: 'the next child' }])
+  await mounted.rerender()
+  assert.notEqual(rectOf(container, 'cX'), null, 'the surviving child left the stage with the folded one')
+  assert.ok(container.querySelector('[data-window="cA"]')?.className.includes('is-leave'), 'the ended child carries no leave mark')
+
+  /* The newcomer ends too, before the first fold's span has run. Both panes are still on the page, and
+   * neither may be drawn over the other: two windows on one ground is a frame the geometry cannot
+   * produce, so it can only come from the two having been measured by different readings. */
+  snap = snapshotOf([])
+  await mounted.rerender()
+  const cA = rectOf(container, 'cA')
+  const cX = rectOf(container, 'cX')
+  assert.notEqual(cA, null, 'the first folding pane vanished before its fold ran')
+  assert.notEqual(cX, null, 'the second folding pane vanished before its fold ran')
+  assert.equal(overlapOf(cA, cX), null, `two windows were drawn on the same ground: ${JSON.stringify({ cA, cX })}`)
+
+  /* A child still standing is part of what the column is measured over: each drawn window gets its own
+   * place in that column. The failure this pins had both panes claiming one column, so "distinct
+   * columns" is the relation — not any particular left edge or width, which is the geometry's. */
+  const main = rectOf(container, 'm1')
+  assert.notEqual(main, null, 'the main window left the stage')
+  assert.notDeepEqual(cA, cX, 'both folding panes were given the same box')
+  assert.equal(overlapOf(main, cA), null, 'the main window and a folding pane were drawn on the same ground')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+/** A folding pane's words, as the sheet's own rules spell them: the fade that keeps the fold's edge
+ *  from cutting a row that is still at full strength. The case pins the rule, never a frame — a fold
+ *  whose rows simply stay lit while the box closes is the guillotine, and that is a fact about the
+ *  sheet, not about any one span's number. */
+test('a folding window takes its words out with it, so the frame edge never cuts a live row', { skip: bundleSkip }, () => {
+  const sheet = stripComments(readFileSync(new URL('../src/client/styles/overview.css', import.meta.url), 'utf8'))
+  const blocks = cssBlocks(sheet, { descend: 'all' })
+  const rules = blocks.filter((block) => block.kind === 'rule')
+
+  /* The pane clips while it folds (`overflow: hidden`), so its rows need a fade of their own. */
+  const clipping = rules.find((rule) => rule.prelude.includes('.superworker-opane.is-leave'))
+  assert.notEqual(clipping, undefined, 'the sheet states no rule for a folding pane')
+  assert.match(clipping.body, /overflow:\s*hidden/u, 'the folding pane no longer clips, so this case is asking the wrong question')
+
+  const fade = rules.find((rule) => rule.prelude.includes('.superworker-opane.is-leave') && rule.prelude.includes('.superworker-ofeed'))
+  assert.notEqual(fade, undefined, 'a folding window animates no fade on its rows: the fold cuts them at full strength')
+  const named = /animation:\s*([\w-]+)/u.exec(fade.body)
+  assert.notEqual(named, null, 'the folding window states no animation for its rows')
+
+  /* The keyframes it names must exist, and must end at nothing: a fade that stops part-way still
+   * leaves a row at full strength under the closing edge. */
+  const steps = rules.filter((rule) => rule.at === `@keyframes ${named[1]}`)
+  assert.ok(steps.length >= 2, `the fade ${named[1]} is named but never stated`)
+  const last = steps.at(-1)
+  assert.match(last.body, /opacity:\s*0/u, `the fade ${named[1]} does not end at nothing`)
+
+  /* And a reader who asked for motion off is not handed a second fade inside the pane's own. */
+  assert.match(sheet, /prefers-reduced-motion[\s\S]*?superworker-opane\.is-leave[\s\S]*?superworker-ofeed[\s\S]*?animation:\s*none/u, 'a reader with motion off is still shown the fold\'s own second fade')
+})
+
 test('a window stopped before the record spoke: its rows stay sharp, and no mark says what happened', { skip: bundleSkip }, async () => {
   /* The reader's complaint: the rehearsal wrapped up and the last window wore no check. It was the
    * beat between the conversation's last turn and the settle that follows it — stopped, delivered

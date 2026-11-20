@@ -400,7 +400,14 @@
 
 /* Leave — the set lost one: the rows fold up into the title line, then the sliver folds away
  * sideways. It clips while it goes (`overflow: hidden`), or the fold would spill the rows it is
- * folding over. When the span has run, the page loses it. */
+ * folding over. When the span has run, the page loses it.
+ *
+ * The box folds; the reading inside it goes with it. A pane whose height is cut while its rows keep
+ * their own strength is a row sliced through the middle by the frame's own edge — the fold reads as
+ * the window being guillotined rather than closed. So the content fades over the first half of the
+ * same span, by the same clock: what the reader sees is a window closing over words that are already
+ * on their way out, and the clip edge has nothing left to cut at the moment it arrives at a row. The
+ * fade ends by 45%, the frame where the box reaches the title line and the clipping stops moving. */
 @keyframes superworker-opane-fold {
   0% {
     height: var(--superworker-pane-h);
@@ -418,10 +425,25 @@
     opacity: 0;
   }
 }
+/* The words inside a folding window, on the fold's own clock: gone by the time the box has reached
+ * the title line. The title line itself stays lit for the sideways half, because it is the one thing
+ * left to see and it carries the shape of what is leaving. */
+@keyframes superworker-opane-fold-in {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
 .superworker-page .superworker-opane.is-leave {
   animation: superworker-opane-fold 0.32s ease forwards;
   overflow: hidden;
   pointer-events: none;
+}
+.superworker-page .superworker-opane.is-leave .superworker-ofeed,
+.superworker-page .superworker-opane.is-leave .superworker-oplate-m {
+  animation: superworker-opane-fold-in 0.16s ease forwards;
 }
 /* Leave, for whoever reads with motion off: a plain fade where the pane stands, no geometry
  * changed — the removal discipline is the same, only the road is plainer. */
@@ -776,6 +798,12 @@
   }
   .superworker-page .superworker-opane.is-leave {
     animation: superworker-opane-out 0.22s ease both;
+  }
+  /* The pane's own fade already takes the words with it, and a second fade inside it is motion a
+   * reader asked not to be shown. */
+  .superworker-page .superworker-opane.is-leave .superworker-ofeed,
+  .superworker-page .superworker-opane.is-leave .superworker-oplate-m {
+    animation: none;
   }
   .superworker-page .superworker-opane.is-born,
   .superworker-page .superworker-opane.is-child.is-born {
