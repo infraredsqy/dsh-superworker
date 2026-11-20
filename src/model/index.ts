@@ -11,7 +11,7 @@ export type * from './contract.ts'
 export { readProject } from './project.ts'
 export { depthsOf, readDeps, readGraph } from './graph.ts'
 export { groupInstructions, readInstructions } from './instructions.ts'
-export { latestSessionOf, readSessions, strandedCycleOf } from './sessions.ts'
+export { bornInSessionOf, readBirthplaces, readSessions, runSessionOf, strandedCycleOf } from './sessions.ts'
 export { endingOf, readOverview } from './overview.ts'
 export type {
   OverviewEnding,

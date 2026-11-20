@@ -19,7 +19,7 @@
 import * as React from 'react'
 import type { SuperworkerReading } from '../host/contract.ts'
 import type { InstructionReading, OverviewReading, OverviewSnapshot } from '../model/index.ts'
-import { everySourceIs, readOverview, readProject, readSessions, strandedCycleOf } from '../model/index.ts'
+import { everySourceIs, readBirthplaces, readOverview, readProject, readSessions, strandedCycleOf } from '../model/index.ts'
 import type { PrefField, PrefsSource, ViewId } from './prefs.ts'
 import { clampSide, DEFAULT_SOURCE, PANEL_PREF_FIELDS, VIEW_IDS, VIEW_WORDS } from './prefs.ts'
 import { useT } from './locale.ts'
@@ -184,6 +184,10 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
   const [archived] = usePreference<boolean>(stored.archived)
   const [load, setLoad] = React.useState<Load>({ phase: 'loading' })
   const [notes, setNotes] = React.useState<Readonly<Record<string, string>>>(NO_NOTES)
+  /* Where each node was born: the conversation that created it. A different question from `notes`,
+     which names the session that works the node — a card's press goes to the birthplace, a window is
+     drawn only for a working session. Kept in one state so the two can never stand in for each other. */
+  const [birthplaces, setBirthplaces] = React.useState<Readonly<Record<string, string>>>(NO_NOTES)
   /* The dispatch claims and the live-agent roster: the two machine-side facts the stranded reading
      judges. An unreadable reading holds neither fact, and an unknown roster (null) never reads as
      "gone". */
@@ -248,12 +252,14 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
        * silence rather than claiming the record names nothing when the truth is that nobody looked. */
       if (frame.sessions === null) {
         setNotes(NO_NOTES)
+        setBirthplaces(NO_NOTES)
         setClaims(NO_CLAIMS)
         setAlive(null)
         setSessionsRead(false)
         return
       }
       setNotes(readSessions(frame.sessions.notes))
+      setBirthplaces(readBirthplaces(frame.sessions.notes))
       setClaims(frame.sessions.claims)
       setAlive(frame.sessions.alive === null ? null : new Set(frame.sessions.alive))
       setSessionsRead(true)
@@ -265,20 +271,21 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
   }, [port, sessionId, workspaceRoot, tick, pickedNone])
 
   /* The click on a card: only when the record's session is on this machine right now does the card
-   * click through. The session identity is recognized in two places — this machine's own notes
-   * first, then the field on the record itself. Missing either the roster or the navigation gateway,
-   * every card on this screen sits quietly. */
+   * click through. A card is a node, not a session — a node that was never dispatched has no working
+   * session to open, so a press lands on the conversation the node was **born in**, which is the one
+   * place a reader can still see where it came from. Missing either the roster or the navigation
+   * gateway, every card on this screen sits quietly. */
   const cardGo = React.useMemo<CardGo | null>(() => {
     if (openSession === undefined) return null
     const known = knownSessions ?? NO_SESSIONS
     return {
       targetOf: (node) => {
-        const session = notes[node.id] ?? node.session
+        const session = birthplaces[node.id] ?? notes[node.id] ?? node.session
         return session !== undefined && session.length > 0 && known.has(session) ? session : null
       },
       open: openSession,
     }
-  }, [notes, knownSessions, openSession])
+  }, [birthplaces, notes, knownSessions, openSession])
 
   /* The press on a window: the same two questions the map's cards are admitted by, asked of a session
    * instead of a node — DSH's navigation gateway has to be here, and the conversation has to be one

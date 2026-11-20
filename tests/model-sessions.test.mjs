@@ -4,38 +4,54 @@
  * Session notes are another input of the model layer: the host half carries that directory back
  * verbatim, and which session to surface to the reader is judged here.
  *
+ * A note answers two separate questions and the two are never substituted for each other: `run`
+ * names the session that works the cell, `discussion` the conversation it was born in.
+ *
  *   node --test tests/
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { latestSessionOf, readSessions, strandedCycleOf } from '../src/model/index.ts'
+import { bornInSessionOf, readBirthplaces, readSessions, runSessionOf, strandedCycleOf } from '../src/model/index.ts'
 
-test('the most recently opened session in a note: each kind compared by its own moment', () => {
-  assert.equal(latestSessionOf({
+test('the working session is the run entry, whatever the discussion says and whenever it happened', () => {
+  assert.equal(runSessionOf({
     discussion: [{ session: 'session-talk', host: 'dsh', at: '2026-10-16T18:21:28Z' }],
     run: [{ session: 'session-run', host: 'dsh', at: '2026-10-18T17:59:44Z' }],
   }), 'session-run')
 
-  assert.equal(latestSessionOf({
+  /* The case this file exists for: a later discussion must not win the working session. That
+     conversation is the one the cell was created in, and it belongs to whoever started it. */
+  assert.equal(runSessionOf({
     discussion: [{ session: 'session-talk', at: '2026-10-19T01:00:00Z' }],
     run: [{ session: 'session-run', at: '2026-10-18T17:59:44Z' }],
-  }), 'session-talk')
+  }), 'session-run')
 })
 
-test('same moment, or neither written: the run for this cell beats the discussion', () => {
-  assert.equal(latestSessionOf({
-    discussion: [{ session: 'session-talk', at: '2026-10-18T00:00:00Z' }],
-    run: [{ session: 'session-run', at: '2026-10-18T00:00:00Z' }],
-  }), 'session-run')
+test('a cell nobody was dispatched to has no working session — a birthplace is not one', () => {
+  /* The shape of a cell that was prepared and never started: the note names only the conversation
+     that created it, and the run list is empty. */
+  const neverStarted = {
+    v: 1,
+    discussion: [{ session: 'session-created-me', host: 'dsh', at: '2026-11-19T21:13:15Z' }],
+    run: [],
+  }
+  assert.equal(runSessionOf(neverStarted), undefined)
+  assert.equal(bornInSessionOf(neverStarted), 'session-created-me')
+})
 
-  assert.equal(latestSessionOf({
-    discussion: [{ session: 'session-talk' }],
-    run: [{ session: 'session-run' }],
-  }), 'session-run')
+test('the birthplace is the discussion entry, and the two readings never trade places', () => {
+  const both = {
+    discussion: [{ session: 'session-talk', at: '2026-10-19T01:00:00Z' }],
+    run: [{ session: 'session-run', at: '2026-10-18T17:59:44Z' }],
+  }
+  assert.equal(bornInSessionOf(both), 'session-talk')
+  assert.equal(runSessionOf(both), 'session-run')
+  assert.equal(runSessionOf({ discussion: [{ session: 'session-talk' }] }), undefined)
+  assert.equal(bornInSessionOf({ run: [{ session: 'session-run' }] }), undefined)
 })
 
 test('several of one kind opened: the one with the latest moment wins', () => {
-  assert.equal(latestSessionOf({
+  assert.equal(runSessionOf({
     run: [
       { session: 'session-first', at: '2026-10-17T00:00:00Z' },
       { session: 'session-again', at: '2026-10-18T00:00:00Z' },
@@ -44,11 +60,11 @@ test('several of one kind opened: the one with the latest moment wins', () => {
 })
 
 test('an unreadable one resolves nothing and does not throw', () => {
-  assert.equal(latestSessionOf({ run: [{ host: 'dsh' }] }), undefined)
-  assert.equal(latestSessionOf({ run: [{ session: '' }] }), undefined)
-  assert.equal(latestSessionOf({ run: 'a string of stuff' }), undefined)
-  assert.equal(latestSessionOf('a note is not a record'), undefined)
-  assert.equal(latestSessionOf(undefined), undefined)
+  assert.equal(runSessionOf({ run: [{ host: 'dsh' }] }), undefined)
+  assert.equal(runSessionOf({ run: [{ session: '' }] }), undefined)
+  assert.equal(runSessionOf({ run: 'a string of stuff' }), undefined)
+  assert.equal(runSessionOf('a note is not a record'), undefined)
+  assert.equal(runSessionOf(undefined), undefined)
 })
 
 test('a layer of notes read into a reading: the file name minus its suffix is the node id, a wrong suffix is not a note', () => {
@@ -59,7 +75,20 @@ test('a layer of notes read into a reading: the file name minus its suffix is th
     '.json': JSON.stringify({ run: [{ session: 'session-bare' }] }),
   })
 
-  assert.deepEqual(out, { 'n-1': 'session-7', 'n-2': 'session-talk' })
+  /* `n-2` is absent on purpose: it was created in `session-talk` and never dispatched, so it has no
+     working session and earns no window. */
+  assert.deepEqual(out, { 'n-1': 'session-7' })
+})
+
+test('the birthplace reading keeps what the working reading drops, and only there', () => {
+  const notes = {
+    'n-1.json': JSON.stringify({ discussion: [{ session: 'session-born' }], run: [{ session: 'session-7' }] }),
+    'n-2.json': JSON.stringify({ discussion: [{ session: 'session-talk' }] }),
+    'n-3.json': JSON.stringify({ run: [{ session: 'session-9' }] }),
+  }
+
+  assert.deepEqual(readSessions(notes), { 'n-1': 'session-7', 'n-3': 'session-9' })
+  assert.deepEqual(readBirthplaces(notes), { 'n-1': 'session-born', 'n-2': 'session-talk' })
 })
 
 test('an unparsable one: that cell is skipped, the rest read on', () => {
