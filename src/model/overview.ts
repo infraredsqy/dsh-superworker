@@ -421,6 +421,18 @@ export interface OverviewInput {
    */
   readonly heldSessions?: readonly unknown[] | undefined
   /**
+   * The nodes whose work was **handed in**: a handoff ticket on disk stating a verdict (anything but
+   * `pending`, the mark a re-run leaves). The caller reads it off the record's own ticket layer, and
+   * this module only carries the fact.
+   *
+   * It is the proof a stopped conversation is read against, and it exists because the conversation's
+   * log cannot give that proof: DSH closes a turn with the same `completed` word whether the step
+   * delivered its work or gave up first. A cell with no ticket behind it and a debt still owed
+   * stopped **before** handing anything in. Absent, no cell is read as handed in — which is the
+   * honest default for a caller that cannot see the ticket layer.
+   */
+  readonly handedNodes?: readonly unknown[] | undefined
+  /**
    * The moment this reading is taken at, in epoch milliseconds (a moment string is
    * read the same way, the convention every other moment on this input follows).
    * It is read for one thing only: how long a window has been running
@@ -1074,15 +1086,28 @@ export function endingOf(events: readonly OverviewEvent[] | undefined): Overview
  * stopped, and nothing about it is broken), then the delivery the record names,
  * then a debt nobody is working.
  *
- * `alert` is deliberately narrow: it needs the debt (`stranded`, which the
- * caller has already judged against the record and this host's live agents), a
- * readable last turn that the conversation did **not** close itself, and a line
- * that has stopped — no leg of the pipeline running. A conversation that closed
- * its own turn owes the record, not the reader: the cell it left held is the
- * engine's business (a settle that has not landed yet, or a handoff nobody
- * wrote), and a pipeline that has merely gone quiet about it is not a break. A
- * conversation that yielded to a leg of its own, or one that ran again since
- * its abort, is a pipeline still in motion, and that is not a break either.
+ * `alert` is deliberately narrow but it is **not** read off the turn's own ending
+ * alone. DSH closes a turn with `completed` whether the step handed its work in or
+ * gave up before it — the word says the model stopped talking, never that the node
+ * was delivered — so a rule keyed on it cannot tell a clean finish from a step
+ * that quit early, and keying one on it painted every self-closed stop as innocent.
+ * The proof read here is the record's own: a **ticket** handed in for the cell.
+ * Work is owed and no ticket stands behind it, so this conversation stopped before
+ * delivering. Three further facts narrow it, and each is a real reason not to
+ * accuse:
+ *
+ * - the cell must be owed (`stranded` / held): a cell nobody holds is the line's
+ *   next work, not money owed.
+ * - **no session of its own may still be running** — its own dispatched children.
+ *   A leg that yielded to work of its own is a pipeline in motion. A *sibling* leg
+ *   of the same line is not this window's business: whether the other parallel
+ *   node is still working says nothing about whether this one stopped owing its
+ *   work, and a rule that waited on the whole line hid a dead leg exactly as long
+ *   as any sibling kept going.
+ * - the window must be at rest. A debt is about work nobody is doing.
+ *
+ * A gate wins over all of it: a checkpoint or a manual node is a person being
+ * owed, which is drawn as the breath and never as a break.
  */
 function factsOf(input: {
   readonly settled: boolean
@@ -1090,6 +1115,7 @@ function factsOf(input: {
   readonly delivered: boolean
   readonly owed: boolean
   readonly moving: boolean
+  readonly handed: boolean
   readonly ending: OverviewEnding | undefined
 }): Pick<OverviewWindow, 'settled' | 'delivered' | 'alert' | 'waiting' | 'ending'> {
   const ending = input.ending === undefined ? {} : { ending: input.ending }
@@ -1099,14 +1125,15 @@ function factsOf(input: {
      record naming the node completed is the *previous* round's word, and stamping a moving window with
      a check would claim a run that has not ended. */
   if (input.delivered && input.settled) return { ...settled, ...ending, delivered: true }
-  /* A debt is drawn only while the line stands still. A pipeline with a leg still running has not
-     stopped at this window whatever its last turn said, and the red is the shape of a stall, never a
-     record of one bad round — which is also why a window that ran again since its abort wears none.
-     A turn the conversation closed itself accuses nobody: the engine settles a clean end in its own
-     time, and a record running behind its own session is a lag, not a fault. An unreadable ending
-     accuses nobody either: a silence is not a debt being dropped. */
+  /* A debt is drawn only while this conversation stands still — `moving` is this window's own children,
+     never the line's other legs. A step that yielded to a leg of its own is a pipeline in motion; a
+     step that stopped while a parallel sibling happened to keep working is not rescued by it.
+     `handed` is the ticket: a cell whose work was handed in owes the record a settle, not the reader a
+     red frame — the engine settles a clean end in its own time, and a record running behind its own
+     session is a lag, not a fault. An unreadable ending accuses nobody either: a silence is not a debt
+     being dropped. */
   const stalled = input.settled && !input.moving
-  const cut = input.ending !== undefined && input.ending.kind !== 'completed'
+  const cut = !input.handed && input.ending !== undefined
   if (input.owed && stalled && cut) return { ...settled, ...ending, alert: true }
   return { ...settled, ...ending }
 }
@@ -1277,6 +1304,13 @@ export function readOverview(input: OverviewInput): OverviewReading {
      which is what keeps the red off every window of it. */
   const moving = movingLegs.length > 0 || kids.length > 0
     || (named === undefined ? order : [...named]).some((id) => rows[id]?.running === true)
+  /* Whether **this** conversation has work of its own still running: the children it dispatched. That
+     is the only motion that keeps a debt from being drawn, and it is deliberately narrower than
+     {@link moving}: a parallel sibling leg still working says nothing about whether this step stopped
+     owing its work. A sibling's progress is the line's business, and the line's business is not what a
+     break on this window would be reporting. */
+  const ownMoving = kids.length > 0
+  const handed = namedSet(input.handedNodes)
   const standing = ghosts.filter((id) => !supersededBy(id) && (isLeg(id) || !moving))
   /* The legs the rail offers: the steps still on the table, in the reading's own order, with the main
      window's own leg among them — the bar that stands lit — whenever the main is a step of the line.
@@ -1315,7 +1349,8 @@ export function readOverview(input: OverviewInput): OverviewReading {
         gated: atGate(mainId),
         delivered: delivered.has(mainId),
         owed: mainWindowDebt,
-        moving,
+        moving: ownMoving,
+        handed: handed.has(input.nodeOf?.[mainId] ?? ''),
         ending: endingOf(input.events?.[mainId]),
       }),
     }
@@ -1345,15 +1380,15 @@ export function readOverview(input: OverviewInput): OverviewReading {
     if (window.title === null && window.rows.length === 0) continue
     const ending = endingOf(input.events?.[id])
     const gated = atGate(id)
-    /* The proof is whichever witness spoke: a last turn the conversation did not close itself, or —
-       when the log carried no word at all — the caller's stranded judgment (the claim is on disk and
-       the session is gone). A turn the conversation closed itself is no proof, whoever still holds
-       the cell: the engine settles a clean end in its own time, and a record running behind its own
-       session is a lag, not a fault. */
+    /* The proof is whichever witness spoke: a ticket the cell never handed in, or — when the log
+       carried no word at all — the caller's stranded judgment (the claim is on disk and the session is
+       gone). A cell that did hand a ticket in is no break, whoever still holds it: the engine settles
+       a clean end in its own time, and a record running behind its own session is a lag, not a fault. */
+    const node = input.nodeOf?.[id] ?? ''
     const broken = !gated
       && (ending === undefined
-        ? stranded.has(input.nodeOf?.[id] ?? '')
-        : ending.kind !== 'completed')
+        ? stranded.has(node)
+        : !handed.has(node))
     seats.push({
       ...window,
       settled: true,
@@ -1368,15 +1403,17 @@ export function readOverview(input: OverviewInput): OverviewReading {
     const gated = atGate(id)
     /* A bar says the two verdicts a step can stand in and nothing else: a person's gate in the warn
        ink, a debt nobody is working in the break's. Both are read the way the window's own frame reads
-       them — one ink, one fact — so a leg that stopped is no break while another leg of the line still
-       runs: the line has not stalled, and the bar and the window could never disagree. A leg still
-       moving wears neither, and a gate is only ever worn at rest: a running step is being worked. */
+       them — one ink, one fact — and a debt is read off the ticket the cell never handed in, never off
+       a sibling leg's progress: a parallel step still working is the line's own motion, and this bar
+       reports this step. A bar still moving wears neither, and a gate is only ever worn at rest: a
+       running step is being worked. */
     if (gated) return { ...leg, waiting: true }
-    if (rows[id]?.running === true || moving) return leg
+    if (rows[id]?.running === true || ownMoving) return leg
     const ending = endingOf(input.events?.[id])
+    const node = input.nodeOf?.[id] ?? ''
     const broken = ending === undefined
-      ? stranded.has(input.nodeOf?.[id] ?? '')
-      : ending.kind !== 'completed'
+      ? stranded.has(node)
+      : !handed.has(node)
     return broken ? { ...leg, alert: true } : leg
   })
   return {

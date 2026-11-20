@@ -77,6 +77,16 @@ const NO_NOTES: Readonly<Record<string, string>> = Object.freeze({})
 /** The claims when nothing has been read: no cell is held to have a claim at all. */
 const NO_CLAIMS: Readonly<Record<string, string>> = Object.freeze({})
 
+/**
+ * The tickets when none was read: no cell is held to have handed its work in.
+ *
+ * That is the cautious direction on purpose. A missing ticket layer paints a stopped cell as a break,
+ * which is a claim the panel can be wrong about; inventing deliveries it never read would be wrong in
+ * the direction that hides work nobody did — and a host that cannot open the layer at all refuses the
+ * whole reading rather than answering this empty (see `readTickets`).
+ */
+const NO_TICKETS: Readonly<Record<string, string>> = Object.freeze({})
+
 const NO_SESSIONS: ReadonlySet<string> = new Set<string>()
 
 /** How far one reading has got, widened with this shell's own phase. Which words a failure reads as is
@@ -192,6 +202,11 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
      judges. An unreadable reading holds neither fact, and an unknown roster (null) never reads as
      "gone". */
   const [claims, setClaims] = React.useState<Readonly<Record<string, string>>>(NO_CLAIMS)
+  /* The handoff tickets on disk, keyed by node: a cell present here handed a verdict in. Together with
+     the node's own state it is how a stopped conversation is told from one that stopped before
+     delivering — the conversation's log cannot make that distinction (its last turn reads `completed`
+     either way), which is exactly the case this reading exists for. */
+  const [tickets, setTickets] = React.useState<Readonly<Record<string, string>>>(NO_TICKETS)
   const [alive, setAlive] = React.useState<ReadonlySet<string> | null>(null)
   /* Whether the record's session side has answered on this pass. An empty set of notes is only "the
    * record names no session" once it has: before that it means "not read yet", and the overview's
@@ -254,6 +269,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
         setNotes(NO_NOTES)
         setBirthplaces(NO_NOTES)
         setClaims(NO_CLAIMS)
+        setTickets(NO_TICKETS)
         setAlive(null)
         setSessionsRead(false)
         return
@@ -261,6 +277,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       setNotes(readSessions(frame.sessions.notes))
       setBirthplaces(readBirthplaces(frame.sessions.notes))
       setClaims(frame.sessions.claims)
+      setTickets(frame.sessions.tickets ?? NO_TICKETS)
       setAlive(frame.sessions.alive === null ? null : new Set(frame.sessions.alive))
       setSessionsRead(true)
     })
@@ -413,6 +430,11 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
    * from this host's live roster: the one debt the overview can name as owed by nobody. */
   const strandedNodes = React.useMemo((): readonly string[] => Object.keys(stranded), [stranded])
 
+  /* The nodes whose work was handed in: a ticket on disk states a verdict. This is the one fact that
+   * separates a step which finished from one that gave up before delivering, and the conversation's
+   * own log cannot supply it — DSH closes both with the same `completed` turn. */
+  const handedNodes = React.useMemo((): readonly string[] => Object.keys(tickets), [tickets])
+
   /* Which step of the line the overview's stage is drawing: the leg the reader picked on the rail,
    * and nothing else. It is this screen's own state for the same reason the tab is — a person asked
    * for it — and it is a *pick*, not a second reading: the model hands the session back into its
@@ -448,13 +470,14 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       waitingSessions,
       deliveredSessions,
       strandedNodes,
+      handedNodes,
       undeliveredSessions,
       heldSessions,
       /* The moment the frame was read at: the end a running window's span is measured to. A window
        * that stopped is measured to its own last word instead, so nothing here keeps counting. */
       at: at.getTime(),
     })
-  }, [reading, events, live, nodeOf, props.sessions, props.ownSession, pickedLeg, notes, waitingSessions, deliveredSessions, strandedNodes, undeliveredSessions, heldSessions, at])
+  }, [reading, events, live, nodeOf, props.sessions, props.ownSession, pickedLeg, notes, waitingSessions, deliveredSessions, strandedNodes, handedNodes, undeliveredSessions, heldSessions, at])
 
   /* A pick names a step still on the table. Once that step has left the rail — delivered, or taken
    * over by a later step — the pick is spent, and the stage keeps the reading's own choice rather

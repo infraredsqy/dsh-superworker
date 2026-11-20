@@ -319,7 +319,7 @@ const OWED_NODE = 'n-owed'
  * main window however the leg is doing; the leg only decides whether anything
  * is still moving.
  */
-function factScene({ running = false, ending, waiting, delivered, stranded, held, runningLeg } = {}) {
+function factScene({ running = false, ending, waiting, delivered, stranded, held, handed, runningLeg } = {}) {
   const byId = { [MAIN]: mainRow(MAIN, { running }) }
   const ids = [MAIN]
   const pipeline = [MAIN]
@@ -337,6 +337,7 @@ function factScene({ running = false, ending, waiting, delivered, stranded, held
     ...(waiting === undefined ? {} : { waitingSessions: waiting }),
     ...(delivered === undefined ? {} : { deliveredSessions: delivered }),
     ...(stranded === undefined ? {} : { strandedNodes: stranded }),
+    ...(handed === undefined ? {} : { handedNodes: handed }),
     ...(held === undefined ? {} : { heldSessions: held }),
   })
 }
@@ -389,34 +390,68 @@ test("delivered lands from the record's word alone: the check is drawn on it, an
   assert.equal('ending' in reading.main, false, 'a delivery invented an ending')
 })
 
-test('alert waits for the stall: a killed turn is no break while a leg of the line still runs', () => {
-  /* The red is the shape of a stall, not a record of one bad round. While another leg of the line runs
-   * the pipeline has not stopped here, and the reading says nothing — the moment that leg stops, the
-   * same ending is read as the break it is. */
-  const running = factScene({ ending: turnEnd(9, 'aborted', 'user'), stranded: [OWED_NODE], runningLeg: 'leg-1' })
-  assert.equal('alert' in running.main, false, 'a leg killed while the line still ran was called a stall')
-  assert.deepEqual(running.main.ending, { kind: 'aborted', cause: 'user' }, 'the ending was not carried verbatim')
+test('alert does not wait for the line: a parallel sibling still running is not this window\'s business', () => {
+  /* The sibling rule this replaces was wrong, and it hid exactly the case it was meant to protect: a
+   * parallel leg dies owing its work, its sibling keeps working, and the reading said nothing for as
+   * long as the sibling ran — leaving the dead leg's debt unreadable for the whole of a healthy run.
+   * Whether another step of the same line is busy says nothing about whether THIS step stopped owing
+   * its work. The debt is drawn at once, and the ending is carried verbatim as ever. */
+  const beside = factScene({ ending: turnEnd(9, 'aborted', 'user'), stranded: [OWED_NODE], runningLeg: 'leg-1' })
+  assert.equal(beside.main.alert, true, 'a leg killed with its work owed went quiet because a sibling kept running')
+  assert.deepEqual(beside.main.ending, { kind: 'aborted', cause: 'user' }, 'the ending was not carried verbatim')
 
-  /* The same scene with the leg gone: the line stands here, and the debt is drawn. */
+  /* The line standing still is the ordinary case, and reads the same way. */
   const stopped = factScene({ ending: turnEnd(9, 'aborted', 'user'), stranded: [OWED_NODE] })
   assert.equal(stopped.main.alert, true, 'a leg killed with its node still owed read as nothing wrong')
 })
 
-test('no alert: a turn the conversation closed itself owes the record, not the reader', () => {
-  /* The false red this rule kills: a leg finishes its work, its turn reads `completed`, and for a
-   * breath the record still holds the cell — the engine's settle has not landed yet. Nothing about
-   * that breath is a fault, whoever still holds the cell or which claims outlived the session: a
-   * clean end is the engine's business, and a reading that paints it red calls a finished leg a
-   * broken one. */
-  const reading = factScene({ ending: turnEnd(9, 'completed'), stranded: [OWED_NODE] })
-  assert.equal('alert' in reading.main, false, 'a cleanly ended leg with the record lagging was called broken')
-  const held = factScene({ ending: turnEnd(9, 'completed'), held: [MAIN] })
-  assert.equal('alert' in held.main, false, 'a cleanly ended leg whose cell the line still holds was called broken')
+test('no alert on a cell that handed its ticket in: a clean end owes the record, not the reader', () => {
+  /* The false red this rule kills: a leg finishes its work, its ticket lands, and for a breath the
+   * record still holds the cell — the engine's settle has not run yet. Nothing about that breath is a
+   * fault, whoever still holds the cell or which claims outlived the session: a clean end is the
+   * engine's business, and a reading that paints it red calls a finished leg a broken one. The proof
+   * is the **ticket**, never the turn's word: DSH closes a delivered step and a step that quit early
+   * with the same `completed`, so the log alone cannot tell them apart. */
+  const reading = factScene({ ending: turnEnd(9, 'completed'), stranded: [OWED_NODE], handed: [OWED_NODE] })
+  assert.equal('alert' in reading.main, false, 'a cleanly ended leg that handed its ticket in was called broken')
+  const held = factScene({ ending: turnEnd(9, 'completed'), handed: [OWED_NODE], held: [MAIN] })
+  assert.equal('alert' in held.main, false, 'a delivered leg whose cell the line still holds was called broken')
 })
 
-test('no alert: a completed turn that yielded to its own running leg is a pipeline in motion', () => {
-  const reading = factScene({ ending: turnEnd(9, 'completed'), stranded: [OWED_NODE], runningLeg: 'leg-1' })
-  assert.equal('alert' in reading.main, false, 'a conversation that yielded to its own leg was called broken')
+test('alert on a turn that closed itself with no ticket behind it: it stopped before delivering', () => {
+  /* The case no ending-word rule could ever catch, and the reason the ticket is the proof now: the
+   * step read its own spec, could not find what it needed, wrote a note and finished its turn. DSH
+   * records that as a clean `completed` — the same word a delivered step gets — while the cell sits in
+   * the line with no ticket and no delivery. The panel has to read it as a break. */
+  const reading = factScene({ ending: turnEnd(9, 'completed'), stranded: [OWED_NODE] })
+  assert.equal(reading.main.alert, true, 'a turn that stopped before handing its work in read as a clean finish')
+
+  /* The same on the caller's held reading alone, with no claim outliving the session. */
+  const held = factScene({ ending: turnEnd(9, 'completed'), held: [MAIN] })
+  assert.equal(held.main.alert, true, 'a step that quit with its cell still held and no ticket read as resting')
+
+  /* A ticket that is still `pending` is the same as none: the re-run's mark hands nothing in, and the
+   * caller drops it before it ever reaches this reading — asserted here as the caller's contract. */
+  const pending = factScene({ ending: turnEnd(9, 'completed'), stranded: [OWED_NODE] })
+  assert.equal(pending.main.alert, true, 'a pending ticket was read as a delivery')
+})
+
+test('no alert: a completed turn that yielded to its own running child is a pipeline in motion', () => {
+  /* A step that dispatched work of its own and stopped to wait for it is still moving: the child it
+   * opened is the motion that matters, and it is narrower than the line. A *sibling* leg running is
+   * not this — that is the case above, and it alerts. */
+  const reading = readOverview({
+    sessions: snapshot([MAIN, 'kid-1'], {
+      [MAIN]: mainRow(MAIN),
+      'kid-1': childRow('kid-1', MAIN, true),
+    }),
+    pipelineSessions: [MAIN],
+    ownSession: MAIN,
+    nodeOf: { [MAIN]: OWED_NODE },
+    strandedNodes: [OWED_NODE],
+    events: { [MAIN]: [turnEnd(9, 'completed')] },
+  })
+  assert.equal('alert' in reading.main, false, 'a conversation that yielded to its own child was called broken')
 })
 
 test('no alert: a stopped turn that owes nothing is no broken leg', () => {
@@ -462,18 +497,20 @@ test('a ghost: a leg that stopped with its work still owed keeps its window, dra
   assert.deepEqual(reading.children[0].rows.map((row) => row.text), ['写到一半就停了'], 'the ghost lost the rows it died with')
 })
 
-test('a ghost resting between rounds is drawn quietly: the debt is not proved broken by the pause alone', () => {
-  /* Its node is still held, and no claim says its session died — the leg simply is not moving at this
-   * instant. The window stays (the reader can see the work on the table) and it accuses nobody. */
+test('a ghost that handed its ticket in is drawn quietly; one that quit without it is drawn broken', () => {
+  /* The window stays in both cases (the reader can see the work on the table); what differs is the
+   * ticket. This is the same pair the main window is judged by, and it exists because the turn's own
+   * word cannot tell them apart: both legs closed their turn with `completed`. */
   const resting = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
     nodeOf: { 'c-1': OWED_NODE },
     undeliveredSessions: ['c-1'],
+    handedNodes: [OWED_NODE],
     events: { 'c-1': [said(5, undefined, '这一轮说完了'), { type: 'turn/end', time: 6, data: { reason: { kind: 'completed' } } }] },
   })
   assert.equal(resting.children.length, 1, 'a leg resting between rounds left the page')
   assert.equal(resting.children[0].settled, true, 'the resting leg reads as moving')
-  assert.equal('alert' in resting.children[0], false, 'a leg that is merely resting was called broken')
+  assert.equal('alert' in resting.children[0], false, 'a leg that handed its ticket in was called broken')
 
   /* The same leg, its last turn stopped by hand: now the debt is proved. */
   const killed = readOverview({
@@ -485,17 +522,27 @@ test('a ghost resting between rounds is drawn quietly: the debt is not proved br
   assert.equal(killed.children[0].alert, true, 'a leg stopped by hand with work owed read as resting')
   assert.deepEqual(killed.children[0].ending, { kind: 'aborted', cause: 'user' })
 
-  /* The resting leg's claim still on disk changes nothing: the readable turn it closed itself is the
-   * word that wins, and a session that ended cleanly is "gone from the roster" for the simple reason
-   * that it ended — the record running behind its own session is a lag, not a fault. */
+  /* And the leg that closed its turn cleanly with **no ticket**: it stopped before delivering, which
+   * is the break the log itself cannot name. */
+  const quit = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
+    nodeOf: { 'c-1': OWED_NODE },
+    undeliveredSessions: ['c-1'],
+    events: { 'c-1': [said(5, undefined, '这一轮说完了'), { type: 'turn/end', time: 6, data: { reason: { kind: 'completed' } } }] },
+  })
+  assert.equal(quit.children[0].alert, true, 'a leg that quit before delivering read as merely resting')
+
+  /* The resting leg's claim still on disk changes nothing when the ticket is in hand: it is the
+   * ticket that decides, and a session gone from the roster is just a session that ended. */
   const claimed = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
     nodeOf: { 'c-1': OWED_NODE },
     undeliveredSessions: ['c-1'],
     strandedNodes: [OWED_NODE],
+    handedNodes: [OWED_NODE],
     events: { 'c-1': [said(5, undefined, '这一轮说完了'), { type: 'turn/end', time: 6, data: { reason: { kind: 'completed' } } }] },
   })
-  assert.equal('alert' in claimed.children[0], false, 'a cleanly ended leg with its claim still on disk was called broken')
+  assert.equal('alert' in claimed.children[0], false, 'a leg that handed its ticket in was called broken')
 })
 
 test('a stopped leg yields the stage to a leg that is still running', () => {
@@ -1176,9 +1223,10 @@ test('a record-named leg the list stopped is a leg while the record still owes i
   assert.deepEqual(reading.children.map((w) => w.id), [], `a stopped step was drawn as a child: ${reading.children.map((w) => w.id)}`)
   assert.deepEqual(reading.legs.map((leg) => leg.id), [conductor, fast, slow], `the rail offers ${reading.legs.map((leg) => leg.id)}`)
   assert.equal(reading.legs[0].alert, undefined, 'a leg that already moved on was drawn as the break')
-  /* The line is still moving — two steps of it are running — so the stopped one wears no break ink
-   * yet: one ink, one fact, and the frame on the stage reads the same fact the same way. */
-  assert.equal(reading.legs[1].alert, undefined, 'a leg drawn as the break while another leg of the line still runs')
+  /* The sibling rule is gone and this is the case that named it: `fast` is a dead leg owing its work,
+   * and `slow` still running says nothing about that. A parallel step's progress is the line's own
+   * motion; the bar reports this step, so the break ink lands at once and stays. */
+  assert.equal(reading.legs[1].alert, true, 'a dead leg went quiet because a parallel sibling was still running')
   assert.equal(reading.legs[2].waiting, undefined, 'a running leg was drawn at a gate')
 
   /* The line stops: now the same bar says the same thing the frame would. */

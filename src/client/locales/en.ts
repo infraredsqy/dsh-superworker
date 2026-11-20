@@ -224,9 +224,13 @@ export const en: Readonly<Record<WordKey, string>> = {
   'overview.row.dispatch': 'dispatches',
   'overview.row.fail': 'fails',
   'overview.row.tool': 'calls',
-  /* The one short word a broken window's line says: how the conversation's last turn ended, carried
-   * verbatim off DSH's own `turn/end`. Short in every language on purpose — the conversation behind
-   * the press carries the detail. `other` is also the word for an ending the log does not carry. */
+  /* The one short word a broken window's line says: why this step stands as a break, in the fewest
+   * syllables the reader can still tell apart. The turn's own reason is carried verbatim off DSH's
+   * `turn/end` where there is one. `before` is the word for the break the log cannot name — the turn
+   * closed by itself (`completed` says the model stopped talking, never that the work landed) with no
+   * ticket handed in behind it, so the line says what actually happened instead of repeating a word
+   * that would read as success. `other` is also the word for an ending the log does not carry. */
+  'overview.fault.before': 'ended early',
   'overview.fault.user': 'aborted by user',
   'overview.fault.disposed': 'disposed',
   'overview.fault.interrupted': 'interrupted',

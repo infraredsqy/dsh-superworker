@@ -177,23 +177,28 @@ function readingsOf(t: Translate, window: OverviewWindow): string | null {
 }
 
 /**
- * The one short word a broken window's fault line says: how the conversation's last turn ended, in
- * the fewest syllables the reader can still tell apart.
+ * The one short word a broken window's fault line says: why this step stands as a break, in the
+ * fewest syllables the reader can still tell apart.
  *
- * The kind and the cause are DSH's own strings (`OverviewEnding`), carried off `turn/end` verbatim,
- * so this is a reading of exact words and never a guess. A turn the conversation closed itself never
- * reaches this table — that is no fault — and an ending the table has never seen, or a log that
- * carries none at all, reads as the one word for an end without account. The line says only this
- * much: the conversation behind the press carries the detail.
+ * Two different questions arrive here and they are answered differently. When the conversation's own
+ * turn carries a reason, that reason is the word — DSH states it verbatim (`OverviewEnding`), so this
+ * is a reading of exact words and never a guess. When the turn closed **by itself** and the cell still
+ * handed nothing in, the log has no word to offer: `completed` there means the model stopped talking,
+ * not that the work was delivered, and this is precisely the break the log cannot name. So it says
+ * what the reader needs — the step stopped before it was done — rather than repeating a word that
+ * would read as success. A turn the conversation closed itself never reaches this table as a break
+ * unless that is the fact, and a log carrying no ending at all reads as the one word for an end
+ * without account.
  */
 function faultWordOf(ending: OverviewEnding | undefined): WordKey {
-  if (ending?.kind === 'aborted') {
+  if (ending === undefined || ending.kind === 'completed') return 'overview.fault.before'
+  if (ending.kind === 'aborted') {
     if (ending.cause === 'user') return 'overview.fault.user'
     if (ending.cause === 'disposed') return 'overview.fault.disposed'
     return 'overview.fault.other'
   }
-  if (ending?.kind === 'interrupted') return 'overview.fault.interrupted'
-  if (ending?.kind === 'error') return 'overview.fault.error'
+  if (ending.kind === 'interrupted') return 'overview.fault.interrupted'
+  if (ending.kind === 'error') return 'overview.fault.error'
   return 'overview.fault.other'
 }
 
