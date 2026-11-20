@@ -513,6 +513,21 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
   }, [windows, watchIds, overview, tab])
   React.useEffect(() => () => windows.watch([]), [windows])
 
+  /* The stopwatch beat: a frame only goes out when the reading's content changes, so the
+     moment a running span is measured to would freeze between frames — the span is the one
+     fact that moves while nothing else does, and a timer read off a frozen moment says the
+     same second forever, then jumps the whole silence at the next frame. While the stage
+     holds a window still running, the display's moment follows this machine's clock at
+     one-second steps; every pushed frame sets it back to the host's own read moment. */
+  const runningShown = overview !== null
+    && ((overview.main !== null && overview.main.settled !== true)
+      || overview.children.some((one) => one.settled !== true))
+  React.useEffect(() => {
+    if (!runningShown) return undefined
+    const timer = setInterval(() => setAt(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [runningShown])
+
   /* Every write on the panel goes through this hand: put the sentence verbatim onto the note line,
    * and on success read again (`tick` moves, and the reading effect above re-runs). Returning
    * "did it land" is for the "record one" row — only a landed sentence clears the box; when the
