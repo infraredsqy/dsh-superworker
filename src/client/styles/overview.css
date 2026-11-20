@@ -609,6 +609,11 @@
   justify-content: flex-end;
   font: var(--dsw-font-xs-13);
   line-height: var(--superworker-orow-h, 24px);
+  /* The veil crosses instead of snapping: the verdict arrives in one class toggle, and the blur and
+   * the step to three tenths are one motion — a one-frame pop read as the stage flickering rather
+   * than as a window finishing. A fade is the still form of that crossing; the rows themselves
+   * never move for it. */
+  transition: opacity 0.25s ease, filter 0.25s ease;
 }
 .superworker-page .superworker-ofeed.is-fade {
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, currentColor 14px);
@@ -709,6 +714,19 @@
   display: block;
   color: var(--superworker-ink-1);
   pointer-events: auto;
+  /* The verdict lands, it does not pop: the mark arrives once, on the entrance's own easing, so the
+   * beat the class turns reads as the square taking its place rather than the frame flickering. */
+  animation: superworker-omark-in 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes superworker-omark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 .superworker-page .superworker-omark.is-gate {
   color: var(--dsw-alias-state-warn-primary);
@@ -795,7 +813,9 @@
 }
 /* Reduced motion: the ring stops and stays a dashed ring — the panel's own still form for work in
  * hand (the state mark's) — while the check, which never moved, is untouched. A leaving pane fades
- * where it stands instead of folding, and a joining one is simply there: no growth, no travel. */
+ * where it stands instead of folding, and a joining one is simply there: no growth, no travel. The
+ * verdict's landing is scale, so it goes too; the veil keeps its fade, an opacity crossing being
+ * the still form of a verdict arriving. */
 @media (prefers-reduced-motion: reduce) {
   .superworker-page .superworker-oring {
     animation: none;
@@ -813,5 +833,8 @@
   .superworker-page .superworker-opane.is-born,
   .superworker-page .superworker-opane.is-child.is-born {
     animation: superworker-opane-in 0.18s ease backwards;
+  }
+  .superworker-page .superworker-omark {
+    animation: none;
   }
 }
