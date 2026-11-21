@@ -92,8 +92,13 @@ export interface OverviewSessionRow {
   readonly running?: unknown
   /** The parent's id: what makes a session one of the main session's children. */
   readonly parentId?: unknown
-  /** The label the list itself spells: a window's title when it works no node. */
+  /** The label the list itself spells: a window's title when the record names no node and nobody dispatched it. */
   readonly displayTitle?: unknown
+  /**
+   * DSH's own projections of this conversation, as far as this reading reads them: the `subagent`
+   * identity carries the `label` its dispatching call wrote ({@link dispatchLabelOf}).
+   */
+  readonly projectionValues?: unknown
   /** When the list last moved this row: the last thing the main window is chosen by, the newest surviving. */
   readonly updatedAt?: unknown
   /**
@@ -184,7 +189,7 @@ export interface OverviewEnding {
 export interface OverviewWindow {
   /** Which session it is. */
   readonly id: string
-  /** Its title: the node's own when it works one, else the list's own label; absent when neither is written. */
+  /** Its title: the node's own when it works one, else the name its dispatcher gave it, else the list's own label; absent when none is written. */
   readonly title: string | null
   /** The node's weight, read the engine's way: written `light` is light, anything else standard; absent without a node. */
   readonly weight: 'light' | 'standard' | null
@@ -1101,8 +1106,29 @@ function cutShort(events: readonly OverviewEvent[] | undefined): boolean {
   return ending !== undefined && ending.kind !== 'completed'
 }
 
+/**
+ * The name the dispatching call gave a conversation, off DSH's own `subagent` projection of its log:
+ * the `label` that call wrote for display — the sentence DSH's own subagent list prints as the
+ * child's own line, and the one word every dispatch result names it by.
+ *
+ * A title is a name. The list's `displayTitle` is not one for a dispatched conversation: it is the
+ * conversation's first prompt line, so a dispatch that opens with `读 <路径> ，照它做` is titled with
+ * a path cut off mid-way — the one thing on the stage that says nothing about what the window is.
+ * The dispatcher's label is the same fact the dispatch row itself carries, so the seat and the row
+ * that opened it read as one.
+ *
+ * Absent for a conversation nobody dispatched — a step of the line is named by its node, and wins
+ * ahead of this — and for one whose projections have not been read yet, which keeps the list's own
+ * label rather than an invented one.
+ */
+function dispatchLabelOf(row: OverviewSessionRow): string | null {
+  const subagent = asRecord(asRecord(row.projectionValues)?.subagent)
+  const label = text(subagent?.label)?.trim()
+  return label === undefined || label.length === 0 ? null : label
+}
+
 function titleOf(row: OverviewSessionRow, node: SuperworkerNode | undefined): string | null {
-  return text(node?.title) ?? text(row.displayTitle) ?? null
+  return text(node?.title) ?? dispatchLabelOf(row) ?? text(row.displayTitle) ?? null
 }
 
 /** The engine's own reading of weight: only `light` ever lands on disk, so anything unwritten or other is standard. */

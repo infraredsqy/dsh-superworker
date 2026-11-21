@@ -715,6 +715,43 @@ test('a subagent that was cut keeps a seat while its leg owes the work', () => {
   assert.deepEqual(done.children, [], 'a subagent that finished its turn kept a seat')
 })
 
+test('a seat is titled by the name its dispatcher gave it, not by the first line of its prompt', () => {
+  /* A dispatch writes two words: the `name` the child is addressed by, and the `description` it is
+   * read by — and DSH folds that description into the child's own `subagent` projection. What the
+   * list projects as the title instead is the conversation's *first prompt line*: for a pipeline
+   * dispatch, which opens with `读 <路径> ，照它做`, that is a path cut off mid-way, and the one thing
+   * on the stage that says nothing about the window. A title is a name, so the dispatcher's own
+   * word wins — and it is the same word the dispatch row in the parent carries. */
+  const label = '派执行者做收尾总单 finale.md'
+  const prompt = '读 C:\\Users\\inf_NAS\\.dsh\\profiles\\web\\node_modules\\dsh-superworker\\packages'
+  const dispatched = (extra) => ({
+    'sub-1': childRow('sub-1', MAIN, true, { displayTitle: prompt, ...extra }),
+  })
+  const seat = (byId, extra = {}) => readOverview({
+    sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN), ...byId }),
+    pipelineSessions: [MAIN],
+    ownSession: MAIN,
+    events: { [MAIN]: [said(1, undefined, '派它去做')], 'sub-1': [said(2, undefined, '读到位了')] },
+    ...extra,
+  })
+
+  const named = seat(dispatched({ projectionValues: { subagent: { mode: 'continuable', label, seq: 0 } } }))
+  assert.equal(named.children[0].title, label, 'the seat was titled by the first line of its prompt')
+
+  /* A child whose projections have not been read yet keeps the list's own label: an unknown name is
+   * unknown, never borrowed from the dispatch that happens to stand beside it. */
+  const unread = seat(dispatched({}))
+  assert.equal(unread.children[0].title, prompt, 'a seat with no projection was given a name it does not have')
+
+  /* And a conversation the record names keeps its node's title: a step of the line is named by the
+   * record, so nothing a dispatch wrote can rename it. */
+  const step = seat(dispatched({ projectionValues: { subagent: { mode: 'continuable', label, seq: 0 } } }), {
+    nodeOf: { 'sub-1': OWED_NODE },
+    nodes: { [OWED_NODE]: { title: '收尾：一张总单' } },
+  })
+  assert.equal(step.children[0].title, '收尾：一张总单', 'a dispatch label renamed a step of the line')
+})
+
 test('another workspace\'s conversation is no step of this line: it supersedes nothing and moves nothing', () => {
   /* The snapshot is every workspace's session list. A conversation opened afterwards, or one still
    * running, says nothing about where this pipeline stands. */
