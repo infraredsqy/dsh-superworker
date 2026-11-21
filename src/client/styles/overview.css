@@ -338,8 +338,10 @@
  *
  * A reflow is not a motion either. The boxes are the geometry's reading of one stage and one set of
  * rows; two consecutive readings of the same stage differ only because the content did, and the
- * drawing follows the numbers straight away. Spending travel between two boxes made a re-measure
- * (a workspace switching under the pane) look like the whole set sliding and shrinking at once.
+ * drawing follows the numbers straight away. Spending travel between two boxes made a re-measure —
+ * a row landing, the panel widened — look like the whole set sliding and shrinking at once. Another
+ * record under the pane is not even that: it is another stage, drawn from scratch (`panel.tsx` keys
+ * it), so it arrives by its own appearance and the page before it is simply gone.
  *
  * The keyframes read the pane's own numbers as vars (`--superworker-pane-*` for the fold, and
  * `--superworker-born-*` for the entrance), because a box that lives in inline styles cannot be
@@ -505,7 +507,7 @@
  * the re-seat a joining window asks of everyone else. There the survivors spend the distance
  * instead of snapping across it, so the event and the room it rearranged read as one. The mark is
  * the pane's own choice (`overview.tsx`), set for the span and then dropped; a stage that changed
- * for any other reason — a re-measure, a workspace switching under the panes — never wears it.
+ * for any other reason — a re-measure, the pane widened — never wears it.
  * The joiner itself is excluded: its arrival already has its flight (`is-born`) and its opening's
  * own easing (`is-grow`), and one box must not carry two clocks. */
 .superworker-page .superworker-ofield.is-settle .superworker-opane:not(.is-leave),
@@ -514,9 +516,9 @@
 }
 
 /* A standing pane follows the geometry without travel. Its box is the reading of one stage and one
- * set of rows; when the stage moves — a workspace switching under the pane, a window widening — the
- * drawing takes the new numbers at once. Sliding and stretching the boxes between two readings spends
- * four hundred milliseconds showing a stage that never existed, and it lands every window late. */
+ * set of rows; when the stage moves — the pane widened, a window opened — the drawing takes the new
+ * numbers at once. Sliding and stretching the boxes between two readings spends four hundred
+ * milliseconds showing a stage that never existed, and it lands every window late. */
 
 /* Fresh row — one window's newest row is not the row it was. */
 @keyframes superworker-orow-in {

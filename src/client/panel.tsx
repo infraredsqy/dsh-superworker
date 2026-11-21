@@ -89,10 +89,17 @@ const NO_TICKETS: Readonly<Record<string, string>> = Object.freeze({})
 
 const NO_SESSIONS: ReadonlySet<string> = new Set<string>()
 
-/** How far one reading has got, widened with this shell's own phase. Which words a failure reads as is
- * decided where it is drawn. */
+/**
+ * How far one reading has got, widened with this shell's own phase. Which words a failure reads as is
+ * decided where it is drawn.
+ *
+ * `space` rides only the arm that has a reading, and it is the record that reading was read for —
+ * the frame's own root, canonical. It is kept *inside* that state rather than beside it because the
+ * two are one fact: a reading and the record it is a reading of may never be drawn one commit apart,
+ * or the stage would be keyed to one record while drawing another.
+ */
 type Load =
-  | LoadOf<SuperworkerReading>
+  | (LoadOf<SuperworkerReading> & { readonly space?: string })
   /** No session is selected, so there is no workspace to read and no failure to speak of. */
   | { readonly phase: 'no-session' }
 
@@ -258,7 +265,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       if (!live) return
       setAt(new Date(frame.at))
       if (frame.reading !== null) {
-        setLoad({ phase: 'ok', reading: frame.reading })
+        setLoad({ phase: 'ok', reading: frame.reading, space: frame.workspaceRoot })
       } else if (frame.failure !== undefined) {
         setLoad({ phase: 'failed', failure: { code: 'transport-failed', ...(frame.failure.detail !== undefined ? { detail: frame.failure.detail } : {}) } })
       }
@@ -320,6 +327,12 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
   }, [knownSessions, openSession])
 
   const reading = load.phase === 'ok' ? load.reading : null
+  /* The record this drawing's reading was read for, and the identity of the overview's page. The
+   * stage keys itself by it, so another record under the pane is a stage drawn from scratch: its
+   * windows were never this page's windows, and nothing of the page before it may be folded, flown
+   * or settled on its way out (`overview.tsx`). A frame's root is the host's own canonical answer,
+   * so two spellings of one path are one page. */
+  const pageSpace = load.phase === 'ok' ? (load.space ?? '') : ''
   const project = React.useMemo(
     () => (reading === null
       ? null
@@ -729,7 +742,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
             {overview === null
               ? null
               : emptySaid === null
-                ? <OverviewPane reading={overview} at={at} go={windowGo} pick={setPickedLeg} />
+                ? <OverviewPane key={pageSpace} reading={overview} at={at} go={windowGo} pick={setPickedLeg} />
                 : <OverviewEmptyStage said={emptySaid} />}
             <OverviewLaunch runnable={runnable} busy={consulting} onRoute={consultRoute} onConduct={consultConduct} />
           </PaneFrame>

@@ -47,7 +47,9 @@ async function specOf(window) {
  * Boot the built panel and mount it on the in-memory port.
  *
  * `record` is the port's filename → text dict (the four sources with something in each, when a case
- * wants a drawn panel); `workspaceRoot` is the root the session header hands the gateway.
+ * wants a drawn panel), or a function of the scope for a case that puts **two records** under one
+ * mount — the scope carries the root being read, so a switch between workspaces draws a different
+ * record; `workspaceRoot` is the root the session header hands the gateway.
  * `useSessions` is the seat's session-list hook, `sessionsService` lands in the context as DSH's
  * `sessions` service, `workspaces` is the workspace-list source — all three optional, all three
  * forwarded the way the real seat forwards them. `settingsForm` replaces the stand-in settings

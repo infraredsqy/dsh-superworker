@@ -55,6 +55,10 @@ function refused(code) {
  * line through {@link readPage}. The refusal simulation (a tier below the default, a byte cap) is
  * optional — omit it and every page passes.
  *
+ * `files` may also be a function of the scope, which is what a case drawing **two workspaces** hands
+ * over: the scope carries the root the host resolved, so one port answers with the record of the
+ * root it was asked about — the same way the real port reads whichever directory it is given.
+ *
  * Every call is recorded on `calls` (kind, scope, path, range and the signal the caller handed
  * over), so a case that judges *which root* was asked needs no port of its own. An empty dict is the
  * bare not-found face: every directory and every file is absent, which is what the plugin cases
@@ -62,13 +66,15 @@ function refused(code) {
  */
 export function fakeWorkspaceFiles(files, { tier = 400, maxBytes = Infinity } = {}) {
   const calls = []
+  /** The record this call reads: one dict for every root, or one per root. */
+  const dictOf = (scope) => (typeof files === 'function' ? files(scope) : files)
   return {
     calls,
     async list(scope, dir, signal) {
       calls.push({ kind: 'list', scope, path: dir, signal })
       const prefix = dir === '' ? '' : `${dir}/`
       const found = new Map()
-      for (const path of Object.keys(files)) {
+      for (const path of Object.keys(dictOf(scope))) {
         if (!path.startsWith(prefix)) continue
         const [head, ...tail] = path.slice(prefix.length).split('/')
         if (head.length === 0) continue
@@ -79,7 +85,7 @@ export function fakeWorkspaceFiles(files, { tier = 400, maxBytes = Infinity } = 
     },
     async read(scope, path, range, signal) {
       calls.push({ kind: 'read', scope, path, range, signal })
-      const text = files[path]
+      const text = dictOf(scope)[path]
       if (text === undefined) throw absentError(path)
       return readPage(text, range, { tier, maxBytes })
     },

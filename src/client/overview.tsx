@@ -814,9 +814,9 @@ export function OverviewPane(props: {
    * worked. That is the same line's next page, so it is closed and opened rather than swapped: the
    * page folds away in the boxes it last drew in, and the page arriving grows where it stands. A
    * person's pick and a changed seat keep the instant swap — those are asks, and a page a reader did
-   * not ask for is not closed under their hand. A cast that replaced the whole world (another
-   * workspace's record under the pane) is no hand-over either: the previous subject was still
-   * running, so nothing of it had finished. */
+   * not ask for is not closed under their hand. Another record under the pane never reaches this
+   * drawing at all: the panel hands the stage a fresh element for it, so the page before it is cut
+   * rather than closed, and none of its marks outlive the record they belonged to. */
   const pastWindow = mainBefore === undefined ? undefined : windowsRef.current.get(mainBefore)
   const handedOn = swappedMain && reading.mainFrom === 'line' && pastWindow?.settled === true
   /* The page being closed, at the boxes and readings it last drew with: built on the hand-over's own

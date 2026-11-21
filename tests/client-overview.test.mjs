@@ -10,7 +10,8 @@
  * - the two entrances, which are not the same fact: a child grows out of the dispatch row that opened
  *   it (its box is the geometry's, its source point is that row), while the main window has no source
  *   at all — it is the conversation the pane is about, so it never travels; and a set that is replaced
- *   whole (another workspace's record under the pane) leaves no pane behind to fold;
+ *   whole (another conversation under the pane) leaves no pane behind to fold, while another
+ *   workspace's record under the pane is another page: cut, then arriving where it stands;
  * - one arrival, one flight: the aim is read on the joining beat and a re-measure under it never
  *   re-aims it, and a seat the reading loses for a beat and hands straight back is the same window
  *   standing — it does not fly out a second time;
@@ -772,6 +773,96 @@ test('a replaced set is another cast, not windows that left: nothing is held to 
 
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('another workspace under the pane is another page: the old one is cut, and the new one arrives where it stands', { skip: bundleSkip }, async (t) => {
+  /* The selector at the top of the panel reads another record, and that record's windows are not this
+   * page's windows. Nothing of the page before it may be closed, settled or flown on its way out —
+   * which is what a switch used to draw: the old page folding shut *under* the new one while the new
+   * one was already appearing, two worlds animating over each other. The stage is handed a fresh
+   * element for another record, so the old page is cut and the new one plays the one motion a page
+   * has: it arrives where it stands. */
+  const first = 'C:\\the-first-workspace'
+  const second = 'C:\\the-second-workspace'
+  /** A record whose one delivered cell was worked by this session: which page the stage should draw. */
+  const recordOf = (title, session) => ({
+    ...record(),
+    '.superworker/ideas.json': json({
+      nodes: {
+        n0: {
+          title,
+          description: 'the piece the main conversation drives',
+          tags: [],
+          mode: 'auto',
+          status: 'completed',
+          created_at: '2026-01-08T00:00:00.000Z',
+          completed_at: '2026-01-09T00:00:00.000Z',
+          dependencies: [],
+        },
+      },
+    }),
+    '.superworker/meta/sessions/n0.json': json({ run: [{ session, at: '2026-01-09T00:00:00.000Z' }] }),
+  })
+  const service = fakeSessionsService()
+  service.set('m1', [said('the first workspace own words.', 1000)])
+  service.set('m2', [said('the second workspace own words.', 2000)])
+  /* Both conversations are in the list the whole time: what the stage draws is the record's own
+   * business, so the switch is judged on the record and nothing else. The page the reader leaves has
+   * said its last word — its check stands, its conversation stopped — while the one arriving is being
+   * worked: exactly the shape a switch has, and the shape that used to be read as the line handing the
+   * stage on. */
+  const snap = {
+    ids: ['m1', 'm2'],
+    byId: {
+      m1: { id: 'm1', running: false, displayTitle: 'the first conversation' },
+      m2: { id: 'm2', running: true, displayTitle: 'the second conversation' },
+    },
+  }
+  const list = {
+    items: [
+      { workspaceId: 'w-first', path: first, title: 'the first workspace', sessionIds: ['render-check-session'] },
+      { workspaceId: 'w-second', path: second, title: 'the second workspace', sessionIds: [] },
+    ],
+  }
+  const mounted = await mountBuiltPanel({
+    record: (scope) => (scope.workspaceRoot === second
+      ? recordOf('the second workspace cell', 'm2')
+      : recordOf('the first workspace cell', 'm1')),
+    workspaces: { getSnapshot: () => list, subscribe: () => () => undefined },
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  /* The stage comes down whatever this case finds: a judgement that fails mid-way must not leave a
+   * mounted root and its timers holding the runner open. */
+  t.after(async () => {
+    await mounted.unmount()
+    assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  assert.notEqual(container.querySelector('[data-window="m1"]'), null, 'the first workspace is not drawn')
+
+  /* The reader picks the other workspace on the selector. */
+  const select = container.querySelector('.superworker-pick select')
+  assert.notEqual(select, null, 'the workspace selector is not drawn')
+  await mounted.act(async () => {
+    select.value = 'w-second'
+    select.dispatchEvent(new mounted.window.Event('change', { bubbles: true }))
+  })
+  await mounted.settle()
+  /* The page is another stage: jsdom lays nothing out, so this stage is pinned the way the first one
+   * was, and what comes back is the frame that first draws it. */
+  await stageAt(mounted, 1024, 720)
+
+  assert.equal(container.querySelector('[data-window="m1"]'), null, 'the previous record\'s window was held to fold on a page that was replaced')
+  assert.equal(container.querySelectorAll('.superworker-opane.is-leave').length, 0, 'the replaced page holds panes mid-fold')
+  const fresh = container.querySelector('[data-window="m2"]')
+  assert.notEqual(fresh, null, 'the second workspace is not drawn')
+  assert.ok(!fresh.className.includes('is-born'), 'a window of the new page was drawn arriving from somewhere')
+  /* The one motion a page has: it appears where it stands — the same appearance the panel plays when
+   * it opens, and the only mark on the stage that is about the page itself. */
+  const field = container.querySelector('.superworker-ofield')
+  assert.ok(field.className.includes('is-first'), `the new page does not appear where it stands: ${field.className}`)
 })
 
 test('leave: the pane fades where it stands, and after the span the page has lost it', { skip: bundleSkip }, async () => {
