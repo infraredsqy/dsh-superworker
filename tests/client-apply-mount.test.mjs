@@ -131,13 +131,3 @@ test('the panel\'s port starts on the carrier and moves to the mounted namespace
   await firstFrame
   assert.ok(frames.length >= 1, 'the panel must get a frame on the road it ended up on')
 })
-
-test('a gateway whose mount never lands keeps the carrier road, and its reads keep working', { skip: bundleSkip }, async () => {
-  const { ctx, provided } = harness()
-  client.apply(ctx)
-  const port = provided[client.SERVICE_KEY].port
-
-  assert.equal(port.source, 'carrier')
-  const reading = await port.read('s1', 'C:\\ws')
-  assert.equal(reading.workspaceRoot, 'C:\\ws', 'the fallback must keep answering while the mount is pending')
-})

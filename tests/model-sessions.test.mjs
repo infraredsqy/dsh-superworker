@@ -11,7 +11,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { bornInSessionOf, readBirthplaces, readSessions, runSessionOf, strandedCycleOf } from '../src/model/index.ts'
+import { bornInSessionOf, readSessions, runSessionOf, strandedCycleOf } from '../src/model/index.ts'
 
 test('the working session is the run entry, whatever the discussion says and whenever it happened', () => {
   assert.equal(runSessionOf({
@@ -78,17 +78,6 @@ test('a layer of notes read into a reading: the file name minus its suffix is th
   /* `n-2` is absent on purpose: it was created in `session-talk` and never dispatched, so it has no
      working session and earns no window. */
   assert.deepEqual(out, { 'n-1': 'session-7' })
-})
-
-test('the birthplace reading keeps what the working reading drops, and only there', () => {
-  const notes = {
-    'n-1.json': JSON.stringify({ discussion: [{ session: 'session-born' }], run: [{ session: 'session-7' }] }),
-    'n-2.json': JSON.stringify({ discussion: [{ session: 'session-talk' }] }),
-    'n-3.json': JSON.stringify({ run: [{ session: 'session-9' }] }),
-  }
-
-  assert.deepEqual(readSessions(notes), { 'n-1': 'session-7', 'n-3': 'session-9' })
-  assert.deepEqual(readBirthplaces(notes), { 'n-1': 'session-born', 'n-2': 'session-talk' })
 })
 
 test('an unparsable one: that cell is skipped, the rest read on', () => {

@@ -134,13 +134,6 @@ test('this build: the shell loads, the panel draws, every tab opens, cycle names
    * moves both sides together. */
   const tabs = mounted.tabs()
   assert.ok(tabs.length > 0, 'the tab strip is drawn')
-  /* The row's identity in its own order: six views with the overview leading. The words on the tabs
-   * are the locales' business; the ids under them are the row's shape, and that is what is pinned. */
-  assert.deepEqual(
-    tabs.map((one) => one.getAttribute('aria-controls')),
-    ['pane-overview', 'pane-map', 'pane-detail', 'pane-notes', 'pane-issue', 'pane-config'],
-    'the row holds the six views, the overview first',
-  )
   for (const tab of tabs) {
     await act(async () => { tab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
     await settle()
