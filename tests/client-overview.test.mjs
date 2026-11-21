@@ -373,6 +373,63 @@ test('the field is the stage frame at the origin, and every pane stands at the g
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
+test('an unmeasured stage draws no window at all, so nothing is ever seen standing in its corner', { skip: bundleSkip }, async () => {
+  /* The reader's complaint, on opening the panel: the windows flew out of the stage's top-left corner.
+   * The corner was never an origin — it is what an unmeasured stage is. The pane is mounted inside a
+   * tab that may still be `hidden`, so its first render has no box; the geometry answers with a
+   * zero-width window at (0, 0), and the opening's own growth then spent that hop as travel. The rule
+   * is the one thing that must hold whatever the geometry says: a stage with no numbers has no
+   * windows to place. */
+  const service = fakeSessionsService()
+  service.set('m1', [said('start.', 1000), dispatched('look for conflicts', 2000, 'd1')])
+  service.set('c1', [read('a.ts', 3000)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: true, title: 'the first child' }])),
+  })
+  /* This is the state the panel really opens in: mounted, and not yet measured. */
+  assert.equal(container(mounted).querySelectorAll('[data-window]').length, 0, 'a window was drawn before the stage had a box: it stands in the corner')
+
+  /* Measured, and the same reading draws its cast — in place, and grown where it stands. */
+  await stageAt(mounted, 1024, 720)
+  const main = container(mounted).querySelector('[data-window="m1"]')
+  const child = container(mounted).querySelector('[data-window="c1"]')
+  assert.notEqual(main, null, 'the stage was measured and still draws no main window')
+  assert.notEqual(child, null, 'the stage was measured and still draws no child')
+  assert.notEqual(main.style.left, '0px', 'the main window stands on the stage\'s own left edge')
+  assert.notEqual(child.style.left, '0px', 'the child stands on the stage\'s own left edge')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the stage\'s arrival grows the windows where they stand: a scale about each box\'s own middle, never a translation', () => {
+  /* The other half of the same fix. Holding the windows back until the stage is measured leaves
+   * nothing to travel from, so the entrance that plays on the panel's opening (and on every return to
+   * this tab) can only be a growth in place. The sheet is where that is stated, and the two ways it
+   * could be wrong are both checkable there: a `translate` would be an invented origin, and a
+   * `transform-origin` other than the box's own middle would move the growth's centre off the window. */
+  const sheet = stripComments(readFileSync(new URL('../src/client/styles/overview.css', import.meta.url), 'utf8'))
+  const rules = cssBlocks(sheet, { descend: 'all' }).filter((block) => block.kind === 'rule')
+
+  const rule = rules.find((one) => one.at === '' && one.prelude.includes('superworker-ofield.is-first') && one.prelude.includes('superworker-opane'))
+  assert.notEqual(rule, undefined, 'no rule plays the stage\'s own arrival')
+  assert.match(rule.body, /transform-origin:\s*center center/u, 'the stage\'s arrival is not centred on each window\'s own box')
+  /* A flying child is excluded: its own flight owns the transform for that beat. */
+  assert.match(rule.prelude, /:not\(\.is-born\)/u, 'the stage\'s arrival and a child\'s flight can land on one box together')
+  assert.match(rule.prelude, /:not\(\.is-leave\)/u, 'a window on its way out plays the arrival as well')
+
+  const named = /animation:\s*([\w-]+)/u.exec(rule.body)
+  assert.notEqual(named, null, 'the stage\'s arrival names no animation')
+  const steps = rules.filter((one) => one.at === `@keyframes ${named[1]}`)
+  assert.ok(steps.length >= 2, `the arrival ${named[1]} is named but never stated`)
+  const from = steps[0].body
+  assert.match(from, /scale\(/u, 'the stage\'s arrival does not grow the window')
+  assert.ok(!/translate/u.test(from), `the stage's arrival translates the window: ${from}`)
+  assert.match(steps.at(-1).body, /transform:\s*none/u, 'the arrival does not land on the box the geometry set')
+})
+
 test('a joining child grows out of the dispatch row that opened it', { skip: bundleSkip }, async () => {
   /* The two windows are not the same kind of thing, and their entrances say so. A child has a source:
    * the row that dispatched it, a real row of the main conversation's feed. It grows out of the

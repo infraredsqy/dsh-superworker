@@ -115,11 +115,16 @@ export interface OverviewEvent {
 /**
  * What one drawn row is. The kind is the whole fact; the word and the mark it
  * is drawn with are the drawing half's business, so this set says only what
- * happened — a reasoning step, a file read or written, a command run, the
- * model's own words, a task dispatched, a failure, and the neutral `tool` for
- * a call this fold does not know by name.
+ * happened — a person's own words handed in, a reasoning step, a file read or
+ * written, a command run, the model's own words, a task dispatched, a failure,
+ * and the neutral `tool` for a call this fold does not know by name.
+ *
+ * `input` is the one row the conversation did not say: the prompt it was
+ * handed. It is here because the feed is read as the conversation's own
+ * transcript — DSH's own conversation half shows the same line — and a reply
+ * with nothing above it is not a reading of what happened, it is a fragment.
  */
-export type OverviewRowKind = 'think' | 'read' | 'write' | 'run' | 'output' | 'dispatch' | 'fail' | 'tool'
+export type OverviewRowKind = 'input' | 'think' | 'read' | 'write' | 'run' | 'output' | 'dispatch' | 'fail' | 'tool'
 
 /** One row a window draws. */
 export interface OverviewRow {
@@ -745,9 +750,7 @@ function contentTextOf(message: Record<string, unknown> | undefined): string | u
  * One assistant message folds into at most two rows: its reasoning into a
  * `think` row, its text into an `output` row. The tool calls an assistant
  * message carries make no rows here — the log writes each of them again as its
- * own `tool/call` event, and one call must not become two rows. The reader's
- * own words fold to nothing: the feed shows what the conversation is doing,
- * and the reader already knows what they said.
+ * own `tool/call` event, and one call must not become two rows.
  */
 function foldAssistant(data: Record<string, unknown> | undefined, rows: OverviewRow[], at: number | undefined): void {
   const message = asRecord(data?.message)
@@ -763,6 +766,33 @@ function foldAssistant(data: Record<string, unknown> | undefined, rows: Overview
   }
   pushRow(rows, 'think', thinking.length > 0 ? thinking.join('\n') : undefined, at)
   pushRow(rows, 'output', spoken.length > 0 ? spoken.join('\n') : undefined, at)
+}
+
+/**
+ * One `user/message` folds into an `input` row — the conversation's prompt, the
+ * one line above the reply that is not the conversation's own.
+ *
+ * The row is drawn for a **person's** words and for nothing else. DSH writes
+ * every user-role message through this one event, and its `source` is what
+ * tells the kinds apart: a direct human prompt (or a dispatch's prompt, or a
+ * continued child's) carries `kind: 'user'`, while the context the harness
+ * injects for itself (a runtime snapshot, a workspace instruction file, the
+ * skill catalog, a settled-child notice, a hook's word) carries its own
+ * producer's `kind`. Those are not what the conversation was asked; drawing
+ * them would bury the prompt under the machinery that delivers it. A message
+ * with no readable `source` is none of them either — the kind is required on
+ * every one of these events, so an absent one is not read as a person speaking.
+ *
+ * The message's blocks are the event's own `data.content`, **not** a nested
+ * `data.message` — this event type is the surface message already, where an
+ * assistant's is wrapped. A dispatch prompt is `kind: 'user'` too, and it is
+ * drawn as the row: for a child window the prompt it was handed *is* what
+ * opened it, and a window whose first row is already its own answer says
+ * nothing about what it was doing there.
+ */
+function foldInput(data: Record<string, unknown> | undefined, rows: OverviewRow[], at: number | undefined): void {
+  if (text(asRecord(data?.source)?.kind) !== 'user') return
+  pushRow(rows, 'input', contentTextOf(data), at)
 }
 
 /** The call's own arguments, as an object; arguments that are not parsable text read as none. */
@@ -947,7 +977,8 @@ function foldRows(events: readonly OverviewEvent[] | undefined): readonly Overvi
     if (type === undefined) continue
     const data = asRecord(event.data)
     const at = typeof event.time === 'number' && Number.isFinite(event.time) ? event.time : undefined
-    if (type === 'assistant/message') foldAssistant(data, rows, at)
+    if (type === 'user/message') foldInput(data, rows, at)
+    else if (type === 'assistant/message') foldAssistant(data, rows, at)
     else if (type === 'tool/call') foldCall(data, rows, runCalls, at)
     else if (type === 'tool/result') foldResult(data, rows, runCalls, at)
   }

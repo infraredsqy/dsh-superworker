@@ -1475,11 +1475,50 @@ test("a command opening on a line break draws no wordless row, yet its result st
   assert.equal(rows[0].text, '14 个用例通过')
 })
 
-test("the reader's own words fold to no row", () => {
+test('a person\'s prompt folds into the one `input` row above the reply', () => {
+  /* The feed is read as the conversation's own transcript, and a reply with nothing above it is a
+   * fragment: the prompt it was handed is the one row the conversation did not say. DSH writes it as
+   * a `user/message`, whose own blocks are `data.content` — the event *is* the surface message here,
+   * where an assistant's wraps one under `data.message`. */
   const reading = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN) }),
     events: {
-      'c-1': [{ type: 'user/message', time: 1, data: { message: { content: [{ type: 'text', text: '继续' }] } } }],
+      'c-1': [
+        { type: 'user/message', time: 1, data: { content: [{ type: 'text', text: '继续' }], source: { kind: 'user' }, role: 'user' } },
+        said(2, undefined, '接着做。'),
+      ],
+    },
+  })
+  assert.deepEqual(reading.children[0].rows.map((row) => [row.kind, row.text]), [['input', '继续'], ['output', '接着做。']])
+})
+
+test('the context the harness injects is not the conversation\'s prompt: its own producer says so', () => {
+  /* Every user-role message arrives as this same event, and `source.kind` is the one thing that tells
+   * a person's word from the machinery delivering it. Drawn, the runtime snapshot, the instruction
+   * file and the skill catalog would bury the prompt they arrive beside. */
+  const reading = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN) }),
+    events: {
+      'c-1': [
+        { type: 'user/message', time: 1, data: { content: [{ type: 'text', text: 'Instructions from: ~/.dsh/AGENTS.md' }], source: { kind: 'agent-instructions', form: 'instructions' } } },
+        { type: 'user/message', time: 2, data: { content: [{ type: 'text', text: 'Current working directory: ...' }], source: { kind: 'runtime-context', form: 'snapshot' } } },
+        { type: 'user/message', time: 3, data: { content: [{ type: 'text', text: 'child settled' }], source: { kind: 'subagent-settled', form: 'notice' } } },
+        /* No readable `source` at all: the kind is required, so this is not read as a person either. */
+        { type: 'user/message', time: 4, data: { content: [{ type: 'text', text: '无主的一句话' }] } },
+      ],
+    },
+  })
+  assert.deepEqual(reading.children[0].rows, [])
+})
+
+test('a message that says nothing draws no `input` row either: no sentence, no row', () => {
+  const reading = readOverview({
+    sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN) }),
+    events: {
+      'c-1': [
+        { type: 'user/message', time: 1, data: { content: [], source: { kind: 'user' } } },
+        { type: 'user/message', time: 2, data: { content: [{ type: 'image', data: '...' }], source: { kind: 'user' } } },
+      ],
     },
   })
   assert.deepEqual(reading.children[0].rows, [])

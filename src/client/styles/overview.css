@@ -355,6 +355,34 @@
     opacity: 1;
   }
 }
+/* The stage's own arrival, and the one a reader sees on opening the panel or returning to this tab:
+ * every window grows where it stands, from its own middle.
+ *
+ * It is a **scale about the box's own centre**, never a translation. The pane is an absolutely
+ * placed box whose position is the geometry's reading, so an entrance that moved it would be telling
+ * the reader it came from somewhere it did not; and the place it used to be said to come from — the
+ * stage's corner — is where an unmeasured layout puts a zero-width box, which is exactly the sliver
+ * every window was seen flying out of. The dot at the top-left of this stage is not an origin; it is
+ * an absence of numbers. So the windows are drawn only once the stage has been measured (the pane
+ * holds them back until then), and the only thing left to animate on the way in is their size.
+ *
+ * `backwards` fills the first frame, so the window never flashes at full size for one paint before
+ * the growth begins. The span is the entrance's own, and the class is dropped by the pane
+ * (`overview.tsx`), whose ref is what decides which beat is the arrival. */
+@keyframes superworker-opane-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.superworker-page .superworker-ofield.is-first .superworker-opane:not(.is-leave):not(.is-born) {
+  animation: superworker-opane-appear 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  transform-origin: center center;
+}
 /* Enter, for a child: it grows out of its source point. The shift is the difference between where
  * the line leaves the main window and where the child's own top-left corner ends up, so the first
  * frame stands exactly on the row that dispatched it, and the last frame is the geometry's box with

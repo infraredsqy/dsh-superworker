@@ -216,6 +216,9 @@ export const en: Readonly<Record<WordKey, string>> = {
   'overview.weight.light': 'light',
   'overview.weight.standard': 'standard',
   'overview.mode.auto': 'auto',
+  /* The feed's own row words. `input` is the prompt the conversation was handed — the one row that is
+   * not the conversation's, drawn so the reply has something above it to reply to. */
+  'overview.row.input': 'asks',
   'overview.row.think': 'thinks',
   'overview.row.read': 'reads',
   'overview.row.write': 'writes',

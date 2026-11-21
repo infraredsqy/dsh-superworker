@@ -243,6 +243,9 @@ export const zh = {
   'overview.weight.light': '轻',
   'overview.weight.standard': '标准',
   'overview.mode.auto': '自动',
+  /* The feed's own row words. `input` is the prompt the conversation was handed — the one row that is
+   * not the conversation's, drawn so the reply has something above it to reply to. */
+  'overview.row.input': '问',
   'overview.row.think': '思考',
   'overview.row.read': '读取',
   'overview.row.write': '写入',

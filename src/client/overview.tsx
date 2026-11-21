@@ -142,6 +142,7 @@ export interface WindowGo {
 
 /** What each row kind says. */
 const ROW_WORDS: Readonly<Record<OverviewRowKind, WordKey>> = {
+  input: 'overview.row.input',
   think: 'overview.row.think',
   read: 'overview.row.read',
   write: 'overview.row.write',
@@ -205,6 +206,16 @@ function faultWordOf(ending: OverviewEnding | undefined): WordKey {
 /** The row's own mark, one small drawing per kind, the way the state marks are drawn. */
 function KindMark(props: { readonly kind: OverviewRowKind }): React.ReactElement {
   switch (props.kind) {
+    case 'input':
+      /* The prompt's own glyph: the caret a reader types after, in the panel's 12-unit box like every
+       * other mark. It is the one row that is not the conversation's, and it says so in the one place
+       * a reader's eye stops first — before the words. */
+      return (
+        <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+          <path d="M3.2 3.4 5.9 6 3.2 8.6" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M6.8 8.6h2.2" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+        </svg>
+      )
     case 'think':
       return (
         <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
@@ -644,6 +655,44 @@ export function OverviewPane(props: {
     return () => observer.disconnect()
   }, [measure])
 
+  /**
+   * Whether this stage has been measured yet — and it is the gate every window waits behind.
+   *
+   * An unmeasured stage is `{ 0, 0 }`, which is not a small stage but the absence of one: the pane
+   * is mounted inside a tab that may still be `hidden`, so its first render has no box to lay out
+   * against. The geometry answers that with a zero-width window at the origin, and drawing it spent
+   * one painted frame with the whole cast standing in the stage's top-left corner — the sliver every
+   * window was read flying out of. Nothing is drawn until the numbers are the stage's own, so the
+   * first frame the reader ever sees already has every window in its place.
+   */
+  const measured = stage.width > 0 && stage.height > 0
+
+  /* The stage's own arrival — the panel opening, or a reader coming back to this tab.
+   *
+   * It is read during the render that first draws the windows at their real boxes, because that is
+   * the only frame the growth may start on: published from an effect it would land a paint late,
+   * after the windows had already been seen standing at full size. `stageArrived` then holds the
+   * mark for the entrance's span, and is set from a **layout** effect so that any redraw landing
+   * between the commit and the paint still reads it — a pushed frame that dropped the class for one
+   * render would restart the growth from its first keyframe.
+   *
+   * The hold is shed once the span has run: left standing, it would answer for every window that
+   * joins the stage later, and a child's own flight from its dispatch row would never play. */
+  const stageArrived = React.useRef(false)
+  const arrivalNow = measured && !stageArrived.current
+  if (arrivalNow) stageArrived.current = true
+  if (!measured) stageArrived.current = false
+  const [stageEntered, setStageEntered] = React.useState(false)
+  const stageEnterTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  React.useLayoutEffect(() => {
+    if (!arrivalNow) return undefined
+    setStageEntered(true)
+    clearTimeout(stageEnterTimer.current)
+    stageEnterTimer.current = setTimeout(() => setStageEntered(false), ENTER_SPAN_MS)
+    return undefined
+  }, [arrivalNow])
+  const appearing = arrivalNow || stageEntered
+
   const mainRows = reading.main?.rows.length ?? 0
 
   /* Leave: the ids that vanished keep their last box for the leave's span, then the page loses them.
@@ -932,6 +981,7 @@ export function OverviewPane(props: {
       for (const timer of enterTimers.current.values()) clearTimeout(timer)
       enterTimers.current.clear()
       clearTimeout(settleTimer.current)
+      clearTimeout(stageEnterTimer.current)
       for (const scheduled of openingTimers.current.values()) clearTimeout(scheduled.timer)
       openingTimers.current.clear()
       for (const scheduled of freshTimers.current.values()) clearTimeout(scheduled)
@@ -1184,7 +1234,7 @@ export function OverviewPane(props: {
         </div>
       ) : null}
       <div
-        className={`superworker-ofield${settling ? ' is-settle' : ''}${joining ? ' is-join' : ''}`}
+        className={`superworker-ofield${settling ? ' is-settle' : ''}${joining ? ' is-join' : ''}${appearing ? ' is-first' : ''}`}
         style={{
           /* The field is the stage's own frame — the sheet lays it over the whole stage — and the
            * boxes inside it are already in stage coordinates. Writing the field's own left/top here
@@ -1204,7 +1254,7 @@ export function OverviewPane(props: {
             ))}
           </svg>
         )}
-        {reading.main === null ? null : (
+        {measured && reading.main !== null ? (
           <WindowPane
             box={placement.main}
             window={reading.main}
@@ -1213,17 +1263,17 @@ export function OverviewPane(props: {
             leave={leavingIds.includes(reading.main.id)}
             fresh={freshIds.has(reading.main.id)}
             /* The main window has no source: it is the conversation this pane is about, so it was
-             * already here. Its own appearance fades in; it never travels. */
+             * already here. Its own appearance scales up where it stands; it never travels. */
             born={undefined}
             grow={opening.includes(reading.main.id)}
             go={props.go}
           />
-        )}
+        ) : null}
         {reading.children.map((one) => {
           /* The box comes from the cast by id, never from the child's index: a window still folding
            * holds the slot it stood in, so the survivors keep the boxes they drew with. */
           const box = boxOf(one.id)
-          if (box === undefined) return null
+          if (box === undefined || !measured) return null
           return (
             <WindowPane
               key={one.id}
@@ -1235,7 +1285,9 @@ export function OverviewPane(props: {
               fresh={freshIds.has(one.id)}
               /* A child grows out of the row that dispatched it, and only while its entrance is
                * owed: the mark is taken on the first drawing that can carry it and kept in `flying`
-               * until the entrance's span has run. */
+               * until the entrance's span has run. A child that joins *during* the stage's own
+               * arrival keeps its flight — the sheet excludes a flying window from the stage's
+               * appearance, so the two never put two transforms on one box. */
               born={flightOf(one.id, box)}
               grow={opening.includes(one.id)}
               go={props.go}
