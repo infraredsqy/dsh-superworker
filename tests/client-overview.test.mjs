@@ -6,7 +6,8 @@
  * service — the same narrow face `session-events.ts` reads. What the cases hold down:
  *
  * - the windows and their words: the node's own nameplate on the main window, running children
- *   only, a child that ended no window at all, and no session id printed anywhere;
+ *   only, a child that ended no window at all, no session id printed anywhere, and a seat titled by
+ *   the name its dispatcher gave it — never by the first line of the prompt it was handed;
  * - the two entrances, which are not the same fact: a child grows out of the dispatch row that opened
  *   it (its box is the geometry's, its source point is that row), while the main window has no source
  *   at all — it is the conversation the pane is about, so it never travels; and a set that is replaced
@@ -160,14 +161,22 @@ const recordAtCheckpoint = () => ({
 })
 
 /** The session-list snapshot, in the shape the seat's `useSessions` hook hands over. `mainRunning` is
- * the reader's own conversation's bit: a scene read after the line has stopped says false. */
+ * the reader's own conversation's bit: a scene read after the line has stopped says false. A child
+ * may carry DSH's own `projections` for it — the `subagent` identity a dispatch writes — which is
+ * the field the reading takes a seat's name from. */
 const snapshotOf = (children, mainRunning = true) => ({
   ids: ['m1', ...children.map((one) => one.id)],
   byId: {
     m1: { id: 'm1', running: mainRunning, retainedBy: { mainView: 1 }, displayTitle: 'the main conversation' },
     ...Object.fromEntries(children.map((one) => [
       one.id,
-      { id: one.id, running: one.running, parentId: 'm1', displayTitle: one.title },
+      {
+        id: one.id,
+        running: one.running,
+        parentId: 'm1',
+        displayTitle: one.title,
+        ...(one.projections === undefined ? {} : { projectionValues: one.projections }),
+      },
     ])),
   },
 })
@@ -328,6 +337,36 @@ test('the overview draws the reading: the node nameplate on the main window, run
    * two dedicated cases below judge. */
   assert.ok(!main.className.includes('is-born'), 'the main window plays an entrance on the pane\'s first drawing')
   assert.ok(!child.className.includes('is-born'), 'a child plays an entrance on the pane\'s first drawing')
+
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a seat is titled by the name its dispatcher gave it, not by the first line of its prompt', { skip: bundleSkip }, async () => {
+  /* The list projects a conversation's title off its first prompt line, and a pipeline dispatch opens
+   * with `读 <路径> ，照它做`: drawn as a title, the seat's own line was a path cut off mid-way. The
+   * dispatch wrote a name for display, though, and DSH folds it into the child's own `subagent`
+   * projection — the same sentence its own subagent list prints. The seat reads that one. */
+  const label = '派执行者做收尾总单 finale.md'
+  const service = fakeSessionsService()
+  service.set('m1', [said('start.', 1000), ...dispatchRun('c1', 'd1', label, 2000)])
+  service.set('c1', [read('a.ts', 3000)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{
+      id: 'c1',
+      running: true,
+      title: '读 C:\\Users\\inf_NAS\\.dsh\\profiles\\web\\node_modules\\dsh-superworker\\packages',
+      projections: { subagent: { mode: 'continuable', label, seq: 0 } },
+    }])),
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+
+  const child = container.querySelector('[data-window="c1"]')
+  assert.notEqual(child, null, 'a running child is not drawn')
+  assert.equal(child.querySelector('.superworker-ohead-t')?.textContent, label, 'the seat was titled by the first line of its prompt')
 
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
