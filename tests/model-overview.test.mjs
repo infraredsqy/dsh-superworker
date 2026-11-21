@@ -454,6 +454,51 @@ test('no alert: a completed turn that yielded to its own running child is a pipe
   assert.equal('alert' in reading.main, false, 'a conversation that yielded to its own child was called broken')
 })
 
+test('no alert on a turn whose own work has already come home: the notice is still crossing', () => {
+  /* The background dispatch, read on the one beat that looks like a stall and is not: the step's
+   * turn closed at 900 while its subagent still ran, the subagent closed its own at 950, and the
+   * step has not spoken since — the settled-child notice that wakes it is on its way. Everything a
+   * break is read from is there (the cell is held, no ticket, the turn reads `completed`, nothing of
+   * the window runs) and every one of those facts is about the *previous* beat. Drawing the break
+   * here is what a reader saw as the red frame flashing just before the window folded. */
+  const scene = (childEndedAt) => readOverview({
+    sessions: snapshot([MAIN, 'sub-1'], {
+      [MAIN]: mainRow(MAIN),
+      'sub-1': childRow('sub-1', MAIN, false),
+    }),
+    pipelineSessions: [MAIN],
+    ownSession: MAIN,
+    nodeOf: { [MAIN]: OWED_NODE },
+    heldSessions: [MAIN],
+    events: {
+      [MAIN]: [turnEnd(900, 'completed')],
+      'sub-1': [turnEnd(childEndedAt, 'completed')],
+    },
+  })
+  const home = scene(950)
+  assert.equal('alert' in home.main, false, 'a step whose worker came home after its last word was called broken')
+  /* And the same step once it *has* spoken since — its next turn ended with the work still owed and
+   * no ticket behind it. That is the quit the ticket layer exists to name, and it alerts. */
+  const quit = scene(800)
+  assert.equal(quit.main.alert, true, 'a step that kept its worker\'s answer and still quit was read as resting')
+
+  /* A stopped subagent that closed its own turn is a hand-back, never a break — even when the
+   * caller's own reading keeps its seat (the work is still on the table). Only a turn the log cut
+   * short is a worker that died owing the work. */
+  const seat = (ending) => readOverview({
+    sessions: snapshot([MAIN, 'sub-1'], { [MAIN]: mainRow(MAIN), 'sub-1': childRow('sub-1', MAIN, false) }),
+    pipelineSessions: [MAIN],
+    ownSession: MAIN,
+    undeliveredSessions: ['sub-1'],
+    events: { [MAIN]: [said(1, undefined, '派它去做')], 'sub-1': [said(2, undefined, '做完了'), ending] },
+  })
+  const quiet = seat(turnEnd(3, 'completed'))
+  assert.deepEqual(quiet.children.map((one) => one.id), ['sub-1'], 'the seat the caller kept left the stage')
+  assert.equal('alert' in quiet.children[0], false, 'a subagent that finished its turn was drawn as a break')
+  const cut = seat(turnEnd(3, 'error'))
+  assert.equal(cut.children[0].alert, true, 'a subagent whose turn died was drawn quietly')
+})
+
 test('no alert: a stopped turn that owes nothing is no broken leg', () => {
   const reading = factScene({ ending: turnEnd(9, 'aborted', 'user') })
   assert.equal('alert' in reading.main, false, 'a conversation that owes nothing was called broken')
@@ -806,15 +851,15 @@ test('no main view in the list: no overview at all, and nothing throws', () => {
     sessions: snapshot(['c-1'], { 'c-1': childRow('c-1', 'session-gone') }),
     events: { 'c-1': [said(1, undefined, 'hello')] },
   })
-  assert.deepEqual(reading, { main: null, children: [], legs: [], hiddenChildren: 0 })
+  assert.deepEqual(reading, { main: null, mainFrom: null, children: [], legs: [], hiddenChildren: 0 })
 })
 
 test('a snapshot nothing can be read off: an empty reading, and no throw', () => {
-  assert.deepEqual(readOverview({ sessions: {} }), { main: null, children: [], legs: [], hiddenChildren: 0 })
-  assert.deepEqual(readOverview({ sessions: { ids: 'nonsense', byId: 5 } }), { main: null, children: [], legs: [], hiddenChildren: 0 })
+  assert.deepEqual(readOverview({ sessions: {} }), { main: null, mainFrom: null, children: [], legs: [], hiddenChildren: 0 })
+  assert.deepEqual(readOverview({ sessions: { ids: 'nonsense', byId: 5 } }), { main: null, mainFrom: null, children: [], legs: [], hiddenChildren: 0 })
   assert.deepEqual(
     readOverview({ sessions: snapshot(['x'], { x: { retainedBy: 'nonsense' } }) }),
-    { main: null, children: [], legs: [], hiddenChildren: 0 },
+    { main: null, mainFrom: null, children: [], legs: [], hiddenChildren: 0 },
   )
 })
 
@@ -926,6 +971,72 @@ test('the stage lands where the line stands: the step a cycle holds, whatever th
   assert.equal(reading.main.id, held, `the stage is ${reading.main.id}, not the step the record holds`)
 })
 
+test('a finished step hands the stage to the step still being worked; alone, it keeps the check', () => {
+  /* Two steps of one line, both held: one has been delivered (its check is its last word) and the
+   * other is still being worked. The stage is the one being worked — the reader who stayed on the
+   * finished step's page must see the line go on, not a check standing where the line has left. With
+   * nothing else out, the check is all there is to read and it keeps the stage. */
+  const finished = 'session-finished'
+  const working = 'session-working'
+  const scene = ({ workingRuns, workingHeld }) => readOverview({
+    sessions: snapshot([finished, working], {
+      [finished]: pipelineRow(finished, { running: false, updatedAt: '2026-11-15T20:00:00.000Z' }),
+      [working]: pipelineRow(working, { running: workingRuns, updatedAt: '2026-11-15T19:00:00.000Z' }),
+    }),
+    pipelineSessions: [finished, working],
+    heldSessions: workingHeld ? [finished, working] : [finished],
+    deliveredSessions: [finished],
+    nodeOf: { [finished]: 'n-finished', [working]: 'n-working' },
+    events: { [finished]: [turnEnd(9, 'completed')] },
+  })
+  const moving = scene({ workingRuns: true, workingHeld: true })
+  assert.equal(moving.main.id, working, `the stage stayed on ${moving.main.id} while the line was being worked`)
+  assert.equal(moving.mainFrom, 'line', 'the hand-over is not read as the line\'s own move')
+  assert.equal('delivered' in moving.main, false, 'the step still being worked wears a check')
+
+  const stopped = scene({ workingRuns: false, workingHeld: false })
+  assert.equal(stopped.main.id, finished, `the stage left the check for ${stopped.main.id} with nothing else out`)
+  assert.equal(stopped.main.delivered, true, 'the last verdict the stage had is not the check')
+})
+
+test('the seat hands the stage over once it has left the line, and keeps it while it owes a gate', () => {
+  /* The reader's own conversation is the stage until the record delivers it: then its check is the
+   * last thing it has to say, and while another step of the line is out the stage belongs to that
+   * one. It keeps the stage while nothing else is out (the check), while it still owes the work (a
+   * debt is where the line stands), and at a person's gate (a person is owed a word there). */
+  const mine = 'session-mine'
+  const theirs = 'session-theirs'
+  const scene = ({ theirsRuns = true, theirsHeld = true, delivered = true, gated = false }) => readOverview({
+    sessions: snapshot([mine, theirs], {
+      [mine]: pipelineRow(mine, { running: false, updatedAt: '2026-11-15T20:00:00.000Z' }),
+      [theirs]: pipelineRow(theirs, { running: theirsRuns, updatedAt: '2026-11-15T19:00:00.000Z' }),
+    }),
+    pipelineSessions: [mine, theirs],
+    ownSession: mine,
+    heldSessions: theirsHeld ? [theirs] : [],
+    ...(delivered ? { deliveredSessions: [mine] } : {}),
+    ...(gated ? { waitingSessions: [mine] } : {}),
+    nodeOf: { [mine]: 'n-mine', [theirs]: 'n-theirs' },
+    events: { [mine]: [turnEnd(9, 'completed')] },
+  })
+  const handedOn = scene({})
+  assert.equal(handedOn.main.id, theirs, `the stage stayed on ${handedOn.main.id} after its step left the line`)
+  assert.equal(handedOn.mainFrom, 'line', 'the seat\'s hand-over is not read as the line\'s own move')
+
+  const alone = scene({ theirsRuns: false, theirsHeld: false })
+  assert.equal(alone.main.id, mine, 'the seat left the check with nothing else of the line out')
+  assert.equal(alone.mainFrom, 'seat', 'the seat is no longer read as the seat')
+  assert.equal(alone.main.delivered, true, 'the seat does not carry the check the record wrote for it')
+
+  const owed = scene({ delivered: false })
+  assert.equal(owed.main.id, mine, 'the reader\'s own step left the stage while it still owes the work')
+  assert.equal(owed.mainFrom, 'seat', 'an owed seat is not read as the seat')
+
+  const gated = scene({ gated: true })
+  assert.equal(gated.main.id, mine, 'the seat at a person\'s gate left the stage the person is owed a word on')
+  assert.equal(gated.main.waiting, true, 'the seat at a gate does not read as waiting')
+})
+
 test('a record-named session the list does not hold draws nothing: the stale main view is no stand-in', () => {
   const stale = 'session-old'
   const reading = readOverview({
@@ -948,7 +1059,7 @@ test('the record names no session at all: no window, rather than an unrelated co
     ownSession: 'session-subagent',
     events: { [stale]: [said(1, undefined, '不该出现的行')] },
   })
-  assert.deepEqual(reading, { main: null, children: [], legs: [], hiddenChildren: 0 })
+  assert.deepEqual(reading, { main: null, mainFrom: null, children: [], legs: [], hiddenChildren: 0 })
 })
 
 test('another conversation in the same workspace, and its children, are never drawn', () => {

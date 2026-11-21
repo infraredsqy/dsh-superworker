@@ -473,6 +473,21 @@
 .superworker-page .superworker-opane.is-leave .superworker-oplate-m {
   animation: superworker-opane-fold-in 0.16s ease forwards;
 }
+/* Leave, for the page the line hands on from: the **main** window's fold keeps its nameplate. That
+ * plate hangs outside the frame (it probes left of the frame's own edge), and the fold's clip would
+ * cut it away on the first frame — the reader would watch a title it was reading disappear before
+ * the window it names had begun to close. So a leaving main keeps its ink outside the shrinking box
+ * and lets the plate, the mark and the fault line fade on the fold's own clock instead; the feed
+ * clips its own rows, so nothing spills while the box closes. */
+.superworker-page .superworker-opane.is-leave.is-main {
+  overflow: visible;
+}
+.superworker-page .superworker-opane.is-leave .superworker-oplate,
+.superworker-page .superworker-opane.is-leave .superworker-omark,
+.superworker-page .superworker-opane.is-leave .superworker-ofault,
+.superworker-page .superworker-opane.is-leave .superworker-oring {
+  animation: superworker-opane-fold-in 0.16s ease forwards;
+}
 /* Leave, for whoever reads with motion off: a plain fade where the pane stands, no geometry
  * changed — the removal discipline is the same, only the road is plainer. */
 @keyframes superworker-opane-out {
@@ -855,7 +870,11 @@
   /* The pane's own fade already takes the words with it, and a second fade inside it is motion a
    * reader asked not to be shown. */
   .superworker-page .superworker-opane.is-leave .superworker-ofeed,
-  .superworker-page .superworker-opane.is-leave .superworker-oplate-m {
+  .superworker-page .superworker-opane.is-leave .superworker-oplate-m,
+  .superworker-page .superworker-opane.is-leave .superworker-oplate,
+  .superworker-page .superworker-opane.is-leave .superworker-omark,
+  .superworker-page .superworker-opane.is-leave .superworker-ofault,
+  .superworker-page .superworker-opane.is-leave .superworker-oring {
     animation: none;
   }
   .superworker-page .superworker-opane.is-born,

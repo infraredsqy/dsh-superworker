@@ -41,13 +41,23 @@
  * being cleared once and forgotten. A delivered leg is never a window; it owes
  * nobody.
  *
+ * A stop is read against the work the conversation still has out. A turn that
+ * closed itself is a **yield** while a session it dispatched is running or came
+ * home after its own last word — the notice that wakes it is still crossing, so
+ * nothing is stuck and nothing is red. Only a turn the log cut short (an abort, an
+ * error, an interruption), or one that closed with its work still owed and nobody
+ * left to wake it, is a break. That is why a subagent that finished its job never
+ * paints the frame red: it hands its turn back, and delivering is not its to do.
+ *
  * A session DSH ran **for** one of these windows — its row carries the
  * `parentId` of the session that dispatched it, and the ordered list leaves it
  * out — is a child of that window: a window while it runs, and, when it was cut
  * off while its dispatcher's cell was still held and the line has stopped, a
  * window afterwards too. It works no node of its own, so its debt is its
  * dispatcher's: the work it was doing is still on the table and nothing took it
- * over. One that closed its own turn hands the work back and leaves.
+ * over. One that closed its own turn hands the work back and leaves; one whose
+ * turn was cut keeps a red seat while the line stands, because that cut is where
+ * the line stands.
  *
  * The main window is the conversation this panel lives in, and it
  * carries the facts the drawing's states are read from: `settled` (the list's
@@ -276,18 +286,35 @@ export interface OverviewLeg {
   readonly alert?: boolean
 }
 
+/**
+ * How the stage's subject was chosen, which is a different fact from which window it
+ * is. A person's pick and a change of the conversation the panel stands in are asks:
+ * the stage takes them at once. The line's own answer is a hand-over: the page the
+ * reader was reading is a step that has finished and left, and the stage moves on to
+ * where the line stands now — the drawing closes the old page and opens the new one.
+ */
+export type OverviewMainFrom = 'pick' | 'seat' | 'line' | 'view'
+
 /** The overview's reading at this snapshot. */
 export interface OverviewReading {
   /**
    * The main window: the conversation this panel's pipeline owns — the one the
-   * reader picked on the rail when there is a pick, else its own session when the
-   * record names it, else a named one still running, else the named one that moved
-   * last. Absent when the record names none of the list's sessions: the stage stays
-   * empty rather than showing a conversation the pipeline never mentioned. It is
-   * the only window that can carry {@link OverviewWindow.waiting}, and the only
-   * one the gate and the delivery are read for.
+   * reader picked on the rail when there is a pick, else its own session while the
+   * record has not delivered it, else a step of the line still being worked, else a
+   * named one still running, else the named one that moved last. Absent when the
+   * record names none of the list's sessions: the stage stays empty rather than
+   * showing a conversation the pipeline never mentioned. It is the only window that
+   * can carry {@link OverviewWindow.waiting}, and the only one the gate and the
+   * delivery are read for.
    */
   readonly main: OverviewWindow | null
+  /**
+   * How {@link main} was chosen ({@link OverviewMainFrom}); absent with no window. It
+   * says nothing about *which* conversation is drawn — that is `main.id` — only about
+   * the ask behind it, which is what the drawing reads to know whether a replacement
+   * is a hand-over or an instant swap.
+   */
+  readonly mainFrom: OverviewMainFrom | null
   /**
    * The child windows, oldest first: the **subagent conversations this main window
    * dispatched** — the list's running rows whose parent is the main session — plus
@@ -569,21 +596,30 @@ function latestOf(
 }
 
 /**
- * Which conversation is the main window — the one rule, in the order it reads:
+ * Which conversation is the main window — the one rule, in the order it reads, and
+ * the ask behind it:
  *
  * 1. the leg the reader picked on the rail, while the list still holds it — a
  *    person's pick outranks every reading here;
  * 2. the conversation the panel stands in, when the seat says which one it is:
- *    the reader's own conversation, running or not. A seat that says nothing is
- *    not stood in for — the browser's open conversation is no reading of the
- *    line (see {@link OverviewInput.ownSession});
- * 3. else the step the record holds: where the line stands right now, which is
- *    the one reading that does not wait on the browser's liveness bit or its
- *    last-moved moment;
- * 4. else a session the record names that the list still calls running (the
- *    newest of them when several are);
- * 5. else the one the record names that moved last;
- * 6. else nothing — no window at all, rather than a conversation the pipeline
+ *    the reader's own conversation, while it is still the line's to read. A seat
+ *    the record has delivered — and no gate stands on it — has said its last word
+ *    (its check), so it keeps the stage only while no other step of the line is
+ *    **being worked**; with one running, the stage follows it. That is what lets a
+ *    reader who stayed on a finished step's page watch the line go on, and what
+ *    keeps the check when the line has really stopped. A seat that says nothing is
+ *    not stood in for — the browser's open conversation is no reading of the line
+ *    (see {@link OverviewInput.ownSession});
+ * 3. else the step the record holds **and** whose conversation still runs: where
+ *    the line is being worked this moment. It leads the held-but-stopped step on
+ *    purpose — a step that has finished owes the stage its check, not its page,
+ *    while a sibling is still being worked;
+ * 4. else the step the record holds that has not left the line (a gate, or a debt
+ *    nobody is working): that stop *is* where the line stands;
+ * 5. else a named session the list still calls running (the newest of them when
+ *    several are);
+ * 6. else the one the record names that moved last;
+ * 7. else nothing — no window at all, rather than a conversation the pipeline
  *    never mentioned.
  *
  * A named session the list does not hold is no window either, and it is never
@@ -598,25 +634,43 @@ function mainIdOf(
   rows: Readonly<Record<string, OverviewSessionRow>>,
   order: readonly string[],
   held: ReadonlySet<string>,
-): string | undefined {
+  left: (id: string) => boolean,
+): { readonly id: string; readonly from: OverviewMainFrom } | undefined {
   /* The pick is asked of the same list as everything else: a leg that left the
      list is no pick, and the fallback answers instead of a stale id. */
   const shown = text(input.shownSession)
-  if (shown !== undefined && rows[shown] !== undefined) return shown
+  if (shown !== undefined && rows[shown] !== undefined) return { id: shown, from: 'pick' }
   const named = pipelineOf(input)
-  if (named === undefined) return mainViewOf(rows)
+  if (named === undefined) {
+    const marker = mainViewOf(rows)
+    return marker === undefined ? undefined : { id: marker, from: 'view' }
+  }
   const candidates = [...named].filter((id) => rows[id] !== undefined)
   const self = text(input.ownSession)
-  if (self !== undefined && named.has(self)) return rows[self] === undefined ? undefined : self
-  /* Where the line stands is a record fact, read before the browser's own: a step a
-     cycle holds right now is the pipeline's work this moment, and the one a reader
-     asking "what is going on" expects. The list's running bit says the same thing
-     one beat later, and its last-moved moment may name a step the line has left. */
-  const working = candidates.filter((id) => held.has(id))
-  if (working.length > 0) return latestOf(working, rows, order)
+  if (self !== undefined && named.has(self)) {
+    if (rows[self] === undefined) return undefined
+    /* A seat that has left the line hands the stage over — but only to a step that is **being
+     * worked** right now, and only because that is the page the line has moved on to. Nothing of
+     * the line running means the check is the last word the stage has to say, and it stays where
+     * the reader is looking; a step that stopped owing work keeps its bar either way. */
+    const worked = candidates.some((id) => id !== self && rows[id]?.running === true)
+    if (!(left(self) && worked)) return { id: self, from: 'seat' }
+  }
+  /* The step being worked right now is the line's own subject: it is the one reading
+     that does not wait on the browser's liveness bit or its last-moved moment. A
+     held but stopped step is read after it, because a step that stopped with its
+     work owed is where the line stands only while nothing of the line still moves. */
+  const live = candidates.filter((id) => held.has(id) && rows[id]?.running === true)
+  const liveId = latestOf(live, rows, order)
+  if (liveId !== undefined) return { id: liveId, from: 'line' }
+  const stuck = candidates.filter((id) => held.has(id) && !left(id))
+  const stuckId = latestOf(stuck, rows, order)
+  if (stuckId !== undefined) return { id: stuckId, from: 'line' }
   const running = candidates.filter((id) => rows[id]?.running === true)
-  if (running.length > 0) return latestOf(running, rows, order)
-  return candidates.length > 0 ? latestOf(candidates, rows, order) : undefined
+  const runningId = latestOf(running, rows, order)
+  if (runningId !== undefined) return { id: runningId, from: 'line' }
+  const last = latestOf(candidates, rows, order)
+  return last === undefined ? undefined : { id: last, from: 'line' }
 }
 
 /**
@@ -1024,6 +1078,23 @@ function endedAtOf(events: readonly OverviewEvent[] | undefined): Date | null {
   return latest === undefined ? null : new Date(latest)
 }
 
+/**
+ * When the conversation's last turn ended: the moment of the log's last `turn/end`,
+ * in epoch milliseconds, or nothing when it carries none. It is the conversation's
+ * own last word — the moment a window that yielded to work of its own is read
+ * against — and both ends of that comparison are the log's own, so nothing here is a
+ * guess about a clock.
+ */
+function turnedAtOf(events: readonly OverviewEvent[] | undefined): number | null {
+  let last: number | null = null
+  for (const event of events ?? []) {
+    if (text(event.type) !== 'turn/end') continue
+    if (typeof event.time !== 'number' || !Number.isFinite(event.time)) continue
+    last = event.time
+  }
+  return last
+}
+
 /** Whether a conversation was cut off rather than closing its own turn: a readable ending that is not `completed`. */
 function cutShort(events: readonly OverviewEvent[] | undefined): boolean {
   const ending = endingOf(events)
@@ -1135,6 +1206,14 @@ export function endingOf(events: readonly OverviewEvent[] | undefined): Overview
  *   node is still working says nothing about whether this one stopped owing its
  *   work, and a rule that waited on the whole line hid a dead leg exactly as long
  *   as any sibling kept going.
+ * - **no session of its own may be owed an answer** (`yielding`): a child that ended
+ *   after this conversation's own last word has handed its result back and the
+ *   conversation has not spoken since — the notice that wakes it is still crossing.
+ *   A stop like that is a yield, not a quit: reading it as a break made the frame
+ *   flash red for the beat between a background subagent finishing and the parent it
+ *   woke, which is the one moment nothing of the window happens to be running. A
+ *   turn the log cut short is still a break — a step killed mid-round is not
+ *   excused by a worker of its own that came home afterwards.
  * - the window must be at rest. A debt is about work nobody is doing.
  *
  * A gate wins over all of it: a checkpoint or a manual node is a person being
@@ -1146,6 +1225,7 @@ function factsOf(input: {
   readonly delivered: boolean
   readonly owed: boolean
   readonly moving: boolean
+  readonly yielding: boolean
   readonly handed: boolean
   readonly ending: OverviewEnding | undefined
 }): Pick<OverviewWindow, 'settled' | 'delivered' | 'alert' | 'waiting' | 'ending'> {
@@ -1157,13 +1237,14 @@ function factsOf(input: {
      a check would claim a run that has not ended. */
   if (input.delivered && input.settled) return { ...settled, ...ending, delivered: true }
   /* A debt is drawn only while this conversation stands still — `moving` is this window's own children,
-     never the line's other legs. A step that yielded to a leg of its own is a pipeline in motion; a
-     step that stopped while a parallel sibling happened to keep working is not rescued by it.
+     never the line's other legs; `yielding` is the one that came back after the window's last word and
+     has not been read yet. A step that yielded to work of its own is a pipeline in motion; a step that
+     stopped while a parallel sibling happened to keep working is not rescued by it.
      `handed` is the ticket: a cell whose work was handed in owes the record a settle, not the reader a
      red frame — the engine settles a clean end in its own time, and a record running behind its own
      session is a lag, not a fault. An unreadable ending accuses nobody either: a silence is not a debt
      being dropped. */
-  const stalled = input.settled && !input.moving
+  const stalled = input.settled && !input.moving && !input.yielding
   const cut = !input.handed && input.ending !== undefined
   if (input.owed && stalled && cut) return { ...settled, ...ending, alert: true }
   return { ...settled, ...ending }
@@ -1232,20 +1313,27 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const order = listedIds(input.sessions)
   const named = pipelineOf(input)
   const held = namedSet(input.heldSessions)
-  const mainId = mainIdOf(input, rows, order, held)
-  const nodeFor = (id: string): SuperworkerNode | undefined =>
-    input.nodeOf === undefined ? undefined : input.nodes?.[input.nodeOf[id] ?? '']
-  const main = mainId === undefined ? undefined : rows[mainId]
   const at = atOf(input.at)
   const waiting = waitingOf(input)
   const delivered = namedSet(input.deliveredSessions)
-  const stranded = namedSet(input.strandedNodes)
-  const undelivered = namedSet(input.undeliveredSessions)
   /* A person's gate is a **stop**, so the caller's word is read with the one fact the
      caller cannot see: a window whose conversation is still running is being worked, and
      it is not waiting on anybody. A pause drawn over a live stream says what the stream
      contradicts, and a rail bar lit for it says the same thing twice. */
   const atGate = (id: string): boolean => waiting.has(id) && rows[id]?.running !== true
+  /* Whether this step has **left the line**: the record delivered its work and no gate stands
+     on it. Its check is the last thing it has to tell the reader, and once the line has
+     somewhere else to be, that is not the stage's subject any more — the page the reader was
+     reading is a finished step while the line it belongs to goes on. It is also the one
+     replacement the drawing hands over rather than swaps (`overview.tsx`). */
+  const left = (id: string): boolean => delivered.has(id) && !atGate(id)
+  const choice = mainIdOf(input, rows, order, held, left)
+  const mainId = choice?.id
+  const nodeFor = (id: string): SuperworkerNode | undefined =>
+    input.nodeOf === undefined ? undefined : input.nodes?.[input.nodeOf[id] ?? '']
+  const main = mainId === undefined ? undefined : rows[mainId]
+  const stranded = namedSet(input.strandedNodes)
+  const undelivered = namedSet(input.undeliveredSessions)
   /* The rows the list knows without listing: DSH keeps a session's dispatched subagents in its own
      `byId` map — each carrying the `parentId` of the session that dispatched it — while the ordered
      list holds top-level sessions only. A row with no parent link is a top-level session and is drawn
@@ -1267,6 +1355,24 @@ export function readOverview(input: OverviewInput): OverviewReading {
      never a child of the window that happened to dispatch it, which is what keeps a
      pipeline's parallel nodes from standing beside each other on one stage. */
   const isLeg = (id: string): boolean => named !== undefined && named.has(id)
+  /* Whether this conversation is waiting on work of its own: a session it dispatched is still
+     running, or ended **after** this conversation's own last word — its result came home and the
+     conversation has not spoken since, so the notice that wakes it is still on its way. That is a
+     yield, and a yield is not a quit: reading one as a break painted the frame red for the beat
+     between a background subagent finishing and the turn it woke, which is the one beat nothing of
+     the window happens to be running. A subagent is never a leg of this comparison — the notice a
+     step's own dispatch leaves behind is the conductor's business, not a step's — and a child whose
+     log cannot place it in that order is not read as owed an answer either. */
+  const yielding = (id: string): boolean => {
+    const spoken = turnedAtOf(input.events?.[id])
+    for (const child of rowIds) {
+      if (child === id || isLeg(child) || parentOf(child) !== id) continue
+      if (rows[child]?.running === true) return true
+      const ended = turnedAtOf(input.events?.[child])
+      if (ended !== null && (spoken === null || ended >= spoken)) return true
+    }
+    return false
+  }
   /* The seats the column can take, in two kinds. A **child**: a session the main
      conversation dispatched itself and the list still calls running — this one step's
      subagents, which is also the whole admission when the caller says nothing about the
@@ -1381,6 +1487,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
         delivered: delivered.has(mainId),
         owed: mainWindowDebt,
         moving: ownMoving,
+        yielding: yielding(mainId),
         handed: handed.has(input.nodeOf?.[mainId] ?? ''),
         ending: endingOf(input.events?.[mainId]),
       }),
@@ -1401,10 +1508,14 @@ export function readOverview(input: OverviewInput): OverviewReading {
   }
   /* The dead children stand after the moving seats. What one says is the thing the reader has to act
      on: the line stands here. It says "broken" only when the debt is proved — the caller's stranded
-     judgment (the claim is on disk and the session is gone), or a last turn the conversation did not
-     close itself — unless a person is the one owed (a gate), which is a different debt and is drawn
-     as the breath. A step resting between rounds keeps its window quietly, which is the truth about
-     it. */
+     judgment (the claim is on disk and the session is gone), a step's last turn that did not close
+     itself or closed it with no ticket behind it, or a **subagent's** last turn the log cut short —
+     unless a person is the one owed (a gate), which is a different debt and is drawn as the breath.
+     A step resting between rounds keeps its window quietly, which is the truth about it.
+     A **subagent** that closed its own turn is never a break: its work is not its own to deliver —
+     it hands the turn back to the conversation that dispatched it, and that conversation reads the
+     result. Only a worker whose turn was cut (aborted, errored, interrupted) died owing the work,
+     which is the one case its red seat exists for. */
   for (const id of standing) {
     if (isLeg(id)) continue
     const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id], at)
@@ -1414,12 +1525,16 @@ export function readOverview(input: OverviewInput): OverviewReading {
     /* The proof is whichever witness spoke: a ticket the cell never handed in, or — when the log
        carried no word at all — the caller's stranded judgment (the claim is on disk and the session is
        gone). A cell that did hand a ticket in is no break, whoever still holds it: the engine settles
-       a clean end in its own time, and a record running behind its own session is a lag, not a fault. */
-    const node = input.nodeOf?.[id] ?? ''
+       a clean end in its own time, and a record running behind its own session is a lag, not a fault.
+       Whether a cell is owed at all is read off the record (`nodeOf`), not off the caller's naming:
+       a session working a node can owe a ticket even when the caller said nothing about a pipeline. */
+    const cell = input.nodeOf?.[id] ?? ''
     const broken = !gated
       && (ending === undefined
-        ? stranded.has(node)
-        : !handed.has(node))
+        ? stranded.has(cell)
+        : cell.length > 0
+          ? !handed.has(cell) && (ending.kind !== 'completed' || !yielding(id))
+          : ending.kind !== 'completed')
     seats.push({
       ...window,
       settled: true,
@@ -1437,9 +1552,10 @@ export function readOverview(input: OverviewInput): OverviewReading {
        them — one ink, one fact — and a debt is read off the ticket the cell never handed in, never off
        a sibling leg's progress: a parallel step still working is the line's own motion, and this bar
        reports this step. A bar still moving wears neither, and a gate is only ever worn at rest: a
-       running step is being worked. */
+       running step is being worked. A worker of this step's own that came home after its last word is
+       no break either: the bar waits for the notice to land, the way the frame does. */
     if (gated) return { ...leg, waiting: true }
-    if (rows[id]?.running === true || ownMoving) return leg
+    if (rows[id]?.running === true || ownMoving || yielding(id)) return leg
     const ending = endingOf(input.events?.[id])
     const node = input.nodeOf?.[id] ?? ''
     const broken = ending === undefined
@@ -1449,6 +1565,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
   })
   return {
     main: mainWindow,
+    mainFrom: mainWindow === null || choice === undefined ? null : choice.from,
     children: drawn.map((window) => {
       const dispatchCallId = anchors.get(window.id)
       return dispatchCallId === undefined ? window : { ...window, dispatchCallId }

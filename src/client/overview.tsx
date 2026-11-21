@@ -23,6 +23,15 @@
  * conversation, the old panes are not held for a fold, they are gone, and the new cast is simply
  * here — nothing of another cast arrives.
  *
+ * The one replacement that is a motion is the **hand-over**: a page that left the line and a line
+ * that went on without it. The stage is moved by the line itself — the step it was drawing finished
+ * and left, and another step is now being worked — so the page folds away in the boxes it last drew
+ * in while the page that replaces it grows where it stands, and the rail's lit bar moves with them
+ * in the same frame. Nothing travels between the two pages: one cast replacing another has no
+ * source point, and the fold is the whole of the leaving. The reading says which switches these
+ * are (`OverviewMainFrom`): a person's pick and a changed seat are asks, and they keep their
+ * instant swap.
+ *
  * A window's state is one drawing per fact, and the person's gate stands first. At a gate
  * (`waiting` — a checkpoint or a manual node; the drawing never asks which, and nothing here keys a
  * state to one of those two modes) it wears the amber breathing border and nothing else: no veil, no
@@ -413,11 +422,16 @@ function WindowPane(props: {
   /** Whether this window is still reaching its real box: its first box is measured over no rows, so
    *  the growth out of it is spent on the way rather than snapped. */
   readonly grow: boolean
+  /** Whether this window states the record's verdict (the check, the break, the gate). A page the
+   *  line handed on from is drawn plainly: its last reading is one beat old, and the verdict that
+   *  ended it belongs to the page the stage now stands on. */
+  readonly verdict?: boolean
   /** Where a press on this window goes; null when nothing on this machine may be pressed. */
   readonly go: WindowGo | null
 }): React.ReactElement {
   const t = useT()
   const { box, window: pane } = props
+  const reads = props.verdict !== false
   const readings = readingsOf(t, pane)
   const head = props.main ? MAIN_HEAD : CHILD_HEAD
   const foot = props.main ? MAIN_FOOT : CHILD_FOOT
@@ -449,14 +463,14 @@ function WindowPane(props: {
    * conversation stopped, so the window breathes amber and carries no check. The rest reach both
    * windows: a leg that stopped with its work still owed is a ghost, and it is drawn broken exactly
    * like the conversation this panel lives in — the debt is the same debt whoever left it. */
-  const atGate = pane.waiting === true
+  const atGate = reads && pane.waiting === true
   /* The check is the record's delivery and nothing else. A conversation that merely went quiet has
    * not handed anything in, and earns no mark at all. */
-  const handed = props.main && !atGate && pane.delivered === true
+  const handed = reads && props.main && !atGate && pane.delivered === true
   /* The broken leg: work is owed, nobody is doing it, and the conversation did not just yield to a
    * leg of its own. It is drawn by its frame, not by a mark inside it — the whole window is the one
    * drawing, and a red border is read sooner than any glyph. */
-  const broken = !atGate && !handed && pane.alert === true
+  const broken = reads && !atGate && !handed && pane.alert === true
   /* The veil answers one fact: this conversation has a verdict, and the verdict is what the reader
    * acts on — so its rows are context and step back. Three verdicts wear it — work handed in, a
    * break, a person's gate — and the frame's ink is what tells them apart. The veil follows the
@@ -615,6 +629,18 @@ function WindowPane(props: {
 }
 
 /**
+ * One window of a page the stage is closing: the reading it last drew with and the box it stood in,
+ * kept for the fold's span. It is a copy, not a reference to the live maps — those move on with the
+ * reading, and a folding page must keep the shape the reader was looking at.
+ */
+interface PastPane {
+  readonly id: string
+  readonly window: OverviewWindow
+  readonly box: OverviewBox
+  readonly main: boolean
+}
+
+/**
  * The overview pane over the reading of one moment. The motion facts ride the beat the reading
  * changes: enter on an id the previous beat had not, leave on a vanished id (held until the leave's
  * span has run), fresh on a replaced newest row, breathing on the person gate.
@@ -691,7 +717,6 @@ export function OverviewPane(props: {
     stageEnterTimer.current = setTimeout(() => setStageEntered(false), ENTER_SPAN_MS)
     return undefined
   }, [arrivalNow])
-  const appearing = arrivalNow || stageEntered
 
   const mainRows = reading.main?.rows.length ?? 0
 
@@ -732,6 +757,15 @@ export function OverviewPane(props: {
   const arrivedOnce = React.useRef<Set<string>>(new Set())
   const heldIds = React.useRef<ReadonlySet<string>>(currentIds)
   const heldMain = React.useRef<string | undefined>(mainId)
+
+  /* The order the column last drew with no fold in flight: what a held window's slot is read from,
+   * and — on a hand-over — the page the stage is closing. Declared here, above the drawing's own
+   * beats, because that page has to be readable on the very render the stage moves. */
+  const castOrder = React.useRef<readonly string[]>([])
+  /* The cast and the subject the stage drew with before this render: the two refs the effect below
+   * advances after the commit, so during the render they still name the previous page. */
+  const castBefore = castOrder.current
+  const mainBefore = heldMain.current
 
   /* The last box and the last reading each id drew from: what a leaving pane has to draw with. */
   const boxesRef = React.useRef<Map<string, OverviewBox>>(new Map())
@@ -774,6 +808,58 @@ export function OverviewPane(props: {
    * diff that still named the old windows would paint one folded pane of the step the reader just
    * left — which is exactly the tear a switch shows as a window flying out of the stage. */
   const swappedMain = heldMain.current !== mainId
+  /* The one replacement that is not a wholesale one: **the line handed the stage on**. The page the
+   * reader was reading is a step that finished and left the line — its conversation stopped, the
+   * record delivered it — and the stage now stands where the line went, on the step still being
+   * worked. That is the same line's next page, so it is closed and opened rather than swapped: the
+   * page folds away in the boxes it last drew in, and the page arriving grows where it stands. A
+   * person's pick and a changed seat keep the instant swap — those are asks, and a page a reader did
+   * not ask for is not closed under their hand. A cast that replaced the whole world (another
+   * workspace's record under the pane) is no hand-over either: the previous subject was still
+   * running, so nothing of it had finished. */
+  const pastWindow = mainBefore === undefined ? undefined : windowsRef.current.get(mainBefore)
+  const handedOn = swappedMain && reading.mainFrom === 'line' && pastWindow?.settled === true
+  /* The page being closed, at the boxes and readings it last drew with: built on the hand-over's own
+   * render, where the refs still name the previous cast, and kept for the fold's span — the step now
+   * being worked pushes frames constantly, and a redraw must not blink the fold away. The verdict is
+   * not repeated on it: that page's reading is one beat old, and what it came to is said by the page
+   * the stage now stands on. */
+  const past = React.useRef<readonly PastPane[]>([])
+  const pastTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const [, setPastPass] = React.useState(0)
+  if (handedOn) {
+    const out: PastPane[] = []
+    const remember = (id: string, main: boolean): void => {
+      const window = windowsRef.current.get(id)
+      const box = boxesRef.current.get(id)
+      if (window !== undefined && box !== undefined) out.push({ id, window, box, main })
+    }
+    if (mainBefore !== undefined) remember(mainBefore, true)
+    for (const id of castBefore) if (id !== mainBefore) remember(id, false)
+    past.current = out
+  }
+  React.useEffect(() => {
+    if (!handedOn) return undefined
+    clearTimeout(pastTimer.current)
+    pastTimer.current = setTimeout(() => {
+      past.current = []
+      setPastPass((pass) => pass + 1)
+    }, LEAVE_SPAN_MS)
+    return undefined
+  }, [handedOn])
+  /* The page a hand-over opens: every window of it grows where it stands, the way the panel's own
+   * opening does. Nothing travels from the page being closed — one cast replacing another has no
+   * source point, and the only true motion there is the old page folding under the new one. */
+  const [handEntered, setHandEntered] = React.useState(false)
+  const handTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  React.useLayoutEffect(() => {
+    if (!handedOn) return undefined
+    setHandEntered(true)
+    clearTimeout(handTimer.current)
+    handTimer.current = setTimeout(() => setHandEntered(false), ENTER_SPAN_MS)
+    return undefined
+  }, [handedOn])
+  const appearing = arrivalNow || stageEntered || handEntered || handedOn
   const goneNow = swappedMain ? [] : [...heldIds.current].filter((id) => !currentIds.has(id))
   const goneKey = goneNow.join('|')
   const leavingIds = React.useMemo(
@@ -808,7 +894,6 @@ export function OverviewPane(props: {
    * it plays, so its ground is still taken. Measuring the column without it the instant the reading
    * drops the window re-measured every survivor on the fold's own first frame: the pane shrank in a
    * room that had already moved around it, which is the tear a reader saw. */
-  const castOrder = React.useRef<readonly string[]>([])
   const cast = React.useMemo((): readonly { readonly id: string; readonly rows: number }[] => {
     const live = reading.children.map((one) => ({ id: one.id, rows: one.rows.length }))
     const held = leavingIds.filter((id) => !live.some((one) => one.id === id))
@@ -982,6 +1067,8 @@ export function OverviewPane(props: {
       enterTimers.current.clear()
       clearTimeout(settleTimer.current)
       clearTimeout(stageEnterTimer.current)
+      clearTimeout(pastTimer.current)
+      clearTimeout(handTimer.current)
       for (const scheduled of openingTimers.current.values()) clearTimeout(scheduled.timer)
       openingTimers.current.clear()
       for (const scheduled of freshTimers.current.values()) clearTimeout(scheduled)
@@ -1008,7 +1095,8 @@ export function OverviewPane(props: {
    * the panes in the commit that changes their boxes; `joined` then holds it for the entrance's own
    * span, so a redraw mid-entrance cannot strip the travel mid-flight. A wholesale replacement
    * substitutes one whole cast for another and arrives in nothing — `arrivedNow` is empty there by
-   * design, and a switch keeps its instant swap. */
+   * design — and a hand-over arrives whole instead, by the stage's own appearance (`is-first`):
+   * one cast replacing another has no source point, so nothing of it travels. */
   const joining = arrivedNow.length > 0 || joined.size > 0
 
   /* Fresh row: the feed's end carries a settled row this window has never shown. The row's own
@@ -1329,6 +1417,25 @@ export function OverviewPane(props: {
             />
           )
         })}
+        {past.current.map((pane) => (
+          /* The page the line handed on from, drawing its fold over the page that replaced it: the
+           * incoming windows are already standing, and a fold is only seen when it closes in front
+           * of them. It states no verdict — the reading it was built from is one beat old — and it
+           * is no control at all: its conversation is not this stage's subject any more. */
+          <WindowPane
+            key={`past:${pane.id}`}
+            box={pane.box}
+            window={pane.window}
+            at={at}
+            main={pane.main}
+            leave
+            verdict={false}
+            fresh={false}
+            born={undefined}
+            grow={false}
+            go={null}
+          />
+        ))}
       </div>
     </div>
   )

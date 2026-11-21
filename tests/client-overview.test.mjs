@@ -19,6 +19,9 @@
  *   the geometry;
  * - leave — a window leaving carries the mark, and after the leave's span the page has lost it;
  *   a child that ends is exactly that: the reading stops drawing it, and the animation takes it away;
+ * - the hand-over — the one replacement that is a motion: a page the line left (its check standing
+ *   while nothing else was out) folds in the box it stood in as the step now being worked arrives and
+ *   the rail's lit bar moves, while a person's pick and a replaced cast keep their instant swap;
  * - fresh row — the arrival's two readings carry the mark, on that row alone: a gained row even
  *   when its text repeats the previous newest (growth), and a swapped newest at a steady count
  *   (the cut);
@@ -1570,8 +1573,79 @@ test('the rail is a switch: a press on a bar draws that step, and never two of t
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 
-test('the step on the table and the seat that stopped with it: two windows, one step, and no rail', { skip: bundleSkip }, async () => {
-  /* Filed from the iPad: one node is held by the line, its conversation was stopped by hand, and the
+test('the line hands the stage on: the finished page folds in its own box, and the rail moves with it', { skip: bundleSkip }, async () => {
+  /* The reader stayed on a finished step's page: its node was delivered and nothing else of the line
+   * was out, so the check stood on the stage. Then the next step starts — the line has left that page
+   * — and the stage hands over: the page being closed folds where it stood, the page arriving grows
+   * where it stands, and the rail's lit bar moves in the same frame. The closed page repeats no
+   * verdict: its check ended it, and what came of it is the page the stage now stands on. */
+  const service = fakeSessionsService()
+  service.set('m1', [said('这一个节点交完了.', 100), { type: 'turn/end', time: 200, data: { reason: { kind: 'completed' } } }])
+  service.set('c1', [read('a.ts', 300)])
+  let snap = {
+    ids: ['m1', 'c1'],
+    byId: {
+      m1: { id: 'm1', running: false, displayTitle: 'the finished step' },
+      /* The next step of the same line: on the table, not yet started — the stage is the reader's own
+       * page, under the check. */
+      c1: { id: 'c1', running: false, displayTitle: 'the step about to start' },
+    },
+  }
+  const mounted = await mountBuiltPanel({
+    record: recordOfADeadLeg(),
+    sessionsService: service,
+    /* The reader is in the delivered step's own conversation. */
+    sessionId: 'm1',
+    useSessions: (select) => select(snap),
+    agents: { list: () => [{ id: 'm1' }] },
+  })
+  await stageAt(mounted, 1024, 720)
+  const { container } = mounted
+  const finished = container.querySelector('[data-window="m1"]')
+  assert.notEqual(finished, null, 'the stage does not draw the delivered step the reader is on')
+  assert.notEqual(finished.querySelector('.superworker-omark'), null, 'the delivered page carries no check')
+  let bars = container.querySelectorAll('.superworker-orail button')
+  assert.equal(bars.length, 2, `the rail offers ${bars.length} bars`)
+  assert.equal(bars[0].getAttribute('aria-current'), 'true', 'the finished page is not the lit bar')
+
+  /* The next step starts being worked: the line has moved on, and the page the reader was reading
+   * is handed over. */
+  snap = {
+    ids: ['m1', 'c1'],
+    byId: {
+      m1: { id: 'm1', running: false, displayTitle: 'the finished step' },
+      c1: { id: 'c1', running: true, displayTitle: 'the step about to start' },
+    },
+  }
+  await mounted.rerender()
+  const closing = container.querySelector('[data-window="m1"]')
+  assert.notEqual(closing, null, 'the page the line left was swapped out instead of folding')
+  assert.ok(closing.className.includes('is-leave'), 'the page the line left carries no leave mark')
+  assert.ok(closing.className.includes('is-main'), 'the page the line left folds as a child window')
+  assert.equal(closing.querySelector('.superworker-omark'), null, 'the closed page repeats a verdict of its own')
+  const opened = container.querySelector('[data-window="c1"]')
+  assert.notEqual(opened, null, 'the page the line moved on to is not drawn')
+  assert.ok(opened.className.includes('is-main'), 'the page the line moved on to was drawn as a child')
+  assert.equal(opened.className.includes('is-leave'), false, 'the page the line moved on to is folding')
+  bars = container.querySelectorAll('.superworker-orail button')
+  assert.equal(bars[0].getAttribute('aria-current'), null, 'the rail kept the lit bar on the page the line left')
+  assert.equal(bars[1].getAttribute('aria-current'), 'true', 'the rail did not move with the stage')
+  /* The stage's own appearance is on the page it opened: one cast replacing another has no source to
+   * fly in from, so the windows grow where they stand. */
+  assert.ok(container.querySelector('.superworker-ofield').className.includes('is-first'), 'the page the line opened arrived with no motion at all')
+
+  /* The fold runs its span, and the page is gone: the stage is the step being worked and nothing
+   * else. */
+  await mounted.act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 480))
+  })
+  assert.equal(container.querySelector('[data-window="m1"]'), null, 'the page the line left was kept past the fold')
+  assert.notEqual(container.querySelector('[data-window="c1"]'), null, 'the page the line moved on to left the stage')
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the step on the table and the seat that stopped with it: two windows, one step, and no rail', { skip: bundleSkip }, async () => {  /* Filed from the iPad: one node is held by the line, its conversation was stopped by hand, and the
    * subagent it had dispatched stopped with it. The seat stands beside the step — the cut is where the
    * line stands — but the rail is the line's switch over **steps**, and one step has nowhere to switch
    * to: a second bar would be a conversation the stage is already drawing, offered a second time. */
