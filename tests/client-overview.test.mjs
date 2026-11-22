@@ -16,9 +16,26 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { bundleSkip, mountBuiltPanel } from './helpers/client-shell.mjs'
-import { flush } from './helpers/wait.mjs'
+import { flush, until } from './helpers/wait.mjs'
 
 const json = (value) => JSON.stringify(value, null, 2) + '\n'
+
+/**
+ * Wait through a mark's span the way the reader lives it: the shed timer fires in real time and the
+ * draw it asks for lands. While it happens the flag that names this a test-only act environment
+ * stands down — an update the pane's own timer schedules is production work, not an act, and the
+ * act queue would otherwise hold the shed's render behind the wait (the shed never reaches the
+ * drawing inside one).
+ */
+const across = async (mounted, check, what) => {
+  const actEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT
+  globalThis.IS_REACT_ACT_ENVIRONMENT = false
+  try {
+    await until(check, what)
+  } finally {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = actEnvironment
+  }
+}
 
 /** The record: one node, one line, and the note that names m1 as that node's session. */
 const record = () => ({
@@ -407,6 +424,182 @@ test('a window whose conversation this machine no longer holds is not pressable'
   assert.deepEqual(goes.opened, [], 'a press on a conversation this machine no longer holds reached the gateway')
 
   await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+/* ------------------------------------------------------------------ the timed marks: armed on the beat, shed at the span */
+
+/* The motion marks are the panel's own invariants — each one arms on the beat its fact lands and
+ * sheds when its span has run — so their moments are pinned here, in real clock time. What the
+ * cases hold is the arming and the shedding, never what the drawing looks like. */
+
+test('a fresh row wears its mark on the beat it lands, and sheds when the fresh span has run', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('start.', 100)])
+  service.set('c1', [read('a.ts', 300)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: true, title: 'the growing child' }])),
+  })
+  try {
+    await stageAt(mounted, 1024, 720)
+    /* The rows the first beat drew with are the window's first sight of itself: none of them is new. */
+    assert.equal(container(mounted).querySelector('.superworker-orow.is-fresh'), null, 'a row the window first saw wore the fresh mark')
+
+    await mounted.act(async () => {
+      service.set('c1', [read('a.ts', 300), read('b.ts', 400)])
+    })
+    await across(mounted, () => container(mounted).querySelector('.superworker-orow.is-fresh') !== null, 'the landed row to wear its fresh mark')
+    const fresh = container(mounted).querySelector('.superworker-orow.is-fresh')
+    assert.ok(fresh.className.includes('is-read'), 'the fresh mark stood on a row other than the one that landed')
+
+    await across(mounted, () => container(mounted).querySelector('.superworker-orow.is-fresh') === null, 'the fresh mark to shed when its span had run')
+  } finally {
+    await mounted.unmount()
+  }
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a leaving pane folds for the leave span, then the room closes up and settles back', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('c1', [read('a.ts', 300)])
+  let snap = snapshotOf([{ id: 'c1', running: true, title: 'the finishing child' }])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  try {
+    await stageAt(mounted, 1024, 720)
+    const field = () => container(mounted).querySelector('.superworker-ofield')
+
+    snap = snapshotOf([])
+    await mounted.rerender()
+    const leaving = container(mounted).querySelector('[data-window="c1"]')
+    assert.notEqual(leaving, null, 'the leaving pane left the page before its leave ran')
+    assert.ok(leaving.className.includes('is-leave'), 'the leaving pane carries no leave mark')
+
+    /* The fold runs its span before the page loses the pane, and the room closing up is raised in the
+     * same breath as the loss — the render that drops the pane is the render that carries the settle. */
+    await across(mounted, () => container(mounted).querySelector('[data-window="c1"]') === null, 'the folded pane to leave the page when its span had run')
+    assert.ok(field().className.includes('is-settle'), 'the room did not close up in the breath that lost the pane')
+    await across(mounted, () => !field().className.includes('is-settle'), 'the settle mark to shed when its span had run')
+  } finally {
+    await mounted.unmount()
+  }
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('the stage\u2019s own arrival wears the entrance mark for the entrance span, then sheds it', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('start.', 1000)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([])),
+  })
+  try {
+    /* The unmeasured stage draws nothing; the beat that first draws the windows at their real boxes
+     * is the stage's own arrival, and it is the one render the entrance mark arms on. */
+    assert.equal(container(mounted).querySelector('.superworker-ofield.is-first'), null, 'an unmeasured stage wore the entrance mark')
+    await stageAt(mounted, 1024, 720)
+    const field = () => container(mounted).querySelector('.superworker-ofield')
+    assert.ok(field().className.includes('is-first'), 'the stage\u2019s own arrival carried no entrance mark')
+
+    await across(mounted, () => !field().className.includes('is-first'), 'the entrance mark to shed when the entrance span had run')
+  } finally {
+    await mounted.unmount()
+  }
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a hand-over folds the page it handed on from and arrives by its own appearance, both shedding at their spans', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('this conversation dispatched the next step.', 100)])
+  service.set('c1', [read('a.ts', 200)])
+  /* The page the reader stands on is a step the record delivered: held, its conversation stopped.
+   * The line's next step is on the table but not yet being worked. */
+  let snap = { ids: ['m1'], byId: { m1: { id: 'm1', running: false, displayTitle: 'the finished step' } } }
+  const mounted = await mountBuiltPanel({
+    record: recordWithARunningLeg(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+    sessionId: 'm1',
+  })
+  try {
+    await stageAt(mounted, 1024, 720)
+    const field = () => container(mounted).querySelector('.superworker-ofield')
+    const stageIs = (id) => container(mounted).querySelector(`[data-window="${id}"]`)
+
+    /* The step the line handed on to is being worked now: the stage follows it, the old page folds in
+     * the boxes it last drew in, and the new page arrives by the stage's own appearance. */
+    snap = { ids: ['m1', 'c1'], byId: { m1: { id: 'm1', running: false, displayTitle: 'the finished step' }, c1: { id: 'c1', running: true, parentId: 'm1', displayTitle: 'the second step' } } }
+    await mounted.rerender()
+    const pastPane = stageIs('m1')
+    assert.notEqual(pastPane, null, 'the page being closed left the stage before its fold ran')
+    assert.ok(pastPane.className.includes('is-leave'), 'the page the line handed on from carries no fold mark')
+    const page = stageIs('c1')
+    assert.notEqual(page, null, 'the step being worked did not take the stage')
+    assert.ok(page.className.includes('is-main'), 'the step being worked was drawn as a child of the step it replaced')
+    assert.ok(field().className.includes('is-first'), 'the hand-over did not arrive by the stage\u2019s own appearance')
+
+    await across(mounted, () => !field().className.includes('is-first'), 'the hand-over\u2019s entrance mark to shed when the entrance span had run')
+    await across(mounted, () => stageIs('m1') === null, 'the folded page to leave the stage when the leave span had run')
+  } finally {
+    await mounted.unmount()
+  }
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('an opening window wears the growth mark from its first beat, and sheds it when the growth span has run', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('start.', 100)])
+  service.set('c1', [read('a.ts', 300)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([{ id: 'c1', running: true, title: 'the opening child' }])),
+  })
+  try {
+    await stageAt(mounted, 1024, 720)
+    /* The window's first box is provisional: the mark is on from the very beat the window stands. */
+    const opening = container(mounted).querySelector('[data-window="c1"]')
+    assert.notEqual(opening, null, 'the running child is not drawn')
+    assert.ok(opening.className.includes('is-grow'), 'the opening window carried no growth mark')
+
+    /* The growth is spent once: rows landed with the window, so the span ends one breath past the
+     * growth itself — no row arrives again, and the mark does not wait past its own deadline. */
+    await across(mounted, () => !container(mounted).querySelector('[data-window="c1"]').className.includes('is-grow'), 'the growth mark to shed when the growth span had run')
+  } finally {
+    await mounted.unmount()
+  }
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+test('a joining window holds the field\u2019s join mark for the entrance span, then sheds it', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('start.', 100)])
+  service.set('c1', [read('a.ts', 300)])
+  let snap = snapshotOf([])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snap),
+  })
+  try {
+    await stageAt(mounted, 1024, 720)
+    const field = () => container(mounted).querySelector('.superworker-ofield')
+
+    snap = snapshotOf([{ id: 'c1', running: true, title: 'the joining child' }])
+    await mounted.rerender()
+    assert.notEqual(container(mounted).querySelector('[data-window="c1"]'), null, 'the joining child did not take the stage')
+    assert.ok(field().className.includes('is-join'), 'the beat that seated a joiner carried no join mark')
+
+    await across(mounted, () => !field().className.includes('is-join'), 'the join mark to shed when the entrance span had run')
+  } finally {
+    await mounted.unmount()
+  }
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
 

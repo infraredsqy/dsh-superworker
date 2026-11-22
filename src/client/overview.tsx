@@ -108,6 +108,7 @@ import {
   type OverviewLink,
   type StageSize,
 } from './overview-geom.ts'
+import { useTimedMarks } from './timed-marks.ts'
 import { useT, type Translate } from './locale.ts'
 import { CheckGlyph, FaultGlyph, PauseGlyph } from './marks.tsx'
 import { elapsedOf } from './words.ts'
@@ -138,6 +139,19 @@ const GROW_SPAN_MS = 360
  *  is written off after this: what the opening waits for is the panel's own read of the sessions, and
  *  that is over by now — a re-measure after it must never be spent. */
 const OPENING_MAX_MS = 3000
+
+/** How far the opening's shed timer waits past the deadline it was set for: a draw in between sheds
+ *  the mark first, so the timer is the backstop that ends the wait, never the thing that cuts the
+ *  growth short. */
+const OPENING_PAD_MS = 40
+
+/** The single marks' names in the shared registry: the stage's own arrival, the hand-over's, and the
+ *  room closing up when a fold has run. */
+const STAGE_MARK = 'stage'
+const HAND_MARK = 'hand'
+const SETTLE_MARK = 'settle'
+/** The closing page's fold in its own registry: one page, one span. */
+const PAST_MARK = 'past'
 
 /**
  * What one press on a window may do: the map's own two hands (`CardGo`), asked of a session instead
@@ -653,32 +667,19 @@ export function OverviewPane(props: {
   const arrivalNow = measured && !stageArrived.current
   if (arrivalNow) stageArrived.current = true
   if (!measured) stageArrived.current = false
-  const [stageEntered, setStageEntered] = React.useState(false)
-  const stageEnterTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  /* The marks that stand alone share one registry: the stage's own arrival, the hand-over's, and
+   * the room closing up when a fold has run. Each declares its id and its span below; the registry
+   * runs the timers, sheds the marks when their spans have run, and clears them at the unmount. */
+  const marks = useTimedMarks()
+  const stageEntered = marks.held.has(STAGE_MARK)
   React.useLayoutEffect(() => {
     if (!arrivalNow) return undefined
-    setStageEntered(true)
-    clearTimeout(stageEnterTimer.current)
-    stageEnterTimer.current = setTimeout(() => setStageEntered(false), ENTER_SPAN_MS)
+    marks.hold([STAGE_MARK], ENTER_SPAN_MS)
     return undefined
   }, [arrivalNow])
 
   const mainRows = reading.main?.rows.length ?? 0
-
-  /* Leave: the ids that vanished keep their last box for the leave's span, then the page loses them.
-   * The comparison is the previous beat's ids against this one's, held in a ref: state is what the
-   * drawing reads, the ref is what the diff reads, and they are never asked to be the same thing.
-   *
-   * The same diff says which windows arrived, which is what an entrance is played for — and that one
-   * is read during the render, not published from here (the note at `arrivedNow` says why). The
-   * entrance needs no state of its own: its mark lives in `flying`, and the timer below is what takes
-   * the mark away when the span has run. */
-  const [leaving, setLeaving] = React.useState<ReadonlySet<string>>(new Set())
-  /* The windows inside their entrance's span: the mark is held for exactly that long (the note at
-   * `arrivedNow` says why the *arrival* is not read from this). */
-  const [joined, setJoined] = React.useState<ReadonlySet<string>>(new Set())
-  const timers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-  const enterTimers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   const currentIds = React.useMemo(
     () => new Set([reading.main?.id, ...reading.children.map((one) => one.id)].filter((one): one is string => one !== undefined)),
@@ -703,18 +704,22 @@ export function OverviewPane(props: {
   const heldIds = React.useRef<ReadonlySet<string>>(currentIds)
   const heldMain = React.useRef<string | undefined>(mainId)
 
-  /* The order the column last drew with no fold in flight: what a held window's slot is read from,
-   * and — on a hand-over — the page the stage is closing. Declared here, above the drawing's own
-   * beats, because that page has to be readable on the very render the stage moves. */
-  const castOrder = React.useRef<readonly string[]>([])
-  /* The cast and the subject the stage drew with before this render: the two refs the effect below
-   * advances after the commit, so during the render they still name the previous page. */
-  const castBefore = castOrder.current
-  const mainBefore = heldMain.current
-
-  /* The last box and the last reading each id drew from: what a leaving pane has to draw with. */
-  const boxesRef = React.useRef<Map<string, OverviewBox>>(new Map())
-  const windowsRef = React.useRef<Map<string, OverviewWindow>>(new Map())
+  /* Leave: the ids that vanished keep their last box for the leave's span, then the page loses them.
+   * The comparison is the previous beat's ids against this one's, held in a ref: state is what the
+   * drawing reads, the ref is what the diff reads, and they are never asked to be the same thing.
+   *
+   * The same diff says which windows arrived, which is what an entrance is played for — and that one
+   * is read during the render, not published from here (the note at `arrivedNow` says why). The
+   * entrance needs no state of its own: its mark lives in `joined`, and the registry is what takes
+   * the mark away when the span has run. */
+  const leaving = useTimedMarks((id) => {
+    /* The fold has run: the stage has really lost this window, so a later return is a new arrival
+     * and may fly again. The room closing up is that same fact seen in the rest of the stage, raised
+     * in the same breath as the removal — the render that hands out the freed boxes carries the
+     * mark, so the close-up spends on the way rather than snapping after it. */
+    arrivedOnce.current.delete(id)
+    marks.hold([SETTLE_MARK], SETTLE_SPAN_MS)
+  })
 
   /* The flight each window is already flying, read once on the beat it joins and never re-read while
    * it travels.
@@ -733,6 +738,24 @@ export function OverviewPane(props: {
    * stands where it belongs and the shift reads as nothing: the entrance played with a zero
    * translate, which is a window that simply appears. */
   const flying = React.useRef<Map<string, { readonly dx: number; readonly dy: number; readonly s: number }>>(new Map())
+
+  /* The windows inside their entrance's span: the mark is held for exactly that long (the note at
+   * `arrivedNow` says why the *arrival* is not read from this). The flight's aim dies with the mark:
+   * the aim was read on the joining beat, and a flight outliving its entrance has nothing left to aim. */
+  const joined = useTimedMarks((id) => { flying.current.delete(id) })
+
+  /* The order the column last drew with no fold in flight: what a held window's slot is read from,
+   * and — on a hand-over — the page the stage is closing. Declared here, above the drawing's own
+   * beats, because that page has to be readable on the very render the stage moves. */
+  const castOrder = React.useRef<readonly string[]>([])
+  /* The cast and the subject the stage drew with before this render: the two refs the effect below
+   * advances after the commit, so during the render they still name the previous page. */
+  const castBefore = castOrder.current
+  const mainBefore = heldMain.current
+
+  /* The last box and the last reading each id drew from: what a leaving pane has to draw with. */
+  const boxesRef = React.useRef<Map<string, OverviewBox>>(new Map())
+  const windowsRef = React.useRef<Map<string, OverviewWindow>>(new Map())
 
   /* The windows that left on THIS beat, read during render rather than from the leave state.
    *
@@ -770,8 +793,9 @@ export function OverviewPane(props: {
    * not repeated on it: that page's reading is one beat old, and what it came to is said by the page
    * the stage now stands on. */
   const past = React.useRef<readonly PastPane[]>([])
-  const pastTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const [, setPastPass] = React.useState(0)
+  /* The page holds for the fold's span, then goes: the expiry is what empties it, and the redraw
+   * that reads the emptied page is the registry's own. */
+  const pastMarks = useTimedMarks(() => { past.current = [] })
   if (handedOn) {
     const out: PastPane[] = []
     const remember = (id: string, main: boolean): void => {
@@ -785,23 +809,16 @@ export function OverviewPane(props: {
   }
   React.useEffect(() => {
     if (!handedOn) return undefined
-    clearTimeout(pastTimer.current)
-    pastTimer.current = setTimeout(() => {
-      past.current = []
-      setPastPass((pass) => pass + 1)
-    }, LEAVE_SPAN_MS)
+    pastMarks.hold([PAST_MARK], LEAVE_SPAN_MS)
     return undefined
   }, [handedOn])
   /* The page a hand-over opens: every window of it grows where it stands, the way the panel's own
    * opening does. Nothing travels from the page being closed — one cast replacing another has no
    * source point, and the only true motion there is the old page folding under the new one. */
-  const [handEntered, setHandEntered] = React.useState(false)
-  const handTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const handEntered = marks.held.has(HAND_MARK)
   React.useLayoutEffect(() => {
     if (!handedOn) return undefined
-    setHandEntered(true)
-    clearTimeout(handTimer.current)
-    handTimer.current = setTimeout(() => setHandEntered(false), ENTER_SPAN_MS)
+    marks.hold([HAND_MARK], ENTER_SPAN_MS)
     return undefined
   }, [handedOn])
   const appearing = arrivalNow || stageEntered || handEntered || handedOn
@@ -816,11 +833,11 @@ export function OverviewPane(props: {
   goneRef.current = gone
   const leavingIds = React.useMemo(
     () => {
-      const out = [...leaving]
+      const out = [...leaving.held]
       for (const id of gone) if (!out.includes(id)) out.push(id)
       return out
     },
-    [leaving, gone],
+    [leaving.held, gone],
   )
 
   /* The windows that arrived on THIS beat, read the same way and for the same reason — the other
@@ -909,12 +926,11 @@ export function OverviewPane(props: {
    * half, not a re-measure — a stage that changed for another reason still takes its new numbers at
    * once, exactly as the sheet's own note asks.
    *
-   * The mark is raised inside the leave's own timer, in the same batch as the removal, so the render
+   * The mark is raised inside the leave's own expiry, in the same batch as the removal, so the render
    * that hands out the new boxes is the render that carries `is-settle`. Setting it from an effect
    * instead would land one paint too late: the boxes would already have snapped by the time the
    * transition arrived, and the transition would have nothing left to spend. */
-  const [settling, setSettling] = React.useState(false)
-  const settleTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const settling = marks.held.has(SETTLE_MARK)
 
   /* Fresh row: the feed's end carries a settled row this window has never shown. The row's own
    * moment (`at`, the record's) is the identity the judgment reads, so an update of the newest
@@ -922,13 +938,12 @@ export function OverviewPane(props: {
    * redraws in place, where replaying the entrance read as a one-frame blink. The mark is held for
    * its span and shed by a timer, the way `joined` is: a set that mirrored each beat would strip
    * the mark on the quiet beat between two arrivals, and the class coming back would restart the
-   * animation from its first frame. The comparison runs in an effect and lands in state, never
-   * while drawing: a host's double render (StrictMode) would run the comparison twice and the
-   * second pass would find the row it recorded itself. The ref is the effect's own memory; state
-   * commits what the beat saw. */
+   * animation from its first frame. The comparison runs in an effect and lands in the registry's
+   * marks, never while drawing: a host's double render (StrictMode) would run the comparison twice
+   * and the second pass would find the row it recorded itself. The ref is the effect's own memory;
+   * the registry commits what the beat saw. */
   const lastRowKeyRef = React.useRef<Map<string, string>>(new Map())
-  const [freshIds, setFreshIds] = React.useState<ReadonlySet<string>>(new Set())
-  const freshTimers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const freshMarks = useTimedMarks()
   React.useEffect(() => {
     const arrived = new Set<string>()
     for (const one of [reading.main, ...reading.children]) {
@@ -943,24 +958,7 @@ export function OverviewPane(props: {
       if (key !== '') lastRowKeyRef.current.set(one.id, key)
     }
     if (arrived.size === 0) return
-    setFreshIds((held) => {
-      const next = new Set(held)
-      for (const id of arrived) next.add(id)
-      return next
-    })
-    for (const id of arrived) {
-      const known = freshTimers.current.get(id)
-      if (known !== undefined) clearTimeout(known)
-      freshTimers.current.set(id, setTimeout(() => {
-        freshTimers.current.delete(id)
-        setFreshIds((held) => {
-          if (!held.has(id)) return held
-          const next = new Set(held)
-          next.delete(id)
-          return next
-        })
-      }, FRESH_SPAN_MS))
-    }
+    freshMarks.hold(arrived, FRESH_SPAN_MS)
   }, [reading])
 
   /* A window's first box is a provisional one. The rows that fill it are its own conversation's, and
@@ -978,14 +976,14 @@ export function OverviewPane(props: {
    * row keeps the arm only as long as the opening could plausibly last, so a re-measure later is
    * never spent. */
   const openings = React.useRef<Map<string, { readonly at: number; rowsAt?: number }>>(new Map())
-  const openingTimers = React.useRef<Map<string, { readonly until: number; readonly timer: ReturnType<typeof setTimeout> }>>(new Map())
-  const [, setOpeningPass] = React.useState(0)
+  const openingMarks = useTimedMarks()
   const rowsIn = new Map<string, number>()
   if (reading.main !== null) rowsIn.set(reading.main.id, reading.main.rows.length)
   for (const one of reading.children) rowsIn.set(one.id, one.rows.length)
   const opening: string[] = []
   {
     const now = Date.now()
+    const deadlines = new Map<string, number>()
     for (const id of currentIds) {
       let held = openings.current.get(id)
       if (held === undefined) {
@@ -995,23 +993,16 @@ export function OverviewPane(props: {
       if (held.rowsAt === undefined && (rowsIn.get(id) ?? 0) > 0) held.rowsAt = now
       if (held.rowsAt === undefined ? now - held.at >= OPENING_MAX_MS : now - held.rowsAt >= GROW_SPAN_MS) continue
       opening.push(id)
-      /* The rows landing is what shortens this window's deadline, so the timer is re-read from the
+      /* The rows landing is what shortens this window's deadline, so the wait is re-read from the
        * deadline it was set for rather than only when there is none: a stale 3s wait would hold the
-       * mark long past the opening and spend a re-measure the reader did not ask for. */
-      const until = held.rowsAt === undefined ? held.at + OPENING_MAX_MS : held.rowsAt + GROW_SPAN_MS
-      const scheduled = openingTimers.current.get(id)
-      if (scheduled !== undefined) {
-        if (scheduled.until === until) continue
-        clearTimeout(scheduled.timer)
-      }
-      /* The span running out is what sheds the mark: a class left standing would spend the next
-       * change too, and only the opening's growth is allowed to travel. */
-      const timer = setTimeout(() => {
-        openingTimers.current.delete(id)
-        setOpeningPass((pass) => pass + 1)
-      }, Math.max(0, until - now) + 40)
-      openingTimers.current.set(id, { until, timer })
+       * mark long past the opening and spend a re-measure the reader did not ask for. The deadline
+       * carries the pad on it — a re-arm naming the waited-on moment idles, so a redraw under the
+       * opening cannot restart the growth's span. */
+      deadlines.set(id, (held.rowsAt === undefined ? held.at + OPENING_MAX_MS : held.rowsAt + GROW_SPAN_MS) + OPENING_PAD_MS)
     }
+    /* The span running out is what sheds the mark: a class left standing would spend the next
+     * change too, and only the opening's growth is allowed to travel. */
+    openingMarks.holdUntil(opening, (id) => deadlines.get(id) ?? now)
   }
 
   React.useEffect(() => {
@@ -1021,14 +1012,10 @@ export function OverviewPane(props: {
     const swappedNow = heldMain.current !== mainId
     heldMain.current = mainId
     if (swappedNow) {
-      for (const timer of timers.current.values()) clearTimeout(timer)
-      timers.current.clear()
-      for (const timer of enterTimers.current.values()) clearTimeout(timer)
-      enterTimers.current.clear()
+      leaving.end()
+      joined.end()
       arrivedOnce.current.clear()
       flying.current.clear()
-      setLeaving((held) => (held.size === 0 ? held : new Set()))
-      setJoined((held) => (held.size === 0 ? held : new Set()))
       return
     }
     /* The beat's arrivals — read during the render above, so the drawing that first stands these
@@ -1036,39 +1023,11 @@ export function OverviewPane(props: {
      * shed it. Without the span the mark would be dropped on the next render: the growth would be
      * cancelled mid-frame by whatever redrew the stage, which is every pushed frame. */
     if (arrivedNow.length > 0) {
-      for (const id of arrivedNow) {
-        arrivedOnce.current.add(id)
-        const known = enterTimers.current.get(id)
-        if (known !== undefined) clearTimeout(known)
-        const timer = setTimeout(() => {
-          enterTimers.current.delete(id)
-          flying.current.delete(id)
-          setJoined((held) => {
-            if (!held.has(id)) return held
-            const next = new Set(held)
-            next.delete(id)
-            return next
-          })
-        }, ENTER_SPAN_MS)
-        enterTimers.current.set(id, timer)
-      }
-      setJoined((held) => {
-        const next = new Set(held)
-        for (const id of arrivedNow) next.add(id)
-        return next.size === held.size ? held : next
-      })
+      for (const id of arrivedNow) arrivedOnce.current.add(id)
+      joined.hold(arrivedNow, ENTER_SPAN_MS)
     }
     /* A window back before its span ran keeps standing: its leave is cancelled, not replayed. */
-    for (const id of currentIds) {
-      const known = timers.current.get(id)
-      if (known === undefined) continue
-      clearTimeout(known)
-      timers.current.delete(id)
-    }
-    setLeaving((held) => {
-      const kept = [...held].filter((id) => !currentIds.has(id))
-      return kept.length === held.size ? held : new Set(kept)
-    })
+    leaving.shed(currentIds)
     const gone = [...before].filter((id) => !currentIds.has(id))
     if (gone.length === 0) return
     /* A window on its way out keeps no join mark: it is leaving, not arriving, and a return before
@@ -1078,67 +1037,15 @@ export function OverviewPane(props: {
     for (const id of gone) {
       openings.current.delete(id)
       lastRowKeyRef.current.delete(id)
-      const openingTimer = openingTimers.current.get(id)
-      if (openingTimer !== undefined) {
-        clearTimeout(openingTimer.timer)
-        openingTimers.current.delete(id)
-      }
-      const entering = enterTimers.current.get(id)
-      if (entering !== undefined) {
-        clearTimeout(entering)
-        enterTimers.current.delete(id)
-        flying.current.delete(id)
-        setJoined((held) => {
-          if (!held.has(id)) return held
-          const next = new Set(held)
-          next.delete(id)
-          return next
-        })
-      }
+      flying.current.delete(id)
     }
-    for (const id of gone) {
-      if (timers.current.has(id)) continue
-      const timer = setTimeout(() => {
-        timers.current.delete(id)
-        /* The fold has run: the stage has really lost this window, so a later return is a new
-         * arrival and may fly again. */
-        arrivedOnce.current.delete(id)
-        setLeaving((held) => {
-          if (!held.has(id)) return held
-          const next = new Set(held)
-          next.delete(id)
-          return next
-        })
-        /* Same batch as the removal: the render that hands out the freed boxes carries the mark. */
-        setSettling(true)
-        clearTimeout(settleTimer.current)
-        settleTimer.current = setTimeout(() => setSettling(false), SETTLE_SPAN_MS)
-      }, LEAVE_SPAN_MS)
-      timers.current.set(id, timer)
-    }
-    setLeaving((held) => {
-      const next = new Set(held)
-      for (const id of gone) next.add(id)
-      return next.size === held.size ? held : next
-    })
+    joined.shed(gone)
+    openingMarks.shed(gone)
+    /* The fold is armed for the leave's own span. Its expiry is what really loses the window — a
+     * later return is a new arrival, and the room closing up is raised in the same breath (the
+     * leave's own note above) — so the shed there is the mark's one way out. */
+    leaving.hold(gone, LEAVE_SPAN_MS)
   }, [currentIds, mainId])
-  React.useEffect(
-    () => () => {
-      for (const timer of timers.current.values()) clearTimeout(timer)
-      timers.current.clear()
-      for (const timer of enterTimers.current.values()) clearTimeout(timer)
-      enterTimers.current.clear()
-      clearTimeout(settleTimer.current)
-      clearTimeout(stageEnterTimer.current)
-      clearTimeout(pastTimer.current)
-      clearTimeout(handTimer.current)
-      for (const scheduled of openingTimers.current.values()) clearTimeout(scheduled.timer)
-      openingTimers.current.clear()
-      for (const scheduled of freshTimers.current.values()) clearTimeout(scheduled)
-      freshTimers.current.clear()
-    },
-    [],
-  )
 
   /* The join's own room: a window arriving re-seats everyone else around it in the same beat, and
    * the survivors spend that move on the way — the same spend a fold's close-up gets (`is-settle`).
@@ -1148,7 +1055,7 @@ export function OverviewPane(props: {
    * substitutes one whole cast for another and arrives in nothing — `arrivedNow` is empty there by
    * design — and a hand-over arrives whole instead, by the stage's own appearance (`is-first`):
    * one cast replacing another has no source point, so nothing of it travels. */
-  const joining = arrivedNow.length > 0 || joined.size > 0
+  const joining = arrivedNow.length > 0 || joined.held.size > 0
 
   /* The box and the reading each id drew from on this beat: a leaving pane reads them back below, and
    * the cast above reads a held window's row count from `windowsRef` after the reading drops it. */
@@ -1227,7 +1134,7 @@ export function OverviewPane(props: {
   const flightOf = (id: string, box: OverviewBox): { readonly dx: number; readonly dy: number; readonly s: number } | undefined => {
     const held = flying.current.get(id)
     if (held !== undefined) return held
-    if (!arrivedNow.includes(id) && !joined.has(id)) return undefined
+    if (!arrivedNow.includes(id) && !joined.held.has(id)) return undefined
     const born = births.get(id)
     if (born === undefined) return undefined
     const mark = {
@@ -1301,7 +1208,7 @@ export function OverviewPane(props: {
             window={reading.main}
             main
             leave={leavingIds.includes(reading.main.id)}
-            fresh={freshIds.has(reading.main.id)}
+            fresh={freshMarks.held.has(reading.main.id)}
             /* The main window has no source: it is the conversation this pane is about, so it was
              * already here. Its own appearance scales up where it stands; it never travels. */
             born={undefined}
@@ -1321,7 +1228,7 @@ export function OverviewPane(props: {
               window={one}
               main={false}
               leave={leavingIds.includes(one.id)}
-              fresh={freshIds.has(one.id)}
+              fresh={freshMarks.held.has(one.id)}
               /* A child grows out of the row that dispatched it, and only while its entrance is
                * owed: the mark is taken on the first drawing that can carry it and kept in `flying`
                * until the entrance's span has run. A child that joins *during* the stage's own
