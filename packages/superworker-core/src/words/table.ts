@@ -1373,7 +1373,7 @@ export const GROUPS = {
       {
         "word": "search",
         "prog": "dag search",
-        "description": null,
+        "description": "Two tiers. The default tier matches the title only, in memory: nothing under the node directories is opened, so no spec.md is read. `--verbose` is the deep tier: each candidate's spec.md is read too, every hit says which cell matched (`match: 'title'` / `match: 'spec'`), and a body hit carries a short excerpt around the match — not the whole spec, reading it in full is `dag open`'s business. A candidate whose spec.md is not written yet is skipped in the deep tier, not an error. Both tiers answer in the graph's own order, with the same limit.",
         "positionals": [
           {
             "name": "query",
@@ -1400,13 +1400,19 @@ export const GROUPS = {
           },
           {
             "flags": [
+              "--verbose"
+            ],
+            "help": "Deep tier: also read each candidate's spec.md and match its body; hits say where they matched (title / spec) and body hits carry an excerpt. The default tier matches titles only and opens no file under the node directories",
+          },
+          {
+            "flags": [
               "--active-only"
             ],
             "help": "Exclude completed nodes from results",
           }
         ],
         "group": "dag",
-        "summary": "Search nodes by title using regex"
+        "summary": "Search nodes by regex; titles by default, spec bodies with --verbose"
       },
       {
         "word": "open",

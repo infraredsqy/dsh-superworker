@@ -78,6 +78,12 @@ export interface DagSearchOptions {
   /** Search only nodes that are not finished. */
   activeOnly?: boolean;
   limit?: number;
+  /**
+   * The deep tier: every candidate's `spec.md` body is read (through the one spelling `paths`
+   * holds) and matched too. Without it the search is the default tier — titles only, matched in
+   * memory, and no file under the node directories is opened.
+   */
+  verbose?: boolean;
 }
 
 /** A list row: the skeleton fields are all there; scores are given only on runnable nodes, blocked and completed ones have none. */
@@ -117,6 +123,13 @@ export interface DagSearchHit {
   title: string;
   status: NodeStatus;
   ready: boolean;
+  /**
+   * Deep tier only: which cell matched — the title, or the node's `spec.md` body. The default
+   * tier carries no such cell: a hit there is a title hit by definition.
+   */
+  match?: 'title' | 'spec';
+  /** Deep tier only, a body hit: a short excerpt around the match — never the whole spec. */
+  snippet?: string;
 }
 
 /** The report of validate: cycles, dangling references, duplicate edges and isolated nodes. */
@@ -215,7 +228,7 @@ export interface DagNamespace {
   info(id: string, options?: DagInfoOptions): Promise<DagInfo>;
   /** Read the transitive closure of one node's upstream and downstream. */
   context(id: string): Promise<NodeContext>;
-  /** Search titles by regex. */
+  /** Search titles by regex; the deep tier (`verbose`) reads each candidate's spec.md body too. */
   search(query: string, options?: DagSearchOptions): Promise<DagSearchHit[]>;
   list(filter?: DagListFilter): Promise<NodeSummary[]>;
   /** The location path of one node's spec.md. */

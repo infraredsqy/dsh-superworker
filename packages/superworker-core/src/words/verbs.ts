@@ -709,6 +709,7 @@ export const dagSearchVerb = run("dag search", async (call) => {
   const hits = await superworker.ledger.dag.search(query, {
     ...(values.limit === undefined ? {} : { limit: Number(values.limit) }),
     ...(values.active_only === true ? { activeOnly: true } : {}),
+    ...(values.verbose === true ? { verbose: true } : {}),
   });
   return { stdout: pyCompact(hits) };
 });

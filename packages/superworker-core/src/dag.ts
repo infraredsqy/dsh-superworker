@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { nowMicro } from './clock';
 import { envSessionId } from './env';
 import {
@@ -119,6 +120,36 @@ function tryAddDependency(nodes: NodeMap, uid: string, dep: string): boolean {
 /** The spec.md location: `<root>/.superworker/nodes/<id>/spec.md` — the one source of the spelling is paths (`nodeSpecPath`). */
 function specPathOf(paths: RecordPaths, uid: string): string {
   return nodeSpecPath(paths, uid);
+}
+
+/**
+ * The spec.md body of one node, or `null` when the file cannot be read — the file's absence is how
+ * "the requirements are not written yet" is expressed, and a deep search skips such a candidate
+ * instead of failing. The location always comes from paths; nothing here spells a second one.
+ */
+async function readSpecText(specPath: string): Promise<string | null> {
+  try {
+    return new TextDecoder('utf-8').decode(await readFile(specPath));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The excerpt a deep search hands back for a body hit: a short window around the first match,
+ * whitespace flattened onto one line, `...` where the window was cut — never the whole spec
+ * (reading it in full is `dag open`'s business, after the node is found).
+ */
+const SNIPPET_PAD = 40;
+function specSnippetOf(pattern: RegExp, text: string): string {
+  const found = pattern.exec(text);
+  if (found === null) return '';
+  const start = Math.max(0, found.index - SNIPPET_PAD);
+  const end = Math.min(text.length, found.index + found[0].length + SNIPPET_PAD);
+  let excerpt = text.slice(start, end).split(/\s+/).filter(Boolean).join(' ').trim();
+  if (start > 0) excerpt = `...${excerpt}`;
+  if (end < text.length) excerpt = `${excerpt}...`;
+  return excerpt;
 }
 
 /** Build the dag namespace: one per project root. */
@@ -631,18 +662,29 @@ export function createDagNamespace(root: string): DagNamespace {
       } catch (error) {
         throw new Error(`invalid regex: ${error instanceof Error ? error.message : String(error)}`);
       }
+      const deep = options.verbose === true;
 
-      // The title is the only text a node's record carries, so it is the only cell search reads.
+      // The default tier is the read a title search has always been: the record's cells matched in
+      // memory, and no file under the node directories is opened — the deep option cannot carry that
+      // away. The deep tier reads each candidate's spec.md (the spelling comes from paths alone) and
+      // says which cell matched; a candidate with no readable spec.md is skipped, not an error. Both
+      // tiers walk the table in its own order, and the limit caps the same list the same way.
       const hits: DagSearchHit[] = [];
       for (const [uid, node] of Object.entries(selected)) {
-        const title = node.title ?? '';
-        if (!pattern.test(title)) continue;
-        hits.push({
+        const cells = {
           id: uid,
-          title,
+          title: node.title ?? '',
           status: node.status,
           ready: nodeReady(uid, nodes),
-        });
+        };
+        if (pattern.test(cells.title)) {
+          hits.push(deep ? { ...cells, match: 'title' } : cells);
+          continue;
+        }
+        if (!deep) continue;
+        const body = await readSpecText(specPathOf(paths, uid));
+        if (body === null || !pattern.test(body)) continue;
+        hits.push({ ...cells, match: 'spec', snippet: specSnippetOf(pattern, body) });
       }
       // The default limit is 5, and a zero or negative one means no ceiling.
       const limit = options.limit ?? 5;

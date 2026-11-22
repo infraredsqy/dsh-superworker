@@ -205,7 +205,7 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 | `ledger.dag.get` | `get(id)` | 读一个节点的记录；不在图上时为 `null` |
 | `ledger.dag.info` | `info(id, options?)` | 读一个节点的详情：记录 + 两个方向的边、就绪、两个读数与会话名单 |
 | `ledger.dag.context` | `context(id)` | 读上下游传递闭包 |
-| `ledger.dag.search` | `search(query, options?)` | 按正则搜标题 |
+| `ledger.dag.search` | `search(query, options?)` | 按正则搜：默认档只搜标题、纯内存，不打开节点目录里任何文件；`verbose` 深档把候选节点的 `spec.md` 正文也读进来匹配，命中带 `match`（`title` / `spec`），正文命中另带片段，缺 spec.md 的候选跳过 |
 | `ledger.dag.list` | `list(filter?)` | 按状态 / 就绪 / 标签列出，重要与紧急排序 |
 | `ledger.dag.specPath` | `specPath(id)` | 节点 spec.md 的落点路径 |
 | `ledger.dag.validate` | `validate()` | 查环、悬空引用与重复边；孤立点点名不翻红 |
