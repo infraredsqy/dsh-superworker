@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { NextPlan } from '../src/conductor';
 import { open } from '../src/open';
 import { main as instruction } from '../plugins/instruction/tools/commands.mjs';
+import { pluginBase } from '../src/plugins/base';
 import { replayCase } from './helpers/corpus';
 import { hashDirectory } from './helpers/hash-dir.ts';
 
@@ -338,9 +339,9 @@ describe('planning: when to stop', () => {
     // A boundary entry written through the plugin's own command surface: it is on disk, and the plan does not read it.
     await instruction(
       ['add', '--text', 'stop after two nodes', '--scope', 'global', '--target', 'boundary', '--stop-after-nodes', '2'],
-      { root },
+      { root, base: pluginBase() },
     );
-    const listed = JSON.parse(String(await instruction(['list', '--all', '--json'], { root }))) as Array<{
+    const listed = JSON.parse(String(await instruction(['list', '--all', '--json'], { root, base: pluginBase() }))) as Array<{
       target: string;
       stop_after_nodes?: number;
     }>;

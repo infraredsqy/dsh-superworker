@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prepareDispatch } from '../src/prepare';
 import { open } from '../src/open';
 import { main as instruction } from '../plugins/instruction/tools/commands.mjs';
+import { pluginBase } from '../src/plugins/base';
 import { hashDirectory } from './helpers/hash-dir.ts';
 
 /**
@@ -143,7 +144,7 @@ describe('dispatch preparation: landing spots and idempotence', () => {
     const root = freshRoot();
     await stageDispatchable(root);
     // The account is the instruction plugin's own record; it is there, and the run doc still does not gain a cell for it.
-    await instruction(['add', '--text', 'changes land only in the assigned files', '--scope', 'global'], { root });
+    await instruction(['add', '--text', 'changes land only in the assigned files', '--scope', 'global'], { root, base: pluginBase() });
     const prepared = await prepareDispatch(root, { cycle: 'c1' }, { homeDir: join(root, '_home') });
     const doc = readFileSync(prepared.nodes[0]!.run_doc, 'utf8');
     expect(doc).not.toContain('User instructions in effect');

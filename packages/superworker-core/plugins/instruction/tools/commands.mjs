@@ -1,21 +1,27 @@
 /**
  * The instruction account's verbs: each verb is one entry of the command surface.
  *
- * The command word and its flags live here; `main` in `impl.mjs` joins this layer to the host context
- * (`ctx.root` is the project root the record directory sits in). A command answers text (what a person
- * reads) or a number (the exit code it asks its caller to leave with), and its two ways of ending are
- * not the same ending: a **usage error** — a line that names no verb, an unknown verb, a flag the verb
- * does not take, the wrong number of positional arguments, a value outside a flag's closed set, a flag
- * the verb requires and the line left out — carries `code: 2` and is answered with the usage page, the
- * way the core's own words answer a refused line; any other failure is thrown, and the host folds it
- * into `main failed` with `code: 1`.
+ * **The surface's mechanics are the engine's one copy**, reached through the record base the host
+ * hands in (`ctx.base.verbSurface`, see the engine's `src/plugins/verb-surface.ts`): splitting a
+ * line into flags and positional arguments, the closed-set and positional-count refusals, the
+ * usage page, the help spellings, and the lock the writing verbs run under. What is left here is
+ * the account's own words: which flags and verbs exist, what each verb does to the account, and
+ * the text a person reads. The tables below (FLAGS, SPECS, RUNNERS) are this plugin's data; the
+ * surface is assembled from them on first use.
+ *
+ * A command answers text (what a person reads) or a number (the exit code it asks its caller to
+ * leave with), and its two ways of ending are not the same ending: a **usage error** — a line that
+ * names no verb, an unknown verb, a flag the verb does not take, the wrong number of positional
+ * arguments, a value outside a flag's closed set, a flag the verb requires and the line left out —
+ * carries `code: 2` and is answered with the usage page, the way the core's own words answer a
+ * refused line; any other failure is thrown, and the host folds it into `main failed` with `code: 1`.
  *
  * The five verbs are the account's whole surface, and the words they answer are the words this
  * account answered before this folder owned them: one verb, one operation — `add` appends one
  * sentence verbatim, `list` is the account read (the reader's view by default, the raw rows when
  * asked), `resolve` archives one, `revive` puts an archived one back, `rm` takes one away text and
  * all. The read side never takes the lock (a write lands atomically, so a read cannot see half an
- * entry); every writing verb holds the account's own lock through "read → change → write".
+ * entry).
  *
  * Which cycle or node a new entry binds to is decided here, and it is the same decision as before:
  * take what the caller named (the named cycle has to be in the line account, a named node has to be
@@ -33,10 +39,8 @@ import {
   LIVE_STATE,
   REMOVED_KEY,
   STATE_MARKS,
-  UsageError,
   VALID_SCOPES,
   VALID_TARGETS,
-  nowSeconds,
   projectRootOf,
   readCycles,
   readInstructions,
@@ -72,6 +76,74 @@ const NO_RECORD_LINES = [
   'This project has no instruction record at all.',
   'That is not an error: work can start as usual.',
 ]
+
+// ═══ The command surface, assembled from the engine's one copy ════════════════
+
+/**
+ * The surface of this command word, built once per process from the tables below: the mechanics
+ * (parsing, usage, refusals, writing-verb locking) are the engine's record base's; the tables are
+ * this plugin's own words. The base arrives on the context the host hands in — a build of this
+ * plugin run by an engine that hands none in is named as it is, instead of failing obscurely.
+ */
+let surface = null
+
+function baseOf(ctx) {
+  const base = ctx === null || typeof ctx !== 'object' ? undefined : ctx.base
+  if (base === undefined || base === null || typeof base.verbSurface !== 'function') {
+    throw new Error(
+      'the instruction tool reads its command surface and record base from the context the host hands ' +
+        'in (ctx.base), and this engine hands none in: update the engine, or install the build of this ' +
+        'plugin that still carries its own record base',
+    )
+  }
+  return base
+}
+
+function surfaceOf(base) {
+  if (surface === null) {
+    surface = base.verbSurface({
+      name: 'instruction',
+      head: USAGE_HEAD,
+      blurb: [
+        'the standing instruction account: one file per project, `.superworker/instructions.json`.',
+        'scopes: global / cycle / node (where an entry can be read from, not who remembers to resolve it).',
+        'reaches: stage / boundary (when a worker reads it: while working, or only when closing out).',
+      ],
+      // This word's text is LF on every platform, unlike the seam's default (the platform's line
+      // ending): the answers and the page here were LF before this folder took them over.
+      eol: EOL,
+      // A refusal here is its sentence alone, not the head in front of it: that is how this word's
+      // refusals read before this layer owned them.
+      refusalHead: false,
+      // A line naming no verb is a refused line for this word, not a help request: the page goes out
+      // as the refusal, and the caller answers it with code 2.
+      emptyArgv: 'refuse',
+      flags: FLAGS,
+      specs: SPECS,
+      runners: RUNNERS,
+      // `add`'s own reading of the line is decided before the lock is taken, as it was when this
+      // folder held the lock itself: a refused sentence must not bring the lock's directory into being.
+      lineChecks: { add: checkAddLine },
+      writingVerbs: ['add', 'resolve', 'rm', 'revive'],
+      withWrite: (ctxOf, body) => withInstructionsLock(ctxOf.root, body, ctxOf.base),
+      contextOf,
+    })
+  }
+  return surface
+}
+
+/**
+ * The refusal about how the line was written: the class comes with the surface (bound on first
+ * use, before any runner can run), and `code: 2` is what such a line answers with — the same 2
+ * the core's own parser answers a usage error with. Everything else is a plain `Error`, which the
+ * host answers with `code: 1`.
+ */
+function usageError(sentence) {
+  if (surface === null) {
+    throw new Error('the instruction command surface is not assembled yet: run the tool through main')
+  }
+  return new surface.UsageError(sentence)
+}
 
 // ═══ The shape of one entry ══════════════════════════════════════════════════
 
@@ -297,7 +369,11 @@ const FLAGS = {
   state: { long: '--state', kind: 'value', choices: ['withdrawn'] },
 }
 
-/** One verb's option table: which flags it knows, how many positional arguments, and which flag it must have. */
+/**
+ * One verb's option table: which flags it knows, how many positional arguments, and which flag it
+ * must have. `label` is the placeholder word this verb's usage row spells for its positionals — the
+ * account's own word; the engine's usage page renders it as spelled here.
+ */
 const SPECS = {
   add: {
     options: ['text', 'scope', 'cycle', 'node', 'target', 'said_by', 'note', 'stop_after_nodes'],
@@ -308,151 +384,84 @@ const SPECS = {
   resolve: {
     options: ['state', 'note', 'project'],
     required: ['state'],
-    positional: { min: 1, max: 1 },
+    positional: { min: 1, max: 1, label: '<ins_id>' },
   },
-  rm: { options: ['project'], positional: { min: 1, max: 1 } },
-  revive: { options: ['project'], positional: { min: 1, max: 1 } },
-}
-
-/** Whether this token looks like a flag (a negative number is a value, not a flag). */
-function looksLikeFlag(token) {
-  return typeof token === 'string' && token.startsWith('-') && token.length > 1 && !/^-\d/.test(token)
-}
-
-/** Which known flag this token lands on; null when it is none. */
-function flagNameOf(token, spec) {
-  if (typeof token !== 'string' || !token.startsWith('--')) return null
-  const name = token.includes('=') ? token.slice(0, token.indexOf('=')) : token
-  for (const key of spec.options) {
-    if (FLAGS[key].long === name) return key
-  }
-  return null
-}
-
-function inlineValueOf(token) {
-  const at = token.indexOf('=')
-  return at < 0 ? undefined : token.slice(at + 1)
-}
-
-/**
- * Split the rest of one line's argv into "options it knows" and "positional arguments".
- *
- * A value-taking flag takes the next cell as its value even when that cell opens with a dash: the
- * account's sentences are the user's verbatim words, and `--text` is always the last switch of an
- * `add` line, so a sentence that begins with `-` still rides as one cell (the panel builds exactly
- * this line).
- */
-function parseArgs(argv, spec) {
-  const options = {}
-  const positional = []
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index]
-    if (token === '--') {
-      positional.push(...argv.slice(index + 1))
-      break
-    }
-    const name = flagNameOf(token, spec)
-    if (name === null) {
-      if (looksLikeFlag(token)) {
-        throw new UsageError(`unrecognized argument: ${token} (run \`instruction help\` for the flags this verb takes)`)
-      }
-      positional.push(token)
-      continue
-    }
-    const cell = FLAGS[name]
-    const inline = inlineValueOf(token)
-    if (cell.kind === 'flag') {
-      if (inline !== undefined) throw new UsageError(`argument ${cell.long}: takes no value`)
-      options[name] = true
-      continue
-    }
-    let raw = inline
-    if (raw === undefined) {
-      index += 1
-      raw = argv[index]
-    }
-    if (raw === undefined) throw new UsageError(`argument ${cell.long}: expected one value`)
-    if (cell.choices !== undefined && !cell.choices.includes(raw)) {
-      throw new UsageError(`invalid ${name} "${raw}", valid: ${[...cell.choices].sort().join(', ')}`)
-    }
-    options[name] = raw
-  }
-  const count = positional.length
-  if (count < spec.positional.min || count > spec.positional.max) {
-    const wanted =
-      spec.positional.max === spec.positional.min
-        ? `${spec.positional.min}`
-        : `${spec.positional.min} to ${spec.positional.max}`
-    throw new UsageError(`this verb wants ${wanted} positional argument(s), got ${count} (run \`instruction help\`)`)
-  }
-  for (const key of spec.required ?? []) {
-    if (options[key] === undefined) {
-      throw new UsageError(`argument ${FLAGS[key].long}: is required (run \`instruction help\`)`)
-    }
-  }
-  return { options, positional }
+  rm: { options: ['project'], positional: { min: 1, max: 1, label: '<ins_id>' } },
+  revive: { options: ['project'], positional: { min: 1, max: 1, label: '<ins_id>' } },
 }
 
 // ═══ Verbs ═══════════════════════════════════════════════════════════════════
 
-async function cmdAdd(args, ctx) {
+/**
+ * What one `add` line must carry on its own, settled after the line is parsed and **before** the
+ * account's lock is taken — the moment the wording has always been read at, when this folder held
+ * the lock itself: a refused line names the vocabulary and reaches no disk, the lock's own directory
+ * included. The three checks are the account's own reading of a whole line: the sentence, and the
+ * two words a caller can name out of the surface's own parser (`--scope` / `--target` are closed
+ * sets there already, and stand here as the account's reading of its own vocabulary, as they did).
+ *
+ * A sentence that is empty once trimmed is a failure of the run — the account will not take it —
+ * not a malformed line: it is thrown plain, as it always was, and the host answers it with `code: 1`.
+ */
+function checkAddLine(args) {
   const { text, scope = 'global', target = 'stage' } = args.options
-  // The wording is checked before any disk is touched: a refusal names the vocabulary and nothing is written.
-  // An empty sentence is a failure of the run — the account will not take it — not a malformed line: it
-  // is thrown as it always was, and the host answers it with `code: 1`.
   if (typeof text !== 'string' || text.trim() === '') throw new Error('text must not be empty')
   if (!VALID_SCOPES.includes(scope)) {
-    throw new UsageError(`scope must be one of ${JSON.stringify([...VALID_SCOPES])}, got ${JSON.stringify(scope)}`)
+    throw usageError(`scope must be one of ${JSON.stringify([...VALID_SCOPES])}, got ${JSON.stringify(scope)}`)
   }
   if (!VALID_TARGETS.includes(target)) {
-    throw new UsageError(`target must be one of ${JSON.stringify([...VALID_TARGETS])}, got ${JSON.stringify(target)}`)
+    throw usageError(`target must be one of ${JSON.stringify([...VALID_TARGETS])}, got ${JSON.stringify(target)}`)
   }
-  return withInstructionsLock(ctx.root, async () => {
-    const data = readInstructions(ctx.root)
-    const cycles = readCycles(ctx.root)
-    const nodes = readNodes(ctx.root)
-    const binding = bindingOf({ ...args.options, scope, target }, cycles, nodes)
-    const entry = {
-      id: nextInstructionId(data),
-      text,
-      scope,
-      target,
-      state: 'live',
-      cycle: binding.cycle,
-      node: binding.node,
-      said_by: args.options.said_by ?? 'user',
-      at: nowSeconds(),
-      resolved_at: null,
-      note: args.options.note ?? null,
-    }
-    if (args.options.stop_after_nodes !== undefined && args.options.stop_after_nodes !== null) {
-      entry.stop_after_nodes = Number(args.options.stop_after_nodes)
-    }
-    data.instructions.push(entry)
-    await writeInstructions(ctx.root, data)
-    // The binding as a reader sees it: the line's id and the node's short form. A global entry records
-    // where it was said, and the printed line leaves that bookkeeping on the account.
-    const where =
-      scope === 'global'
-        ? []
-        : [entry.cycle, typeof entry.node === 'string' && entry.node !== '' ? short(entry.node) : undefined].filter(
-            (cell) => typeof cell === 'string' && cell !== '',
-          )
-    return (
-      `INSTRUCTION ${entry.id}: [${scope}/${target}] ${entry.text}` +
-      (where.length > 0 ? `   @ ${where.join(' / ')}` : '')
-    )
-  })
+}
+
+async function cmdAdd(args, ctx) {
+  const { text, scope = 'global', target = 'stage' } = args.options
+  // The wording was checked before this run took the lock (`checkAddLine`, declared on the surface):
+  // what this verb does is read the account, build the entry, and land it.
+  const data = await readInstructions(ctx.root, ctx.base)
+  const cycles = await readCycles(ctx.root, ctx.base)
+  const nodes = await readNodes(ctx.root, ctx.base)
+  const binding = bindingOf({ ...args.options, scope, target }, cycles, nodes)
+  const entry = {
+    id: nextInstructionId(data),
+    text,
+    scope,
+    target,
+    state: 'live',
+    cycle: binding.cycle,
+    node: binding.node,
+    said_by: args.options.said_by ?? 'user',
+    at: ctx.base.nowSeconds(),
+    resolved_at: null,
+    note: args.options.note ?? null,
+  }
+  if (args.options.stop_after_nodes !== undefined && args.options.stop_after_nodes !== null) {
+    entry.stop_after_nodes = Number(args.options.stop_after_nodes)
+  }
+  data.instructions.push(entry)
+  await writeInstructions(ctx.root, data, ctx.base)
+  // The binding as a reader sees it: the line's id and the node's short form. A global entry records
+  // where it was said, and the printed line leaves that bookkeeping on the account.
+  const where =
+    scope === 'global'
+      ? []
+      : [entry.cycle, typeof entry.node === 'string' && entry.node !== '' ? short(entry.node) : undefined].filter(
+          (cell) => typeof cell === 'string' && cell !== '',
+        )
+  return (
+    `INSTRUCTION ${entry.id}: [${scope}/${target}] ${entry.text}` +
+    (where.length > 0 ? `   @ ${where.join(' / ')}` : '')
+  )
 }
 
 async function cmdList(args, ctx) {
   const { all, live, scope, node, json } = args.options
-  const data = readInstructions(ctx.root)
+  const data = await readInstructions(ctx.root, ctx.base)
   const accountView = all === true || live === true || scope !== undefined
 
   if (!accountView) {
-    const cycles = readCycles(ctx.root)
-    const nodes = readNodes(ctx.root)
+    const cycles = await readCycles(ctx.root, ctx.base)
+    const nodes = await readNodes(ctx.root, ctx.base)
     const position = positionOf(cycles, node ?? null)
     const active = new Set(
       cycles.filter((record) => record.status === 'active').map((record) => record.id).filter((id) => typeof id === 'string'),
@@ -506,107 +515,86 @@ async function cmdList(args, ctx) {
 
 async function cmdResolve(args, ctx) {
   const id = args.positional[0]
-  return withInstructionsLock(ctx.root, async () => {
-    const data = readInstructions(ctx.root)
-    const hit = data.instructions.find((entry) => entry.id === id)
-    if (hit === undefined) throw new Error(`no instruction ${JSON.stringify(id)}`)
-    // Resolving touches the state and timestamp cells, plus the note when one is given: text, scope and
-    // binding are all kept as they are, and a note that was never given is not cleared.
-    hit.state = 'withdrawn'
-    hit.resolved_at = nowSeconds()
-    if (args.options.note !== undefined && args.options.note !== '') hit.note = args.options.note
-    await writeInstructions(ctx.root, data)
-    return `INSTRUCTION ${id} → ${args.options.state}`
-  })
+  const data = await readInstructions(ctx.root, ctx.base)
+  const hit = data.instructions.find((entry) => entry.id === id)
+  if (hit === undefined) throw new Error(`no instruction ${JSON.stringify(id)}`)
+  // Resolving touches the state and timestamp cells, plus the note when one is given: text, scope and
+  // binding are all kept as they are, and a note that was never given is not cleared.
+  hit.state = 'withdrawn'
+  hit.resolved_at = ctx.base.nowSeconds()
+  if (args.options.note !== undefined && args.options.note !== '') hit.note = args.options.note
+  await writeInstructions(ctx.root, data, ctx.base)
+  return `INSTRUCTION ${id} → ${args.options.state}`
 }
 
 async function cmdRevive(args, ctx) {
   const id = args.positional[0]
-  return withInstructionsLock(ctx.root, async () => {
-    const data = readInstructions(ctx.root)
-    const [hit, trace] = locate(data, id)
-    if (hit === null && trace === null) throw new Error(`no instruction ${JSON.stringify(id)}`)
-    if (hit === null) {
-      throw new Error(
-        `instruction ${JSON.stringify(id)} was removed at ${trace.at}; its text went with it, and ` +
-          'putting an entry back is not how a removal is undone',
-      )
-    }
-    if (isLive(hit)) {
-      throw new Error(`instruction ${JSON.stringify(id)} is already live: there is nothing to put back`)
-    }
-    // Reviving touches only the state and the timestamp: a live entry has no resolution timestamp.
-    hit.state = 'live'
-    hit.resolved_at = null
-    await writeInstructions(ctx.root, data)
-    return `INSTRUCTION ${id} → live`
-  })
+  const data = await readInstructions(ctx.root, ctx.base)
+  const [hit, trace] = locate(data, id)
+  if (hit === null && trace === null) throw new Error(`no instruction ${JSON.stringify(id)}`)
+  if (hit === null) {
+    throw new Error(
+      `instruction ${JSON.stringify(id)} was removed at ${trace.at}; its text went with it, and ` +
+        'putting an entry back is not how a removal is undone',
+    )
+  }
+  if (isLive(hit)) {
+    throw new Error(`instruction ${JSON.stringify(id)} is already live: there is nothing to put back`)
+  }
+  // Reviving touches only the state and the timestamp: a live entry has no resolution timestamp.
+  hit.state = 'live'
+  hit.resolved_at = null
+  await writeInstructions(ctx.root, data, ctx.base)
+  return `INSTRUCTION ${id} → live`
 }
 
 async function cmdRm(args, ctx) {
   const id = args.positional[0]
-  return withInstructionsLock(ctx.root, async () => {
-    const data = readInstructions(ctx.root)
-    const [hit, trace] = locate(data, id)
-    if (hit === null && trace === null) throw new Error(`no instruction ${JSON.stringify(id)}`)
-    if (hit === null) {
-      throw new Error(
-        `instruction ${JSON.stringify(id)} was removed at ${trace.at}; its text is already off the account`,
-      )
-    }
-    // The sentence is printed first, then it goes: the entry leaves with its text, the tombstone keeps
-    // the id and the moment, and an issued number is never issued again.
-    const head = `INSTRUCTION ${hit.id}: [${hit.scope}/${hit.target ?? 'stage'}] ${hit.text}\n`
-    const at = data.instructions.indexOf(hit)
-    data.instructions.splice(at, 1)
-    let traces = data[REMOVED_KEY]
-    if (!Array.isArray(traces)) {
-      traces = []
-      data[REMOVED_KEY] = traces
-    }
-    traces.push({ id, at: nowSeconds() })
-    await writeInstructions(ctx.root, data)
-    return `${head}REMOVED ${id}`
-  })
+  const data = await readInstructions(ctx.root, ctx.base)
+  const [hit, trace] = locate(data, id)
+  if (hit === null && trace === null) throw new Error(`no instruction ${JSON.stringify(id)}`)
+  if (hit === null) {
+    throw new Error(
+      `instruction ${JSON.stringify(id)} was removed at ${trace.at}; its text is already off the account`,
+    )
+  }
+  // The sentence is printed first, then it goes: the entry leaves with its text, the tombstone keeps
+  // the id and the moment, and an issued number is never issued again.
+  const head = `INSTRUCTION ${hit.id}: [${hit.scope}/${hit.target ?? 'stage'}] ${hit.text}\n`
+  const at = data.instructions.indexOf(hit)
+  data.instructions.splice(at, 1)
+  let traces = data[REMOVED_KEY]
+  if (!Array.isArray(traces)) {
+    traces = []
+    data[REMOVED_KEY] = traces
+  }
+  traces.push({ id, at: ctx.base.nowSeconds() })
+  await writeInstructions(ctx.root, data, ctx.base)
+  return `${head}REMOVED ${id}`
 }
 
 // ═══ The command surface ═════════════════════════════════════════════════════
 
 const RUNNERS = { add: cmdAdd, list: cmdList, resolve: cmdResolve, rm: cmdRm, revive: cmdRevive }
 
-/** The usage spelling of one flag (the page and the parser read the same table). */
-function flagUsage(key) {
-  const cell = FLAGS[key]
-  return cell.kind === 'flag' ? `[${cell.long}]` : `[${cell.long} <value>]`
-}
-
 /**
- * The `instruction help` list: the five verbs and their flags, derived from the command surface's one
- * table, with the scope vocabulary printed beside the verb that binds it.
+ * The context one verb runs under: a named `--project` replaces the root the host handed in,
+ * resolved from this process's own directory — and, being an explicit root, resolved through a linked
+ * worktree back to the main tree that holds the account. No name means the host's root as it came:
+ * the host already resolved it.
  */
-export function usage() {
-  const rows = Object.keys(SPECS).map((word) => {
-    const spec = SPECS[word]
-    const positional =
-      spec.positional.min === 0 ? '' : spec.positional.min === spec.positional.max ? ' <ins_id>' : ' <ins_id...>'
-    const flags = spec.options.map(flagUsage).join(' ')
-    return `  ${word}${positional}${flags.length > 0 ? ` ${flags}` : ''}`
-  })
-  return [
-    USAGE_HEAD,
-    '',
-    "the standing instruction account: one file per project, `.superworker/instructions.json`.",
-    'scopes: global / cycle / node (where an entry can be read from, not who remembers to resolve it).',
-    'reaches: stage / boundary (when a worker reads it: while working, or only when closing out).',
-    '',
-    ...rows,
-    '',
-  ].join(EOL)
+function contextOf(args, ctx) {
+  const named = args.options.project
+  const root = named === undefined || named === '' ? ctx.root : projectRootOf(named)
+  return { ...ctx, root }
 }
 
 /**
  * The command's entry point: the first cell of argv is the verb (the declaration says `keep_name: false`,
- * so the host takes the command word off).
+ * so the host takes the command word off). The line is parsed, its refusals decided, its project root
+ * settled by `contextOf`, and a writing verb locked by the command surface assembled above — the
+ * engine's one copy of the mechanics; this function only binds that surface to the context that
+ * carries the record base, and hands the line over.
  *
  * A help flag in the last cell — exactly `--help` or `-h`, with something before it — asks the same
  * page the first-cell spelling asks. A help flag anywhere else reaches the verb's parser like any
@@ -614,19 +602,7 @@ export function usage() {
  * usage refusal, and the caller answers it with its exit code (2) on the stderr stream.
  */
 export async function main(argv, ctx) {
-  const args = [...argv]
-  if (args.length === 0) throw new UsageError(usage().replace(/\n+$/u, ''))
-  const spoken = args[0]
-  if (spoken === 'help' || spoken === '--help' || spoken === '-h') return usage()
-  const runner = RUNNERS[spoken]
-  if (runner === undefined) throw new UsageError(`unrecognized command "${spoken}" (run \`instruction help\`)`)
-  if (args.length > 1 && (args[args.length - 1] === '--help' || args[args.length - 1] === '-h')) return usage()
-  const spec = SPECS[spoken]
-  const parsed = parseArgs(args.slice(1), spec)
-  // A named `--project` replaces the root the host handed in, resolved from this process's own
-  // directory — and, being an explicit root, resolved through a linked worktree back to the main tree
-  // that holds the account. No name means the host's root as it came: the host already resolved it.
-  const named = parsed.options.project
-  const root = named === undefined || named === '' ? ctx.root : projectRootOf(named)
-  return runner(parsed, { ...ctx, root })
+  // The base is read on **every** call, not only on the one that assembles the surface: a caller
+  // that hands in a context without one is answered with the sentence below, whichever call it is.
+  return surfaceOf(baseOf(ctx)).main(argv, ctx)
 }

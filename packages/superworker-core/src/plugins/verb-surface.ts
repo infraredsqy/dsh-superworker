@@ -82,6 +82,45 @@ export interface VerbSurfaceTables<C> {
   readonly withWrite?: (ctx: C, body: () => Promise<unknown>) => Promise<unknown>;
   /** The lines between the head and the verb rows on the usage page (what the record is and where it lives). */
   readonly blurb?: readonly string[];
+  /**
+   * The checks one writing verb's line passes on its own content, run after the line is parsed and
+   * **before** that verb's lock is taken. They are the plugin's own reading of what a whole line
+   * must carry (an `add` that names no sentence); a check throws whatever the word answers that
+   * with. Nothing is read from or written to the record before them, so a line they refuse leaves
+   * no trace on disk — the lock's directory included — which is how a refusal read before this
+   * layer held the lock and the write together. Keyed by verb: a writing verb with no entry is
+   * left to its runner, inside the lock, exactly as before.
+   */
+  readonly lineChecks?: Readonly<Record<string, (parsed: ParsedVerbArgs, ctx: C) => void>>;
+  /**
+   * The context one parsed line runs under. The default is the one the caller handed in. A word
+   * whose line can name another project rewrites it here — after the line is parsed and **before**
+   * the writing lock is taken, so the lock lands on the record this line acts on rather than on the
+   * one its caller happened to stand in.
+   */
+  readonly contextOf?: (parsed: ParsedVerbArgs, ctx: C) => C;
+  /**
+   * The line ending of this word's text product — its usage page and the sentences it answers. The
+   * default is the platform's (`jsonio.ts`), which is what a word whose text a person reads on this
+   * machine follows; a word whose answers were LF on every platform before this layer took them over
+   * declares `'\n'` here instead.
+   */
+  readonly eol?: string;
+  /**
+   * Whether a refusal puts the usage head in front of its sentence (`<head>`, a blank line, the
+   * sentence) — the default, and what a word whose refusals have always read that way answers.
+   * `false` leaves the sentence standing alone: `new UsageError(sentence).message` is the sentence,
+   * and the whole page when the sentence is the page. Both are defensible readings; the word that
+   * owns the refusals declares which.
+   */
+  readonly refusalHead?: boolean;
+  /**
+   * What a line that names no verb at all means for this word. `help` (the default) answers the
+   * usage page as a success; `refuse` is a usage refusal — `code: 2`, the page as its sentence —
+   * which is what a word whose caller reads "no verb named" as a refused line answers. The two are
+   * both defensible readings of the same empty line, so the word that owns it declares which.
+   */
+  readonly emptyArgv?: 'help' | 'refuse';
 }
 
 /** A refusal about how the line was written, not about what the record holds: `code = 2`, answered with the usage page. */
@@ -122,6 +161,10 @@ export function createVerbSurface<C>(tables: VerbSurfaceTables<C>): VerbSurface<
     );
   }
   const writingVerbs = new Set<string>(tables.writingVerbs ?? []);
+  // The word's own text product: the line ending its page and its refusals use (the platform's by
+  // default), and whether a refusal leads with the usage head (it does by default).
+  const eol = tables.eol ?? EOL;
+  const refusalHead = tables.refusalHead ?? true;
   // A usage row with no placeholder word would misinform: a verb that takes positional arguments
   // must have its table spell its own word.
   for (const [word, spec] of Object.entries(tables.specs)) {
@@ -136,6 +179,10 @@ export function createVerbSurface<C>(tables: VerbSurfaceTables<C>): VerbSurface<
   class SurfaceUsageError extends UsageError {
     constructor(sentence: string) {
       super(tables.head, sentence);
+      // The one spelling of this word's refusal sentence: the seam's default is the head, a blank
+      // line and the sentence; a word that declares `refusalHead: false` answers the sentence alone.
+      if (!refusalHead) this.message = sentence;
+      else if (eol !== EOL) this.message = `${tables.head}${eol}${eol}${sentence}`;
     }
   }
 
@@ -316,12 +363,19 @@ export function createVerbSurface<C>(tables: VerbSurfaceTables<C>): VerbSurface<
     const lines: string[] = [tables.head, ''];
     if (tables.blurb !== undefined && tables.blurb.length > 0) lines.push(...tables.blurb, '');
     lines.push(...rows, '');
-    return lines.join(EOL);
+    return lines.join(eol);
   }
 
   async function main(argv: readonly string[], ctx: C): Promise<unknown> {
     const args = [...argv];
-    if (args.length === 0) return usage();
+    if (args.length === 0) {
+      // "No verb named" is the word's own reading of the empty line: a help request (the page, as a
+      // success) or a refused line (the page as the refusal's sentence, code 2). The sentence is the
+      // page minus its trailing blank lines, whatever line ending those blank lines are spelled in
+      // (`\r\n` too, not only `\n`), so the refusal really is the page with its tail taken off.
+      if (tables.emptyArgv === 'refuse') throw usageErrorOf(usage().replace(/(?:\r?\n)+$/u, ''));
+      return usage();
+    }
     const spoken = args[0]!;
     if (spoken === 'help' || spoken === '--help' || spoken === '-h') return usage();
     // An old spelling is the same verb: the canonical name is what the tables and the help page are
@@ -337,8 +391,16 @@ export function createVerbSurface<C>(tables: VerbSurfaceTables<C>): VerbSurface<
     }
     const spec = tables.specs[word]!;
     const parsed = parseArgs(normalizeShortFlags(args.slice(1), spec), spec);
-    if (writingVerbs.has(word)) return tables.withWrite!(ctx, async () => runner(parsed, ctx));
-    return runner(parsed, ctx);
+    // A word whose line can name another project rewrites the context here — after the line is
+    // parsed, before the lock is taken — so the write and its lock land on the record this line acts on.
+    const target = tables.contextOf === undefined ? ctx : tables.contextOf(parsed, ctx);
+    if (writingVerbs.has(word)) {
+      // What the line itself must carry is decided here, still outside the lock: a refused line
+      // reaches no record, so it cannot bring the lock's own directory into being on its way.
+      tables.lineChecks?.[word]?.(parsed, target);
+      return tables.withWrite!(target, async () => runner(parsed, target));
+    }
+    return runner(parsed, target);
   }
 
   return { main, usage, UsageError: SurfaceUsageError, parseArgs };

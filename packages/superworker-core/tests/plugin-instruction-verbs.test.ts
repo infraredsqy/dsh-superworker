@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { main as instruction } from '../plugins/instruction/tools/commands.mjs';
-import { UsageError } from '../plugins/instruction/tools/storage.mjs';
-import { atomicWriteJson, jsonOptionsForRecord } from '../src/jsonio';
+import { UsageError } from '../src/plugins/verb-surface';
+import { pluginBase, type PluginBase } from '../src/plugins/base';
+import { atomicWriteJson, jsonBytes, jsonOptionsForRecord } from '../src/jsonio';
 import { open } from '../src/open';
 
 /**
@@ -15,7 +16,9 @@ import { open } from '../src/open';
  * state x position), the add / resolve / revive round trip, tombstones hidden but kept, ids never
  * issued twice, the account's whole-file read-modify-write, and that the write verbs carry no init
  * gate of their own (that reading is `src/initledger.ts`'s alone). The record belongs to
- * this folder, so its shape is spelled here rather than taken from the engine's exports.
+ * this folder, so its shape is spelled here rather than taken from the engine's exports. The
+ * context carries the record base the way the host hands it in, so the plugin's own layer is
+ * exercised exactly as the runtime exercises it.
  */
 
 /** The record's shape as this folder writes and reads it (the plugin owns the type now). */
@@ -34,7 +37,13 @@ interface InstructionRecord {
   stop_after_nodes?: number;
 }
 
+interface Ctx {
+  root: string;
+  base: PluginBase;
+}
+
 let root: string;
+let ctx: Ctx;
 let superworker: ReturnType<typeof open>;
 
 /** The seconds shape: 2026-...T...:...:...Z. That is the only shape an instruction stamp takes. */
@@ -42,6 +51,7 @@ const SECONDS_SHAPE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'superworker-ins-cmd-'));
+  ctx = { root, base: pluginBase() };
   superworker = open(root);
   await superworker.ledger.init();
 });
@@ -49,12 +59,16 @@ beforeEach(async () => {
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
   root = undefined!;
+  ctx = undefined!;
   superworker = undefined!;
 });
 
-/** One line through the plugin's own command surface: the folder the host loads by path is what runs. */
+/**
+ * One line through the plugin's own command surface: the folder the host loads by path is what runs.
+ * The context is the case's own root with the record base the host hands in.
+ */
 async function out(argv: string[]): Promise<string> {
-  return String(await (instruction as (argv: string[], ctx: { root: string }) => Promise<unknown>)(argv, { root }));
+  return String(await (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(argv, ctx));
 }
 
 async function err(argv: string[]): Promise<string> {
@@ -558,7 +572,7 @@ describe('list: position, order and the two views', () => {
     const orphan = mkdtempSync(join(tmpdir(), 'superworker-ins-orphan-'));
     /** One line run against a named root instead of this case's own project (`add` takes no `--project`). */
     const runIn = async (dir: string, argv: string[]): Promise<unknown> =>
-      (instruction as (argv: string[], ctx: { root: string }) => Promise<unknown>)(argv, { root: dir });
+      (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(argv, { root: dir, base: pluginBase() });
     try {
       await open(main).ledger.init();
       await runIn(main, ['add', '--scope', 'global', '--text', 'kept in the main tree']);
@@ -589,6 +603,50 @@ describe('list: position, order and the two views', () => {
       for (const dir of [main, linked, submodule, plain, orphan]) rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('a writing verb named another project takes that project\u2019s lock, not the caller\u2019s', async () => {
+    // The lock is what makes the read → change → write exclusive, so it has to land on the record the
+    // line acts on. A stand-in base records the lock path it is handed: `resolve … --project <other>`
+    // must ask for `<other>/.superworker/meta/instructions.lock` and never for this case's own root.
+    // Without this reading, deleting the context rewrite would leave every assertion above green —
+    // they check where the write landed, not where the lock was taken.
+    const other = mkdtempSync(join(tmpdir(), 'superworker-ins-lock-other-'));
+    try {
+      await open(other).ledger.init();
+      await (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(
+        ['add', '--scope', 'global', '--text', 'an entry in the other project'],
+        { root: other, base: pluginBase() },
+      );
+      const locksTaken: string[] = [];
+      const real = pluginBase();
+      const watching: PluginBase = {
+        ...real,
+        withLock: (lockPath, body, options) => {
+          locksTaken.push(lockPath);
+          return real.withLock(lockPath, body, options);
+        },
+      };
+      expect(
+        String(
+          await (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(
+            ['resolve', 'i-0001', '--state', 'withdrawn', '--project', other],
+            { root, base: watching },
+          ),
+        ),
+      ).toBe('INSTRUCTION i-0001 → withdrawn');
+      expect(locksTaken).toEqual([join(other, '.superworker', 'meta', 'instructions.lock')]);
+      // A line naming no project takes this case's own lock: the default is not the rewrite.
+      await add('a sentence on this project');
+      locksTaken.length = 0;
+      await (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(
+        ['resolve', 'i-0001', '--state', 'withdrawn'],
+        { root, base: watching },
+      );
+      expect(locksTaken).toEqual([join(root, '.superworker', 'meta', 'instructions.lock')]);
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('the surface itself', () => {
@@ -605,6 +663,37 @@ describe('the surface itself', () => {
     const page = await out(['help']);
     expect(await out(['rm', '--help'])).toBe(page);
     expect(await out(['list', '-h'])).toBe(page);
+  });
+
+  it('a later call whose context carries no record base answers the guard sentence, not a failure deep in the record read', async () => {
+    // The base is read on **every** call, not only on the one that assembles the surface: once the
+    // surface exists, a second caller in the same process that hands in no base must still hear the
+    // sentence that names the missing cell. Reading the base only while assembling would let that
+    // caller through to the record read with `undefined` and fail there — the property error below,
+    // which says nothing about the engine the caller is talking to.
+    const GUARD =
+      'the instruction tool reads its command surface and record base from the context the host hands '
+      + 'in (ctx.base), and this engine hands none in: update the engine, or install the build of this '
+      + 'plugin that still carries its own record base';
+    // A line with the base first: whatever call assembled the surface, the two calls below are
+    // second and later ones in this process.
+    expect(await out(['list', '--json'])).toBe('[]');
+    const bare = { root } as unknown as Ctx; // the project is named; the record base the host adds is not
+    const failures: string[] = [];
+    // Both lines really need the base — one reads the account, one writes it through its lock — so
+    // the sentence that comes back cannot be a runner's own answer either.
+    for (const argv of [['list', '--json'], ['add', '--scope', 'global', '--text', 'x']]) {
+      const failure = (await (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(argv, bare)
+        .catch((error: unknown) => error)) as Error;
+      expect(failure).toBeInstanceOf(Error);
+      failures.push(failure.message);
+    }
+    expect(failures).toEqual([GUARD, GUARD]);
+    // And it really is the guard answering rather than the record read failing one frame deeper, and
+    // the refused `add` never reached the lock: not one byte of the account landed.
+    expect(failures.join(' ')).not.toContain('readJson');
+    expect(failures.join(' ')).not.toContain('withLock');
+    expect(existsSync(join(root, '.superworker', 'instructions.json'))).toBe(false);
   });
 
   it('the bare word is a usage refusal (code 2, the page); an empty sentence is a plain failure (code 1, no code on it)', async () => {
@@ -626,6 +715,54 @@ describe('the surface itself', () => {
   });
 });
 
+describe('a refused line leaves no byte on disk, the record directory included', () => {
+  /** One line run against a directory that has never been init-ed: nothing is there before the line. */
+  const refusalIn = async (dir: string, argv: string[]): Promise<unknown> =>
+    (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(argv, { root: dir, base: pluginBase() });
+
+  it('an empty sentence (code 1) leaves no `.superworker/` at all \u2014 the lock\u2019s directory must not be created on the way', async () => {
+    // The writing verbs run under the account's lock, and taking that lock creates
+    // `<root>/.superworker/meta/`. A line the account refuses on its own content is settled before the
+    // lock is taken, so the refusal reads exactly as it did when the verb held the lock itself: zero
+    // bytes, and not even the directory. That directory is what the engine's migration reading sees as
+    // a record directory, so leaving it behind would turn a legacy workspace's `migrate` from `ready`
+    // into `both-present` — a state only a person can settle.
+    const bare = mkdtempSync(join(tmpdir(), 'superworker-ins-refusal-'));
+    try {
+      const blank = (await refusalIn(bare, ['add', '--scope', 'global', '--text', '   ']).catch(
+        (error: unknown) => error,
+      )) as Error & { code?: number };
+      expect(blank.message).toBe('text must not be empty');
+      expect(blank.code).toBeUndefined();
+      expect(existsSync(join(bare, '.superworker', 'instructions.json'))).toBe(false);
+      expect(existsSync(join(bare, '.superworker'))).toBe(false);
+      expect(readdirSync(bare)).toEqual([]);
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
+  it('a line refused on its closed set leaves nothing either: the refusal happens before the lock, not inside it', async () => {
+    const bare = mkdtempSync(join(tmpdir(), 'superworker-ins-refusal-'));
+    try {
+      const refusal: unknown = await refusalIn(bare, ['add', '--scope', 'round', '--text', 'x']).catch(
+        (error: unknown) => error,
+      );
+      expect((refusal as { code: number }).code).toBe(2);
+      expect((refusal as Error).message).toContain('invalid scope "round"');
+      expect(existsSync(join(bare, '.superworker'))).toBe(false);
+      expect(readdirSync(bare)).toEqual([]);
+      // A line the account does accept is the contrast: it takes the lock, so the directory appears
+      // with the entry. Without this reading, the assertion above would pass on a plugin that simply
+      // never wrote anything.
+      await refusalIn(bare, ['add', '--scope', 'global', '--text', 'a sentence the account takes']);
+      expect(existsSync(join(bare, '.superworker', 'instructions.json'))).toBe(true);
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('the write verbs carry no init gate of their own', () => {
   it('add lands the account on a project whose `.superworker` was never init-ed (whether it counts as init-ed is `src/initledger.ts`\'s reading alone)', async () => {
     const bare = mkdtempSync(join(tmpdir(), 'superworker-ins-gate-'));
@@ -633,8 +770,9 @@ describe('the write verbs carry no init gate of their own', () => {
       const line = ['add', '--scope', 'global', '--text', 'lands without a plugin-level gate'];
       expect(
         String(
-          await (instruction as (argv: string[], ctx: { root: string }) => Promise<unknown>)(line, {
+          await (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(line, {
             root: bare,
+            base: pluginBase(),
           }),
         ),
       ).toContain('INSTRUCTION i-0001');
@@ -662,5 +800,200 @@ describe('whole-file read-modify-write: every other top-level key is kept as it 
     expect(after.hand_merged).toEqual({ keep: 'me', nested: { v: 1 } });
     expect(Object.keys(after)).toEqual(['instructions', 'hand_merged', 'removed']);
     expect((after.instructions as unknown[]).length).toBe(0);
+  });
+});
+
+describe('the bytes a write lands: the record base\u2019s one writer, this record\u2019s construction order', () => {
+  /**
+   * A record base whose clock hands out these moments in order: the expected documents below carry
+   * literal stamps, so the moment each write lands has to be the one the case chose.
+   */
+  function useFixedClock(moments: readonly string[]): void {
+    const queue = [...moments];
+    ctx = {
+      ...ctx,
+      base: {
+        ...pluginBase(),
+        nowSeconds: () => {
+          const moment = queue.shift();
+          if (moment === undefined) throw new Error('the fixed clock ran out of moments');
+          return moment;
+        },
+      },
+    };
+  }
+
+  /** The keys one `add` builds an entry with, in construction order — a sorting writer reorders them. */
+  const ENTRY_KEYS = [
+    'id', 'text', 'scope', 'target', 'state', 'cycle', 'node', 'said_by', 'at', 'resolved_at', 'note',
+  ];
+
+  /**
+   * The two `add`s of the first case as the document they must leave: written out here in full, in
+   * construction order, so the expectation is a fixed literal and not a re-parsing of the record the
+   * case is about. A writer that sorted keys, changed the indent, wrote a trailing newline or spelled
+   * the text's non-ASCII differently would not produce these bytes.
+   */
+  const TWO_ADDS = [
+    '{',
+    '  "instructions": [',
+    '    {',
+    '      "id": "i-0001",',
+    '      "text": "先读这个节点的 spec，再动手",',
+    '      "scope": "global",',
+    '      "target": "stage",',
+    '      "state": "live",',
+    '      "cycle": null,',
+    '      "node": null,',
+    '      "said_by": "user",',
+    '      "at": "2026-01-01T00:00:00Z",',
+    '      "resolved_at": null,',
+    '      "note": null',
+    '    },',
+    '    {',
+    '      "id": "i-0002",',
+    '      "text": "close only",',
+    '      "scope": "global",',
+    '      "target": "boundary",',
+    '      "state": "live",',
+    '      "cycle": null,',
+    '      "node": null,',
+    '      "said_by": "user",',
+    '      "at": "2026-01-01T00:00:01Z",',
+    '      "resolved_at": null,',
+    '      "note": null',
+    '    }',
+    '  ]',
+    '}',
+  ].join('\n');
+
+  /**
+   * The same document as a value, in construction order, for the comparison against the base's own
+   * writer: `jsonBytes` of **this** object (never of the file the case is about) is what the byte
+   * rule says the record must be, so a writer that sorts keys or re-spells the bytes goes red.
+   */
+  const TWO_ADDS_VALUE = {
+    instructions: [
+      {
+        id: 'i-0001',
+        text: '先读这个节点的 spec，再动手',
+        scope: 'global',
+        target: 'stage',
+        state: 'live',
+        cycle: null,
+        node: null,
+        said_by: 'user',
+        at: '2026-01-01T00:00:00Z',
+        resolved_at: null,
+        note: null,
+      },
+      {
+        id: 'i-0002',
+        text: 'close only',
+        scope: 'global',
+        target: 'boundary',
+        state: 'live',
+        cycle: null,
+        node: null,
+        said_by: 'user',
+        at: '2026-01-01T00:00:01Z',
+        resolved_at: null,
+        note: null,
+      },
+    ],
+  };
+
+  it('the account on disk is exactly the base\u2019s `jsonBytes` \u2014 two-space indent, non-ASCII as it is, keys in construction order, no trailing newline', async () => {
+    // Two entries in the order that would scramble a sorting writer, with non-ASCII and multi-byte
+    // cells in the middle of a sentence: whatever an entry's key set is, the bytes on disk are the
+    // base's one spelling of this record, in the order the entry was built. `sortKeys` is left off
+    // on purpose — the account is the one record whose writer keeps construction order.
+    useFixedClock(['2026-01-01T00:00:00Z', '2026-01-01T00:00:01Z']);
+    await add('先读这个节点的 spec，再动手');
+    await out(['add', '--scope', 'global', '--target', 'boundary', '--text', 'close only']);
+
+    const raw = readFileSync(join(root, '.superworker', 'instructions.json'));
+    // Byte equality covers every cell of the rule at once: indentation, key order (construction, not
+    // sorted), non-ASCII as it is, LF, and no trailing newline. The expectation is a fixed document:
+    // it is not read back out of the file under test, so a sorting writer cannot satisfy it.
+    expect(raw.toString('utf8')).toBe(TWO_ADDS);
+    // And the same rule read the way `spec.md`'s criterion 1 spells it: the bytes are what the base's
+    // own writer — with no key sort — spells for a hand-built construction-order value.
+    expect(raw.equals(Buffer.from(jsonBytes(TWO_ADDS_VALUE)))).toBe(true);
+    // The entry's own key sequence, spelled out: this is the cell a sorting writer scrambles, and the
+    // assertion above would keep passing if the expectation had been parsed from the file itself.
+    expect(Object.keys(entries()[0]!)).toEqual(ENTRY_KEYS);
+    expect(Object.keys(entries()[1]!)).toEqual(ENTRY_KEYS);
+    // And the top-level order is the file's own: the account table, then the tombstone table once a
+    // removal has left one — never sorted into `instructions` / `removed` by a writer.
+    expect(Object.keys(JSON.parse(raw.toString('utf8')) as Record<string, unknown>)).toEqual(['instructions']);
+  });
+
+  it('a read-modify-write lands through the same writer: the file keeps the base\u2019s bytes after a resolve and a removal', async () => {
+    useFixedClock([
+      '2026-01-01T00:00:00Z',
+      '2026-01-01T00:00:01Z',
+      '2026-01-01T00:00:02Z',
+    ]);
+    await add('one sentence to keep');
+    await out(['resolve', 'i-0001', '--state', 'withdrawn']);
+    const file = join(root, '.superworker', 'instructions.json');
+    // Both halves of the same fixed document: the expections below are literals, not a re-parse.
+    const resolvedDocument = [
+      '{',
+      '  "instructions": [',
+      '    {',
+      '      "id": "i-0001",',
+      '      "text": "one sentence to keep",',
+      '      "scope": "global",',
+      '      "target": "stage",',
+      '      "state": "withdrawn",',
+      '      "cycle": null,',
+      '      "node": null,',
+      '      "said_by": "user",',
+      '      "at": "2026-01-01T00:00:00Z",',
+      '      "resolved_at": "2026-01-01T00:00:01Z",',
+      '      "note": null',
+      '    }',
+      '  ]',
+      '}',
+    ].join('\n');
+    expect(readFileSync(file, 'utf8')).toBe(resolvedDocument);
+    expect(readFileSync(file).equals(Buffer.from(jsonBytes({
+      instructions: [
+        {
+          id: 'i-0001',
+          text: 'one sentence to keep',
+          scope: 'global',
+          target: 'stage',
+          state: 'withdrawn',
+          cycle: null,
+          node: null,
+          said_by: 'user',
+          at: '2026-01-01T00:00:00Z',
+          resolved_at: '2026-01-01T00:00:01Z',
+          note: null,
+        },
+      ],
+    })))).toBe(true);
+
+    await out(['rm', 'i-0001']);
+    const removedDocument = [
+      '{',
+      '  "instructions": [],',
+      '  "removed": [',
+      '    {',
+      '      "id": "i-0001",',
+      '      "at": "2026-01-01T00:00:02Z"',
+      '    }',
+      '  ]',
+      '}',
+    ].join('\n');
+    expect(readFileSync(file, 'utf8')).toBe(removedDocument);
+    expect(readFileSync(file).equals(Buffer.from(jsonBytes({
+      instructions: [],
+      removed: [{ id: 'i-0001', at: '2026-01-01T00:00:02Z' }],
+    })))).toBe(true);
+    expect(Object.keys(readInstructionFile())).toEqual(['instructions', 'removed']);
   });
 });
