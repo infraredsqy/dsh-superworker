@@ -12,11 +12,14 @@ export { readProject } from './project.ts'
 export { depthsOf, readDeps, readGraph } from './graph.ts'
 export { groupInstructions, readInstructions } from './instructions.ts'
 export { bornInSessionOf, readBirthplaces, readSessions, runSessionOf, strandedCycleOf } from './sessions.ts'
-export { endingOf, readOverview } from './overview.ts'
+export { endingOf, owedSessions, readJudgement, readOverview } from './overview.ts'
 export type {
+  JudgementInput,
+  OverviewCellVerdict,
   OverviewEnding,
   OverviewEvent,
   OverviewInput,
+  OverviewJudgement,
   OverviewLeg,
   OverviewReading,
   OverviewRow,

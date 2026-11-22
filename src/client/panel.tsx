@@ -19,7 +19,7 @@
 import * as React from 'react'
 import type { SuperworkerReading } from '../host/contract.ts'
 import type { InstructionReading, OverviewReading, OverviewSnapshot } from '../model/index.ts'
-import { everySourceIs, readBirthplaces, readOverview, readProject, readSessions, strandedCycleOf } from '../model/index.ts'
+import { everySourceIs, owedSessions, readBirthplaces, readJudgement, readOverview, readProject, readSessions, strandedCycleOf } from '../model/index.ts'
 import type { PrefField, PrefsSource, ViewId } from './prefs.ts'
 import { clampSide, DEFAULT_SOURCE, PANEL_PREF_FIELDS, VIEW_IDS, VIEW_WORDS } from './prefs.ts'
 import { useT } from './locale.ts'
@@ -376,81 +376,22 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
    * one place, the model layer; it is not re-derived here by summing column lengths. */
   const noNodes = project !== null && project.nodes.length === 0
 
-  /* Which node each session works, the notes' own reading turned the overview's way round: the
-   * notes name a session per node, a window's nameplate reads the node by its session. */
-  const nodeOf = React.useMemo(() => {
-    const out: Record<string, string> = {}
-    for (const [node, session] of Object.entries(notes)) out[session] = node
-    return out
-  }, [notes])
-
-  /* The sessions whose node owes a person a word: the record's own gate reading, all three kinds — a
-   * checkpoint (delivered, and that delivery not approved), a manual node nobody is working, or a node
-   * put out to wait (`shelved`, which the record keeps for the person to revive or close). A gate is a
-   * person being owed, so a manual node whose leg is running right now is not one: it is being worked.
-   * The overview draws such a window as waiting instead of finished or broken; the judgment stays the
-   * model's, only the fact is handed over. */
-  const waitingSessions = React.useMemo((): readonly string[] => {
-    const out: string[] = []
-    for (const [session, nodeId] of Object.entries(nodeOf)) {
-      const node = project?.nodeById[nodeId]
-      if (node === undefined) continue
-      if (node.gate?.kind === 'checkpoint') out.push(session)
-      else if (node.gate?.kind === 'shelved') out.push(session)
-      else if (node.gate?.kind === 'manual' && !node.running) out.push(session)
-    }
-    return out
-  }, [nodeOf, project])
-
-  /* The sessions whose node a line still holds: not delivered, and the record's own `running` reading.
-   * This is the debt a red window is drawn on — narrower than "not delivered", because a cell nobody
-   * has started and nobody holds is the line's next work rather than money owed. */
-  const heldSessions = React.useMemo((): readonly string[] => {
-    const out: string[] = []
-    for (const [session, nodeId] of Object.entries(nodeOf)) {
-      if (project?.nodeById[nodeId]?.running === true) out.push(session)
-    }
-    return out
-  }, [nodeOf, project])
-
-  /* The sessions whose node the record has not delivered: any state but `completed`, a cell put out to
-   * wait included. Such a leg keeps its window after its conversation stops, as long as the line has
-   * stopped with it — the window is where that work is read — while a leg the record has delivered
-   * leaves with its conversation, owing nobody anything. */
-  const undeliveredSessions = React.useMemo((): readonly string[] => {
-    const out: string[] = []
-    for (const [session, nodeId] of Object.entries(nodeOf)) {
-      if (project?.nodeById[nodeId]?.state !== 'completed') out.push(session)
-    }
-    return out
-  }, [nodeOf, project])
-
-  /* The sessions whose node the record calls delivered: the node's state is `completed`. The gate
-   * still wins over this in the overview's own reading (a delivered checkpoint owes a person a word,
-   * not a check), so nothing has to be subtracted here. When every node is delivered the whole
-   * pipeline has handed itself in, and the conversation this panel lives in carries that verdict even
-   * when it works no node of its own. */
-  const deliveredSessions = React.useMemo((): readonly string[] => {
-    const out: string[] = []
-    for (const [session, nodeId] of Object.entries(nodeOf)) {
-      if (project?.nodeById[nodeId]?.state === 'completed') out.push(session)
-    }
-    const nodes = project?.nodes ?? []
-    if (sessionId !== undefined && sessionId.length > 0 && nodes.length > 0
-      && nodes.every((node) => node.state === 'completed') && !out.includes(sessionId)) {
-      out.push(sessionId)
-    }
-    return out
-  }, [nodeOf, project, sessionId])
-
-  /* The nodes the dispatch reading calls stranded — claim on disk, cell still held, its session gone
-   * from this host's live roster: the one debt the overview can name as owed by nobody. */
-  const strandedNodes = React.useMemo((): readonly string[] => Object.keys(stranded), [stranded])
-
-  /* The nodes whose work was handed in: a ticket on disk states a verdict. This is the one fact that
-   * separates a step which finished from one that gave up before delivering, and the conversation's
-   * own log cannot supply it — DSH closes both with the same `completed` turn. */
-  const handedNodes = React.useMemo((): readonly string[] => Object.keys(tickets), [tickets])
+  /* The record's judgement of its own cells, assembled once: which session works which cell, and what
+   * the record says about each — a person's gate, a delivery, a hold, a ticket, a claim nobody is left
+   * to settle. It is the model's reading (`readJudgement`), not a judgment of this screen's: the seven
+   * name lists the overview used to take are one keyed packet now, so a new verdict is added where the
+   * record is read and every reader of it — the windows, the rail's bars, this screen's watch list —
+   * follows without being re-plumbed. Nothing here decides what any of those words mean. */
+  const judgement = React.useMemo(() => {
+    if (reading === null) return undefined
+    return readJudgement({
+      sessions: notes,
+      nodes: project?.nodeById ?? {},
+      stranded,
+      handed: tickets,
+      panelSession: sessionId,
+    })
+  }, [reading, notes, project, stranded, tickets, sessionId])
 
   /* Which step of the line the overview's stage is drawing: the leg the reader picked on the rail,
    * and nothing else. It is this screen's own state for the same reason the tab is — a person asked
@@ -481,20 +422,14 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       pipelineSessions: Object.values(notes),
       events,
       live,
-      nodeOf,
+      judgement,
       nodes: reading.nodes,
       capacity: READING_CAPACITY,
-      waitingSessions,
-      deliveredSessions,
-      strandedNodes,
-      handedNodes,
-      undeliveredSessions,
-      heldSessions,
       /* The moment the frame was read at: the end a running window's span is measured to. A window
        * that stopped is measured to its own last word instead, so nothing here keeps counting. */
       at: at.getTime(),
     })
-  }, [reading, events, live, nodeOf, props.sessions, props.ownSession, pickedLeg, notes, waitingSessions, deliveredSessions, strandedNodes, handedNodes, undeliveredSessions, heldSessions, at])
+  }, [reading, events, live, judgement, props.sessions, props.ownSession, pickedLeg, notes, at])
 
   /* A pick names a step still on the table. Once that step has left the rail — delivered, or taken
    * over by a later step — the pick is spent, and the stage keeps the reading's own choice rather
@@ -525,10 +460,12 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
   /* The event windows the overview holds open: every window the reading names, every leg its rail
    * offers — a bar is measured by the rows the leg's window would hold, so that log has to be open
    * before the bar can be drawn to scale — plus the sessions that could still become one — the leg's
-   * dispatched workers, whose own last turn decides whether their seat stays, and the legs whose
-   * cells the record still owes. A window's admission is read off its own log (`turn/end`, and when
-   * it began), so that log has to be open before the window exists. Only while the overview is the
-   * shown pane; re-watching the same ids is nothing, and the ids that left are released there. */
+   * dispatched workers, whose own last turn decides whether their seat stays, and every leg whose cell
+   * the record still owes (`owedSessions`, the model's own list off the judgement packet, so the ids
+   * the stage draws its ghosts from and the ids this screen keeps open can never disagree). A window's
+   * admission is read off its own log (`turn/end`, and when it began), so that log has to be open
+   * before the window exists. Only while the overview is the shown pane; re-watching the same ids is
+   * nothing, and the ids that left are released there. */
   const watchIds = React.useMemo((): readonly string[] => {
     const out = new Set<string>()
     const main = overview?.main?.id
@@ -542,9 +479,9 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
      * model's own reading of the snapshot (`mainChildIds`, the same set the reading draws its
      * seats from); the snapshot's shape is never re-spelled here. */
     for (const id of overview?.mainChildIds ?? []) out.add(id)
-    for (const id of undeliveredSessions) out.add(id)
+    for (const id of owedSessions(judgement)) out.add(id)
     return [...out]
-  }, [overview, undeliveredSessions])
+  }, [overview, judgement])
   React.useEffect(() => {
     if (tab !== 'overview' || overview === null) {
       windows.watch([])

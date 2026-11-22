@@ -11,7 +11,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { endingOf, readOverview } from '../src/model/index.ts'
+import { endingOf, owedSessions, readJudgement, readOverview } from '../src/model/index.ts'
 
 /* ---- the inputs' smallest honest shapes ---------------------------------- */
 
@@ -74,6 +74,75 @@ function catalog(time, data) {
 }
 
 const MAIN = 'session-main'
+
+/**
+ * The judgement packet the reading now takes, assembled the model's way: one entry per cell, and every
+ * verdict about that cell read off one honest record reading.
+ *
+ * The cases below were written against the shape this replaces — seven parallel name lists, most keyed
+ * by session and two by node — and they keep saying the same things here: `waitingSessions` (a cell at
+ * a person's gate), `deliveredSessions` / `undeliveredSessions` (a cell's work handed in or still owed),
+ * `heldSessions` (a cell a line still holds), `strandedNodes` and `handedNodes` (a claim that outlived
+ * its session, a ticket on disk). One helper turns those into the packet, so a case says which fact it
+ * means instead of which list the fact used to ride in.
+ *
+ * `undeliveredSessions` is read as the exhaustive list it is when given — and as "all of it is still
+ * owed" when left out: with no such list, every cell the case names stays `todo` unless
+ * `deliveredSessions` says otherwise, so every session noted for a cell lands in the packet's `owed`.
+ * A case that means the project's work is in says so with an **empty** list, which delivers every cell
+ * it does not name. The packet has no word for "no verdict about this cell": leaving the list out is
+ * not silence about delivery, it is the record's own reading of a cell still owed.
+ *
+ * A session the notes do not map to a cell gets none of its own: it works no cell of the record, which
+ * is the `no cell of its own` branch the debt formula reads for a subagent.
+ */
+function packetOf({
+  nodeOf = {},
+  waitingSessions,
+  deliveredSessions,
+  undeliveredSessions,
+  heldSessions,
+  strandedNodes,
+  handedNodes,
+} = {}) {
+  const facts = {}
+  const fact = (nodeId) => {
+    const kept = facts[nodeId] ?? { state: 'todo', running: false, gate: null }
+    facts[nodeId] = kept
+    return kept
+  }
+  /* A cell is delivered only when a case says so: delivery is a positive word the record writes, and
+     the shape this replaces had no way to claim it except by naming the cell. A case that gives
+     `undeliveredSessions` — even an empty one — is saying which cells are still owed, so the cells it
+     leaves out are delivered. */
+  if (undeliveredSessions !== undefined) {
+    for (const nodeId of new Set(Object.values(nodeOf))) fact(nodeId)
+    for (const nodeId of Object.keys(facts)) facts[nodeId] = { ...facts[nodeId], state: 'completed' }
+    for (const session of undeliveredSessions) fact(nodeOf[session] ?? session).state = 'todo'
+  }
+  for (const session of deliveredSessions ?? []) fact(nodeOf[session] ?? session).state = 'completed'
+  /* The gate's kind is `manual` on purpose: the record's own "a person is owed a word" that does not
+     also claim a delivery, so a case naming a gate says nothing about delivery either way. */
+  for (const session of waitingSessions ?? []) {
+    fact(nodeOf[session] ?? session).gate = { kind: 'manual', since: null }
+  }
+  for (const session of heldSessions ?? []) fact(nodeOf[session] ?? session).running = true
+  const strandedMap = {}
+  for (const nodeId of strandedNodes ?? []) strandedMap[nodeId] = 'cycle-1'
+  const handedMap = {}
+  for (const nodeId of handedNodes ?? []) handedMap[nodeId] = 'delivered'
+  /* Only a session the notes map to a cell is noted for one; the cells are the record's own. */
+  const notes = Object.fromEntries(Object.entries(nodeOf).map(([session, nodeId]) => [nodeId, session]))
+  return readJudgement({
+    sessions: notes,
+    nodes: Object.fromEntries(Object.entries(facts).filter(([nodeId]) => notes[nodeId] !== undefined)),
+    stranded: strandedMap,
+    handed: handedMap,
+    /* A session with no cell of its own can still be a leg the record owes: the packet carries it as
+       `owed`, which is exactly the branch the debt formula reads for a worker. */
+    owedSessions: (undeliveredSessions ?? []).filter((session) => notes[session] === undefined),
+  })
+}
 
 /** The plain scene: one main session, no children. */
 function mainAlone() {
@@ -241,13 +310,15 @@ function factScene({ running = false, ending, waiting, delivered, stranded, held
     sessions: snapshot(ids, byId),
     pipelineSessions: pipeline,
     ownSession: MAIN,
-    nodeOf: { [MAIN]: OWED_NODE },
     ...(ending === undefined ? {} : { events: { [MAIN]: [ending] } }),
-    ...(waiting === undefined ? {} : { waitingSessions: waiting }),
-    ...(delivered === undefined ? {} : { deliveredSessions: delivered }),
-    ...(stranded === undefined ? {} : { strandedNodes: stranded }),
-    ...(handed === undefined ? {} : { handedNodes: handed }),
-    ...(held === undefined ? {} : { heldSessions: held }),
+    judgement: packetOf({
+      nodeOf: { [MAIN]: OWED_NODE },
+      waitingSessions: waiting,
+      deliveredSessions: delivered,
+      strandedNodes: stranded,
+      handedNodes: handed,
+      heldSessions: held,
+    }),
   })
 }
 
@@ -284,7 +355,10 @@ test('waiting lands on the main window, from the fact the caller hands over', ()
    * caller never named carries nothing, and the named one is still the main window. */
   const beside = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN) }),
-    waitingSessions: [MAIN],
+    judgement: packetOf({
+      nodeOf: { [MAIN]: 'n-main' },
+      waitingSessions: [MAIN],
+    }),
   })
   assert.equal(beside.main.waiting, true, 'the gate did not land on the window it names')
   assert.equal('waiting' in beside.children[0], false, 'the gate spilled onto a window the caller never named')
@@ -356,9 +430,11 @@ test('no alert: a completed turn that yielded to its own running child is a pipe
     }),
     pipelineSessions: [MAIN],
     ownSession: MAIN,
-    nodeOf: { [MAIN]: OWED_NODE },
-    strandedNodes: [OWED_NODE],
     events: { [MAIN]: [turnEnd(9, 'completed')] },
+    judgement: packetOf({
+      nodeOf: { [MAIN]: OWED_NODE },
+      strandedNodes: [OWED_NODE],
+    }),
   })
   assert.equal('alert' in reading.main, false, 'a conversation that yielded to its own child was called broken')
 })
@@ -377,12 +453,14 @@ test('no alert on a turn whose own work has already come home: the notice is sti
     }),
     pipelineSessions: [MAIN],
     ownSession: MAIN,
-    nodeOf: { [MAIN]: OWED_NODE },
-    heldSessions: [MAIN],
     events: {
       [MAIN]: [turnEnd(900, 'completed')],
       'sub-1': [turnEnd(childEndedAt, 'completed')],
     },
+    judgement: packetOf({
+      nodeOf: { [MAIN]: OWED_NODE },
+      heldSessions: [MAIN],
+    }),
   })
   const home = scene(950)
   assert.equal('alert' in home.main, false, 'a step whose worker came home after its last word was called broken')
@@ -398,8 +476,10 @@ test('no alert on a turn whose own work has already come home: the notice is sti
     sessions: snapshot([MAIN, 'sub-1'], { [MAIN]: mainRow(MAIN), 'sub-1': childRow('sub-1', MAIN, false) }),
     pipelineSessions: [MAIN],
     ownSession: MAIN,
-    undeliveredSessions: ['sub-1'],
     events: { [MAIN]: [said(1, undefined, '派它去做')], 'sub-1': [said(2, undefined, '做完了'), ending] },
+    judgement: packetOf({
+      undeliveredSessions: ['sub-1'],
+    }),
   })
   const quiet = seat(turnEnd(3, 'completed'))
   assert.deepEqual(quiet.children.map((one) => one.id), ['sub-1'], 'the seat the caller kept left the stage')
@@ -423,8 +503,10 @@ test('a running window never alerts: a debt is about work nobody is doing', () =
   /* The same on a child: running, its node owed by a line, and nothing to read off its log. */
   const child = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN) }),
-    nodeOf: { 'c-1': OWED_NODE },
-    strandedNodes: [OWED_NODE],
+    judgement: packetOf({
+      nodeOf: { 'c-1': OWED_NODE },
+      strandedNodes: [OWED_NODE],
+    }),
   })
   assert.equal('alert' in child.children[0], false, 'a running child was accused of being stranded')
 })
@@ -435,10 +517,12 @@ test('a ghost: a leg that stopped with its work still owed keeps its window, dra
    * only place the debt can be read. It stays, and it stays broken. */
   const reading = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
-    nodeOf: { 'c-1': OWED_NODE },
-    undeliveredSessions: ['c-1'],
-    strandedNodes: [OWED_NODE],
     events: { 'c-1': [said(5, undefined, '写到一半就停了')] },
+    judgement: packetOf({
+      nodeOf: { 'c-1': OWED_NODE },
+      undeliveredSessions: ['c-1'],
+      strandedNodes: [OWED_NODE],
+    }),
   })
   assert.deepEqual(reading.children.map((w) => w.id), ['c-1'], 'a leg that died owing work left no window at all')
   assert.equal(reading.children[0].settled, true, 'the ghost reads as still moving')
@@ -452,10 +536,12 @@ test('a ghost that handed its ticket in is drawn quietly; one that quit without 
    * word cannot tell them apart: both legs closed their turn with `completed`. */
   const resting = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
-    nodeOf: { 'c-1': OWED_NODE },
-    undeliveredSessions: ['c-1'],
-    handedNodes: [OWED_NODE],
     events: { 'c-1': [said(5, undefined, '这一轮说完了'), { type: 'turn/end', time: 6, data: { reason: { kind: 'completed' } } }] },
+    judgement: packetOf({
+      nodeOf: { 'c-1': OWED_NODE },
+      undeliveredSessions: ['c-1'],
+      handedNodes: [OWED_NODE],
+    }),
   })
   assert.equal(resting.children.length, 1, 'a leg resting between rounds left the page')
   assert.equal(resting.children[0].settled, true, 'the resting leg reads as moving')
@@ -464,9 +550,11 @@ test('a ghost that handed its ticket in is drawn quietly; one that quit without 
   /* The same leg, its last turn stopped by hand: now the debt is proved. */
   const killed = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
-    nodeOf: { 'c-1': OWED_NODE },
-    undeliveredSessions: ['c-1'],
     events: { 'c-1': [{ type: 'turn/end', time: 6, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }] },
+    judgement: packetOf({
+      nodeOf: { 'c-1': OWED_NODE },
+      undeliveredSessions: ['c-1'],
+    }),
   })
   assert.equal(killed.children[0].alert, true, 'a leg stopped by hand with work owed read as resting')
   assert.deepEqual(killed.children[0].ending, { kind: 'aborted', cause: 'user' })
@@ -475,9 +563,11 @@ test('a ghost that handed its ticket in is drawn quietly; one that quit without 
    * is the break the log itself cannot name. */
   const quit = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
-    nodeOf: { 'c-1': OWED_NODE },
-    undeliveredSessions: ['c-1'],
     events: { 'c-1': [said(5, undefined, '这一轮说完了'), { type: 'turn/end', time: 6, data: { reason: { kind: 'completed' } } }] },
+    judgement: packetOf({
+      nodeOf: { 'c-1': OWED_NODE },
+      undeliveredSessions: ['c-1'],
+    }),
   })
   assert.equal(quit.children[0].alert, true, 'a leg that quit before delivering read as merely resting')
 
@@ -485,11 +575,13 @@ test('a ghost that handed its ticket in is drawn quietly; one that quit without 
    * ticket that decides, and a session gone from the roster is just a session that ended. */
   const claimed = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
-    nodeOf: { 'c-1': OWED_NODE },
-    undeliveredSessions: ['c-1'],
-    strandedNodes: [OWED_NODE],
-    handedNodes: [OWED_NODE],
     events: { 'c-1': [said(5, undefined, '这一轮说完了'), { type: 'turn/end', time: 6, data: { reason: { kind: 'completed' } } }] },
+    judgement: packetOf({
+      nodeOf: { 'c-1': OWED_NODE },
+      undeliveredSessions: ['c-1'],
+      strandedNodes: [OWED_NODE],
+      handedNodes: [OWED_NODE],
+    }),
   })
   assert.equal('alert' in claimed.children[0], false, 'a leg that handed its ticket in was called broken')
 })
@@ -504,13 +596,15 @@ test('a stopped leg yields the stage to a leg that is still running', () => {
       'c-1': childRow('c-1', MAIN, false),
       'c-2': childRow('c-2', MAIN, legRunning),
     }),
-    nodeOf: { 'c-1': OWED_NODE, 'c-2': 'n-other' },
-    undeliveredSessions: ['c-1', 'c-2'],
-    strandedNodes: [OWED_NODE],
     events: {
       'c-1': [said(5, undefined, '写到一半就停了'), said(50, undefined, '最后一句')],
       'c-2': [said(6, undefined, '我在做')],
     },
+    judgement: packetOf({
+      nodeOf: { 'c-1': OWED_NODE, 'c-2': 'n-other' },
+      undeliveredSessions: ['c-1', 'c-2'],
+      strandedNodes: [OWED_NODE],
+    }),
   })
   assert.deepEqual(scene(true).children.map((w) => w.id), ['c-2'], 'a stopped leg kept the stage while a sibling still ran')
   assert.deepEqual(scene(false).children.map((w) => w.id).sort(), ['c-1', 'c-2'], 'the stall hid a debt when the line stopped')
@@ -525,13 +619,15 @@ test('a leg that stopped is superseded by a leg that began after it', () => {
       'c-1': childRow('c-1', MAIN, false),
       'c-2': childRow('c-2', MAIN, false),
     }),
-    nodeOf: { 'c-1': OWED_NODE, 'c-2': 'n-next' },
-    undeliveredSessions: ['c-1', 'c-2'],
-    strandedNodes: [OWED_NODE],
     events: {
       'c-1': [said(5, undefined, '第一条腿'), { type: 'turn/end', time: 10, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }],
       'c-2': [said(20, undefined, '第二条腿')],
     },
+    judgement: packetOf({
+      nodeOf: { 'c-1': OWED_NODE, 'c-2': 'n-next' },
+      undeliveredSessions: ['c-1', 'c-2'],
+      strandedNodes: [OWED_NODE],
+    }),
   })
   assert.deepEqual(reading.children.map((w) => w.id), ['c-2'], 'a superseded leg kept the stage the newer one had taken')
   assert.equal('alert' in reading.children[0], false, 'a leg that just began was called broken')
@@ -542,12 +638,14 @@ test('a leg put out to wait stands quiet: a person is owed a word, nobody was br
    * the gate and is never drawn as a break, even though its last turn was stopped by hand. */
   const reading = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
-    nodeOf: { 'c-1': OWED_NODE },
     nodes: { [OWED_NODE]: { title: '收尾：一张总单' } },
-    undeliveredSessions: ['c-1'],
-    waitingSessions: ['c-1'],
-    strandedNodes: [OWED_NODE],
     events: { 'c-1': [{ type: 'turn/end', time: 10, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }] },
+    judgement: packetOf({
+      nodeOf: { 'c-1': OWED_NODE },
+      undeliveredSessions: ['c-1'],
+      waitingSessions: ['c-1'],
+      strandedNodes: [OWED_NODE],
+    }),
   })
   assert.equal(reading.children[0].waiting, true, 'the gate did not land on the leg the person owes a word for')
   assert.equal('alert' in reading.children[0], false, 'a gate was drawn as a break')
@@ -572,12 +670,14 @@ test('a subagent that was cut keeps a seat while its leg owes the work', () => {
     sessions: snapshot([MAIN], byId),
     pipelineSessions: [MAIN],
     ownSession: MAIN,
-    nodeOf: { [MAIN]: OWED_NODE },
-    heldSessions: [MAIN],
     events: {
       [MAIN]: [said(1, undefined, '派它去做'), { type: 'turn/end', time: 9, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }],
       'sub-1': [said(2, undefined, '写 finale.md'), { type: 'turn/end', time: 3, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }],
     },
+    judgement: packetOf({
+      nodeOf: { [MAIN]: OWED_NODE },
+      heldSessions: [MAIN],
+    }),
   })
   assert.deepEqual(reading.children.map((w) => w.id), ['sub-1'], 'a cut subagent lost the seat it was working from')
   assert.equal(reading.children[0].title, 'exec-finale', 'the subagent borrowed a name it does not have')
@@ -589,9 +689,11 @@ test('a subagent that was cut keeps a seat while its leg owes the work', () => {
     sessions: snapshot([MAIN], { ...byId, 'sub-1': { ...byId['sub-1'], running: true } }),
     pipelineSessions: [MAIN],
     ownSession: MAIN,
-    nodeOf: { [MAIN]: OWED_NODE },
-    heldSessions: [MAIN],
     events: { [MAIN]: [said(1, undefined, '派它去做')], 'sub-1': [said(2, undefined, '正在写')] },
+    judgement: packetOf({
+      nodeOf: { [MAIN]: OWED_NODE },
+      heldSessions: [MAIN],
+    }),
   })
   assert.deepEqual(alive.children.map((w) => w.id), ['sub-1'], 'a running subagent was not drawn')
   assert.equal('alert' in alive.main, false, 'a leg whose own worker still runs was called stopped')
@@ -601,12 +703,14 @@ test('a subagent that was cut keeps a seat while its leg owes the work', () => {
     sessions: snapshot([MAIN], byId),
     pipelineSessions: [MAIN],
     ownSession: MAIN,
-    nodeOf: { [MAIN]: OWED_NODE },
-    heldSessions: [MAIN],
     events: {
       [MAIN]: [said(1, undefined, '派它去做')],
       'sub-1': [{ type: 'turn/end', time: 3, data: { reason: { kind: 'completed' } } }],
     },
+    judgement: packetOf({
+      nodeOf: { [MAIN]: OWED_NODE },
+      heldSessions: [MAIN],
+    }),
   })
   assert.deepEqual(done.children, [], 'a subagent that finished its turn kept a seat')
 })
@@ -622,13 +726,15 @@ test('another workspace\'s conversation is no step of this line: it supersedes n
     }),
     pipelineSessions: [MAIN],
     ownSession: MAIN,
-    nodeOf: { 'c-1': OWED_NODE },
-    undeliveredSessions: ['c-1'],
-    strandedNodes: [OWED_NODE],
     events: {
       'c-1': [said(2, undefined, '这一格停在这'), { type: 'turn/end', time: 10, data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } }],
       elsewhere: [said(20, undefined, '我是别处的')],
     },
+    judgement: packetOf({
+      nodeOf: { 'c-1': OWED_NODE },
+      undeliveredSessions: ['c-1'],
+      strandedNodes: [OWED_NODE],
+    }),
   })
   assert.deepEqual(reading.children.map((w) => w.id), ['c-1'], 'a conversation of another workspace took this line\'s stage away')
   assert.equal(reading.children[0].alert, true, 'a conversation of another workspace was read as this line moving')
@@ -637,17 +743,23 @@ test('another workspace\'s conversation is no step of this line: it supersedes n
 test('no ghost: a leg that stopped owing nothing leaves with its window', () => {
   const reading = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
-    nodeOf: { 'c-1': OWED_NODE },
     events: { 'c-1': [said(5, undefined, '写完了')] },
+    judgement: packetOf({
+      nodeOf: { 'c-1': OWED_NODE },
+      /* Its cell's work was handed in: the leg owes nobody, so the stage keeps nothing for it. */
+      deliveredSessions: ['c-1'],
+    }),
   })
   assert.deepEqual(reading.children, [], 'a finished leg that owes nothing stayed on the page')
 
   /* And a stopped session no node names is nobody's debt either. */
   const untied = readOverview({
     sessions: snapshot([MAIN, 'c-1'], { [MAIN]: mainRow(MAIN), 'c-1': childRow('c-1', MAIN, false) }),
-    undeliveredSessions: [],
-    strandedNodes: [OWED_NODE],
     events: { 'c-1': [said(5, undefined, '我是个工具性子 agent')] },
+    judgement: packetOf({
+      undeliveredSessions: [],
+      strandedNodes: [OWED_NODE],
+    }),
   })
   assert.deepEqual(untied.children, [], 'a stopped session no node names was drawn as a debt')
 })
@@ -659,10 +771,12 @@ test('a ghost stands on the record alone when its conversation left the list', (
    * nothing to say. */
   const reading = readOverview({
     sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }),
-    nodeOf: { 'gone-1': OWED_NODE },
     nodes: { [OWED_NODE]: { title: '收尾：一张总单' } },
-    undeliveredSessions: ['gone-1'],
-    strandedNodes: [OWED_NODE],
+    judgement: packetOf({
+      nodeOf: { 'gone-1': OWED_NODE },
+      undeliveredSessions: ['gone-1'],
+      strandedNodes: [OWED_NODE],
+    }),
   })
   assert.deepEqual(reading.children.map((w) => w.id), ['gone-1'], 'a debt whose conversation was gone drew no window')
   assert.equal(reading.children[0].title, '收尾：一张总单', 'the seat took no name from the record')
@@ -674,9 +788,11 @@ test('a ghost stands on the record alone when its conversation left the list', (
   /* The same session, its node no longer owed by any line: nobody is being waited on, so no seat. */
   const settledDebt = readOverview({
     sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }),
-    nodeOf: { 'gone-1': OWED_NODE },
     nodes: { [OWED_NODE]: { title: '收尾：一张总单' } },
-    undeliveredSessions: [],
+    judgement: packetOf({
+      nodeOf: { 'gone-1': OWED_NODE },
+      undeliveredSessions: [],
+    }),
   })
   assert.deepEqual(settledDebt.children, [], 'a session the list lost was drawn without the record owing it')
 })
@@ -796,7 +912,10 @@ test('the stage lands where the line stands: the step a cycle holds, whatever th
       [held]: pipelineRow(held, { running: false, updatedAt: '2026-11-14T19:33:48.000Z' }),
     }),
     pipelineSessions: [moved, held],
-    heldSessions: [held],
+    judgement: packetOf({
+      nodeOf: { [moved]: 'n-moved', [held]: 'n-held' },
+      heldSessions: [held],
+    }),
   })
   assert.equal(reading.main.id, held, `the stage is ${reading.main.id}, not the step the record holds`)
 })
@@ -815,11 +934,15 @@ test('the seat hands the stage over once it has left the line, and keeps it whil
     }),
     pipelineSessions: [mine, theirs],
     ownSession: mine,
-    heldSessions: theirsHeld ? [theirs] : [],
-    ...(delivered ? { deliveredSessions: [mine] } : {}),
-    ...(gated ? { waitingSessions: [mine] } : {}),
-    nodeOf: { [mine]: 'n-mine', [theirs]: 'n-theirs' },
     events: { [mine]: [turnEnd(9, 'completed')] },
+    judgement: packetOf({
+      nodeOf: { [mine]: 'n-mine', [theirs]: 'n-theirs' },
+      /* Both cells are on the table; which of them the record has delivered is the switch here, and
+         the check the seat keeps is that delivery. */
+      undeliveredSessions: [...(delivered ? [] : [mine]), theirs],
+      waitingSessions: gated ? [mine] : undefined,
+      heldSessions: theirsHeld ? [theirs] : [],
+    }),
   })
   const handedOn = scene({})
   assert.equal(handedOn.main.id, theirs, `the stage stayed on ${handedOn.main.id} after its step left the line`)
@@ -878,8 +1001,10 @@ test("the main window's anchors are read off its own log, never the conversation
         result(6, 'call-ours', 'started subagent c-ours'),
       ],
     },
-    nodeOf: { [ours]: 'n-ours', [stale]: 'n-stale' },
     nodes: { 'n-ours': { title: '管道自己的节点', mode: 'auto' }, 'n-stale': { title: '旧会话的节点', mode: 'auto' } },
+    judgement: packetOf({
+      nodeOf: { [ours]: 'n-ours', [stale]: 'n-stale' },
+    }),
   })
   assert.equal(reading.main.title, '管道自己的节点', `the nameplate reads ${reading.main.title}`)
   assert.deepEqual(reading.main.rows.map((row) => row.callId), ['call-ours'], "the main window's rows came from another conversation")
@@ -909,13 +1034,15 @@ test('the leg the reader picked is the stage, ahead of the panel\'s own conversa
     pipelineSessions: [conductor, fast, slow],
     ownSession: conductor,
     shownSession: slow,
-    nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
     nodes: {
       'n-conductor': { title: '场记：开场记录', mode: 'auto' },
       'n-fast': { title: '快工：一张小抄', mode: 'auto' },
       'n-slow': { title: '慢工：三段小传', mode: 'auto' },
     },
     events: { [slow]: [said(1, undefined, '慢工的行')] },
+    judgement: packetOf({
+      nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
+    }),
   })
   assert.equal(reading.main.id, slow, `the stage is ${reading.main.id}, not the leg the reader picked`)
   assert.deepEqual(reading.main.rows.map((row) => row.full), ['慢工的行'], "the stage drew another conversation's rows")
@@ -936,11 +1063,15 @@ test('the rail is the line\'s list, not the stage\'s: a press never costs it a b
     pipelineSessions: steps,
     ownSession: steps[2],
     shownSession,
-    nodeOf: Object.fromEntries(steps.map((id) => [id, `n-${id}`])),
     nodes: Object.fromEntries(steps.map((id) => [`n-${id}`, { title: id, mode: 'auto' }])),
-    /* The record owes all three: none of them has been delivered. */
-    undeliveredSessions: steps,
-    heldSessions: steps,
+    /* The record owes all three: none of them has been delivered. No line holds any of them — the
+     * scene's only witness for these bars is the record's own `owed` list, which is exactly the third
+     * state the rail's rule reads: held-by-a-line would be a second, weaker witness, and a bar rescued
+     * by that one would say nothing about the first. */
+    judgement: packetOf({
+      nodeOf: Object.fromEntries(steps.map((id) => [id, `n-${id}`])),
+      undeliveredSessions: steps,
+    }),
     events: {
       [steps[0]]: [said(10, undefined, 'a 的行')],
       [steps[1]]: [said(20, undefined, 'b 的行')],
@@ -968,11 +1099,13 @@ test('a pick the list no longer holds is no pick: the fallback answers', () => {
     ownSession: conductor,
     /* A leg that just left its list, or an id picked in another workspace: neither is this stage. */
     shownSession: 'session-gone-leg',
-    nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast' },
     nodes: {
       'n-conductor': { title: '场记：开场记录', mode: 'auto' },
       'n-fast': { title: '快工：一张小抄', mode: 'auto' },
     },
+    judgement: packetOf({
+      nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast' },
+    }),
   })
   assert.equal(reading.main.id, conductor, `the stage is ${reading.main.id} on a pick the list does not hold`)
   assert.deepEqual(reading.legs.map((leg) => leg.id), [conductor, fast], 'the rail lost a step it was offering')
@@ -1006,13 +1139,15 @@ test('two record-named legs still running are two legs on the rail, and one stag
     }),
     pipelineSessions: [conductor, fast, slow],
     ownSession: conductor,
-    nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
     nodes: {
       'n-conductor': { title: '场记：开场记录', mode: 'auto' },
       'n-fast': { title: '快工：一张小抄', mode: 'auto' },
       'n-slow': { title: '慢工：三段小传', mode: 'auto' },
     },
     events: { [fast]: [said(1, undefined, '快工的行')], [slow]: [said(2, undefined, '慢工的行')] },
+    judgement: packetOf({
+      nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
+    }),
   })
   assert.equal(reading.main.id, conductor, `the main window is ${reading.main.id}, not the reader's own conversation`)
   assert.deepEqual(
@@ -1052,16 +1187,18 @@ test('a record-named leg the list stopped is a leg while the record still owes i
     }),
     pipelineSessions: [conductor, fast, slow],
     ownSession: slow,
-    nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
     nodes: {
       'n-conductor': { title: '场记：开场记录', mode: 'auto' },
       'n-fast': { title: '快工：一张小抄', mode: 'auto' },
       'n-slow': { title: '慢工：三段小传', mode: 'auto' },
     },
-    undeliveredSessions: [fast, slow],
-    heldSessions: [fast],
     /* The claim is on disk and the session is gone from this host's roster: the debt is proved. */
-    strandedNodes: ['n-fast'],
+    judgement: packetOf({
+      nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
+      undeliveredSessions: [fast, slow],
+      heldSessions: [fast],
+      strandedNodes: ['n-fast'],
+    }),
   })
   assert.equal(reading.main.id, slow, `the main window is ${reading.main.id}, not the reader's own conversation`)
   assert.deepEqual(reading.children.map((w) => w.id), [], `a stopped step was drawn as a child: ${reading.children.map((w) => w.id)}`)
@@ -1082,15 +1219,17 @@ test('a record-named leg the list stopped is a leg while the record still owes i
     }),
     pipelineSessions: [conductor, fast, slow],
     ownSession: slow,
-    nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
     nodes: {
       'n-conductor': { title: '场记：开场记录', mode: 'auto' },
       'n-fast': { title: '快工：一张小抄', mode: 'auto' },
       'n-slow': { title: '慢工：三段小传', mode: 'auto' },
     },
-    undeliveredSessions: [fast, slow],
-    heldSessions: [fast],
-    strandedNodes: ['n-fast'],
+    judgement: packetOf({
+      nodeOf: { [conductor]: 'n-conductor', [fast]: 'n-fast', [slow]: 'n-slow' },
+      undeliveredSessions: [fast, slow],
+      heldSessions: [fast],
+      strandedNodes: ['n-fast'],
+    }),
   })
   /* The line stops: now the same bar says the same thing the frame would — and the step whose node
    * was delivered has left the rail altogether, because it owes nobody a look. */
@@ -1399,10 +1538,12 @@ function legScene(ending, { worker = false, ...extra } = {}) {
     sessions: snapshot([MAIN, LEG], byId),
     pipelineSessions: [MAIN, LEG],
     ownSession: MAIN,
-    nodeOf: { [LEG]: OWED_NODE },
-    undeliveredSessions: [LEG],
     ...(ending === undefined ? {} : { events: { [LEG]: [ending] } }),
-    ...extra,
+    judgement: packetOf({
+      nodeOf: { [LEG]: OWED_NODE },
+      undeliveredSessions: [LEG],
+      ...extra,
+    }),
   })
 }
 
@@ -1418,11 +1559,13 @@ function seatScene(ending, { worker = false, ...extra } = {}) {
     sessions: snapshot([MAIN, LEG], byId),
     pipelineSessions: [MAIN],
     ownSession: MAIN,
-    nodeOf: { [MAIN]: OWED_NODE },
-    heldSessions: [MAIN],
-    undeliveredSessions: [LEG],
     ...(ending === undefined ? {} : { events: { [LEG]: [ending] } }),
-    ...extra,
+    judgement: packetOf({
+      nodeOf: { [MAIN]: OWED_NODE },
+      heldSessions: [MAIN],
+      undeliveredSessions: [LEG],
+      ...extra,
+    }),
   })
 }
 
@@ -1551,4 +1694,105 @@ test('mainChildIds is the parented set untruncated: the ended ones in, the cap n
     sessions: snapshot(ids, Object.fromEntries(ids.map((id) => [id, childRow(id, 'session-elsewhere')]))),
   })
   assert.deepEqual(orphan.mainChildIds, [], 'a reading with no main window still named children')
+})
+
+/* ---- the judgement packet: one assembly, one shape ------------------------
+ *
+ * The seven parallel name lists the reading used to take are one packet now, keyed by cell, and
+ * `readJudgement` is the one place a cell's verdicts are read off the record. What these cases pin is
+ * the packet's shape and the two facts that used to be nobody's job: which session works which cell,
+ * and which sessions the record still owes.
+ */
+
+test('the packet turns the notes round once: nodeOf is keyed by session, the cells by node', () => {
+  const packet = readJudgement({
+    sessions: { 'n-1': 'session-a', 'n-2': 'session-b' },
+    nodes: {
+      'n-1': { id: 'n-1', state: 'todo', running: true, gate: null },
+      'n-2': { id: 'n-2', state: 'completed', running: false, gate: null },
+    },
+  })
+  assert.deepEqual(packet.nodeOf, { 'session-a': 'n-1', 'session-b': 'n-2' }, 'a session was not turned round to its cell')
+  assert.deepEqual(packet.cells['n-1'], { waiting: false, delivered: false, held: true, handed: false, stranded: false })
+  assert.deepEqual(packet.cells['n-2'], { waiting: false, delivered: true, held: false, handed: false, stranded: false })
+})
+
+test('the packet reads the gate the way the record does: a manual cell being worked owes nobody', () => {
+  const packet = readJudgement({
+    sessions: { 'n-checkpoint': 's-1', 'n-shelved': 's-2', 'n-manual-idle': 's-3', 'n-manual-busy': 's-4' },
+    nodes: {
+      'n-checkpoint': { id: 'n-checkpoint', state: 'completed', running: false, gate: { kind: 'checkpoint', since: null } },
+      'n-shelved': { id: 'n-shelved', state: 'shelved', running: false, gate: { kind: 'shelved', since: null } },
+      'n-manual-idle': { id: 'n-manual-idle', state: 'todo', running: false, gate: { kind: 'manual', since: null } },
+      'n-manual-busy': { id: 'n-manual-busy', state: 'todo', running: true, gate: { kind: 'manual', since: null } },
+    },
+  })
+  assert.equal(packet.cells['n-checkpoint'].waiting, true, 'a finished checkpoint lost its gate')
+  assert.equal(packet.cells['n-shelved'].waiting, true, 'a shelved cell lost its gate')
+  assert.equal(packet.cells['n-manual-idle'].waiting, true, 'an unstarted manual cell lost its gate')
+  assert.equal(packet.cells['n-manual-busy'].waiting, false, 'a manual cell a line is working was read as owed to a person')
+})
+
+test('the packet carries the owed list: a cell still on the table, and a session whose cell the record let go', () => {
+  const packet = readJudgement({
+    sessions: { 'n-todo': 's-todo', 'n-done': 's-done', gone: 's-gone' },
+    nodes: {
+      'n-todo': { id: 'n-todo', state: 'todo', running: false, gate: null },
+      'n-done': { id: 'n-done', state: 'completed', running: false, gate: null },
+    },
+  })
+  /* A session noted for a cell the project no longer holds is owed: no reading can call that cell
+     delivered, and reading the absence as delivery is how a leg leaves the stage owing its work. */
+  assert.deepEqual([...packet.owed].sort(), ['s-gone', 's-todo'], 'the owed list lost a cell or invented one')
+  assert.deepEqual(owedSessions(packet), packet.owed, 'the public reader disagreed with the packet it reads')
+  assert.deepEqual(owedSessions(undefined), [], 'a caller with no packet was read as owing work')
+})
+
+test('the packet lands the whole pipeline\'s delivery on the panel\'s own conversation, once', () => {
+  const everyCellDone = (panelSession) => readJudgement({
+    sessions: { 'n-1': 's-leg' },
+    nodes: { 'n-1': { id: 'n-1', state: 'completed', running: false, gate: null } },
+    panelSession,
+  })
+  /* The conversation this panel reads for works no cell: it carries the verdict, because everything
+     handed itself in. */
+  assert.equal(everyCellDone('s-conductor').pipelineDeliveredOn, 's-conductor', 'the whole pipeline handing itself in was not landed anywhere')
+  /* It works one of them: that cell already says so, and one fact is not said twice. */
+  assert.equal(everyCellDone('s-leg').pipelineDeliveredOn, null, 'the delivery was said twice')
+  /* Not everything is in: there is nothing to land. */
+  const owed = readJudgement({
+    sessions: { 'n-1': 's-leg' },
+    nodes: { 'n-1': { id: 'n-1', state: 'todo', running: false, gate: null } },
+    panelSession: 's-conductor',
+  })
+  assert.equal(owed.pipelineDeliveredOn, null, 'a pipeline still owing work read as handed in')
+  /* A workspace with no cell at all: `every` over no cell is vacuously true, and a check drawn there
+     would say a project handed in work it never held. Nothing is delivered, so nothing is landed. */
+  const empty = readJudgement({ sessions: {}, nodes: {}, panelSession: 's-conductor' })
+  assert.equal(empty.pipelineDeliveredOn, null, 'an empty workspace read as a pipeline handed in')
+  const onEmpty = readOverview({
+    sessions: snapshot(['s-conductor'], { 's-conductor': mainRow('s-conductor') }),
+    ownSession: 's-conductor',
+    judgement: empty,
+  })
+  assert.equal(onEmpty.main?.delivered === true, false, 'a conversation with no cell of the project wore a delivery')
+})
+
+test('the reading asks the packet and nothing else: no packet, no gate, no delivery, no debt', () => {
+  /* A caller with no record side hands over no packet at all. Nothing is delivered, nothing is gated,
+     nothing is held — and the window still draws its conversation, because those verdicts were always
+     the record's word and the record said nothing. */
+  const bare = readOverview({ sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }) })
+  assert.equal(bare.main.id, MAIN, 'a reading with no judgement drew no window at all')
+  assert.equal('delivered' in bare.main, false, 'a missing packet invented a delivery')
+  assert.equal('waiting' in bare.main, false, 'a missing packet invented a gate')
+  assert.equal('alert' in bare.main, false, 'a missing packet invented a debt')
+
+  /* The same scene with the packet: the one cell's word is what the window wears. */
+  const judged = readOverview({
+    sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }),
+    judgement: packetOf({ nodeOf: { [MAIN]: OWED_NODE }, waitingSessions: [MAIN] }),
+  })
+  assert.equal(judged.main.waiting, true, 'the packet\'s gate did not reach the window')
+  assert.equal('delivered' in judged.main, false, 'a gated window was also drawn as handed in')
 })

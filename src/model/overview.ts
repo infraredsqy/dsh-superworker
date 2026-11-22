@@ -5,8 +5,9 @@
  * What comes in is what the browser already holds: the session list's own
  * snapshot (a pushed state, so liveness is read straight off its running bit —
  * it is never probed by opening a session, an act that would wake an ended
- * one), each session's own events, and the record side that names a window:
- * which node the session works, and that node's verbatim record. What comes
+ * one), each session's own events, and the record side: the judgement packet
+ * the record's verdicts about its cells are assembled into once
+ * ({@link readJudgement}), and those cells' own records verbatim. What comes
  * out is only the reading — which windows, which rows, what each row carries.
  * Sizes, positions, motion, pixels: none of that lives here.
  *
@@ -62,7 +63,7 @@
  * The main window is the conversation this panel lives in, and it
  * carries the facts the drawing's states are read from: `settled` (the list's
  * running bit is not true — the rows will not move again), `delivered` (the
- * record says the work is handed in), `waiting` (the caller names this session
+ * record says the work is handed in), `waiting` (the record names this session
  * as one whose node stands at a person's gate) and `alert` (work is owed,
  * nobody is doing it, and the line has stopped). See
  * {@link OverviewWindow}.
@@ -74,6 +75,7 @@
  * stops at its old value when a session dies mid-round, and the list's own
  * running bit is the authority.
  */
+import type { NodeReading } from './contract.ts'
 import type { SuperworkerNode } from './records.ts'
 import { asRecord, secondsBetween, text, toEpoch } from './fields.ts'
 
@@ -250,15 +252,16 @@ export interface OverviewWindow {
    */
   readonly ending?: OverviewEnding
   /**
-   * Whether this window stands at a person's gate: the caller named this session
+   * Whether this window stands at a person's gate: the record named this session
    * as one whose node owes a person a word — a checkpoint (delivered, not
    * approved, and the line not yet walked past it) or a manual node nobody has
    * started — **and** the conversation is at rest. A gate is a stop: a window
    * still running is being worked, so it is waiting on nobody. That judgment is
-   * the record's own (`readProject`'s node gate); this module only carries the
-   * fact the caller hands over and never re-reads the record for it. Only the main
-   * window carries it, and the drawing reads it before anything else: a window at
-   * the gate is drawn as waiting, never as finished and never as broken.
+   * the record's own (`readProject`'s node gate), read into the packet's cell
+   * verdicts; this module carries the fact the packet states and never re-reads
+   * the record for it. Only the main window carries it, and the drawing reads it
+   * before anything else: a window at the gate is drawn as waiting, never as
+   * finished and never as broken.
    */
   readonly waiting?: boolean
 }
@@ -285,7 +288,7 @@ export interface OverviewLeg {
   readonly title: string | null
   /** How many rows its window would draw at this moment — the bar's own length, and no other reading. */
   readonly rows: number
-  /** Whether it stands at a person's gate: the bar's amber ink, the caller's own reading carried as it is — worn only at rest, because a step still running is being worked and not waiting on anybody. */
+  /** Whether it stands at a person's gate: the bar's amber ink, the record's own reading carried as it is — worn only at rest, because a step still running is being worked and not waiting on anybody. */
   readonly waiting?: boolean
   /** Whether it owes work nobody is doing: the bar's break ink, carried the same way. */
   readonly alert?: boolean
@@ -379,8 +382,17 @@ export interface OverviewInput {
    * draws no tail at all.
    */
   readonly live?: Readonly<Record<string, readonly OverviewEvent[]>>
-  /** Which node each session works, keyed by session id — folded by the caller out of the records' own session notes, not re-read here. */
-  readonly nodeOf?: Readonly<Record<string, string>>
+  /**
+   * The record's verdicts about the cells its sessions work, assembled once
+   * ({@link readJudgement}): which cell each session works, and what the record
+   * says about each cell. This module only carries them — it re-reads no record
+   * and invents no verdict — so a cell's judgement is spelled in exactly one
+   * place, and a new one is added there instead of in every list here.
+   *
+   * Absent, no session works a cell: every verdict is "the record says nothing",
+   * which is what a caller with no record side at all hands over.
+   */
+  readonly judgement?: OverviewJudgement | undefined
   /** The nodes' records verbatim: a window's nameplate reads its title and its two readings here. */
   readonly nodes?: Readonly<Record<string, SuperworkerNode>>
   /** How many rows a window has room for; the most recent are kept. Absent means no cut. */
@@ -422,69 +434,6 @@ export interface OverviewInput {
    */
   readonly shownSession?: unknown
   /**
-   * The sessions whose node stands at a person's gate, both kinds: a
-   * **checkpoint** (delivered, that delivery not approved yet, and the line not
-   * yet walked past it) and a **manual** node nobody has started. The panel
-   * computes it off the record's own gate reading (`readProject`'s
-   * `node.gate.kind`) — the manual kind only
-   * while nobody is working the node, since a gate is a person being owed, not a
-   * conversation being quiet — and hands the session ids over; this module only
-   * carries the fact, so the gate is never re-read and never invented here. The
-   * main window stands waiting when its session is one of these **and its
-   * conversation is at rest** — a gate is a stop, and a window still running is
-   * being worked, not waiting. Absent means none is.
-   */
-  readonly waitingSessions?: readonly unknown[] | undefined
-  /**
-   * The sessions whose node the record calls **delivered**: the node's state is
-   * `completed` and no gate of this reading stands on it. The judgment is the
-   * record's own (`readProject`'s `node.state`); this module only carries it, and
-   * the drawing puts its check on nothing else.
-   */
-  readonly deliveredSessions?: readonly unknown[] | undefined
-  /**
-   * The nodes the dispatch reading calls **stranded** — a claim on disk, the
-   * cell still held by a line, and the session its note names absent from this
-   * host's live agents (`strandedCycleOf`). The judgment is already made by the
-   * caller, which has the three facts; this module only reads the debt off it.
-   */
-  readonly strandedNodes?: readonly unknown[] | undefined
-  /**
-   * The sessions whose node the record has **not delivered**: its state is anything but
-   * `completed` — a cell still being worked, a cell nobody started, a cell put out to wait
-   * (`shelved`). The caller reads it off the project's own nodes.
-   *
-   * It is what keeps a leg's window after the leg stopped, because the work is still on the
-   * table and the window is the only place that is said. A leg the record has delivered
-   * leaves with its conversation: it owes nobody anything, and a window for it would narrate
-   * a finished round. Absent, no leg outlives its run.
-   */
-  readonly undeliveredSessions?: readonly unknown[] | undefined
-  /**
-   * The sessions whose node a line **still holds**: the node is not delivered and a
-   * cycle holds it, which is the project's own `running` reading. The caller reads it
-   * off the record.
-   *
-   * It is the debt a red window is drawn on, and it is narrower than
-   * {@link undeliveredSessions} on purpose: a cell nobody has started and nobody holds
-   * is the line's next work, not a debt — a conductor waiting for its next dispatch
-   * must not wear the break's red frame. `shelved` cells are not held either; they owe a
-   * person, which is the gate.
-   */
-  readonly heldSessions?: readonly unknown[] | undefined
-  /**
-   * The nodes whose work was **handed in**: a handoff ticket on disk stating a verdict (anything but
-   * `pending`, the mark a re-run leaves). The caller reads it off the record's own ticket layer, and
-   * this module only carries the fact.
-   *
-   * It is the proof a stopped conversation is read against, and it exists because the conversation's
-   * log cannot give that proof: DSH closes a turn with the same `completed` word whether the step
-   * delivered its work or gave up first. A cell with no ticket behind it and a debt still owed
-   * stopped **before** handing anything in. Absent, no cell is read as handed in — which is the
-   * honest default for a caller that cannot see the ticket layer.
-   */
-  readonly handedNodes?: readonly unknown[] | undefined
-  /**
    * The moment this reading is taken at, in epoch milliseconds (a moment string is
    * read the same way, the convention every other moment on this input follows).
    * It is read for one thing only: how long a window has been running
@@ -494,6 +443,120 @@ export interface OverviewInput {
    * measured from the wrong end.
    */
   readonly at?: unknown
+}
+
+/**
+ * The record's verdicts about one cell, as far as the overview reads them.
+ *
+ * One cell, one entry: the words a window's state is drawn from are read off
+ * this and nowhere else, so a step's window and the rail's bar for that same step
+ * can never be given two verdicts. What each word means is the record's own
+ * judgement, made where the record is read; this layer only carries it.
+ */
+export interface OverviewCellVerdict {
+  /**
+   * Whether a person is owed a word here: a **checkpoint** (delivered, that
+   * delivery not approved, and the line not yet walked past it), a cell put out to
+   * wait (`shelved`), or a **manual** node nobody has started. A gate is a person
+   * being owed, never a conversation being quiet; the manual kind therefore only
+   * counts while no line holds the cell.
+   */
+  readonly waiting: boolean
+  /** Whether the record calls this cell's work delivered: its state is `completed`. The one fact the check is drawn on. */
+  readonly delivered: boolean
+  /**
+   * Whether a line still holds this cell: the record's own `running` reading. It is
+   * the debt a red window is drawn on, and it is narrower than "not delivered" on
+   * purpose — a cell nobody has started and nobody holds is the line's next work,
+   * not money owed.
+   */
+  readonly held: boolean
+  /**
+   * Whether this cell's work was **handed in**: a handoff ticket on disk stating a
+   * verdict (anything but `pending`, the mark a re-run leaves). It is the proof a
+   * stopped conversation is read against, and it exists because the conversation's
+   * own log cannot give that proof: DSH closes a turn with the same `completed`
+   * word whether the step delivered or gave up first.
+   */
+  readonly handed: boolean
+  /**
+   * Whether the claim on this cell outlived the session it names: a claim on disk,
+   * the cell still held by a line, and that session absent from this host's live
+   * agents. It is the one debt that can be named as owed by nobody.
+   */
+  readonly stranded: boolean
+}
+
+/**
+ * The judgement packet: the record's verdicts about its cells, keyed by node id,
+ * with each cell's session turned round beside them — assembled once, by
+ * {@link readJudgement}, and read here and by the shell's watch list.
+ */
+export interface OverviewJudgement {
+  /**
+   * Which cell each session works, keyed by session id: the record's session notes
+   * turned round once. A session absent from here works no cell of the record, and
+   * then no verdict about a cell applies to it.
+   */
+  readonly nodeOf: Readonly<Record<string, string>>
+  /**
+   * Each cell's verdicts, keyed by node id: every cell the project holds, **plus** every cell a
+   * session is noted for even when the project has since let it go. An entry for a cell the project
+   * no longer states is a cell whose delivery is unproved — `delivered` is false there, not because
+   * the record denied it, but because nothing can state it — while its other words come from the
+   * ticket and the claim read by node id. So a reader sees an entry for every cell a session works,
+   * and `cells[id] === undefined` means only "no session is noted for this cell".
+   */
+  readonly cells: Readonly<Record<string, OverviewCellVerdict>>
+  /**
+   * The session the pipeline's own delivery lands on: the conversation the panel
+   * reads the workspace for, when every cell **the project holds** has been
+   * delivered and that conversation works none of them itself. The whole pipeline
+   * handing itself in is what that conversation carries, even with no cell of its
+   * own; `null` while any cell of the project is still owed, and when that session
+   * works a cell (its own cell then says so, and one fact is never said twice).
+   *
+   * It is a verdict about the project's cells, not about every debt the record
+   * carries: a session noted for a cell the project has let go of is owed
+   * ({@link OverviewJudgement.owed}) without clearing this one, so the two can be
+   * true at once — the project's work is all in, and one leg is still owed a look.
+   */
+  readonly pipelineDeliveredOn: string | null
+  /**
+   * The sessions whose work the record still owes: every session working a cell
+   * its own record has not delivered, plus any session the record names as owing
+   * work with no cell of its own to say it on.
+   *
+   * It is one fact, assembled here, and the window a stopped leg keeps hangs off
+   * it: the stage shows where the line stands **now**, so a leg the record has not
+   * delivered keeps its window (and the shell keeps its log open) after its
+   * conversation stopped, because the window is the only place that debt is said.
+   * Read off the packet rather than derived again by each reader, so the ids the
+   * stage draws its ghosts from and the ids the shell keeps open cannot disagree.
+   */
+  readonly owed: readonly string[]
+}
+
+/** What the judgement packet is assembled from: the record-side facts, one entry each. */
+export interface JudgementInput {
+  /** Which session works each node — the record's session notes read (`readSessions`), keyed by node id. */
+  readonly sessions: Readonly<Record<string, string>>
+  /** The project's node readings, keyed by id: a cell's gate, delivery and hold are read off them. */
+  readonly nodes: Readonly<Record<string, NodeReading>>
+  /** The nodes the dispatch reading calls stranded, keyed by node: the cycle whose claim outlived its session. */
+  readonly stranded?: Readonly<Record<string, string>> | undefined
+  /** The cells whose work was handed in, keyed by node: the handoff tickets on disk, verdict already read. */
+  readonly handed?: Readonly<Record<string, string>> | undefined
+  /**
+   * The sessions a caller knows to owe work that no cell of the record can say on its
+   * behalf — a site with no record side, or a step whose cell the record has already let
+   * go of. Each one is carried into {@link OverviewJudgement.owed} as it comes; the
+   * judgements about cells are not touched, because a session with no cell has no cell
+   * verdict to touch.
+   */
+  readonly owedSessions?: readonly unknown[] | undefined
+  /** The conversation this panel reads the workspace for — the one the pipeline's own delivery lands on. */
+  readonly panelSession?: unknown
 }
 
 /** The drawn row each tool name folds into. A name outside the four sets is a tool this fold does not know, and folds as the neutral `tool`. */
@@ -1190,24 +1253,136 @@ function windowOf(
   }
 }
 
-/** The sessions the caller named as standing at a person's gate; nothing named is none. */
-function waitingOf(input: OverviewInput): ReadonlySet<string> {
-  return namedSet(input.waitingSessions)
+/**
+ * The judgement packet's one assembly: the record's session notes turned round,
+ * and every verdict the overview draws a window's state from, read off the
+ * record once ({@link OverviewJudgement}).
+ *
+ * It lives here rather than in the shell because the judgement is a fact about
+ * the record, not about the page: the words a window is drawn with — a person's
+ * gate, a delivery, a hold, a ticket, a claim nobody will settle — are read where
+ * the record is read, and the shell only hands the packet over. That is what keeps
+ * a step's window and its rail bar from ever being given two verdicts: both read
+ * this one entry.
+ *
+ * `stranded` and `handed` are keyed by their own word — a node id, whether or not
+ * the id names a cell the project holds — because a ticket is a fact about a cell
+ * the record may already have let go of, and the debt it excuses is read by node
+ * id rather than by the other map's shape.
+ */
+export function readJudgement(input: JudgementInput): OverviewJudgement {
+  const nodeOf: Record<string, string> = {}
+  for (const [nodeId, session] of Object.entries(input.sessions)) nodeOf[session] = nodeId
+  const stranded = input.stranded ?? {}
+  const handed = input.handed ?? {}
+  const cells: Record<string, OverviewCellVerdict> = {}
+  /* Every cell the project holds, plus every cell a session is noted for even when the project has
+     since let it go: a session the notes name works a cell, and a cell the project no longer states
+     is a cell whose delivery is unproved — not a delivered one. Reading the absence as delivery
+     would let such a leg leave the stage owing its work. */
+  const ids = new Set<string>(Object.keys(input.nodes))
+  for (const nodeId of Object.values(nodeOf)) ids.add(nodeId)
+  for (const id of ids) {
+    const node = input.nodes[id]
+    /* The gate's three kinds, read off the record's own gate reading. A manual node is a person
+       being owed only while nobody is working it: a cell a line holds is being worked, and a
+       conversation being quiet is not the same fact. `shelved` is a cell put out to wait, which is
+       the record asking for the person who has to decide it. */
+    const waiting = node?.gate?.kind === 'checkpoint' || node?.gate?.kind === 'shelved'
+      || (node?.gate?.kind === 'manual' && node.running !== true)
+    cells[id] = {
+      waiting,
+      delivered: node?.state === 'completed',
+      held: node?.running === true,
+      handed: Object.hasOwn(handed, id),
+      stranded: Object.hasOwn(stranded, id),
+    }
+  }
+  /* The whole pipeline handing itself in is a verdict about the workspace, and the conversation this
+     panel reads it for carries that verdict even when it works no cell of its own. A conversation
+     whose own cell already says it delivered says nothing twice. */
+  const panelSession = text(input.panelSession)
+  const project = Object.values(input.nodes)
+  const pipelineDeliveredOn = panelSession !== undefined && project.length > 0
+    && project.every((node) => node.state === 'completed')
+    && verdictOf({ nodeOf, cells, pipelineDeliveredOn: null, owed: [] }, panelSession)?.delivered !== true
+    ? panelSession
+    : null
+  /* The work the record still owes, session by session: every session working a cell its own record has
+     not delivered, plus the sessions a caller knows owe work with no cell of their own. A session noted
+     for a cell the project no longer holds is owed too — a cell no reading can call delivered states no
+     delivery, and reading that absence as one would let the leg leave the stage owing its work. */
+  const owed: string[] = []
+  for (const [session, nodeId] of Object.entries(nodeOf)) {
+    if (cells[nodeId]?.delivered !== true) owed.push(session)
+  }
+  for (const session of input.owedSessions ?? []) {
+    if (typeof session === 'string' && session.length > 0 && !owed.includes(session)) owed.push(session)
+  }
+  return { nodeOf, cells, pipelineDeliveredOn, owed }
 }
 
 /**
- * The one way a caller-named list of sessions is read: ids that name something,
- * a list that is absent or not a list naming nobody. (A named *pipeline* keeps
- * its own tri-state reading — `pipelineOf` — because "nobody said" and "the
- * record names none" are different facts there.)
+ * The sessions whose cell's verdict answers this: one walk over the packet, keyed by session. It is
+ * the only way a session-keyed question is asked here — every one of them reads the one packet, so a
+ * verdict added to a cell is read by everyone who asks about it, and never re-derived per reader.
+ *
+ * A session noted for a cell the project does not hold still has a verdict, and it is not "no":
+ * that cell's entry is assembled anyway ({@link OverviewJudgement.cells}), with `delivered` false —
+ * the one word no reading can state for a cell the project has let go of — and its other words read
+ * off the ticket and the claim by node id. So such a session answers whatever those words say, quite
+ * apart from delivery; only a session the notes do not map to a cell has no verdict, and answers
+ * `false`.
  */
-function namedSet(list: readonly unknown[] | undefined): ReadonlySet<string> {
-  const named = new Set<string>()
-  if (!Array.isArray(list)) return named
-  for (const id of list) {
-    if (typeof id === 'string' && id.length > 0) named.add(id)
+function sessionsWhere(
+  judgement: OverviewJudgement | undefined,
+  pick: (cell: OverviewCellVerdict) => boolean,
+): ReadonlySet<string> {
+  const out = new Set<string>()
+  for (const [session, nodeId] of Object.entries(judgement?.nodeOf ?? {})) {
+    const cell = judgement?.cells[nodeId]
+    if (cell !== undefined && pick(cell)) out.add(session)
   }
-  return named
+  return out
+}
+
+/**
+ * The sessions whose work the record still owes — the packet's own {@link OverviewJudgement.owed},
+ * handed over as the list the stage outlives a conversation by and the list the shell keeps its logs
+ * open for. Assembled once, in {@link readJudgement}; read by everyone who needs it, so the two can
+ * never disagree.
+ */
+export function owedSessions(judgement: OverviewJudgement | undefined): readonly string[] {
+  return judgement?.owed ?? []
+}
+
+/**
+ * One cell's verdict, or none: a session that works no cell of the record has no
+ * verdict to answer with, and so reads `undefined` here. Which ids have an entry at
+ * all is the packet's own statement ({@link OverviewJudgement.cells}) — this reader
+ * only turns a session into the cell it works, and states nothing about the map.
+ */
+function verdictOf(judgement: OverviewJudgement | undefined, id: string): OverviewCellVerdict | undefined {
+  const node = nodeIdOf(judgement, id)
+  return node === undefined ? undefined : judgement?.cells[node]
+}
+
+/**
+ * The node a session works, by id; a session that works none — or a caller with no
+ * record side at all — names no node.
+ */
+function nodeIdOf(judgement: OverviewJudgement | undefined, id: string): string | undefined {
+  return judgement?.nodeOf[id]
+}
+
+/** Whether this session's cell handed its work in: a ticket on disk, whoever still holds the cell. */
+function handedOf(judgement: OverviewJudgement | undefined, id: string): boolean {
+  return verdictOf(judgement, id)?.handed === true
+}
+
+/** Whether this session's cell's claim outlived the session: the debt nobody is left to settle. */
+function strandedOf(judgement: OverviewJudgement | undefined, id: string): boolean {
+  return verdictOf(judgement, id)?.stranded === true
 }
 
 /**
@@ -1332,16 +1507,17 @@ function factsOf(input: {
  * one it is replacing. A **child** is never one of them, however it is drawn: a
  * seat on the stage is a conversation to read, not a step to switch to.
  *
- * The window's state facts are read here and nowhere else ({@link factsOf}):
- * `settled` is the list's running bit not being true, `waiting` is the caller
- * naming this session as one whose node owes a person a word **and the window
- * being at rest** — a gate is a stop, and a conversation still running is being
- * worked — `delivered` is the caller naming it as a node the record calls
- * completed, and `alert` is a debt nobody is working — the caller's stranded
- * reading, read only while the line stands still (no leg of the pipeline running)
- * and only off a last turn that can be read. The check belongs to `delivered`
- * alone: a conversation going quiet is not a piece of work handed in, and a
- * checkpoint's silence is why the gate is drawn first.
+ * The window's state facts are read here and nowhere else ({@link factsOf}), and every one of them
+ * that is a word about a cell is read off the judgement packet the record assembled
+ * ({@link OverviewJudgement}): `waiting` is the record naming this session's cell as one owing a
+ * person a word **and the window being at rest** — a gate is a stop, and a conversation still
+ * running is being worked — `delivered` is that cell's entry saying the record calls the work
+ * completed, and `alert` is a debt nobody is working — the record's stranded judgment and the
+ * ticket the cell never handed in, read only while the line stands still (no leg of the pipeline
+ * running) and only off a last turn that can be read. `settled` is the one fact that is the list's
+ * own, not the record's: the running bit not being true. The check belongs to `delivered` alone: a
+ * conversation going quiet is not a piece of work handed in, and a checkpoint's silence is why the
+ * gate is drawn first.
  *
  * While a window's step streams, its two tail rows — each the newest slice of
  * one live buffer, read off the transient chunks the caller hands over — hang
@@ -1359,14 +1535,21 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const rows = rowsOf(input.sessions)
   const order = listedIds(input.sessions)
   const named = pipelineOf(input)
-  const held = namedSet(input.heldSessions)
   const at = atOf(input.at)
-  const waiting = waitingOf(input)
-  const delivered = namedSet(input.deliveredSessions)
-  /* A person's gate is a **stop**, so the caller's word is read with the one fact the
-     caller cannot see: a window whose conversation is still running is being worked, and
-     it is not waiting on anybody. A pause drawn over a live stream says what the stream
-     contradicts, and a rail bar lit for it says the same thing twice. */
+  const judgement = input.judgement
+  /* Every session-keyed question this reading asks is asked of the one judgement packet: a cell's
+     verdicts come from there, never from a second reading of the record beside it. */
+  const held = sessionsWhere(judgement, (cell) => cell.held)
+  /* A person's gate is a **stop**, so the record's word is read with the one fact that is the
+     conversation's own: a window still running is being worked, and it is not waiting on anybody. A
+     pause drawn over a live stream says what the stream contradicts, and a rail bar lit for it says
+     the same thing twice. */
+  const waiting = sessionsWhere(judgement, (cell) => cell.waiting)
+  const delivered = new Set(sessionsWhere(judgement, (cell) => cell.delivered))
+  /* The whole pipeline handing itself in lands on the conversation this panel reads the workspace
+     for, even one that works no cell of its own: that conversation carries the verdict. */
+  const deliveredOn = judgement?.pipelineDeliveredOn
+  if (deliveredOn !== null && deliveredOn !== undefined) delivered.add(deliveredOn)
   const atGate = (id: string): boolean => waiting.has(id) && rows[id]?.running !== true
   /* Whether this step has **left the line**: the record delivered its work and no gate stands
      on it. Its check is the last thing it has to tell the reader, and once the line has
@@ -1376,11 +1559,12 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const left = (id: string): boolean => delivered.has(id) && !atGate(id)
   const choice = mainIdOf(input, rows, order, held, left)
   const mainId = choice?.id
-  const nodeFor = (id: string): SuperworkerNode | undefined =>
-    input.nodeOf === undefined ? undefined : input.nodes?.[input.nodeOf[id] ?? '']
+  const nodeFor = (id: string): SuperworkerNode | undefined => {
+    const node = nodeIdOf(judgement, id)
+    return node === undefined ? undefined : input.nodes?.[node]
+  }
   const main = mainId === undefined ? undefined : rows[mainId]
-  const stranded = namedSet(input.strandedNodes)
-  const undelivered = namedSet(input.undeliveredSessions)
+  const undelivered = new Set(owedSessions(judgement))
   /* The rows the list knows without listing: DSH keeps a session's dispatched subagents in its own
      `byId` map — each carrying the `parentId` of the session that dispatched it — while the ordered
      list holds top-level sessions only. A row with no parent link is a top-level session and is drawn
@@ -1390,12 +1574,9 @@ export function readOverview(input: OverviewInput): OverviewReading {
     return typeof parent === 'string' && parent.length > 0 ? parent : undefined
   }
   const rowIds = [...new Set([...order, ...Object.keys(rows).filter((id) => parentOf(id) !== undefined)])]
-  /* Whether this session owes work somebody was on: the record holding its cell, or the caller's
+  /* Whether this session owes work somebody was on: the record holding its cell, or the record's
      judgment that the claim outlived the session. */
-  const debtOf = (id: string): boolean => {
-    const node = input.nodeOf?.[id]
-    return held.has(id) || (node !== undefined && stranded.has(node))
-  }
+  const debtOf = (id: string): boolean => held.has(id) || strandedOf(judgement, id)
   const mainWindowDebt = mainId === undefined ? false : debtOf(mainId)
   /* Whether a session is a step of the line rather than a subagent of one: the record
      names it for a node. A step of the line is a **leg** — the rail's entries — and
@@ -1426,8 +1607,8 @@ export function readOverview(input: OverviewInput): OverviewReading {
      pipeline. A **ghost child**: one of those the main's own dispatch cut short while the
      main still owes that work, which keeps its seat so the cut is somewhere to be read.
      A **leg**: a record-named session still on the table. A running leg is a rail entry
-     and not a seat at all, and so is a leg the record has not delivered
-     (`undeliveredSessions`) whose conversation is not running — resting between rounds,
+     and not a seat at all, and so is a leg the record still owes (the packet's `owed`)
+     whose conversation is not running — resting between rounds,
      dead, or gone from the list altogether. Nothing will settle such a leg next unless
      something prompts it, and the bar it keeps is the only place that debt can be read;
      letting it go with the conversation is how a broken leg becomes invisible. A stopped
@@ -1461,7 +1642,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
      leg that went quiet while its conversation stayed on the list is the case above, not this one. */
   for (const id of undelivered) {
     if (id === mainId || rows[id] !== undefined) continue
-    if (input.nodeOf?.[id] === undefined) continue
+    if (nodeIdOf(judgement, id) === undefined) continue
     ghosts.push(id)
   }
   /* A conversation that began after another one took its place on the **stage**: the line is standing
@@ -1501,27 +1682,26 @@ export function readOverview(input: OverviewInput): OverviewReading {
      owing its work. A sibling's progress is the line's business, and the line's business is not what a
      break on this window would be reporting. */
   const ownMoving = kids.length > 0
-  const handed = namedSet(input.handedNodes)
   const standing = ghosts.filter((id) => !supersededBy(id) && (isLeg(id) || !moving))
   /* Whether this conversation owes work nobody is doing — the one formula the ghost seat and
      the rail bar share, so the two readers can never give one step two verdicts. The two words
      it replaces were the same formula once each reader's own context is carried in:
-     - no readable ending: the caller's stranded judgment is the only witness;
-     - a cell the record names: a ticket excuses (the caller's `handedNodes`), and a turn still
+     - no readable ending: the record's stranded judgment is the only witness;
+     - a cell the record names: a ticket excuses (the cell's own `handed`), and a turn still
        owed a wake (`yielding`) is a yield, not a quit. The bar reads this clause only after its
        own three rescues below — the step standing still, no worker of its own moving, no yield —
        so `yielding` is false there and the clause reduces to the bare `!handed` the bar has
        always spelled;
      - no cell of its own: a worker owes nobody a delivery, and only a turn the log cut short is
        its break. A leg is record-named for a node — the notes name both — so the bar never reads
-       this word on this input; a caller that names a pipeline without its node map does, and
+       this word on this input; a caller that names a pipeline without its cell map does, and
        keeps the leg's bare `!handed` there. */
   const alertOf = (id: string): boolean => {
-    const cell = input.nodeOf?.[id] ?? ''
+    const cell = nodeIdOf(judgement, id) ?? ''
     const ending = endingOf(input.events?.[id])
-    if (ending === undefined) return stranded.has(cell)
-    if (cell.length === 0) return isLeg(id) ? !handed.has(cell) : ending.kind !== 'completed'
-    return !handed.has(cell) && (ending.kind !== 'completed' || !yielding(id))
+    if (ending === undefined) return strandedOf(judgement, id)
+    if (cell.length === 0) return isLeg(id) ? !handedOf(judgement, id) : ending.kind !== 'completed'
+    return !handedOf(judgement, id) && (ending.kind !== 'completed' || !yielding(id))
   }
   /* The legs the rail offers: the steps still on the table, in the reading's own order. The rail is
      the line's own list and **nothing else feeds it** — not which page the stage happens to draw, not
@@ -1537,20 +1717,22 @@ export function readOverview(input: OverviewInput): OverviewReading {
      a bar for it would stand one conversation twice on one page, offering a switch to where the reader
      already is. The stage's seat keeps its window; the rail keeps the steps.
 
-     A step is on the table while **the record still owes its work** — the caller's own
-     `undeliveredSessions`, which the panel reads off each node's state. A step whose node is delivered
-     has left the line and owes nobody a look: it drops off the rail with its check, and the map is
-     where its history stays. A gate is no exception in the end: a finished checkpoint still owes a
-     person a word, so `atGate` keeps its bar. The list's own running bit keeps it too — a step being
-     worked this moment is on the table by definition, whatever the record has round to saying about
-     its state yet.
+     A step is on the table while **the record still owes its work** — the sessions the
+     judgement packet names as owed, which the record reads off each cell's own state. A step
+     whose node is delivered has left the line and owes nobody a look: it drops off the
+     rail with its check, and the map is where its history stays. A gate is no exception
+     in the end: a finished checkpoint still owes a person a word, so `atGate` keeps its
+     bar. The list's own running bit keeps it too — a step being worked this moment is on
+     the table by definition, whatever the record has round to saying about its state yet.
 
-     A caller that names no undelivered list has said nothing about the record's debts, and the rail
-     then falls back to what the session list alone can prove — a step the list still calls running or
-     one the record still holds. Silence is never read as "the line owes nothing": that would empty the
-     rail of every leg the caller did not enumerate. */
-  const owes = input.undeliveredSessions === undefined
-    ? (id: string): boolean => rows[id]?.running === true || held.has(id)
+     A caller that hands over no packet has said nothing about the record's debts, and the
+     rail then falls back to what the session list alone can prove — a step the list still
+     calls running. There is no second witness in that branch: every verdict about a cell is
+     read off the packet, so a reading with no packet knows no held cell either, and promising
+     one here would promise a fact this branch cannot state. Silence is never read as "the
+     line owes nothing": that would empty the rail of every leg the caller did not enumerate. */
+  const owes = judgement === undefined
+    ? (id: string): boolean => rows[id]?.running === true
     : (id: string): boolean => undelivered.has(id) || rows[id]?.running === true || atGate(id)
   /* The stage's own page keeps its bar whatever the record owes, and so does the page this panel
      itself stands in: a bar that vanished from under the page being drawn would be a switch with no
@@ -1577,7 +1759,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
         owed: mainWindowDebt,
         moving: ownMoving,
         yielding: yielding(mainId),
-        handed: handed.has(input.nodeOf?.[mainId] ?? ''),
+        handed: handedOf(judgement, mainId),
         ending: endingOf(input.events?.[mainId]),
       }),
     }
@@ -1596,7 +1778,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
     seats.push(ending === undefined ? window : { ...window, ending })
   }
   /* The dead children stand after the moving seats. What one says is the thing the reader has to act
-     on: the line stands here. It says "broken" only when the debt is proved — the caller's stranded
+     on: the line stands here. It says "broken" only when the debt is proved — the record's stranded
      judgment (the claim is on disk and the session is gone), a step's last turn that did not close
      itself or closed it with no ticket behind it, or a **subagent's** last turn the log cut short —
      unless a person is the one owed (a gate), which is a different debt and is drawn as the breath.
@@ -1612,7 +1794,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
     const ending = endingOf(input.events?.[id])
     const gated = atGate(id)
     /* The proof is whichever witness spoke: a ticket the cell never handed in, or — when the log
-       carried no word at all — the caller's stranded judgment (the claim is on disk and the session is
+       carried no word at all — the record's stranded judgment (the claim is on disk and the session is
        gone). A cell that did hand a ticket in is no break, whoever still holds it: the engine settles
        a clean end in its own time, and a record running behind its own session is a lag, not a fault.
        Whether a cell is owed at all is read off the record (`nodeOf`), not off the caller's naming:
