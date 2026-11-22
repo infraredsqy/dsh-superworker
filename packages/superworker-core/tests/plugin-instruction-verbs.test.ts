@@ -13,7 +13,8 @@ import { open } from '../src/open';
  *
  * What is pinned is the criterion, not the implementation: the visibility matrix (scope x binding
  * state x position), the add / resolve / revive round trip, tombstones hidden but kept, ids never
- * issued twice, the account's whole-file read-modify-write and the init gate. The record belongs to
+ * issued twice, the account's whole-file read-modify-write, and that the write verbs carry no init
+ * gate of their own (that reading is `src/initledger.ts`'s alone). The record belongs to
  * this folder, so its shape is spelled here rather than taken from the engine's exports.
  */
 
@@ -625,17 +626,21 @@ describe('the surface itself', () => {
   });
 });
 
-describe('the init gate: a `.superworker` that was never init-ed keeps every byte', () => {
-  it('add refuses and the `.superworker` dir was never even raised', async () => {
+describe('the write verbs carry no init gate of their own', () => {
+  it('add lands the account on a project whose `.superworker` was never init-ed (whether it counts as init-ed is `src/initledger.ts`\'s reading alone)', async () => {
     const bare = mkdtempSync(join(tmpdir(), 'superworker-ins-gate-'));
     try {
-      const line = ['add', '--scope', 'global', '--text', 'the one that cannot get in'];
+      const line = ['add', '--scope', 'global', '--text', 'lands without a plugin-level gate'];
       expect(
-        String(await (instruction as (argv: string[], ctx: { root: string }) => Promise<unknown>)(line, { root: bare }).catch(
-          (error: unknown) => (error instanceof Error ? error.message : String(error)),
-        )),
-      ).toMatch(/was never init-ed .*Ask `init` first/);
-      expect(existsSync(join(bare, '.superworker'))).toBe(false);
+        String(
+          await (instruction as (argv: string[], ctx: { root: string }) => Promise<unknown>)(line, {
+            root: bare,
+          }),
+        ),
+      ).toContain('INSTRUCTION i-0001');
+      expect(readFileSync(join(bare, '.superworker', 'instructions.json'), 'utf8')).toContain(
+        'lands without a plugin-level gate',
+      );
     } finally {
       rmSync(bare, { recursive: true, force: true });
     }

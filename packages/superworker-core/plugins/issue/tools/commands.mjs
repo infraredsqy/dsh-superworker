@@ -474,14 +474,7 @@ async function cmdAdd(args, ctx) {
 }
 
 async function cmdAddFromFile(args, ctx) {
-  const fromFile = resolveFrom(ctx.root, args.options.from_file);
-  let batch;
-  try {
-    batch = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(readFileSync(fromFile)));
-  } catch (error) {
-    throw new Error(error instanceof Error ? error.message : String(error));
-  }
-  if (!Array.isArray(batch)) throw new Error('file must contain a JSON array');
+  const batch = readRowsFile(ctx.root, args.options.from_file);
 
   const out = [];
   // First pass: fill in the missing ids and build every record (each one goes through the content
@@ -710,58 +703,50 @@ async function cmdUpdateFromFile(args, ctx) {
   return `${lines.join(EOL)}${EOL}`;
 }
 
-async function cmdResolve(args, ctx) {
+/**
+ * The one "mark these ids with a status" walk the three status verbs share: every id must be in the
+ * pool before anything changes, one moment stamps the whole batch, a record whose line gave no
+ * reason keeps the reason it had (`reject` hands its required reason straight through), one write
+ * lands the batch, and each id answers one line. `verb` carries what one verb adds on top of the
+ * mark: `beforeWrite` runs once after the ids check out, `each` once per record.
+ */
+async function markStatus(args, ctx, status, verb = {}) {
   const data = readPool(ctx.root);
   const ids = uniqueIds(args.positional);
   for (const uid of ids) get(uid, data);
   const moment = now();
-  if (args.options.plan_path) ensurePlanDir(ctx.root, args.options.plan_path);
+  if (verb.beforeWrite) verb.beforeWrite(args.options, ctx);
   const lines = [];
   for (const uid of ids) {
     const issue = get(uid, data);
-    issue.status = 'resolved';
+    issue.status = status;
     issue.reason = args.options.reason ? args.options.reason : issue.reason;
     issue.updated_at = moment;
-    if (args.options.plan_path) issue.plan_path = args.options.plan_path;
-    lines.push(`Issue resolved: ${uid}`);
+    if (verb.each) verb.each(issue, args.options);
+    lines.push(`Issue ${status}: ${uid}`);
   }
   await writePool(ctx.root, data);
   return `${lines.join(EOL)}${EOL}`;
+}
+
+async function cmdResolve(args, ctx) {
+  return markStatus(args, ctx, 'resolved', {
+    beforeWrite: (options, ctxOf) => {
+      if (options.plan_path) ensurePlanDir(ctxOf.root, options.plan_path);
+    },
+    each: (issue, options) => {
+      if (options.plan_path) issue.plan_path = options.plan_path;
+    },
+  });
 }
 
 async function cmdReject(args, ctx) {
   if (!args.options.reason) throw new UsageError('--reason is required for reject');
-  const data = readPool(ctx.root);
-  const ids = uniqueIds(args.positional);
-  for (const uid of ids) get(uid, data);
-  const moment = now();
-  const lines = [];
-  for (const uid of ids) {
-    const issue = get(uid, data);
-    issue.status = 'rejected';
-    issue.reason = args.options.reason;
-    issue.updated_at = moment;
-    lines.push(`Issue rejected: ${uid}`);
-  }
-  await writePool(ctx.root, data);
-  return `${lines.join(EOL)}${EOL}`;
+  return markStatus(args, ctx, 'rejected');
 }
 
 async function cmdAcknowledge(args, ctx) {
-  const data = readPool(ctx.root);
-  const ids = uniqueIds(args.positional);
-  for (const uid of ids) get(uid, data);
-  const moment = now();
-  const lines = [];
-  for (const uid of ids) {
-    const issue = get(uid, data);
-    issue.status = 'acknowledged';
-    issue.reason = args.options.reason ? args.options.reason : issue.reason;
-    issue.updated_at = moment;
-    lines.push(`Issue acknowledged: ${uid}`);
-  }
-  await writePool(ctx.root, data);
-  return `${lines.join(EOL)}${EOL}`;
+  return markStatus(args, ctx, 'acknowledged');
 }
 
 async function cmdRemove(args, ctx) {

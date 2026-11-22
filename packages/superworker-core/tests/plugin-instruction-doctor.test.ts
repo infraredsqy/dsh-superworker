@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { offer, offer_preview } from '../plugins/instruction/impl.mjs';
+import * as impl from '../plugins/instruction/impl.mjs';
 import { open } from '../src/open';
 import { answer } from '../src/index';
 
@@ -71,9 +71,14 @@ describe('the folder taken away', () => {
   });
 });
 
-describe('the close-time cell this plugin occupies', () => {
-  it('both doors answer "none this round": no node is inserted and no record is read', () => {
-    expect(offer()).toBeNull();
-    expect(offer_preview()).toBeNull();
+describe('a commands-only declaration occupies no cell', () => {
+  it('the declaration states neither timing nor action, and the impl carries no close-time door', () => {
+    const decl = JSON.parse(
+      readFileSync(fileURLToPath(new URL('../plugins/instruction/plugin.json', import.meta.url)), 'utf8'),
+    ) as { timing?: string; action?: string };
+    expect(decl.timing).toBeUndefined();
+    expect(decl.action).toBeUndefined();
+    expect((impl as Record<string, unknown>).offer).toBeUndefined();
+    expect((impl as Record<string, unknown>).offer_preview).toBeUndefined();
   });
 });

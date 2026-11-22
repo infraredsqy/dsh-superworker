@@ -34,10 +34,8 @@
  * - The base of a relative path: always resolved from the project root `ctx.root` the host hands in
  *   (a plugin is given no working directory).
  *
- * **The init gate stays in front of every write** (and out of every read): a record directory that
- * was never set up is refused with the engine's own sentence, so a project that never ran `init`
- * gets not one byte from a verb that changes the account — while `list` still reads an absent
- * account as an empty one, which is an answer and not a failure.
+ * Whether a record directory counts as init-ed is `src/initledger.ts`'s reading alone — this layer
+ * does not answer that question a second time.
  */
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -430,29 +428,6 @@ function discardTemp(tmp) {
 
 function sleep(ms) {
   return new Promise((done) => setTimeout(done, ms))
-}
-
-// ═══ The init gate ═══════════════════════════════════════════════════════════
-
-/** The two files whose presence is what "this record directory was set up" means here (a pure filesystem question). */
-const INIT_MARKERS = ['.gitignore', '.gitattributes']
-
-/** Whether this project's record directory counts as init-ed (the version of the engine's reading, for this folder's own use). */
-export function isInitialized(root) {
-  const dir = recordDir(root)
-  if (!existsSync(dir) || !statSync(dir).isDirectory()) return false
-  return INIT_MARKERS.every((marker) => {
-    const path = join(dir, marker)
-    return existsSync(path) && statSync(path).isFile()
-  })
-}
-
-/** Refuse to change the account when the record directory was never set up: no byte lands, no directory is created. */
-export function assertInitialized(root) {
-  if (isInitialized(root)) return
-  throw new Error(
-    `${recordDir(root)} was never init-ed (missing ${INIT_MARKERS.join(' or ')}). Ask \`init\` first.`,
-  )
 }
 
 // ═══ Small pieces ════════════════════════════════════════════════════════════

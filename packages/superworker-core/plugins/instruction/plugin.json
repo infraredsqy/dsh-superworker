@@ -1,8 +1,6 @@
 {
   "name": "instruction",
   "summary": "the standing instruction account: its own word, its own record and its own lock live in this folder",
-  "timing": "close",
-  "action": "insert",
   "commands": {
     "instruction": {
       "summary": "standing user instructions",

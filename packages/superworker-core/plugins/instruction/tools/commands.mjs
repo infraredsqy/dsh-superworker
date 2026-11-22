@@ -36,7 +36,6 @@ import {
   UsageError,
   VALID_SCOPES,
   VALID_TARGETS,
-  assertInitialized,
   nowSeconds,
   projectRootOf,
   readCycles,
@@ -575,9 +574,6 @@ async function cmdRm(args, ctx) {
 
 const RUNNERS = { add: cmdAdd, list: cmdList, resolve: cmdResolve, rm: cmdRm, revive: cmdRevive }
 
-/** The verbs that change the account: the init gate and the account's lock stand in front of each one. */
-const WRITING_VERBS = new Set(['add', 'resolve', 'rm', 'revive'])
-
 /** The usage spelling of one flag (the page and the parser read the same table). */
 function flagUsage(key) {
   const cell = FLAGS[key]
@@ -632,8 +628,5 @@ export async function main(argv, ctx) {
   // that holds the account. No name means the host's root as it came: the host already resolved it.
   const named = parsed.options.project
   const root = named === undefined || named === '' ? ctx.root : projectRootOf(named)
-  // The gate comes before the lock: a record directory that was never set up gets not one byte,
-  // and not even the lock's own meta/ directory (the engine's verbs gated the same way).
-  if (WRITING_VERBS.has(spoken)) assertInitialized(root)
   return runner(parsed, { ...ctx, root })
 }
