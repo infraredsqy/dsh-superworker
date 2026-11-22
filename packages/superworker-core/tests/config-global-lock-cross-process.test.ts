@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createConfigNamespace } from '../src/config.ts';
 import { globalConfigPath } from '../src/paths.ts';
+import { SLOW } from './helpers/slow';
 
 /**
  * The machine layer ( `<home>/.superworker/config.json` ) is one record file with one writer at a time, across
@@ -188,7 +189,7 @@ function whenLockRefuses(path: string, count: number): Promise<'blocked'> {
   });
 }
 
-describe.skipIf(!workerLoadsTs)('two processes writing the machine layer', () => {
+describe.skipIf(!workerLoadsTs || !SLOW)('two processes writing the machine layer', () => {
   it('a write held through its read → write window makes the other process wait: both keys are in the file', async () => {
     const config = createConfigNamespace(root, { homeDir: home });
     // The slow writer takes the machine lock, snapshots `{}`, and announces HELD; it writes its

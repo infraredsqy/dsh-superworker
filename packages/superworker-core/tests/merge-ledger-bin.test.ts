@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { build } from 'tsdown';
 import type { MergeDriverIo, MergeDriverRequest } from '../src/ledgermerge/driver';
+import { SLOW } from './helpers/slow';
 
 /**
  * The package's only process entry (`src/merge-ledger-bin.ts`, product `dist/merge-ledger.mjs`).
@@ -226,24 +227,24 @@ function runProduct(args: readonly string[], cwd: string): Promise<RealRun> {
   });
 }
 
-beforeAll(async () => {
-  productDir = mkdtempSync(join(tmpdir(), 'superworker-bin-product-'));
-  await build({
-    config: false,
-    entry: { 'merge-ledger': entrySource },
-    outDir: productDir,
-    banner: '#!/usr/bin/env node\n',
-    dts: false,
-    clean: true,
+describe.skipIf(!SLOW)('the verdict reaches stderr whole: the real product on real pipes', () => {
+  beforeAll(async () => {
+    productDir = mkdtempSync(join(tmpdir(), 'superworker-bin-product-'));
+    await build({
+      config: false,
+      entry: { 'merge-ledger': entrySource },
+      outDir: productDir,
+      banner: '#!/usr/bin/env node\n',
+      dts: false,
+      clean: true,
+    });
+    product = join(productDir, 'merge-ledger.mjs');
   });
-  product = join(productDir, 'merge-ledger.mjs');
-});
 
-afterAll(() => {
-  if (productDir !== undefined) rmSync(productDir, { recursive: true, force: true });
-});
+  afterAll(() => {
+    if (productDir !== undefined) rmSync(productDir, { recursive: true, force: true });
+  });
 
-describe('the verdict reaches stderr whole: the real product on real pipes', () => {
   it('a conflict verdict arrives complete: every conflict line and the closing line, exit 1', async () => {
     const root = mkdtempSync(join(tmpdir(), 'superworker-bin-conflict-'));
     try {

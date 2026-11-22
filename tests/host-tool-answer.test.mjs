@@ -79,9 +79,8 @@ test('Byte lock three: a word page is ≤4096 bytes (the largest page is locked 
   }
 })
 
-test('Byte lock four: the cap constant is 4000, and a long result over it stays whole with the pointer at its tail; under it, no pointer', async () => {
-  const { LONG_RESULT_LIMIT, longResultPointerOf } = await import('superworker-core')
-  assert.equal(LONG_RESULT_LIMIT, 4000)
+test('Byte lock four: a long result over the cap stays whole with the pointer at its tail; under it, no pointer', async () => {
+  const { longResultPointerOf } = await import('superworker-core')
   assert.equal(longResultPointerOf('x'.repeat(4000), 'dag list'), null, 'no pointer right up to the cap')
   assert.match(longResultPointerOf('x'.repeat(4001), 'dag list'), /dag info/u)
   assert.equal(

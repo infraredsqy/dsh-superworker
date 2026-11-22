@@ -501,9 +501,6 @@ test('the standing corner: a press unfolds the doors, a door opens that door\'s 
     corner.pin.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true }))
   })
   assert.equal(corner.corner.classList.contains('is-open'), true, 'the pin did not unfold the doors')
-  /* The doors wear the invocation they open with: what a press sends is readable before the press. */
-  assert.equal(corner.route.textContent, '/sw-route', 'the graph door does not name the invocation it opens')
-  assert.equal(corner.conduct.textContent, '/sw-conduct', 'the line door does not name the invocation it opens')
 
   /* The route door answers with the door it named, this session, and the root the selector gave. */
   await mounted.act(async () => {

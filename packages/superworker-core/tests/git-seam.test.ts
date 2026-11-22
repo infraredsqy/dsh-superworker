@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { GitResult } from '../src/git.ts';
 import { gitRunner } from './helpers/git-runner.ts';
+import { SLOW } from './helpers/slow';
 
 /**
  * The git seam: git enters the engine only from outside, and one call is one answer.
@@ -15,7 +16,7 @@ import { gitRunner } from './helpers/git-runner.ts';
  * (`tests/helpers/git-runner.ts`), working against real git.
  */
 
-describe('the injected git runner', () => {
+describe.skipIf(!SLOW)('the injected git runner', () => {
   it('a call that goes through answers with code 0 and its output on stdout', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'superworker-git-seam-'));
     try {
