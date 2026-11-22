@@ -394,9 +394,20 @@ export function logLineOf(ctx: unknown, level: LogLevel, line: string): void {
  *
  * Read structurally like every seam here: a host carrying no such field answers "the shipped one",
  * so this never asks a real deployment to know the field exists.
+ *
+ * A real Cordis context **refuses** the read rather than answering `undefined`: its proxy throws
+ * `cannot get property "<name>" without inject` for any name no service declares, and this one is a
+ * field, never a service. That refusal is the same answer as an absent field — and it is the answer
+ * every deployment gives — so it is caught here. Letting it escape would fail `apply` itself: the
+ * line would not activate at all, and the panel would stand there with its shell and no reading.
  */
 export function weightsFolderOf(ctx: unknown): string | null | undefined {
-  const held = (ctx as { weightsFolder?: unknown } | undefined)?.weightsFolder
+  let held: unknown
+  try {
+    held = (ctx as { weightsFolder?: unknown } | null | undefined)?.weightsFolder
+  } catch {
+    return undefined
+  }
   return typeof held === 'string' || held === null ? held : undefined
 }
 

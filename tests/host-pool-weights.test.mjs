@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { poolWeightsPath, readPoolWeights } from '../src/host/pool-weights.ts'
+import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
 import { fakeWorkspaceFiles } from './helpers/workspace-files-port.mjs'
 import { SEVERITY_WEIGHTS } from '../packages/superworker-core/plugins/issue/tools/storage.mjs'
 
@@ -66,6 +67,31 @@ test('a table of the wrong shape is no table: an empty one would weigh every tie
 test('"do not look at all" really opens nothing: the caller that passes null gets no table', async () => {
   assert.equal(await readPoolWeights(null), null)
   assert.equal(poolWeightsPath(null), null, 'and there is no file to name either')
+})
+
+/*
+ * The host this line really runs on: a Cordis context is a proxy that *refuses* a name no service
+ * declares (`cannot get property "<name>" without inject`) instead of answering `undefined`. Every
+ * stand-in in this repo is a plain object, so that refusal is the one host shape no other case here
+ * has — and it is the shape that took a whole install down: reading the optional folder off such a
+ * host threw inside the gateway's constructor, `apply` never finished, the line never activated, and
+ * the panel came up with its shell (brand, workspace picker, tabs) and no reading behind it, because
+ * no frame ever arrived. A refusal is "this host names no folder", so it must land on the shipped
+ * one rather than unwind the line.
+ */
+test('a host that refuses an undeclared name names no folder: the line still builds and reads', async () => {
+  const declared = { workspaceFiles: fakeWorkspaceFiles({}), on: () => () => undefined }
+  const cordisLike = new Proxy(declared, {
+    get: (target, prop, receiver) => {
+      /* Symbols are the proxy's own business (Cordis reads its identity by one), never a service a
+       * host would refuse — the real context lets them through the same way. */
+      if (typeof prop === 'symbol' || Reflect.has(target, prop)) return Reflect.get(target, prop, receiver)
+      throw new Error(`cannot get property "${String(prop)}" without inject`)
+    },
+  })
+  const gateway = new SuperworkerRecordsGateway(cordisLike)
+  const reading = await gateway.read('refusing-host-session', 'C:\\refusing-host-workspace')
+  assert.deepEqual(reading.poolWeights, { ...SEVERITY_WEIGHTS }, 'the line must fall back to the folder it ships, not fail to activate')
 })
 
 /*
