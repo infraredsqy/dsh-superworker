@@ -1,5 +1,6 @@
 import { resolveConfig, type ConfigValue, type KnobSpec } from '../config';
 import { nodeSpecPath, recordPaths } from '../paths';
+import { pluginBase } from './base';
 import type { PluginAssembly } from './assembly';
 import { implOf } from './scan';
 import { declaredKnobSpecs, readingsOf } from './tables';
@@ -13,6 +14,13 @@ import type {
   PluginReadingEntry,
 } from './types';
 import { PLUGIN_IMPL_NAME } from './scan';
+
+/**
+ * The record base, handed to every context as `ctx.base`: stateless cells over the engine's own
+ * record IO, so a plugin's own record layer takes its mechanics from here — one foundation, no
+ * per-plugin copy.
+ */
+const BASE = pluginBase();
 
 /**
  * The host context: everything a plugin can see at one timing, and nothing outside this surface.
@@ -302,6 +310,7 @@ export function createContext(options: ContextOptions): PluginContext {
         }
       : async (argv) => (await routeCommand(argv, folders, context, warnings, (await tables).routable)).ran,
     specPath: (nodeIdIn: string) => nodeSpecPath(paths, nodeIdIn),
+    base: BASE,
   };
 
   return context;

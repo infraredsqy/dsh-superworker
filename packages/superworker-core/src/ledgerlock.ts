@@ -31,6 +31,12 @@ import { ledgerLockPath, type RecordPaths } from './paths.ts';
  *   follows the process).
  * - Gatekeeping of the "this record does not allow writes at all" kind (`gate`) belongs to the
  *   init decision.
+ *
+ * The protocol has one home here, and two spellings: `withLedgerLock` is the record tree's own
+ * lock (`<record>/meta/ledger.lock`), and `withRecordLock(lockPath, body)` is the same protocol
+ * over a lock path the caller names — a record owned outside the record tree takes the mutex,
+ * the cadence, the limit and the decidable error from this one reading instead of carrying a
+ * second implementation.
  */
 
 /** The default limit for waiting on the lock: writing one record takes a few milliseconds, and the limit only guards against a deadlock — it is never reached in ordinary work. */
@@ -48,31 +54,48 @@ const holding = new AsyncLocalStorage<string>();
 /** The tail of the chain of same-path holders in this process; the key is the resolved lock path. */
 const chains = new Map<string, Promise<unknown>>();
 
-export interface LedgerLockOptions {
+export interface RecordLockOptions {
   /** The limit for waiting on the lock (milliseconds); `LEDGER_LOCK_TIMEOUT_MS` by default. */
   readonly timeoutMs?: number;
+  /**
+   * The lock's name inside the timeout sentence (`the <label> lock <path> stayed busy …`); the
+   * record tree's own lock says `ledger`. A record owned outside the record tree names its own
+   * lock through the plugin base's `withLock`, so the sentence says whose lock stayed busy —
+   * the code (`lock_timeout`) and the path stay the contract either way.
+   */
+  readonly label?: string;
 }
 
-/** Hold the lock through one "read → change → write". Not getting the lock throws `RecordError('lock_timeout')`. */
-export async function withLedgerLock<T>(
-  paths: RecordPaths,
+export interface LedgerLockOptions extends RecordLockOptions {}
+
+/**
+ * Hold **one record lock named by its path** through one "read → change → write": the cross-process
+ * protocol of this module — exclusive creation of an empty file, a 50 ms probe, a decidable
+ * `lock_timeout` on timeout, and the in-process promise chain with its re-entry — over any lock path
+ * a caller names. The record tree's lock (`withLedgerLock`) is the `ledger.lock` spelling of this one
+ * reading; a record owned by a plugin (the issue pool's `issues.lock`, the instruction account's
+ * `instructions.lock`) takes the same protocol under its own path, through the plugin base's
+ * `withLock`. One record, one lock, and no operation holds two.
+ */
+export async function withRecordLock<T>(
+  lockPath: string,
   body: () => Promise<T>,
-  options: LedgerLockOptions = {},
+  options: RecordLockOptions = {},
 ): Promise<T> {
-  const path = ledgerLockPath(paths);
-  const key = resolve(path);
+  const key = resolve(lockPath);
   if (holding.getStore() === key) {
     return body();
   }
   const timeoutMs = options.timeoutMs ?? LEDGER_LOCK_TIMEOUT_MS;
+  const label = options.label ?? 'ledger';
   const base: Promise<unknown> = chains.get(key) ?? Promise.resolve();
   const claim = base.then(() =>
     holding.run(key, async () => {
-      await acquire(path, timeoutMs);
+      await acquire(key, timeoutMs, label);
       try {
         return await body();
       } finally {
-        await release(path);
+        await release(key);
       }
     }),
   );
@@ -86,7 +109,16 @@ export async function withLedgerLock<T>(
   return claim;
 }
 
-async function acquire(path: string, timeoutMs: number): Promise<void> {
+/** Hold the record tree's lock through one "read → change → write". Not getting the lock throws `RecordError('lock_timeout')`. */
+export async function withLedgerLock<T>(
+  paths: RecordPaths,
+  body: () => Promise<T>,
+  options: LedgerLockOptions = {},
+): Promise<T> {
+  return withRecordLock(ledgerLockPath(paths), body, options);
+}
+
+async function acquire(path: string, timeoutMs: number, label: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -99,7 +131,7 @@ async function acquire(path: string, timeoutMs: number): Promise<void> {
         throw new RecordError(
           'lock_timeout',
           path,
-          `the ledger lock ${path} stayed busy for ${timeoutMs} ms; another process is ` +
+          `the ${label} lock ${path} stayed busy for ${timeoutMs} ms; another process is ` +
             'mid-write. If you are sure nobody is writing right now, delete that path and run ' +
             'again: an empty lock file is the only thing a holder that died leaves behind. ' +
             'Nothing was changed.',

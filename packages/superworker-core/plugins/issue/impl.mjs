@@ -43,6 +43,9 @@
  *                               a plugin that really has to ask another word; this one does not: the
  *                               pool's number is computed by a function it imports)
  *     ctx.specPath(node_id)     where one node's spec.md lands (this tree's own layout)
+ *     ctx.base                  the engine's record base (bytes, atomic landing, record lock,
+ *                               moments, command-surface mechanics) — the pool's tools take their
+ *                               mechanics from here instead of carrying a second copy
  *     ctx.root / ctx.cycle / ctx.nodeId / ctx.sig / ctx.dag / ctx.target
  *
  * **This file belongs to this plugin alone**: reading the declaration, pairing it with the prose
@@ -120,10 +123,11 @@ const PROSE = {
 
 /**
  * How heavy the pool is, computed by the pool's own tools; it throws what the pool's reader throws (an
- * unreadable pool is a number this pass does not know, never 0).
+ * unreadable pool is a number this pass does not know, never 0). The pool's own layer reads and writes
+ * through the record base the host hands in (`ctx.base`) — the engine's one foundation, no second copy.
  */
-export function pool_weight(ctx) {
-  return poolWeight(ctx.root);
+export async function pool_weight(ctx) {
+  return poolWeight(ctx.root, ctx.base);
 }
 
 // ── Metrics: the declaration's names, this file's words ──────────────────────

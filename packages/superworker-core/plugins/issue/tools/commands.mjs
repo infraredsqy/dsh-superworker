@@ -1,17 +1,24 @@
 /**
  * The issue pool's verbs: each verb is one entry of the command surface.
  *
- * The command word and its flags live here; `main` in `impl.mjs` joins this layer to the host context
- * (`ctx.root` is the project root the record directory sits in). A command answers text (what a person
- * reads) or a number (the exit code it asks its caller to leave with), and its two ways of ending are
- * not the same ending: a **usage error** — an unknown verb, a flag the verb does not take, the wrong
- * number of positional arguments, a value outside a flag's closed set, a flag the verb requires and the
- * line left out, a value of the wrong shape (a regex the engine cannot compile) — carries `code: 2` and
- * is answered with the usage line, the way the core's own words answer a refused line; any other failure
- * is thrown, and the host folds it into `main failed` with `code: 1` (at a timing's seam it becomes one
- * WARNING line and "none this round"). The text handed back on success ends with a newline, like a
- * printed line; the two sentences that would have gone to stderr (a skipped batch import, `No changes
- * specified`) are folded into that same text.
+ * **The surface's mechanics are the engine's one copy**, reached through the record base the host
+ * hands in (`ctx.base.verbSurface`, see the engine's `src/plugins/verb-surface.ts`): splitting a
+ * line into flags and positional arguments, the closed-set and positional-count refusals, the
+ * usage page, the help spellings, the old verb aliases, and the lock the writing verbs run under.
+ * What is left here is the pool's own words: which flags and verbs exist, what each verb does to
+ * the pool, and the text a person reads. The tables below (FLAGS, SPECS, VERB_ALIASES, RUNNERS,
+ * WRITING_VERBS) are this plugin's data; the surface is assembled from them on first use.
+ *
+ * A command answers text (what a person reads) or a number (the exit code it asks its caller to
+ * leave with), and its two ways of ending are not the same ending: a **usage error** — an unknown
+ * verb, a flag the verb does not take, the wrong number of positional arguments, a value outside a
+ * flag's closed set, a flag the verb requires and the line left out, a value of the wrong shape (a
+ * regex the engine cannot compile) — carries `code: 2` and is answered with the usage line, the
+ * way the core's own words answer a refused line; any other failure is thrown, and the host folds
+ * it into `main failed` with `code: 1` (at a timing's seam it becomes one WARNING line and "none
+ * this round"). The text handed back on success ends with a newline, like a printed line; the two
+ * sentences that would have gone to stderr (a skipped batch import, `No changes specified`) are
+ * folded into that same text.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import {
@@ -23,32 +30,69 @@ import {
   VALID_STATUSES,
   ensurePlanDir,
   missingIssue,
-  now,
   readPool,
   resolveFrom,
   withPoolLock,
   writePool,
 } from './storage.mjs';
 
-// ═══ How a refusal ends ══════════════════════════════════════════════════════
-
-/**
- * A refusal about how the line was written, not about what the pool holds: the verb is unknown, the
- * flag is not one this verb takes, the positional count is wrong, the value misses a closed set, a flag
- * the verb requires was left out, the value is of the wrong shape. `code = 2` is what such a line
- * answers with — the same 2 the core's own parser answers a usage error with — and `main` lets it out
- * with that code attached. Everything else is a plain `Error`, which the host answers with `code: 1`.
- */
-export class UsageError extends Error {
-  constructor(sentence) {
-    super(`${USAGE_HEAD}${EOL}${EOL}${sentence}`);
-    this.name = 'UsageError';
-    this.code = 2;
-  }
-}
-
 /** The head of the usage page, and of every usage error's sentence. */
 const USAGE_HEAD = 'usage: issue <verb> [options]';
+
+// The record directory's name is spelled here because a plugin's tool file cannot import the engine's constant.
+const RECORD_DIR_NAME = '.superworker';
+
+// ═══ The command surface, assembled from the engine's one copy ════════════════
+
+/**
+ * The surface of this command word, built once per process from the tables below: the mechanics
+ * (parsing, usage, refusals, writing-verb locking) are the engine's record base's; the tables are
+ * this plugin's own words. The base arrives on the context the host hands in — a build of this
+ * plugin run by an engine that hands none in is named as it is, instead of failing obscurely.
+ */
+let surface = null;
+
+function baseOf(ctx) {
+  const base = ctx === null || typeof ctx !== 'object' ? undefined : ctx.base;
+  if (base === undefined || base === null || typeof base.verbSurface !== 'function') {
+    throw new Error(
+      'the issue tool reads its command surface and record base from the context the host hands in '
+        + '(ctx.base), and this engine hands none in: update the engine, or install the build of this '
+        + 'plugin that still carries its own record base',
+    );
+  }
+  return base;
+}
+
+function surfaceOf(ctx) {
+  if (surface === null) {
+    surface = baseOf(ctx).verbSurface({
+      name: 'issue',
+      head: USAGE_HEAD,
+      blurb: [`the issue pool: one file per project, \`<root>/${RECORD_DIR_NAME}/issues/issues.json\`.`],
+      flags: FLAGS,
+      specs: SPECS,
+      aliases: VERB_ALIASES,
+      runners: RUNNERS,
+      writingVerbs: [...WRITING_VERBS],
+      withWrite: (ctxOf, body) => withPoolLock(ctxOf.root, body, ctxOf.base),
+    });
+  }
+  return surface;
+}
+
+/**
+ * The refusal about how the line was written: the class comes with the surface (bound on first
+ * use, before any runner can run), and `code: 2` is what such a line answers with — the same 2
+ * the core's own parser answers a usage error with. Everything else is a plain `Error`, which the
+ * host answers with `code: 1`.
+ */
+function usageError(sentence) {
+  if (surface === null) {
+    throw new Error('the issue command surface is not assembled yet: run the tool through main');
+  }
+  return new surface.UsageError(sentence);
+}
 
 // ═══ The shape of a record ═══════════════════════════════════════════════════
 
@@ -184,25 +228,26 @@ const UPDATE_FIELDS = ['severity', 'decision', 'status', 'module', 'title', 'des
 /**
  * One verb's option table: which flags it knows and how many positional arguments it takes.
  * `suppliedBy` names the option whose rows carry the positional arguments themselves (`--from-file`),
- * so a line taking that option needs none.
+ * so a line taking that option needs none. `label` is the placeholder word the verb's usage row
+ * spells for its positionals — the pool's own word; the engine's usage page renders it as spelled here.
  */
 const SPECS = {
   add: { options: ['id', 'from_file', 'auto_id', 'severity', 'decision', 'source', 'module', 'title', 'description', 'suggestion', 'reason', 'files', 'functions', 'plan_path'], positional: { min: 0, max: 0 } },
   list: { options: ['status', 'severity', 'decision', 'source', 'module', 'limit', 'brief'], positional: { min: 0, max: 0 } },
-  update: { options: ['from_file', ...UPDATE_FIELDS], positional: { min: 1, max: Number.POSITIVE_INFINITY, suppliedBy: 'from_file' } },
-  resolve: { options: ['reason', 'plan_path'], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
-  reject: { options: ['reason'], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
-  acknowledge: { options: ['reason'], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
-  remove: { options: [], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
-  'open-plan': { options: [], positional: { min: 1, max: 1 } },
+  update: { options: ['from_file', ...UPDATE_FIELDS], positional: { min: 1, max: Number.POSITIVE_INFINITY, suppliedBy: 'from_file', label: '<id…>' } },
+  resolve: { options: ['reason', 'plan_path'], positional: { min: 1, max: Number.POSITIVE_INFINITY, label: '<id…>' } },
+  reject: { options: ['reason'], positional: { min: 1, max: Number.POSITIVE_INFINITY, label: '<id…>' } },
+  acknowledge: { options: ['reason'], positional: { min: 1, max: Number.POSITIVE_INFINITY, label: '<id…>' } },
+  remove: { options: [], positional: { min: 1, max: Number.POSITIVE_INFINITY, label: '<id…>' } },
+  'open-plan': { options: [], positional: { min: 1, max: 1, label: '<id>' } },
   status: { options: ['verbose'], positional: { min: 0, max: 0 } },
   weight: { options: ['verbose'], positional: { min: 0, max: 0 } },
   top: { options: ['limit', 'brief'], positional: { min: 0, max: 0 } },
   'by-module': { options: [], positional: { min: 0, max: 0 } },
   stale: { options: ['threshold'], positional: { min: 0, max: 0 } },
-  mark: { options: [], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
-  search: { options: ['status', 'severity', 'source', 'limit'], positional: { min: 1, max: 1 } },
-  'export-plan': { options: [], positional: { min: 1, max: Number.POSITIVE_INFINITY } },
+  mark: { options: [], positional: { min: 1, max: Number.POSITIVE_INFINITY, label: '<id…>' } },
+  search: { options: ['status', 'severity', 'source', 'limit'], positional: { min: 1, max: 1, label: '<id>' } },
+  'export-plan': { options: [], positional: { min: 1, max: Number.POSITIVE_INFINITY, label: '<id…>' } },
 };
 
 /**
@@ -212,155 +257,6 @@ const SPECS = {
  * beside the canonical spelling.
  */
 const VERB_ALIASES = Object.freeze({ by_module: 'by-module', export_plan: 'export-plan' });
-
-/**
- * Short spellings are folded into long ones first (`-v` -> `--verbose`, `-n` -> `--limit`,
- * `-t` -> `--threshold`). A short spelling that takes a value also accepts the attached form
- * (`-n5` / `-n=5` -> `--limit=5`: the value follows the short flag directly, or is separated by an
- * equals sign); characters attached to a short spelling that takes no value (`-v`) are not folded and
- * still count as an unrecognized argument.
- */
-function normalizeShortFlags(argv, spec) {
-  const shorts = new Map();
-  const takingValue = [];
-  for (const key of spec.options) {
-    const cell = FLAGS[key];
-    if (cell.short === undefined) continue;
-    shorts.set(cell.short, cell);
-    if (cell.kind !== 'flag') takingValue.push(cell);
-  }
-  const out = [];
-  let positionalOnly = false;
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-    if (token === '--') {
-      positionalOnly = true;
-      out.push(token);
-      continue;
-    }
-    if (positionalOnly) {
-      out.push(token);
-      continue;
-    }
-    const exact = shorts.get(token);
-    if (exact !== undefined) {
-      // When the previous token is a short spelling taking a value, this one is that value and is not
-      // folded as a flag (the -t in `-n -t`).
-      const previous = index > 0 ? shorts.get(argv[index - 1]) : undefined;
-      out.push(previous !== undefined && previous.kind !== 'flag' ? token : exact.long);
-      continue;
-    }
-    const attached = attachedShortValue(token, takingValue);
-    if (attached !== null) {
-      out.push(attached);
-      continue;
-    }
-    out.push(token);
-  }
-  return out;
-}
-
-/** The fold of the attached form: `-n5` / `-n=5` -> `--limit=5` (the value is carried over as it is, into the int parsing of parseArgs). */
-function attachedShortValue(token, takingValue) {
-  for (const cell of takingValue) {
-    if (!token.startsWith(cell.short)) continue;
-    const rest = token.slice(cell.short.length);
-    if (rest === '') continue;
-    const value = rest.startsWith('=') ? rest.slice(1) : rest;
-    return `${cell.long}=${value}`;
-  }
-  return null;
-}
-
-/** Split the rest of one line's argv into "flags it knows" and "positional arguments"; an unknown token is rejected at once. */
-function parseArgs(argv, spec) {
-  const options = {};
-  const positional = [];
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-    if (token === '--') {
-      positional.push(...argv.slice(index + 1));
-      break;
-    }
-    const name = flagNameOf(token, spec);
-    if (name === null) {
-      if (looksLikeFlag(token)) {
-        throw new UsageError(`unrecognized argument: ${token} (run \`issue help\` for the flags this verb takes)`);
-      }
-      positional.push(token);
-      continue;
-    }
-    const cell = FLAGS[name];
-    const inline = inlineValueOf(token);
-    if (cell.kind === 'flag') {
-      if (inline !== undefined) throw new UsageError(`argument ${cell.long}: takes no value`);
-      options[name] = true;
-      continue;
-    }
-    if (cell.kind === 'list') {
-      const values = [];
-      if (inline !== undefined) values.push(inline);
-      else {
-        while (index + 1 < argv.length && !looksLikeFlag(argv[index + 1])) values.push(argv[(index += 1)]);
-      }
-      options[name] = values;
-      continue;
-    }
-    let raw = inline;
-    if (raw === undefined) {
-      index += 1;
-      raw = argv[index];
-    }
-    if (raw === undefined) throw new UsageError(`argument ${cell.long}: expected one value`);
-    if (cell.kind === 'int') {
-      if (!/^[+-]?\d+$/.test(raw)) throw new UsageError(`argument ${cell.long}: invalid int value: '${raw}'`);
-      options[name] = Number(raw);
-      continue;
-    }
-    if (cell.choices !== undefined && !cell.choices.includes(raw)) {
-      throw new UsageError(`invalid ${name} "${raw}", valid: ${[...cell.choices].sort().join(', ')}`);
-    }
-    options[name] = raw;
-  }
-  const count = positional.length;
-  // An option that carries the positionals in its own rows (a batch file names its ids) answers the
-  // minimum positional count for the whole line.
-  const minimum = spec.positional.suppliedBy !== undefined && options[spec.positional.suppliedBy] !== undefined
-    ? 0
-    : spec.positional.min;
-  if (count < minimum || count > spec.positional.max) {
-    throw new UsageError(
-      `this verb wants ${positionalWanted(spec)} positional argument(s), got ${count} (run \`issue help\`)`,
-    );
-  }
-  return { options, positional };
-}
-
-function positionalWanted(spec) {
-  if (spec.positional.max === Number.POSITIVE_INFINITY) return `at least ${spec.positional.min}`;
-  if (spec.positional.min === spec.positional.max) return `${spec.positional.min}`;
-  return `${spec.positional.min} to ${spec.positional.max}`;
-}
-
-/** Whether this token counts as a flag (a negative number like `-1` is a value, not a flag). */
-function looksLikeFlag(token) {
-  return typeof token === 'string' && token.startsWith('-') && token.length > 1 && !/^-\d/.test(token);
-}
-
-/** Which known flag this token lands on; `null` when it is none. */
-function flagNameOf(token, spec) {
-  if (typeof token !== 'string' || !token.startsWith('--')) return null;
-  const name = token.includes('=') ? token.slice(0, token.indexOf('=')) : token;
-  for (const key of spec.options) {
-    if (FLAGS[key].long === name) return key;
-  }
-  return null;
-}
-
-function inlineValueOf(token) {
-  const at = token.indexOf('=');
-  return at < 0 ? undefined : token.slice(at + 1);
-}
 
 // ═══ Small output pieces ═════════════════════════════════════════════════════
 
@@ -461,13 +357,13 @@ function briefIssue(issue) {
 async function cmdAdd(args, ctx) {
   if (args.options.from_file) return cmdAddFromFile(args, ctx);
   const uid = args.options.id;
-  if (!uid) throw new UsageError('--id is required (or use --from-file for batch)');
-  const data = readPool(ctx.root);
+  if (!uid) throw usageError('--id is required (or use --from-file for batch)');
+  const data = await readPool(ctx.root, ctx.base);
   if (Object.prototype.hasOwnProperty.call(data.issues, uid)) throw new Error(`issue "${uid}" already exists`);
-  const record = buildIssueRecord(args.options, uid, now());
+  const record = buildIssueRecord(args.options, uid, ctx.base.nowMicro());
   if (record.plan_path) ensurePlanDir(ctx.root, record.plan_path);
   data.issues[uid] = record;
-  await writePool(ctx.root, data);
+  await writePool(ctx.root, data, ctx.base);
   const lines = [`Issue created: ${uid}`];
   if (record.plan_path) lines.push(`Plan path (nonexistent): ${resolveFrom(ctx.root, record.plan_path)}`);
   return `${lines.join(EOL)}${EOL}`;
@@ -479,8 +375,8 @@ async function cmdAddFromFile(args, ctx) {
   const out = [];
   // First pass: fill in the missing ids and build every record (each one goes through the content
   // checks on the spot).
-  const data = readPool(ctx.root);
-  const moment = now();
+  const data = await readPool(ctx.root, ctx.base);
+  const moment = ctx.base.nowMicro();
   const records = [];
   const named = new Set();
   for (let index = 0; index < batch.length; index += 1) {
@@ -516,13 +412,13 @@ async function cmdAddFromFile(args, ctx) {
     data.issues[record.id] = record;
     created += 1;
   }
-  await writePool(ctx.root, data);
+  await writePool(ctx.root, data, ctx.base);
   out.push(`Batch import: ${created} created, ${skipped} skipped`);
   return `${out.join(EOL)}${EOL}`;
 }
 
 async function cmdList(args, ctx) {
-  const issues = filterIssues(Object.values(readPool(ctx.root).issues), args.options);
+  const issues = filterIssues(Object.values((await readPool(ctx.root, ctx.base)).issues), args.options);
   const sevOrder = severityOrder();
   // A stable sort: newest discovery first, then by severity.
   const rows = stableSort(newestFirst(issues), (issue) => sevOrder[issue.severity] ?? 99);
@@ -642,11 +538,11 @@ function uniqueIds(positional) {
 
 async function cmdUpdate(args, ctx) {
   if (args.options.from_file !== undefined) return cmdUpdateFromFile(args, ctx);
-  const data = readPool(ctx.root);
+  const data = await readPool(ctx.root, ctx.base);
   const ids = uniqueIds(args.positional);
   const patch = updatePatch(args.options);
   for (const uid of ids) get(uid, data);
-  const moment = now();
+  const moment = ctx.base.nowMicro();
   ensurePatchPlanDirs(ctx.root, [patch]);
   const results = [];
   for (const uid of ids) {
@@ -657,7 +553,7 @@ async function cmdUpdate(args, ctx) {
   }
   const changedCount = results.filter((entry) => entry.changed.size > 0).length;
   if (changedCount === 0) return `No changes specified${EOL}`;
-  await writePool(ctx.root, data);
+  await writePool(ctx.root, data, ctx.base);
   return `${updateLines(results).join(EOL)}${EOL}`;
 }
 
@@ -669,7 +565,7 @@ async function cmdUpdateFromFile(args, ctx) {
     }
   }
   const rows = readRowsFile(ctx.root, args.options.from_file);
-  const data = readPool(ctx.root);
+  const data = await readPool(ctx.root, ctx.base);
   const allowed = new Set(['id', ...UPDATE_FIELDS]);
   const entries = [];
   for (let index = 0; index < rows.length; index += 1) {
@@ -687,7 +583,7 @@ async function cmdUpdateFromFile(args, ctx) {
     validateUpdateRow(row, where);
     entries.push({ id: uid, patch: updatePatch(row) });
   }
-  const moment = now();
+  const moment = ctx.base.nowMicro();
   ensurePatchPlanDirs(ctx.root, entries.map((entry) => entry.patch));
   const results = [];
   for (const entry of entries) {
@@ -699,7 +595,7 @@ async function cmdUpdateFromFile(args, ctx) {
   const changedCount = results.filter((entry) => entry.changed.size > 0).length;
   const lines = changedCount === 0 ? ['No changes specified'] : updateLines(results);
   lines.push(`Batch update: ${changedCount} updated, ${results.length - changedCount} unchanged`);
-  if (changedCount > 0) await writePool(ctx.root, data);
+  if (changedCount > 0) await writePool(ctx.root, data, ctx.base);
   return `${lines.join(EOL)}${EOL}`;
 }
 
@@ -711,10 +607,10 @@ async function cmdUpdateFromFile(args, ctx) {
  * mark: `beforeWrite` runs once after the ids check out, `each` once per record.
  */
 async function markStatus(args, ctx, status, verb = {}) {
-  const data = readPool(ctx.root);
+  const data = await readPool(ctx.root, ctx.base);
   const ids = uniqueIds(args.positional);
   for (const uid of ids) get(uid, data);
-  const moment = now();
+  const moment = ctx.base.nowMicro();
   if (verb.beforeWrite) verb.beforeWrite(args.options, ctx);
   const lines = [];
   for (const uid of ids) {
@@ -725,7 +621,7 @@ async function markStatus(args, ctx, status, verb = {}) {
     if (verb.each) verb.each(issue, args.options);
     lines.push(`Issue ${status}: ${uid}`);
   }
-  await writePool(ctx.root, data);
+  await writePool(ctx.root, data, ctx.base);
   return `${lines.join(EOL)}${EOL}`;
 }
 
@@ -741,7 +637,7 @@ async function cmdResolve(args, ctx) {
 }
 
 async function cmdReject(args, ctx) {
-  if (!args.options.reason) throw new UsageError('--reason is required for reject');
+  if (!args.options.reason) throw usageError('--reason is required for reject');
   return markStatus(args, ctx, 'rejected');
 }
 
@@ -750,7 +646,7 @@ async function cmdAcknowledge(args, ctx) {
 }
 
 async function cmdRemove(args, ctx) {
-  const data = readPool(ctx.root);
+  const data = await readPool(ctx.root, ctx.base);
   const ids = uniqueIds(args.positional);
   for (const uid of ids) get(uid, data);
   const lines = [];
@@ -758,7 +654,7 @@ async function cmdRemove(args, ctx) {
     delete data.issues[uid];
     lines.push(`Issue removed: ${uid}`);
   }
-  await writePool(ctx.root, data);
+  await writePool(ctx.root, data, ctx.base);
   return `${lines.join(EOL)}${EOL}`;
 }
 
@@ -768,7 +664,7 @@ const OWED = new Set(['open', 'acknowledged', 'resolving']);
 const PICKABLE = new Set(['open', 'acknowledged']);
 
 async function cmdStatus(args, ctx) {
-  const all = Object.values(readPool(ctx.root).issues);
+  const all = Object.values((await readPool(ctx.root, ctx.base)).issues);
   const issues = args.options.verbose ? all : all.filter((issue) => OWED.has(issue.status));
   const result = {
     by_severity: countsBy(issues, 'severity'),
@@ -801,12 +697,13 @@ function weightOf(issues) {
  * printed line back. It throws exactly what `readPool` throws (an unreadable pool is "not known this
  * pass", never 0).
  */
-export function poolWeight(root) {
-  return weightOf(payableOf(readPool(root)).payable);
+export async function poolWeight(root, base) {
+  const data = await readPool(root, base);
+  return weightOf(payableOf(data).payable);
 }
 
 async function cmdWeight(args, ctx) {
-  const data = readPool(ctx.root);
+  const data = await readPool(ctx.root, ctx.base);
   const { actionable, payable } = payableOf(data);
   const weight = weightOf(payable);
   if (!args.options.verbose) return `${weight}${EOL}`;
@@ -821,7 +718,7 @@ async function cmdWeight(args, ctx) {
 }
 
 async function cmdTop(args, ctx) {
-  const pickable = Object.values(readPool(ctx.root).issues).filter((issue) => PICKABLE.has(issue.status));
+  const pickable = Object.values((await readPool(ctx.root, ctx.base)).issues).filter((issue) => PICKABLE.has(issue.status));
   const sevOrder = severityOrder();
   const rows = stableSort(
     newestFirst(pickable),
@@ -834,7 +731,7 @@ async function cmdTop(args, ctx) {
 }
 
 async function cmdByModule(args, ctx) {
-  const data = readPool(ctx.root);
+  const data = await readPool(ctx.root, ctx.base);
   const modules = {};
   for (const issue of Object.values(data.issues)) {
     if (!PICKABLE.has(issue.status)) continue;
@@ -846,16 +743,16 @@ async function cmdByModule(args, ctx) {
 }
 
 async function cmdStale(args, ctx) {
-  const data = readPool(ctx.root);
+  const data = await readPool(ctx.root, ctx.base);
   const threshold = args.options.threshold === undefined ? STALE_CHECK_COUNT : args.options.threshold;
   const stale = staleIssues(Object.values(data.issues), threshold);
   return jsonText(stableSort(stale, (issue) => -(issue.check_count ?? 0)));
 }
 
 async function cmdMark(args, ctx) {
-  const data = readPool(ctx.root);
+  const data = await readPool(ctx.root, ctx.base);
   const wanted = new Set(args.positional.filter((id) => id && id.trim() !== ''));
-  const moment = now();
+  const moment = ctx.base.nowMicro();
   const marked = [];
   const unknown = [];
   for (const uid of [...wanted].sort()) {
@@ -872,7 +769,7 @@ async function cmdMark(args, ctx) {
   const candidates = Object.values(data.issues)
     .filter((issue) => issue.status === 'open' && !markedSet.has(issue.id))
     .sort((a, b) => compareText(a.id ?? '', b.id ?? ''));
-  await writePool(ctx.root, data);
+  await writePool(ctx.root, data, ctx.base);
   return jsonText({
     marked,
     unknown_ids: unknown,
@@ -889,7 +786,7 @@ async function cmdMark(args, ctx) {
 }
 
 async function cmdOpenPlan(args, ctx) {
-  const data = readPool(ctx.root);
+  const data = await readPool(ctx.root, ctx.base);
   const uid = args.positional[0];
   const issue = get(uid, data);
   if (!issue.plan_path) throw new Error(`Issue "${uid}" has no plan_path set`);
@@ -897,14 +794,14 @@ async function cmdOpenPlan(args, ctx) {
 }
 
 async function cmdSearch(args, ctx) {
-  const data = readPool(ctx.root);
+  const data = await readPool(ctx.root, ctx.base);
   const issues = filterIssues(Object.values(data.issues), args.options);
 
   let pattern;
   try {
     pattern = new RegExp(args.positional[0], 'i');
   } catch (error) {
-    throw new UsageError(`invalid regex: ${error instanceof Error ? error.message : String(error)}`);
+    throw usageError(`invalid regex: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   const tier1 = [];
@@ -963,7 +860,7 @@ async function cmdSearch(args, ctx) {
 }
 
 async function cmdExportPlan(args, ctx) {
-  const data = readPool(ctx.root);
+  const data = await readPool(ctx.root, ctx.base);
   const ids = args.positional;
   if (ids.length === 0) throw new Error('specify issue IDs to export');
   const sevOrder = severityOrder();
@@ -1091,51 +988,21 @@ const RUNNERS = {
 };
 
 /**
- * The verbs whose "read → change → write" runs exclusively in this process (`add` covers the batch
- * file too, and `update` may decide to write nothing — held either way, it is one command's turn).
- * One process can run two commands at once; a body that read the pool before another body's write
- * landed would write that write back out of the pool, so the writers queue. The reading verbs stay
- * out of the queue: a write lands atomically, so a read never needs the lock and must not wait
- * behind a write.
+ * The verbs whose "read → change → write" runs exclusively (`add` covers the batch file too, and
+ * `update` may decide to write nothing — held either way, it is one command's turn). One process
+ * can run two commands at once; a body that read the pool before another body's write landed would
+ * write that write back out of the pool, so the writers hold the pool's own record lock: the
+ * surface hands every writing verb through `withWrite`, which is `withPoolLock`. The reading verbs
+ * stay out: a write lands atomically, so a read never needs the lock and must not wait behind one.
  */
 const WRITING_VERBS = new Set(['add', 'update', 'resolve', 'reject', 'acknowledge', 'remove', 'mark']);
 
-/** The usage spelling of one flag (help and parsing use the same table). */
-function flagUsage(key) {
-  const cell = FLAGS[key];
-  const short = cell.short === undefined ? '' : `${cell.short}|`;
-  const tail = cell.kind === 'flag' ? '' : cell.kind === 'int' ? ' <n>' : ' <value>';
-  return `[${short}${cell.long}${tail}]`;
-}
-
-// The record directory's name is spelled here because a plugin's tool file cannot import the engine's constant.
-const RECORD_DIR_NAME = '.superworker';
-
-/** The `issue help` list: the verbs and their flags, derived from the command surface's single table, with an old spelling named on the row it still routes to. */
-export function usage() {
-  const rows = Object.keys(SPECS).map((word) => {
-    const positional = SPECS[word].positional.min === 0
-      ? ''
-      : SPECS[word].positional.min === SPECS[word].positional.max
-        ? ' <id>'
-        : ' <id…>';
-    const flags = SPECS[word].options.map(flagUsage).join(' ');
-    const alias = Object.keys(VERB_ALIASES).find((spoken) => VERB_ALIASES[spoken] === word);
-    return `  ${word}${positional}${flags.length > 0 ? ` ${flags}` : ''}`
-      + `${alias === undefined ? '' : `   (also answers as \`${alias}\`)`}`;
-  });
-  return [
-    USAGE_HEAD,
-    '',
-    `the issue pool: one file per project, \`<root>/${RECORD_DIR_NAME}/issues/issues.json\`.`,
-    '',
-    ...rows,
-    '',
-  ].join(EOL);
-}
-
 /**
- * The command's entry point: the first entry of argv is the verb (the declaration says `keep_name: false`, so the host takes the command word off).
+ * The command's entry point: the first entry of argv is the verb (the declaration says
+ * `keep_name: false`, so the host takes the command word off). The line is parsed, its refusals
+ * decided, and a writing verb locked by the command surface assembled above — the engine's one
+ * copy of the mechanics; this function only binds that surface to the context that carries the
+ * record base, and hands the line over.
  *
  * A help flag in the last cell — exactly `--help` or `-h`, with something before it — asks the same
  * page the first-cell spelling asks. A help flag anywhere else is not that request: it reaches the
@@ -1143,19 +1010,5 @@ export function usage() {
  * value that must end the line with the flag's own spelling is attached instead: `--reason=--help`.
  */
 export async function main(argv, ctx) {
-  const args = [...argv];
-  if (args.length === 0) return usage();
-  const spoken = args[0];
-  if (spoken === 'help' || spoken === '--help' || spoken === '-h') return usage();
-  // An old underscore spelling is the same verb: the canonical name is what the tables and the help
-  // page are keyed by, so the rest of this function never hears the alias.
-  const word = VERB_ALIASES[spoken] ?? spoken;
-  const runner = RUNNERS[word];
-  if (runner === undefined) throw new UsageError(`unrecognized command "${spoken}" (run \`issue help\`)`);
-  // A trailing help flag is the help request: the last cell is exactly `--help` or `-h`, with something before it.
-  if (args.length > 1 && (args[args.length - 1] === '--help' || args[args.length - 1] === '-h')) return usage();
-  const spec = SPECS[word];
-  const parsed = parseArgs(normalizeShortFlags(args.slice(1), spec), spec);
-  if (WRITING_VERBS.has(word)) return withPoolLock(ctx.root, () => runner(parsed, ctx));
-  return runner(parsed, ctx);
+  return surfaceOf(ctx).main(argv, ctx);
 }

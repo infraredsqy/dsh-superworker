@@ -1,16 +1,18 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 // The surface under test is the plugin folder's own implementation (the very files the host loads
-// by path), plus the worker fixture that runs it in a second process.
+// by path), plus the worker fixture that runs it in a second process. The record base the plugin
+// takes its mechanics from is handed in the way the host hands it in.
+import { pluginBase } from '../src/plugins/base';
 import { withPoolLock, poolLockPath } from '../plugins/issue/tools/storage.mjs';
 import { SLOW } from './helpers/slow';
 
 /**
- * The pool's one-writer rule **across processes**.
+ * The pool's one-writer rule **across processes**, and its recovery from a holder that died.
  *
  * The in-process queue is `plugin-issue-pool-lock.test.ts`; this file pins the other half: two
  * processes each adding one issue must both be in the pool. The overlap is brought about for real
@@ -19,7 +21,18 @@ import { SLOW } from './helpers/slow';
  * the window and the first snapshot puts it back out; with it, the second process waits. The same
  * pause is opened from **both** sides in the second case, so neither the test's start order nor a
  * lucky scheduling gap can stand in for the lock.
+ *
+ * The crash case is the residue half of the same contract: a worker that dies mid-write leaves a
+ * temporary file and the lock file behind, the pool itself is untouched, and — once the lock file
+ * is cleared, the one recovery step the lock error's own sentence describes — the next process
+ * writes normally, without the residue disturbing read or write.
  */
+
+const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
+
+// The worker loads the engine's .ts (the record base): --experimental-strip-types exists from 22.6
+// on, 23.6+/24+ load it natively; only 22.0–22.5, which truly has no flag, skips the slow cases.
+const workerLoadsTs = nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 6);
 
 let root: string;
 
@@ -29,6 +42,12 @@ const POOL = (): string => join(root, '.superworker', 'issues', 'issues.json');
 function pooledIds(): string[] {
   const data = JSON.parse(readFileSync(POOL(), 'utf8')) as { issues: Record<string, unknown> };
   return Object.keys(data.issues).sort();
+}
+
+/** The pool directory's leftover temporary files (the writer's own naming shape). */
+function tempResidues(): string[] {
+  const dir = join(root, '.superworker', 'issues');
+  return readdirSync(dir).filter((name) => name.endsWith('.tmp'));
 }
 
 const workerPath = fileURLToPath(new URL('./fixtures/issue-pool-worker.mjs', import.meta.url));
@@ -47,7 +66,10 @@ interface RunningWorker {
 }
 
 function startWorker(args: string[]): RunningWorker {
-  const child = spawn(process.execPath, [workerPath, ...args], { windowsHide: true });
+  // Below 24 a .ts file will not load without the flag (native support starts at 23.6+); from 22.6
+  // on, --experimental-strip-types is enough.
+  const loadTsArgs = workerLoadsTs && nodeMajor < 24 ? ['--experimental-strip-types'] : [];
+  const child = spawn(process.execPath, [...loadTsArgs, workerPath, ...args], { windowsHide: true });
   let stdout = '';
   let stderr = '';
   const waiters: Array<{ needle: string; resolveSeen: () => void }> = [];
@@ -129,13 +151,40 @@ describe.skipIf(!SLOW)('two processes writing one pool', () => {
   }, 20_000);
 });
 
+describe.skipIf(!SLOW)('a holder that died mid-write: the residue is recoverable', () => {
+  it('the temp file and the lock file are left behind, the pool is untouched, and the next write is normal once the lock is cleared', async () => {
+    // The crash: lock taken, pool read, a temp file on disk, then a hard exit — nothing renamed,
+    // the lock never released. Exit code 1 is the worker's own.
+    const crasher = startWorker(['crash', root, 'ghost']);
+    const crashed = await crasher.done;
+    expect(crashed.code).toBe(1);
+    // What a holder that died mid-write leaves: its temporary file, its lock file — and the pool
+    // itself as it was (the temp was never renamed onto it, so there is no pool file yet).
+    expect(tempResidues()).toHaveLength(1);
+    expect(existsSync(poolLockPath(root))).toBe(true);
+    expect(existsSync(POOL())).toBe(false);
+
+    // The one recovery step the lock error's sentence describes: a person, sure nobody is writing,
+    // deletes the lock path. The residue temp stays where it is — clearing it is nobody's urgent
+    // business, and the next write must not need it gone.
+    unlinkSync(poolLockPath(root));
+
+    // The next process writes normally: the residue does not disturb read or write.
+    const adder = startWorker(['add', root, 'recovered']);
+    const added = await adder.done;
+    expect(added.code).toBe(0);
+    // Neither side is told about a loss or a gain: the pool is the only witness.
+    expect(pooledIds()).toEqual(['recovered']);
+  }, 20_000);
+});
+
 describe("the pool's lock is its own file", () => {
   it('a write holds `<root>/.superworker/meta/issues.lock` and never the record tree\'s `ledger.lock`', async () => {
     const ledgerLock = join(root, '.superworker', 'meta', 'ledger.lock');
     const seen: boolean[] = [];
     await withPoolLock(root, async () => {
       seen.push(existsSync(poolLockPath(root)), existsSync(ledgerLock));
-    });
+    }, pluginBase());
     expect(seen).toEqual([true, false]);
     expect(existsSync(poolLockPath(root))).toBe(false);
   });

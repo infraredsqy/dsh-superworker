@@ -7,16 +7,20 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CELL_FALLBACK, main as issue, poolWeight } from '../plugins/issue/tools/commands.mjs';
 import { pool_weight } from '../plugins/issue/impl.mjs';
 import { EOL } from '../plugins/issue/tools/storage.mjs';
+import { pluginBase, type PluginBase } from '../src/plugins/base';
+import { jsonBytes } from '../src/jsonio';
 
 /**
  * The command surface of the issue pool: a sample of verb behaviour, pinning invariants (the
  * status vocabulary, the weight formula, which issues are pickable, defaults, and that error
  * sentences are decidable) and not formatting details. Engine operations always land in a temp
- * dir.
+ * dir. The context carries the record base the way the host hands it in, so the plugin's own
+ * layer is exercised exactly as the runtime exercises it.
  */
 
 interface Ctx {
   root: string;
+  base: PluginBase;
 }
 
 let root: string;
@@ -77,7 +81,7 @@ async function err(argv: string[]): Promise<string> {
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'superworker-issue-cmd-'));
-  ctx = { root };
+  ctx = { root, base: pluginBase() };
 });
 
 afterEach(() => {
@@ -536,16 +540,17 @@ describe("the weight is a function of the pool, not a line of printed text", () 
     // Each counted tier contributes its own SEVERITY_WEIGHTS share, so the two above add up to 12;
     // the external one and the settled one count for nothing.
     expect(await out(['weight'])).toBe(`12${EOL}`);
-    expect(poolWeight(root)).toBe(12);
+    expect(await poolWeight(root, ctx.base)).toBe(12);
     // The declared source, handed a context with no `capture` at all: the number is computed from the
     // pool, so nothing has to run a command and read its last line back.
-    expect((pool_weight as (ctx: { root: string }) => number)({ root })).toBe(12);
+    expect(await (pool_weight as (ctx: Ctx) => Promise<number>)({ root, base: ctx.base })).toBe(12);
     // An absent pool is an empty one, so the reading is 0 ...
     seed({});
-    expect((pool_weight as (ctx: { root: string }) => number)({ root })).toBe(0);
+    expect(await (pool_weight as (ctx: Ctx) => Promise<number>)({ root, base: ctx.base })).toBe(0);
     // ... and a pool that cannot be read refuses instead of answering 0: a debt never reads as paid.
     writeFileSync(POOL(), '{ this is not json', 'utf8');
-    expect(() => (pool_weight as (ctx: { root: string }) => number)({ root })).toThrow(/parse failure/);
+    await expect((pool_weight as (ctx: Ctx) => Promise<number>)({ root, base: ctx.base }))
+      .rejects.toThrow(/parse failure/);
   });
 });
 
@@ -584,5 +589,29 @@ describe('one pool table, one reading: filter, order and count are shared by the
     seedMore({ stale: { ...row({ id: 'stale' }), check_count: 3 } });
     expect(JSON.parse(await out(['status'])).stale).toBe(1);
     expect(JSON.parse(await out(['stale'])).map((r: { id: string }) => r.id)).toEqual(['stale']);
+  });
+});
+
+describe('the bytes a write lands: the record base\u2019s one writer, the pool\u2019s deep key sort', () => {
+  it('the pool on disk is exactly the base\u2019s `jsonBytes` with sortKeys \u2014 two-space indent, non-ASCII as it is, deeply sorted keys, no trailing newline', async () => {
+    // Two adds in the order that would scramble an unsorted writer, with non-ASCII and multi-byte
+    // cells in the middle of the record: whatever the construction order was, the bytes on disk
+    // are the base's one spelling of this record.
+    await out(['add', '--id', 'z-late', '--module', '面板/panel', '--title', '深键序']);
+    await out(['add', '--id', 'a-early']);
+    const raw = readFileSync(POOL());
+    const data = JSON.parse(raw.toString('utf8')) as unknown;
+    // Byte equality covers every cell of the rule at once: indentation, key order (deeply, the
+    // top level and each issue's own cells), non-ASCII as it is, LF, and no trailing newline.
+    expect(raw.equals(Buffer.from(jsonBytes(data, { sortKeys: true })))).toBe(true);
+    expect(Object.keys((data as { issues: Record<string, unknown> }).issues)).toEqual(['a-early', 'z-late']);
+  });
+
+  it('an update lands through the same writer: the file keeps the base\u2019s bytes after a read-modify-write', async () => {
+    await out(['add', '--id', 'a', '--title', 'Alpha']);
+    await out(['update', 'a', '--severity', 'P1']);
+    const raw = readFileSync(POOL());
+    const data = JSON.parse(raw.toString('utf8')) as unknown;
+    expect(raw.equals(Buffer.from(jsonBytes(data, { sortKeys: true })))).toBe(true);
   });
 });

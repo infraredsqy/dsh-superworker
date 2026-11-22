@@ -180,6 +180,22 @@ export type {
   PluginTiming,
 } from './plugins/types';
 
+/* The record base a plugin's own layer takes its mechanics from, handed over on the host context
+   (`ctx.base`): the byte format, the atomic landing, the reader, the record lock, the timestamps,
+   and the command-surface mechanics — the engine's one foundation, reached only through the seam. */
+export type { PluginBase } from './plugins/base';
+export type {
+  ParsedVerbArgs,
+  UsageError,
+  VerbFlagCell,
+  VerbFlagKind,
+  VerbRunner,
+  VerbSpec,
+  VerbSurface,
+  VerbSurfaceTables,
+} from './plugins/verb-surface';
+export type { RecordLockOptions } from './ledgerlock';
+
 /* The record directory's own name, exported rather than respelled: the host half builds its
    workspace-relative source paths from this one constant, so a second spelling of the directory
    has nowhere to appear. The tickets' directory name comes out the same way: the panel reads the

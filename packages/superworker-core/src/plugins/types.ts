@@ -1,5 +1,6 @@
 import type { ConfigKind, ConfigValue } from '../config';
 import type { NodeRecord } from '../types';
+import type { PluginBase } from './base';
 
 /**
  * The declaration surface and the runtime contract of plugins: the kinds, the timings, the actions, the closed
@@ -246,6 +247,15 @@ export interface PluginContext {
   run(argv: readonly string[]): Promise<boolean>;
   /** The location of one node's spec.md (this tree's own layout, told to the plugin as it is). */
   specPath(nodeId: string): string;
+  /**
+   * The record base (`src/plugins/base.ts`): the byte format of a record on disk, the atomic
+   * landing, the reader, the cross-process record lock with its in-process queue, the two
+   * timestamp spellings, and the command-surface mechanics. A plugin's own record layer takes its
+   * mechanics from here instead of carrying a second implementation — the plugin names its own
+   * record's landing path, its lock path and its command words, the engine owns the foundation.
+   * A plugin written before this cell existed never reads it and works as it always did.
+   */
+  readonly base: PluginBase;
 }
 
 /** One plugin command in the routing table: the word, the owning plugin, whether the word travels with argv, and the one line of `--help`. */

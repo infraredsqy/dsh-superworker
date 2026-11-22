@@ -180,6 +180,33 @@ describe('nodes by tag', () => {
 
 });
 
+describe('the record base on the context', () => {
+  it('ctx.base hands the engine\u2019s record base in: the cells a plugin\u2019s own layer reads are on it, and they work', async () => {
+    const lab = makeLab('superworker-plugin-ctx-');
+    try {
+      const folders = (await loadPlugins(join(lab.root, 'plugins'))).folders;
+      const ctx = createContext({
+        root: lab.root,
+        folders,
+        homeDir: lab.home,
+        warnings: [],
+        dag: { nodes: {} },
+      });
+      // The cells are the one foundation's: byte format, reader, atomic landing, record lock,
+      // moments, command-surface mechanics. A function on every cell, reachable no other way.
+      expect(typeof ctx.base.nowMicro).toBe('function');
+      expect(typeof ctx.base.nowSeconds).toBe('function');
+      expect(typeof ctx.base.readJson).toBe('function');
+      expect(typeof ctx.base.writeJson).toBe('function');
+      expect(typeof ctx.base.withLock).toBe('function');
+      expect(typeof ctx.base.verbSurface).toBe('function');
+      expect(ctx.base.nowMicro()).toMatch(/\.\d{6}Z$/);
+    } finally {
+      lab.cleanup();
+    }
+  });
+});
+
 describe('one routing, two readers: capture / run and conductor.pluginCommand read the same answer', () => {
   it('a word whose implementation has no main() reads as "it did not run" on both paths, naming the same cause', async () => {
     // The routing used to exist twice — once for capture / run, once for the conductor's plugin word — and

@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import type { ConfigValue } from '../config';
 import { cellOf, group, isKnownKind, servedSources, wordsCell } from './cells';
+import { pluginBase } from './base';
 import type { PluginContext, PluginDeclaration, PluginInsertTarget } from './types';
 
 /**
@@ -60,6 +61,9 @@ export function standInContext(decl: PluginDeclaration, project: string): Plugin
     capture: () => Promise.resolve(''),
     run: () => Promise.resolve(true),
     specPath: (nodeId: string) => join(project, 'stand-in', `${nodeId}.md`),
+    // The record base is machinery, not a door: it carries no scene and acts on nothing by itself,
+    // so the stand-in hands the same stateless foundation a real context hands.
+    base: pluginBase(),
   };
 }
 

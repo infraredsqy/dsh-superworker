@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // The surface under test is this plugin folder's own implementation (the very files the host loads
-// by path), plus the one entry the pool's read-modify-write goes through.
+// by path), plus the one entry the pool's read-modify-write goes through. The record base the
+// plugin takes its mechanics from is handed in the way the host hands it in.
+import { pluginBase } from '../src/plugins/base';
 import { main as issue } from '../plugins/issue/tools/commands.mjs';
 import { withPoolLock } from '../plugins/issue/tools/storage.mjs';
 
@@ -14,31 +16,33 @@ import { withPoolLock } from '../plugins/issue/tools/storage.mjs';
  * either write landed, the pool comes back without one of the two issues and nobody is told. The
  * overlap is brought about for real below: the first write misses its rename once, which sends it
  * back for the retry the atomic write already backs off from — while it waits, the second command
- * runs all the way through unless something queues it.
+ * runs all the way through unless something holds the pool's lock for it.
  *
- * The "rename blocked" step is forced through a module double: everything but `renameSync` is the
- * real implementation (the plugin reads and writes with `node:fs`'s synchronous surface).
+ * The "rename blocked" step is forced through a module double: everything but `rename` of the
+ * record base's own landing (`node:fs/promises`, the engine's `src/jsonio.ts`) is the real
+ * implementation.
  */
 
 const renameProbe = vi.hoisted(() => ({ failRemaining: 0 }));
 
-vi.mock('node:fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs')>();
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
   return {
     ...actual,
-    renameSync: (from: unknown, to: unknown) => {
+    rename: (from: unknown, to: unknown) => {
       if (renameProbe.failRemaining > 0) {
         renameProbe.failRemaining -= 1;
         const error = new Error('rename blocked (test double)') as { code?: string };
         error.code = 'EPERM';
-        throw error;
+        return Promise.reject(error);
       }
-      return actual.renameSync(from as string, to as string);
+      return actual.rename(from as string, to as string);
     },
   };
 });
 
 let root: string;
+let base: ReturnType<typeof pluginBase>;
 
 const POOL = (): string => join(root, '.superworker', 'issues', 'issues.json');
 
@@ -49,12 +53,13 @@ function pooledIds(): string[] {
 }
 
 async function run(argv: string[]): Promise<string> {
-  const main = issue as (argv: string[], ctx: { root: string }) => Promise<unknown>;
-  return String(await main(argv, { root }));
+  const main = issue as (argv: string[], ctx: { root: string; base: typeof base }) => Promise<unknown>;
+  return String(await main(argv, { root, base }));
 }
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'superworker-issue-lock-'));
+  base = pluginBase();
   renameProbe.failRemaining = 0;
 });
 
@@ -69,7 +74,7 @@ describe('two writes at once', () => {
     const second = run(['add', '--id', 'second', '--title', 'Second']);
     const answers = await Promise.all([first, second]);
     // The double ate the missed rename: had it not been hit, neither write would have looked at a
-    // snapshot the other one had already replaced, and this test would pass without the queue.
+    // snapshot the other one had already replaced, and this test would pass without the lock.
     expect(renameProbe.failRemaining).toBe(0);
     // Both commands report success: a loss here would be silent, which is the whole point.
     expect(answers[0]).toContain('Issue created: first');
@@ -77,7 +82,7 @@ describe('two writes at once', () => {
     expect(pooledIds()).toEqual(['first', 'second']);
   });
 
-  it('every mutating verb goes through the same queue: a write waits for the one in front of it', async () => {
+  it('every mutating verb goes through the same lock: a write waits for the one in front of it', async () => {
     await run(['add', '--id', 'seed', '--title', 'Seed']);
     // The same overlap as above, between two different verbs: the mark is held back by a missed
     // rename, and the resolve running in the meantime must not land on top of it.
@@ -85,7 +90,7 @@ describe('two writes at once', () => {
     const marked = run(['mark', 'seed']);
     const resolved = run(['resolve', 'seed']);
     await Promise.all([marked, resolved]);
-    // Same premise as above: the window the queue has to close only exists because the rename was
+    // Same premise as above: the window the lock has to close only exists because the rename was
     // missed, so the double's hit is asserted rather than assumed.
     expect(renameProbe.failRemaining).toBe(0);
     const status = JSON.parse(readFileSync(POOL(), 'utf8')) as {
@@ -100,7 +105,7 @@ describe('two writes at once', () => {
 });
 
 describe('the writers queue, the readers do not', () => {
-  it('a write started while the queue is held waits for it, while a reading verb answers right away', async () => {
+  it('a write started while the lock is held waits for it, while a reading verb answers right away', async () => {
     let release!: () => void;
     const held = new Promise<void>((done) => {
       release = done;
@@ -112,7 +117,7 @@ describe('the writers queue, the readers do not', () => {
     const holding = withPoolLock(root, async () => {
       entered();
       await held;
-    });
+    }, base);
     await inside;
 
     const adding = run(['add', '--id', 'queued', '--title', 'Queued']);
