@@ -520,7 +520,6 @@ export const dagAddVerb = run("dag add", async (call) => {
   const { values, positionals, superworker, root } = call;
   const titleWords = positionals[0] ?? [];
   const title = titleWords[0] ?? '';
-  const description = (positionals[1] ?? []).join(' ') || values.desc;
   if (values.from_file === undefined && titleWords.length === 0) {
     // The title cell is optional on the row because the file form carries the titles instead: a call
     // with neither is refused with the same sentence the required cell used to answer with.
@@ -529,7 +528,7 @@ export const dagAddVerb = run("dag add", async (call) => {
   if (values.from_file !== undefined) {
     if (titleWords.length > 0) return refuse('give either a title or --from-file', 2);
     // A batch carries the rows' own fields: a per-node option alongside it has nothing to shape.
-    const alongside = ['desc', 'mode', 'weight', 'tags', 'depends_on']
+    const alongside = ['mode', 'weight', 'tags', 'depends_on']
       .filter((cell) => values[cell] !== undefined)
       .map((cell) => `--${cell.replace(/_/gu, '-')}`);
     if (alongside.length > 0) {
@@ -568,7 +567,6 @@ export const dagAddVerb = run("dag add", async (call) => {
   }
   const node = await superworker.ledger.dag.add({
     title,
-    ...(description === undefined || description === '' ? {} : { description }),
     ...(values.mode === undefined ? {} : { mode: values.mode }),
     ...(values.weight === undefined ? {} : { weight: values.weight }),
     ...(values.tags === undefined ? {} : { tags: splitTags(values.tags) }),
@@ -592,7 +590,6 @@ export const dagUpdateVerb = run("dag update", async (call) => {
   const id = call.at(0)!;
   const patch: Record<string, unknown> = {};
   if (values.title !== undefined) patch.title = values.title;
-  if (values.desc !== undefined) patch.description = values.desc;
   if (values.mode !== undefined) patch.mode = values.mode;
   if (values.weight !== undefined) patch.weight = values.weight;
   if (values.tags !== undefined) patch.tags = splitTags(values.tags);
@@ -601,7 +598,7 @@ export const dagUpdateVerb = run("dag update", async (call) => {
     // A call that names no change is a line this word cannot take, and it answers like one: the
     // sentence on stderr, and the refusal's own code (never a success code with an error sentence).
     return refuse(
-      'No changes: provide --title, --desc, --mode, --weight, --tags and/or --clear-tags',
+      'No changes: provide --title, --mode, --weight, --tags and/or --clear-tags',
       EXIT.refused,
     );
   }

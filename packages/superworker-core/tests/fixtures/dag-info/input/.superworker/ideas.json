@@ -2,7 +2,6 @@
   "nodes": {
     "@node-a@": {
       "title": "A",
-      "description": "the note on A",
       "status": "todo",
       "mode": "checkpoint",
       "dependencies": [
@@ -17,7 +16,6 @@
     },
     "@node-b@": {
       "title": "B",
-      "description": "",
       "status": "completed",
       "mode": "auto",
       "dependencies": [],
@@ -28,7 +26,6 @@
     },
     "@node-c@": {
       "title": "C",
-      "description": "",
       "status": "todo",
       "mode": "auto",
       "dependencies": [
@@ -39,7 +36,6 @@
     },
     "@node-d@": {
       "title": "D",
-      "description": "",
       "status": "shelved",
       "mode": "auto",
       "dependencies": [],

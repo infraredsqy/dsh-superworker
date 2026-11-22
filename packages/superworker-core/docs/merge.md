@@ -57,7 +57,7 @@ git 在**工作树的顶层**拉起驱动，项目可能在那下面好几层，
 
 - **图**：节点按 uuid 取并集。`status` 两侧都挪了就取更高的一档（`todo` < `shelved` <
   `completed`），词汇表以外的词是冲突。依赖边两侧都只加边就取并集，任一侧剪过边（或没有共同
-  祖先可比）就是冲突。`title` / `description` / `mode` / `tags` 由 `updated_at` 判后写的那次赢；
+  祖先可比）就是冲突。`title` / `mode` / `tags` 由 `updated_at` 判后写的那次赢；
   `updated_at` 取晚的、`created_at` 取早的。取下节点会传播：一侧取下、另一侧原封不动就是删除，
   一侧取下、另一侧改过是删 vs 改的冲突。合并弄断的依赖边要点名——`ledger.dag.validate` 会报悬空
   引用，在那之前这条边读作已满足（节点显示就绪）。

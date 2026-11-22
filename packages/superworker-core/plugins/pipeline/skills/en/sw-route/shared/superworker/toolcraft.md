@@ -66,5 +66,5 @@ is `dag search`'s job.**
 
 ### Quoting a pattern
 
-Every pattern argument (`dag search`'s regex, `dag add`'s title / description) goes in double quotes, to stop
+Every pattern argument (`dag search`'s regex, `dag add`'s title) goes in double quotes, to stop
 the shell from parsing special characters.

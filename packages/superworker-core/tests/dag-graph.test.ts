@@ -369,39 +369,25 @@ describe('ready: an absent status reads todo, in every reader', () => {
   });
 });
 
-describe('search: a regex over titles and descriptions', () => {
-  it('title hits come first and get the full text; a single hit in a description gets an excerpt', async () => {
-    await superworker.ledger.dag.add({ title: 'login page rebuild', description: 'setup text unrelated to login' });
-    await superworker.ledger.dag.add({ title: 'nav bar', description: 'move login to top right' });
-    await superworker.ledger.dag.add({
-      title: 'footer',
-      description: 'go over the nav first and tuck the secondary entries into a drawer, then move the login entry to the top right where it is visible at a glance, ' +
-        'then the signup entry, the footer keeping a spare path for troubleshooting',
-    });
+describe('search: a regex over the title', () => {
+  it('matches the title only, and a hit carries the node\'s own cells', async () => {
+    await superworker.ledger.dag.add({ title: 'login page rebuild' });
+    await superworker.ledger.dag.add({ title: 'nav bar' });
+    await superworker.ledger.dag.add({ title: 'footer' });
 
     const hits = await superworker.ledger.dag.search('login');
-    expect(hits).toHaveLength(3);
-    // Title hits come first and description-only hits after; inside each group the order follows the on-disk sort of node ids.
-    expect(hits.slice(0, 1).map((hit) => hit.title)).toEqual(['login page rebuild']);
-    expect(hits.slice(1).map((hit) => hit.title).sort()).toEqual(['nav bar', 'footer'].sort());
-    // A title hit gives the full text.
-    expect(hits[0]!.description).toBe('setup text unrelated to login');
-    const byTitle = new Map(hits.slice(1).map((hit) => [hit.title, hit]));
-    // One hit in a short description: the window covers the whole text and the excerpt carries no ellipsis.
-    expect(byTitle.get('nav bar')!.description).toBe('move login to top right');
-    // One hit in a long description: twenty characters on each side of the first hit, and both trimmed ends get an ellipsis.
-    const footer = byTitle.get('footer')!.description!;
-    expect(footer.startsWith('...')).toBe(true);
-    expect(footer.endsWith('...')).toBe(true);
-    expect(footer.length).toBeLessThan(90);
-    expect(hits.every((hit) => hit.status === 'todo')).toBe(true);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.title).toBe('login page rebuild');
+    expect(Object.keys(hits[0]!).sort()).toEqual(['id', 'ready', 'status', 'title']);
+    expect(hits[0]!.status).toBe('todo');
   });
 
-  it('two or more hits in a description get the full text', async () => {
-    await superworker.ledger.dag.add({ title: 'description only', description: 'cache invalidation is the only hard problem; a cache stampede is harder' });
+  it('a hit carries the node\'s own cells and nothing else', async () => {
+    await superworker.ledger.dag.add({ title: 'cache invalidation is the only hard problem' });
     const hits = await superworker.ledger.dag.search('cache');
     expect(hits).toHaveLength(1);
-    expect(hits[0]!.description).toBe('cache invalidation is the only hard problem; a cache stampede is harder');
+    expect(hits[0]!.title).toBe('cache invalidation is the only hard problem');
+    expect(Object.keys(hits[0]!).sort()).toEqual(['id', 'ready', 'status', 'title']);
   });
 
   it('activeOnly leaves out completed nodes; limit caps the result (5 by default)', async () => {
@@ -439,7 +425,6 @@ function withoutStatus(node: Record<string, unknown>): Record<string, unknown> {
 function nodeOf(title: string, dependencies: string[]): Record<string, unknown> {
   return {
     title,
-    description: '',
     status: 'todo',
     mode: 'auto',
     dependencies,

@@ -4,7 +4,6 @@
       "completed_at": "@t3@",
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "starting point of the wrap-up parity case",
       "mode": "checkpoint",
       "status": "completed",
       "title": "the cell at a checkpoint",

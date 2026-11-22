@@ -2,7 +2,6 @@
   "nodes": {
     "@node-a@": {
       "title": "assemble the round",
-      "description": "",
       "status": "todo",
       "mode": "checkpoint",
       "dependencies": [],

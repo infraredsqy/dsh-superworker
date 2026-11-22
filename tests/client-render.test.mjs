@@ -27,7 +27,6 @@ const record = () => ({
     nodes: {
       n1: {
         title: 'the first node',
-        description: 'a finished piece of work',
         tags: ['t0'],
         mode: 'auto',
         status: 'completed',

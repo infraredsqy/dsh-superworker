@@ -4,7 +4,6 @@
       "completed_at": "@t2@",
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "the one that passes the gate",
       "mode": "checkpoint",
       "status": "completed",
       "title": "review proof",

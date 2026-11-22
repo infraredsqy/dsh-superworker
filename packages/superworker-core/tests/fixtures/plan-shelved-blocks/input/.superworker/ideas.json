@@ -2,7 +2,6 @@
   "nodes": {
     "@node-a@": {
       "title": "parked",
-      "description": "",
       "status": "shelved",
       "mode": "auto",
       "dependencies": [],
@@ -11,7 +10,6 @@
     },
     "@node-b@": {
       "title": "after it",
-      "description": "",
       "status": "todo",
       "mode": "auto",
       "dependencies": [
@@ -22,7 +20,6 @@
     },
     "@node-c@": {
       "title": "after that",
-      "description": "",
       "status": "todo",
       "mode": "auto",
       "dependencies": [

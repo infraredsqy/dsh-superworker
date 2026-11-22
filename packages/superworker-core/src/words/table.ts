@@ -943,13 +943,6 @@ export const GROUPS = {
             "metavar": "title",
             "required": false,
             "help": "Node title"
-          },
-          {
-            "name": "description",
-            "metavar": "description",
-            "required": false,
-            "help": "Description text (positional, space-separated)",
-            "nargs": "*"
           }
         ],
         "options": [
@@ -959,13 +952,6 @@ export const GROUPS = {
               "--help"
             ],
             "help": "show this help message and exit",
-          },
-          {
-            "flags": [
-              "--desc"
-            ],
-            "metavar": "DESC",
-            "help": "Description text (flag, alternative to positional)",
           },
           {
             "flags": [
@@ -1074,13 +1060,6 @@ export const GROUPS = {
           },
           {
             "flags": [
-              "--desc"
-            ],
-            "metavar": "DESC",
-            "help": "New description",
-          },
-          {
-            "flags": [
               "--mode"
             ],
             "metavar": "{auto,checkpoint,manual}",
@@ -1117,7 +1096,7 @@ export const GROUPS = {
           }
         ],
         "group": "dag",
-        "summary": "Update title and/or description"
+        "summary": "Update the title, mode, weight or tags"
       },
       {
         "word": "depend",
@@ -1427,7 +1406,7 @@ export const GROUPS = {
           }
         ],
         "group": "dag",
-        "summary": "Search nodes by title/description using regex"
+        "summary": "Search nodes by title using regex"
       },
       {
         "word": "open",

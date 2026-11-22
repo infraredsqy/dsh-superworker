@@ -2,7 +2,6 @@
   "nodes": {
     "@node-a@": {
       "title": "first",
-      "description": "",
       "status": "completed",
       "mode": "auto",
       "dependencies": [],
@@ -12,7 +11,6 @@
     },
     "@node-b@": {
       "title": "second",
-      "description": "",
       "status": "completed",
       "mode": "auto",
       "dependencies": [

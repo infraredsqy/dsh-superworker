@@ -79,7 +79,7 @@ const DEFAULT_WEIGHT: NodeWeight = 'standard';
 const VALID_MODES: readonly NodeMode[] = ['auto', 'checkpoint', 'manual'];
 const VALID_WEIGHTS: readonly NodeWeight[] = ['light', 'standard'];
 /** The cells one batch row may carry; any other key is a typo the batch is refused for. */
-const BATCH_ROW_KEYS: readonly string[] = ['ref', 'title', 'description', 'mode', 'weight', 'tags', 'depends_on'];
+const BATCH_ROW_KEYS: readonly string[] = ['ref', 'title', 'mode', 'weight', 'tags', 'depends_on'];
 
 /** One row's string-array cell: anything but an array of strings is a bad row. */
 function stringArrayCell(value: unknown, field: string, row: number): string[] {
@@ -160,7 +160,6 @@ export function createDagNamespace(root: string): DagNamespace {
         const now = nowMicro();
         const node: NodeRecord = {
           title: input.title,
-          description: input.description ?? '',
           status: 'todo',
           mode: input.mode ?? DEFAULT_MODE,
           dependencies: [],
@@ -239,9 +238,6 @@ export function createDagNamespace(root: string): DagNamespace {
           if (typeof cells.title !== 'string' || cells.title === '') {
             throw new Error(`row ${at}: title cannot be empty`);
           }
-          if (cells.description !== undefined && typeof cells.description !== 'string') {
-            throw new Error(`row ${at}: description must be a string`);
-          }
           if (cells.mode !== undefined && !VALID_MODES.includes(cells.mode as NodeMode)) {
             throw new Error(`row ${at}: mode must be one of ${VALID_MODES.join(', ')}`);
           }
@@ -264,7 +260,6 @@ export function createDagNamespace(root: string): DagNamespace {
           const uid = randomUUID();
           const node: NodeRecord = {
             title: cells.title,
-            description: typeof cells.description === 'string' ? cells.description : '',
             status: 'todo',
             mode: (cells.mode as NodeMode | undefined) ?? DEFAULT_MODE,
             dependencies: [],
@@ -347,10 +342,6 @@ export function createDagNamespace(root: string): DagNamespace {
         let changed = false;
         if (patch.title !== undefined) {
           node.title = patch.title;
-          changed = true;
-        }
-        if (patch.description !== undefined) {
-          node.description = patch.description;
           changed = true;
         }
         if (patch.mode !== undefined) {
@@ -555,7 +546,6 @@ export function createDagNamespace(root: string): DagNamespace {
         // exactly as readiness below already reads an absent status as todo.
         status: node.status ?? 'todo',
         mode: node.mode ?? DEFAULT_MODE,
-        description: node.description ?? '',
         depends_on: dependsOn,
         depended_by: dependedBy,
         ready: nodeReady(uid, nodes),
@@ -636,53 +626,27 @@ export function createDagNamespace(root: string): DagNamespace {
           )
         : nodes;
       let pattern: RegExp;
-      let counter: RegExp;
       try {
         pattern = new RegExp(query, 'i');
-        counter = new RegExp(query, 'gi');
       } catch (error) {
         throw new Error(`invalid regex: ${error instanceof Error ? error.message : String(error)}`);
       }
 
-      /** A window of twenty characters either side of the first hit; an ellipsis is added at whichever end was cut. */
-      const snippet = (description: string): string => {
-        const PAD = 20;
-        const pos = description.search(pattern);
-        const start = Math.max(0, pos - PAD);
-        const end = Math.min(description.length, pos + PAD);
-        let out = description.slice(start, end);
-        if (start > 0) out = `...${out}`;
-        if (end < description.length) out = `${out}...`;
-        return out;
-      };
-
-      const titleHits: DagSearchHit[] = [];
-      const descriptionHits: DagSearchHit[] = [];
+      // The title is the only text a node's record carries, so it is the only cell search reads.
+      const hits: DagSearchHit[] = [];
       for (const [uid, node] of Object.entries(selected)) {
         const title = node.title ?? '';
-        const description = node.description ?? '';
-        const inTitle = pattern.test(title);
-        const inDescription = pattern.test(description);
-        if (!inTitle && !inDescription) continue;
-        const hit: DagSearchHit = {
+        if (!pattern.test(title)) continue;
+        hits.push({
           id: uid,
           title,
           status: node.status,
           ready: nodeReady(uid, nodes),
-        };
-        if (description !== '') {
-          if (inTitle) hit.description = description;
-          else {
-            const occurrences = [...description.matchAll(counter)].length;
-            hit.description = occurrences >= 2 ? description : snippet(description);
-          }
-        }
-        (inTitle ? titleHits : descriptionHits).push(hit);
+        });
       }
-      // Title hits come first; the default limit is 5, and a zero or negative one means no ceiling.
-      const result = [...titleHits, ...descriptionHits];
+      // The default limit is 5, and a zero or negative one means no ceiling.
       const limit = options.limit ?? 5;
-      return limit > 0 ? result.slice(0, limit) : result;
+      return limit > 0 ? hits.slice(0, limit) : hits;
     },
 
     async list(filter: DagListFilter = {}): Promise<NodeSummary[]> {

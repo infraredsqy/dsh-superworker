@@ -33,7 +33,6 @@ export type NodeWeight = 'light' | 'standard';
 /** A node record (a value of the `nodes` table in ideas.json). */
 export interface NodeRecord {
   title: string;
-  description: string;
   status: NodeStatus;
   mode: NodeMode;
   /** The ids of the nodes it depends on (the edges on the graph). */

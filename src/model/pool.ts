@@ -9,8 +9,8 @@
  * standing, just left out of the weighted sum.
  *
  * Neither the weight table nor the policy line sits on a ready-made field in
- * the records: the former is written in some maintenance node's own
- * description (`P3/P2/P1/P0 = 1/2/4/8`), the latter is a cycle's own
+ * the records: the former is written in some maintenance node's own title
+ * (`P3/P2/P1/P0 = 1/2/4/8`), the latter is a cycle's own
  * `issue_pool_weight_limit`.
  */
 import type { SuperworkerCycle, SuperworkerIssue, SuperworkerNode } from './records.ts'
@@ -140,7 +140,7 @@ export function readPool(
 
 export function readWeights(nodes: Readonly<Record<string, SuperworkerNode>>): PoolWeights | null {
   for (const node of Object.values(nodes)) {
-    const said = `${node.title ?? ''} ${node.description ?? ''}`
+    const said = node.title ?? ''
     const found = WEIGHT_MAP.exec(said)
     if (found !== null) {
       return { P3: Number(found[1]), P2: Number(found[2]), P1: Number(found[3]), P0: Number(found[4]) }

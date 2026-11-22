@@ -3,7 +3,6 @@
     "@node-a@": {
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "first item on the writing line",
       "mode": "auto",
       "status": "todo",
       "tags": [
@@ -15,7 +14,6 @@
     "@node-b@": {
       "created_at": "@t2@",
       "dependencies": [],
-      "description": "",
       "mode": "checkpoint",
       "status": "todo",
       "title": "review proof",
@@ -24,7 +22,6 @@
     "@node-c@": {
       "created_at": "@t3@",
       "dependencies": [],
-      "description": "",
       "mode": "auto",
       "status": "shelved",
       "tags": [
@@ -40,7 +37,6 @@
       "dependencies": [
         "@node-b@"
       ],
-      "description": "",
       "mode": "manual",
       "status": "todo",
       "title": "roll up and deliver",
@@ -51,7 +47,6 @@
       "dependencies": [
         "@node-a@"
       ],
-      "description": "a registration with dependencies and tags",
       "mode": "manual",
       "status": "todo",
       "tags": [

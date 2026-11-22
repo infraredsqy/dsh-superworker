@@ -33,7 +33,6 @@ describe('add: registering a node', () => {
     const plain = await superworker.ledger.dag.add({ title: 'plain node' });
     expect(plain).toMatchObject({
       title: 'plain node',
-      description: '',
       status: 'todo',
       mode: 'auto',
       dependencies: [],
@@ -45,7 +44,6 @@ describe('add: registering a node', () => {
 
     const dressed = await superworker.ledger.dag.add({
       title: 'dressed up',
-      description: 'has a note',
       tags: ['coding'],
       weight: 'light',
       mode: 'checkpoint',
@@ -86,11 +84,10 @@ describe('add: registering a node', () => {
 });
 
 describe('update: changing a node', () => {
-  it('changing title, description or mode all touch updated_at', async () => {
+  it('changing title or mode all touch updated_at', async () => {
     const node = await superworker.ledger.dag.add({ title: 'old title' });
-    const updated = await superworker.ledger.dag.update(node.id, { title: 'new title', description: 'new note', mode: 'manual' });
+    const updated = await superworker.ledger.dag.update(node.id, { title: 'new title', mode: 'manual' });
     expect(updated.title).toBe('new title');
-    expect(updated.description).toBe('new note');
     expect(updated.mode).toBe('manual');
     expect(updated.updated_at > node.updated_at).toBe(true);
   });

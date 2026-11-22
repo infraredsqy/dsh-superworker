@@ -47,7 +47,6 @@ const json = (value) => JSON.stringify(value, null, 2) + '\n'
 const NODES = {
   n1: {
     title: 'first',
-    description: 'the first node',
     tags: ['t0'],
     mode: 'auto',
     weight: 'w1',
@@ -61,7 +60,6 @@ const NODES = {
   // The second node deliberately carries no weight and no dsh_session: absent in the record, absent in the payload.
   n2: {
     title: 'second',
-    description: 'the second node',
     tags: [],
     mode: 'manual',
     status: 'todo',
@@ -111,7 +109,7 @@ const record = () => ({
   '.superworker/issues/issues.json': json({ version: 1, issues: ISSUES }),
 })
 
-test('Every source was read, and the entries are the record\'s own (weight / description / dsh_session as they are)', async () => {
+test('Every source was read, and the entries are the record\'s own (weight / dsh_session as they are)', async () => {
   const { port } = fakeWorkspace(record(), { pageLines: 500 })
   const reading = await readReading(port, scope, signal)
 
@@ -127,7 +125,7 @@ test('Every source was read, and the entries are the record\'s own (weight / des
 test('A record spanning several pages still comes back whole', async () => {
   const many = {}
   for (let i = 1; i <= 20; i++) {
-    many[`n${i}`] = { ...NODES.n2, title: `node ${i}`, description: `description ${i}`, dependencies: [`n${i - 1}`] }
+    many[`n${i}`] = { ...NODES.n2, title: `node ${i} ${'t'.repeat(300)}`, dependencies: [`n${i - 1}`] }
   }
   const files = record()
   files['.superworker/ideas.json'] = json({ nodes: many })
@@ -200,7 +198,7 @@ test('A page that will not move forward does not spin forever', async () => {
 test('When a page breaches the byte cap it shrinks and retries: the whole record still reads in full', async () => {
   const many = {}
   for (let i = 1; i <= 400; i++) {
-    many[`n${i}`] = { ...NODES.n2, title: `node ${i}`, description: 'd'.repeat(300) }
+    many[`n${i}`] = { ...NODES.n2, title: `node ${i} ${'t'.repeat(300)}` }
   }
   const files = record()
   files['.superworker/ideas.json'] = json({ nodes: many })
@@ -221,7 +219,7 @@ test('When a page breaches the byte cap it shrinks and retries: the whole record
 test('A requested line count above the port tier shrinks and retries too: the whole record still reads in full', async () => {
   const many = {}
   for (let i = 1; i <= 40; i++) {
-    many[`n${i}`] = { ...NODES.n2, title: `node ${i}`, description: 'd'.repeat(3000) }
+    many[`n${i}`] = { ...NODES.n2, title: `node ${i} ${'t'.repeat(3000)}` }
   }
   const files = record()
   files['.superworker/ideas.json'] = json({ nodes: many })
@@ -239,7 +237,7 @@ test('A requested line count above the port tier shrinks and retries too: the wh
 
 test('When one line alone breaches the cap, that one really is unreadable', async () => {
   const files = record()
-  files['.superworker/ideas.json'] = json({ nodes: { n1: { ...NODES.n2, description: 'd'.repeat(9000) } } })
+  files['.superworker/ideas.json'] = json({ nodes: { n1: { ...NODES.n2, title: 't'.repeat(9000) } } })
   const { port } = fakeWorkspace(files, { pageLines: 500, maxBytes: 4096 })
   const reading = await readReading(port, scope, signal)
 

@@ -4,7 +4,6 @@
       "completed_at": "@t6@",
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "第一个节点的说明",
       "mode": "auto",
       "status": "completed",
       "tags": [
@@ -16,7 +15,6 @@
     "@node-b@": {
       "created_at": "@t2@",
       "dependencies": [],
-      "description": "",
       "mode": "checkpoint",
       "status": "todo",
       "title": "复核校样",
@@ -25,7 +23,6 @@
     "@node-c@": {
       "created_at": "@t3@",
       "dependencies": [],
-      "description": "",
       "mode": "auto",
       "status": "todo",
       "tags": [

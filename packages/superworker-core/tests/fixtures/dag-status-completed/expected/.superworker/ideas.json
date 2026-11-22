@@ -4,7 +4,6 @@
       "completed_at": "@t6@",
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "first item on the writing line",
       "mode": "auto",
       "status": "completed",
       "tags": [
@@ -16,7 +15,6 @@
     "@node-b@": {
       "created_at": "@t2@",
       "dependencies": [],
-      "description": "",
       "mode": "checkpoint",
       "status": "todo",
       "title": "review proof",
@@ -25,7 +23,6 @@
     "@node-c@": {
       "created_at": "@t3@",
       "dependencies": [],
-      "description": "",
       "mode": "auto",
       "status": "shelved",
       "tags": [
@@ -41,7 +38,6 @@
       "dependencies": [
         "@node-b@"
       ],
-      "description": "",
       "mode": "manual",
       "status": "todo",
       "title": "roll up and deliver",

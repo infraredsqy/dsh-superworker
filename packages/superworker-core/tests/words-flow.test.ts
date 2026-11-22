@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { SimulatedExecutor } from '../src/executor';
 import { open } from '../src/open';
 import { answer } from '../src/words/router';
+import { COMMAND_ROWS } from '../src/words/table';
 import type { WordsIO } from '../src/words/types';
 
 /**
@@ -220,6 +221,25 @@ describe('dag update: the word that names no change', () => {
     expect(refused.code).toBe(2);
     expect(refused.stderr.startsWith('Error: No changes:')).toBe(true);
     expect(readFileSync(join(root, '.superworker', 'ideas.json'), 'utf8')).toBe(before);
+  });
+
+  it('the refusal names exactly the options the row still carries: a retired flag cannot come back in the sentence', async () => {
+    const { io } = project();
+    await call(io, ['init']);
+    await call(io, ['dag', 'add', 'the first node']);
+    const [id] = graphIds(io);
+    const refused = await answer(['dag', 'update', id!], io);
+
+    // The sentence's own option list, and the row the parser actually reads: one repair, one place. The
+    // list is derived from the table rather than restated, so a flag that leaves the word leaves the
+    // sentence with it — and a flag that only ever existed in the sentence (the retired `--desc`) has
+    // nothing in the table to match.
+    const named = [...refused.stderr.matchAll(/(?<![\w-])(--[a-z][a-z-]*)/gu)].map((match) => match[1]!);
+    const carried = (COMMAND_ROWS['dag update']?.options ?? [])
+      .flatMap((option) => option.flags ?? [])
+      .filter((flag) => flag !== '-h' && flag !== '--help');
+    expect([...new Set(named)].sort()).toEqual([...new Set(carried)].sort());
+    expect(named).not.toContain('--desc');
   });
 });
 

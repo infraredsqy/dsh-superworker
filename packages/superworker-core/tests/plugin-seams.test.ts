@@ -77,8 +77,10 @@ describe('close: settlement and the insertion seam each land their own part', ()
       expect(record).not.toBeNull();
       expect(record!.status).toBe('todo');
       expect(record!.mode).toBe('auto');
-      // The description cell holds the spec text as a JSON literal (the on-disk byte convention for one argv encoding step).
-      expect(record!.description).toBe(JSON.stringify(SPEC_A));
+      // The text travels one way: it is the new node's spec.md and nothing is copied onto the record.
+      expect(Object.keys(record!).sort()).toEqual([
+        'created_at', 'dependencies', 'mode', 'status', 'tags', 'title', 'updated_at',
+      ]);
       expect(record!.dependencies).toEqual([nodeId]);
       expect(readFileSync(join(recordPaths(lab.root).nodesDir, inserted!.id, 'spec.md'), 'utf8')).toBe(SPEC_A);
       // Settlement and insertion in one close: the verdict enters path, the closed node lands completed, and the

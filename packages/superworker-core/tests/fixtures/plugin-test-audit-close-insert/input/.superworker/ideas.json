@@ -3,7 +3,6 @@
     "@node-a@": {
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "starting point of the test-audit parity case",
       "mode": "auto",
       "status": "todo",
       "title": "the node that got closed",

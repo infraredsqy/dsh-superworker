@@ -2,7 +2,6 @@
   "nodes": {
     "@node-b@": {
       "title": "B",
-      "description": "",
       "status": "todo",
       "mode": "auto",
       "dependencies": [],

@@ -186,7 +186,6 @@ function conflictSide(title: (index: number) => string): string {
     nodes[`${String(index).padStart(8, '0')}-1111-4111-8111-111111111111`] = {
       created_at: '2026-02-01T00:00:00.000000Z',
       dependencies: [],
-      description: 'the same description on every side',
       mode: 'auto',
       status: 'todo',
       title: title(index),

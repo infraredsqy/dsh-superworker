@@ -196,7 +196,7 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 | `ledger.dag.add` | `add(input)` | 登记一个节点：标题必填，依赖、标签、模式、重量可选 |
 | `ledger.dag.addMany` | `addMany(rows)` | 一批登记为一次图的写：行可带 `ref`，坏行 / 悬空依赖 / 成环拒整批，一个字节不落 |
 | `ledger.dag.remove` | `remove(id, options?)` | 把节点取下图，它的会话档一并删掉；还有依赖者时拒绝，除非 `force` |
-| `ledger.dag.update` | `update(id, patch)` | 改节点的标题 / 描述 / 模式 / 标签 / 重量 |
+| `ledger.dag.update` | `update(id, patch)` | 改节点的标题 / 模式 / 标签 / 重量 |
 | `ledger.dag.link` | `link(id, dependsOn \| dependsOn[])` | 加依赖边；自查环，成环即拒绝；交数组时是一批、一次写入，全部落或一条都不落 |
 | `ledger.dag.unlink` | `unlink(id, dependency)` | 摘一条依赖边 |
 | `ledger.dag.setStatus` | `setStatus(id, status)` | 改状态；落 completed 时写完成时刻，离开即摘除 |
@@ -205,7 +205,7 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 | `ledger.dag.get` | `get(id)` | 读一个节点的记录；不在图上时为 `null` |
 | `ledger.dag.info` | `info(id, options?)` | 读一个节点的详情：记录 + 两个方向的边、就绪、两个读数与会话名单 |
 | `ledger.dag.context` | `context(id)` | 读上下游传递闭包 |
-| `ledger.dag.search` | `search(query, options?)` | 按正则搜标题与描述，标题命中排前 |
+| `ledger.dag.search` | `search(query, options?)` | 按正则搜标题 |
 | `ledger.dag.list` | `list(filter?)` | 按状态 / 就绪 / 标签列出，重要与紧急排序 |
 | `ledger.dag.specPath` | `specPath(id)` | 节点 spec.md 的落点路径 |
 | `ledger.dag.validate` | `validate()` | 查环、悬空引用与重复边；孤立点点名不翻红 |
@@ -221,7 +221,7 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 
 | 字段 | 取值 |
 | --- | --- |
-| `id` / `title` / `status` / `mode` / `description` | 记录里的词；标题、描述缺席读空串，状态缺席读 `todo`，模式缺席读 `auto` |
+| `id` / `title` / `status` / `mode` | 记录里的词；标题缺席读空串，状态缺席读 `todo`，模式缺席读 `auto` |
 | `depends_on` | 本节点记录里的依赖，按记录的次序；每项 `{ id, title }`，图上已经没有的那个读 `(unknown)` |
 | `depended_by` | 图上每条记录里写了本节点的那些节点，按节点表的次序；`{ id, title }`，标题缺席读空串 |
 | `ready` | 与 `list` 的 `ready` 同一把尺 |

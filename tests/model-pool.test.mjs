@@ -10,12 +10,20 @@ import { readLine, readPool, readProject, readWeights } from '../src/model/index
 import { AT, cycle, issue, record } from './helpers/record-fixtures.mjs'
 
 /** The maintenance chore that carries the weight table. */
-const CARRIER = { title: 'tidy the issue pool', description: 'each tier counts by P3/P2/P1/P0 = 1/2/4/8.' }
+const CARRIER = { title: 'tidy the issue pool: each tier counts by P3/P2/P1/P0 = 1/2/4/8.' }
 
-test('the weight table: taken from the maintenance chore\'s own description in the record', () => {
+test('the weight table: taken from the maintenance chore\'s own title in the record', () => {
   assert.deepEqual(readWeights({ n1: CARRIER }), { P3: 1, P2: 2, P1: 4, P0: 8 })
   assert.equal(readWeights({ n1: { title: 'other work' } }), null, 'no table in the record means none')
   assert.equal(readWeights({}), null)
+  /* The record's description cell is retired: a table that sits only there feeds no reading. Older
+   * records still carry it (nothing migrates it away), so this is the reading to hold — the cell is
+   * no longer one of the places the table is read from. */
+  assert.equal(
+    readWeights({ n1: { title: 'tidy the issue pool', description: 'each tier counts by P3/P2/P1/P0 = 1/2/4/8.' } }),
+    null,
+    'the retired description cell no longer feeds the table',
+  )
 })
 
 test('the policy line: which cycle set that number itself', () => {

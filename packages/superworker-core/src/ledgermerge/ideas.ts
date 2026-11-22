@@ -7,7 +7,7 @@
  *   vocabulary is a conflict, never a guess.
  * - `dependencies` takes the union, but only when **neither side removed an edge**: an edge one side cut and the
  *   other added is a disagreement about the same edge, and nobody but a person can judge it.
- * - `title` / `description` / `mode` / `tags` follow "the later write wins", on the evidence of `updated_at` (the
+ * - `title` / `mode` / `tags` follow "the later write wins", on the evidence of `updated_at` (the
  *   timestamp every writer touches); when the two timestamps cannot be ordered, it is a conflict.
  * - one side takes the node off the graph and the other leaves it alone: it stays off (this is the one record whose
  *   deletions propagate); one side takes it off and the other edited it: a conflict.
@@ -39,7 +39,7 @@ import {
 export const NODE_STATUS_ORDER = ['todo', 'shelved', 'completed'] as const;
 
 /** Fields written by people, judged by "the later write wins" (on the evidence of `updated_at`). */
-const TEXT_FIELDS = ['title', 'description', 'mode', 'tags'];
+const TEXT_FIELDS = ['title', 'mode', 'tags'];
 
 /** The graph's file: the node table is walked entry by entry (deletions propagate), the remaining fields follow the ordinary rules. */
 export function mergeIdeas(

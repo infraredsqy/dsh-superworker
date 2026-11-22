@@ -19,8 +19,8 @@ and leave the implementation detail to downstream.
 
 - Take in an idea, first step back and align on what he really wants, then talk through value and
   dependencies, and write it down as a node once it has converged
-- Change the graph at the user's asking: add and drop nodes, change titles and descriptions,
-  connect and cut edges, change the execution mode
+- Change the graph at the user's asking: add and drop nodes, change titles, connect and cut
+  edges, change the execution mode
 - Query the graph: what is in it, which nodes are ready, what state some node is in
 
 The DAG and the project docs (docs/, spec) you read directly; **project code you do not
@@ -356,7 +356,7 @@ message; they run in the order you gave and come back together.
    the full up- and downstream once; an empty downstream is an orphan, so go back and fill it in.
    Edges among this batch go in the rows file's `depends_on` (naming a `ref` from the same batch);
    an edge onto a node already on the graph takes `dag depend <node> --on a,b,c`, one write
-4. Writing it down: put the batch in a rows file (`title` / `description` / `mode` / `weight` /
+4. Writing it down: put the batch in a rows file (`title` / `mode` / `weight` /
    `tags` / `depends_on`, optionally a `ref`) and run one `dag add --from-file` — it prints each
    node's id and spec path per row. Then write two files per id, `intention.md` and `spec.md`;
    neither exists yet, so write them directly and do not read them first; rows that do not depend
@@ -386,7 +386,7 @@ easily: when it really happened, write it down.
 
 **Changing the graph:**
 
-- The title, the description, the mode and the weight can all be changed
+- The title, the mode, the weight and the tags can all be changed
 - Connecting an edge, cutting an edge and deleting a node all move other nodes: check the up- and
   downstream before touching anything and lay the connections that would break before the user;
   after the change, check the topology once more

@@ -25,7 +25,6 @@ import type {
 /** What registering a node takes: the title is required, the rest has defaults. */
 export interface DagAddInput {
   title: string;
-  description?: string;
   mode?: NodeMode;
   tags?: string[];
   weight?: NodeWeight;
@@ -41,7 +40,6 @@ export interface DagAddManyRow {
   /** A name for this row inside the batch: unique among the rows, and never an id already on the graph. */
   ref?: string;
   title: string;
-  description?: string;
   mode?: NodeMode;
   weight?: NodeWeight;
   tags?: string[];
@@ -52,7 +50,6 @@ export interface DagAddManyRow {
 /** Change one node: whichever key is given is the key that changes. */
 export interface DagUpdateInput {
   title?: string;
-  description?: string;
   mode?: NodeMode;
   /** Replace with a new set of tags; null takes them all off (back to visible to every filter set). */
   tags?: string[] | null;
@@ -114,14 +111,12 @@ export interface NodeContext {
   downstream: NodeContextEntry[];
 }
 
-/** One row a search hit. */
+/** One row a search hit: the node's own cells, from the title that matched. */
 export interface DagSearchHit {
   id: string;
   title: string;
   status: NodeStatus;
   ready: boolean;
-  /** The full text when the title matched; when only the description matched, the full text or an excerpt depending on the number of hits. */
-  description?: string;
 }
 
 /** The report of validate: cycles, dangling references, duplicate edges and isolated nodes. */
@@ -163,7 +158,7 @@ export interface DagInfoEdge {
  * waits on and who waits on it, whether it is ready, where it stands in the ordering, and the two
  * session lists only this machine holds.
  *
- * Key order is the read side's own and is fixed: id, title, status, mode, description, depends_on,
+ * Key order is the read side's own and is fixed: id, title, status, mode, depends_on,
  * depended_by, ready, urgency_level, importance_score, then the optional cells in this order —
  * weight (only light), created_at / updated_at (only under `verbose`), sessions (only when a note
  * has something in it), completed_at, approved_at (each only when its moment was written).
@@ -173,7 +168,6 @@ export interface DagInfo {
   title: string;
   status: NodeStatus;
   mode: NodeMode;
-  description: string;
   depends_on: DagInfoEdge[];
   depended_by: DagInfoEdge[];
   ready: boolean;
@@ -221,7 +215,7 @@ export interface DagNamespace {
   info(id: string, options?: DagInfoOptions): Promise<DagInfo>;
   /** Read the transitive closure of one node's upstream and downstream. */
   context(id: string): Promise<NodeContext>;
-  /** Search titles and descriptions by regex; title hits come first. */
+  /** Search titles by regex. */
   search(query: string, options?: DagSearchOptions): Promise<DagSearchHit[]>;
   list(filter?: DagListFilter): Promise<NodeSummary[]>;
   /** The location path of one node's spec.md. */

@@ -38,7 +38,6 @@ export type SuperworkerReadingState = 'records' | 'legacy'
 /** A node in the records: fields copied from the record, value types as written by whichever spelling actually appears in the record. */
 export interface SuperworkerNode {
   readonly title?: string
-  readonly description?: string
   readonly tags?: readonly string[]
   /** The mode this node runs in, e.g. `auto`／`manual`／`checkpoint`. */
   readonly mode?: string

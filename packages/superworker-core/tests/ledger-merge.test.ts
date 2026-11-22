@@ -228,7 +228,6 @@ describe('one side has no such file', () => {
       nodes: {
         'dddddddd-4444-4444-8444-444444444444': {
           title: 'only this side has it',
-          description: '',
           status: 'todo',
           mode: 'auto',
           dependencies: [],
@@ -295,7 +294,6 @@ describe('a side that is present but unreadable: exit 2, a line on stderr, not a
       nodes: {
         'dddddddd-4444-4444-8444-444444444444': {
           title: 'only this side has it',
-          description: '',
           status: 'todo',
           mode: 'auto',
           dependencies: [],
@@ -398,7 +396,6 @@ describe('the record directory was never init-ed: not a byte is written', () => 
             nodes: {
               [id]: {
                 title,
-                description: '',
                 status: 'todo',
                 mode: 'auto',
                 dependencies: [],
@@ -444,7 +441,6 @@ describe('the rules', () => {
   function node(title: string, status: string, stamp: string, dependencies: string[] = []) {
     return {
       title,
-      description: '',
       status,
       mode: 'auto',
       dependencies,
@@ -690,7 +686,6 @@ describe('the side branches of the decision: each branch has a case of its own',
   function idea(title: string, extra: Record<string, unknown> = {}) {
     return {
       title,
-      description: '',
       status: 'todo',
       mode: 'auto',
       dependencies: [] as string[],
@@ -771,7 +766,6 @@ describe('the side branches of the decision: each branch has a case of its own',
     // the same value.
     const baseNode = {
       title: 'A',
-      description: '',
       status: 'todo',
       mode: 'auto',
       created_at: '2026-02-01T00:00:00.000000Z',
@@ -870,7 +864,6 @@ describe('the tables: one reading of a list-or-mapping shape', () => {
   function idea(title: string, extra: Record<string, unknown> = {}) {
     return {
       title,
-      description: '',
       status: 'todo',
       mode: 'auto',
       dependencies: [] as string[],
@@ -998,7 +991,6 @@ describe('the writing half of the driver: the record lock and the default landin
         nodes: {
           [id]: {
             title,
-            description: '',
             status: 'todo',
             mode: 'auto',
             dependencies: [],

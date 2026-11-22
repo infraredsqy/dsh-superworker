@@ -4,7 +4,6 @@
       "completed_at": "@t4@",
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "starting point of the closing-seam parity case",
       "mode": "auto",
       "status": "completed",
       "title": "the node that got closed",
@@ -15,7 +14,6 @@
       "dependencies": [
         "@node-a@"
       ],
-      "description": "\"# Greeter spec\\n\\nInserted by the greeter plugin at the close.\\n\"",
       "mode": "auto",
       "status": "todo",
       "tags": [

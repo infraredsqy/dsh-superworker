@@ -16,7 +16,6 @@ import type {
 
 const node: NodeRecord = {
   title: 'scaffold',
-  description: 'stand the interface surface up',
   status: 'completed',
   mode: 'auto',
   dependencies: ['aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'],
@@ -86,7 +85,7 @@ const sessionNote: SessionNoteRecord = {
 describe('key sets of the five frozen record kinds', () => {
   it('node (a value in the nodes table of ideas.json)', () => {
     expect(Object.keys(node).sort()).toEqual([
-      'approved_at', 'completed_at', 'created_at', 'dependencies', 'description',
+      'approved_at', 'completed_at', 'created_at', 'dependencies',
       'mode', 'status', 'tags', 'title', 'updated_at', 'weight',
     ]);
   });

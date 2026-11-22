@@ -53,7 +53,7 @@ describe('addMany: one batch, one graph write', () => {
     expect(base!.ref).toBe('base');
     expect(top!.ref).toBe('top');
     // The registry shape is add's own: todo / auto, an empty dependency list, tags and weight only when given.
-    expect(base).toMatchObject({ title: 'first batch', description: '', status: 'todo', mode: 'auto', dependencies: [] });
+    expect(base).toMatchObject({ title: 'first batch', status: 'todo', mode: 'auto', dependencies: [] });
     expect(base!.tags).toEqual(['coding']);
     expect(base!.weight).toBe('light');
     expect(top!.weight).toBeUndefined();
@@ -206,11 +206,36 @@ describe('addMany / link at the words layer', () => {
     expect(withTitle.code).toBe(2);
     expect(withTitle.stderr).toContain('give either a title or --from-file');
 
-    const withDesc = await answer(['dag', 'add', '--from-file', file, '--desc', 'a description'], io);
-    expect(withDesc.code).toBe(2);
-    expect(withDesc.stderr).toContain('--from-file takes the rows');
+    const withMode = await answer(['dag', 'add', '--from-file', file, '--mode', 'manual'], io);
+    expect(withMode.code).toBe(2);
+    expect(withMode.stderr).toContain('--from-file takes the rows');
 
     // A refused call writes nothing: the graph document was never even created here.
     expect(existsSync(join(projectRoot, '.superworker', 'ideas.json'))).toBe(false);
+  });
+
+  it('a row carrying the retired text key is an unknown field: the whole batch is refused and not one byte lands', async () => {
+    const { root: projectRoot, io } = project();
+    await call(io, ['init']);
+    const good = idOn(await call(io, ['dag', 'add', 'already on the graph']));
+    const record = join(projectRoot, '.superworker', 'ideas.json');
+    const before = readFileSync(record);
+    const nodesBefore = readdirSync(join(projectRoot, '.superworker', 'nodes')).sort();
+
+    const file = join(projectRoot, 'old-batch.json');
+    writeFileSync(
+      file,
+      JSON.stringify([
+        { ref: 'a', title: 'first of the batch' },
+        { ref: 'b', title: 'second of the batch', description: 'a note an older line file still carries' },
+      ]),
+    );
+
+    const refused = await answer(['dag', 'add', '--from-file', file], io);
+    expect(refused.code).not.toBe(0);
+    expect(refused.stderr).toContain('row 2: unknown field "description"');
+    expect(readFileSync(record).equals(before)).toBe(true);
+    expect(readdirSync(join(projectRoot, '.superworker', 'nodes')).sort()).toEqual(nodesBefore);
+    expect(nodesBefore).toEqual([good]);
   });
 });

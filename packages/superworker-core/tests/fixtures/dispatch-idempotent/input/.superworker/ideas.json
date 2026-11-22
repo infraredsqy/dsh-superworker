@@ -2,7 +2,6 @@
   "nodes": {
     "@node-a@": {
       "title": "prepare the round",
-      "description": "",
       "status": "todo",
       "mode": "auto",
       "dependencies": [],

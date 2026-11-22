@@ -2,7 +2,6 @@
   "nodes": {
     "@node-b@": {
       "title": "beta",
-      "description": "",
       "status": "todo",
       "mode": "auto",
       "dependencies": [],
@@ -11,7 +10,6 @@
     },
     "@node-a@": {
       "title": "alpha",
-      "description": "",
       "status": "todo",
       "mode": "auto",
       "dependencies": [],
@@ -20,7 +18,6 @@
     },
     "@node-c@": {
       "title": "gamma",
-      "description": "",
       "status": "todo",
       "mode": "auto",
       "dependencies": [],

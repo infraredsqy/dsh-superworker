@@ -2,7 +2,6 @@
   "nodes": {
     "@node-a@": {
       "title": "round",
-      "description": "",
       "status": "todo",
       "mode": "checkpoint",
       "dependencies": [],
@@ -11,7 +10,6 @@
     },
     "@node-b@": {
       "title": "next",
-      "description": "",
       "status": "todo",
       "mode": "auto",
       "dependencies": [],

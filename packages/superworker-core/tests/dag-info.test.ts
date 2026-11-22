@@ -29,7 +29,7 @@ afterEach(() => {
 
 /** The detail's key order with nothing optional in play. */
 const BASE_KEYS = [
-  'id', 'title', 'status', 'mode', 'description', 'depends_on', 'depended_by',
+  'id', 'title', 'status', 'mode', 'depends_on', 'depended_by',
   'ready', 'urgency_level', 'importance_score',
 ];
 
@@ -38,7 +38,7 @@ async function plantGraph(): Promise<Record<'a' | 'b' | 'c' | 'd', string>> {
   const b = (await superworker.ledger.dag.add({ title: 'B' })).id;
   await superworker.ledger.dag.setStatus(b, 'completed');
   await superworker.ledger.dag.approve(b, '2021-01-01T00:00:00.000000Z');
-  const a = (await superworker.ledger.dag.add({ title: 'A', description: 'the note on A', depends_on: [b] })).id;
+  const a = (await superworker.ledger.dag.add({ title: 'A', depends_on: [b] })).id;
   const c = (await superworker.ledger.dag.add({ title: 'C', depends_on: [a] })).id;
   const d = (await superworker.ledger.dag.add({ title: 'D' })).id;
   await superworker.ledger.dag.setStatus(d, 'shelved');
@@ -50,7 +50,7 @@ describe('the detail: the record plus both edge directions', () => {
     const { a } = await plantGraph();
     const info = await superworker.ledger.dag.info(a);
     expect(Object.keys(info)).toEqual(BASE_KEYS);
-    expect(info).toMatchObject({ id: a, title: 'A', status: 'todo', mode: 'auto', description: 'the note on A' });
+    expect(info).toMatchObject({ id: a, title: 'A', status: 'todo', mode: 'auto' });
   });
 
   it('both directions come back in their own orders: dependencies as the record has them, dependents as the table has them', async () => {

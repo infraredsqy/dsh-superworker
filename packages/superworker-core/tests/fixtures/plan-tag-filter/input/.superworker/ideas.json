@@ -2,7 +2,6 @@
   "nodes": {
     "@node-a@": {
       "title": "drawing",
-      "description": "",
       "status": "todo",
       "mode": "auto",
       "dependencies": [],
@@ -14,7 +13,6 @@
     },
     "@node-b@": {
       "title": "prose",
-      "description": "",
       "status": "todo",
       "mode": "auto",
       "dependencies": [],

@@ -3,7 +3,6 @@
   "title": "A",
   "status": "todo",
   "mode": "checkpoint",
-  "description": "the note on A",
   "depends_on": [
     {
       "id": "@node-b@",

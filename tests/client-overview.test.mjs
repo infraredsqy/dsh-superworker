@@ -26,7 +26,6 @@ const record = () => ({
     nodes: {
       n0: {
         title: 'the driven node',
-        description: 'the piece the main conversation drives',
         tags: [],
         mode: 'auto',
         status: 'completed',
@@ -133,7 +132,6 @@ const recordOfADeadLeg = () => ({
     nodes: {
       n0: {
         title: 'the driven node',
-        description: 'the piece the main conversation drives',
         tags: [],
         mode: 'auto',
         status: 'completed',
@@ -143,7 +141,6 @@ const recordOfADeadLeg = () => ({
       },
       n1: {
         title: 'the leg that died',
-        description: 'a piece of work the line still holds',
         tags: [],
         mode: 'auto',
         status: 'todo',
@@ -456,7 +453,6 @@ const recordUnstarted = () => ({
     nodes: {
       n0: {
         title: 'the driven node',
-        description: 'the piece the main conversation drives',
         tags: [],
         mode: 'auto',
         status: 'todo',

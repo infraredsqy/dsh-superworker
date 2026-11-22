@@ -2,7 +2,6 @@
   "nodes": {
     "@node-a@": {
       "title": "drawing",
-      "description": "",
       "status": "todo",
       "mode": "auto",
       "dependencies": [],

@@ -108,7 +108,7 @@ describe('byte-for-byte comparison: one operation sequence produces one byte set
 
     const captures: string[] = [];
     const ids: string[] = [];
-    const a = await superworker.ledger.dag.add({ title: '写作底稿', description: '第一个节点的说明', tags: ['coding'] });
+    const a = await superworker.ledger.dag.add({ title: '写作底稿', tags: ['coding'] });
     ids.push(a.id);
     captures.push(readFileSync(ideasJson, 'utf8'));
     const b = await superworker.ledger.dag.add({ title: '复核校样', mode: 'checkpoint' });

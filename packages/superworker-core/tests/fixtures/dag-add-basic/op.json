@@ -2,8 +2,7 @@
   "path": "ledger.dag.add",
   "args": [
     {
-      "title": "a new roll arrives",
-      "description": "the note added to the line"
+      "title": "a new roll arrives"
     }
   ]
 }

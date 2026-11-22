@@ -16,6 +16,10 @@ import { COMMANDS, COMMAND_ROWS, GROUPS } from '../src/words/table';
 const FLAGS = (word: string): string[] =>
   (COMMAND_ROWS[word]?.options ?? []).flatMap((option) => option.flags ?? []).sort();
 
+/** The positional cells' names, in the order the row takes them. */
+const POSITIONALS = (word: string): string[] =>
+  (COMMAND_ROWS[word]?.positionals ?? []).map((cell) => cell.name);
+
 describe('one verb, one operation: the flow verbs carry shaping options only', () => {
   it('plan reads: where to read, and the closing rehearsal', () => {
     expect(FLAGS('plan')).toEqual(['--after', '--cycle', '--help', '--json', '--project', '-h']);
@@ -41,11 +45,20 @@ describe('one verb, one operation: the flow verbs carry shaping options only', (
     expect(FLAGS('handoff')).toEqual(['--form', '--help', '--outputs', '--project', '--summary', '-h', '-o', '-s']);
   });
 
-  it('the retired op-selecting flags are on no verb at all', () => {
-    const retired = ['--plan', '--spawn', '--no-spawn', '--continue', '--stop'];
+  it('the retired flags are on no verb at all', () => {
+    // The five op-selectors `cycle restart` and the flow words used to keep, plus `--desc`: that one
+    // wrote the node record's description cell, which is out of the record, so `dag add` and
+    // `dag update` may not carry it back on either.
+    const retired = ['--plan', '--spawn', '--no-spawn', '--continue', '--stop', '--desc'];
     const words = Object.keys(COMMAND_ROWS);
     const carrying = words.filter((word) => FLAGS(word).some((flag) => retired.includes(flag)));
     expect(carrying).toEqual([]);
+  });
+
+  it('`dag add` takes one positional: the title. The description slot it used to take is gone', () => {
+    // The positional names are a frozen face of the table: `dag add` used to take a second free-text
+    // positional for the record's description cell, and that cell is out of the record.
+    expect(POSITIONALS('dag add')).toEqual(['title']);
   });
 
   it('the rehearsal flag sits on the words whose effect is not a record read back', () => {

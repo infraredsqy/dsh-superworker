@@ -15,10 +15,8 @@ import type { NormalizedOffer } from './types';
  *    re-hung onto the new node. The old edge of `before` is taken off first (without tearing it the graph would
  *    cycle and the graph namespace would refuse), and that is exactly how an insertion voids this close's pick.
  *
- * **The description cell's reading is fixed**: the whole spec first goes through one JSON string encoding and
- * then into the description cell (the description is handed to the graph namespace as one argument and lands
- * there as it is, so the generated description is a JSON literal with quotes and escapes; both sides use this
- * reading at the same moment, which is why the bytes line up).
+ * **The spec text travels one way**: it is written into the new node's `spec.md` and nowhere else. The node's
+ * record carries no cell for it, so nothing is handed to the graph namespace beside the title and the tags.
  *
  * The spec.md location is not spelled here: `paths.nodeSpecPath` is the one home of that spelling, so the
  * path an offer is told about and the path the text lands on cannot drift apart.
@@ -44,7 +42,7 @@ export interface AppliedInsertion {
 }
 
 /**
- * The whole landing of one offer: `add` (the description is evaluated first, so a builder that explodes leaves
+ * The whole landing of one offer: `add` (the text is evaluated first, so a builder that explodes leaves
  * nothing behind) → writing spec.md → the edges. `closed` is the node this close closes (the insertion hangs
  * behind it); `targetId` is the node originally picked (only with it is the other end wired; the closing seam has
  * no picking step, so the closing side passes null).
@@ -58,15 +56,13 @@ export async function applyInsertion(
 ): Promise<AppliedInsertion> {
   const paths: RecordPaths = recordPaths(root);
 
-  // The description is evaluated first: if the builder throws here, nothing has landed on the graph.
+  // The text is evaluated first: if the builder throws here, nothing has landed on the graph.
   const described = await offer.specOf(NEW_NODE);
   if (typeof described !== 'string') {
     throw new TypeError(`\`spec_of\` must return the node's text as a string, got ${typeof described}`);
   }
   const added = await dag.add({
     title: offer.title,
-    // The description cell holds a JSON literal (one JSON string encoding, so the bytes match on both sides).
-    description: JSON.stringify(described),
     tags: offer.tags,
   });
 

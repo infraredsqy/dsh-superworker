@@ -50,4 +50,4 @@ dag search '合并|集成|迁移|整合|主项目'
 
 ### pattern 引号
 
-所有 pattern 参数（`dag search` 的 regex、`dag add` 的 title/description）用双引号包起来，防止 shell 解析特殊字符。
+所有 pattern 参数（`dag search` 的 regex、`dag add` 的 title）用双引号包起来，防止 shell 解析特殊字符。

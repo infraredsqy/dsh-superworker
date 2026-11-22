@@ -3,7 +3,6 @@
     "@node-a@": {
       "created_at": "@t1@",
       "dependencies": [],
-      "description": "第一个节点的说明",
       "mode": "auto",
       "status": "todo",
       "tags": [
