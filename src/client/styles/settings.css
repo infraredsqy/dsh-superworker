@@ -140,6 +140,12 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
+}/* A value this page only reads: the tool holds the key on the global layer and every write from
+ * here lands on the project's, so the row states what the record holds and stands no control —
+ * what is drawn has to be usable. */
+.superworker-page .superworker-cfgvalue{
+  font: var(--dsw-font-s-14);
+  color: var(--dsw-alias-label-primary);
 }.superworker-page .superworker-vlayer{
   justify-self: end;
 }/* The page cannot hold two columns any more: every row takes the whole measure, and the line

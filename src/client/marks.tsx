@@ -49,9 +49,45 @@ export function LineMark(props: { readonly cycle: CycleReading }): React.ReactEl
 }
 
 /**
- * State mark: the model's one bucket, drawn. A card that wants a person (a gate, or the shelved
- * verdict, which is its own gate) takes the pause mark; the line's hold takes the spinner; the
- * card's own state draws the rest. Nothing here judges the record again. A stranded dispatch
+ * The three verdict glyphs, each path drawn once and shared: the check for work handed in, the two
+ * bars for a word owed to a person, and the failed circle for a break. The stroke and the size are
+ * the caller's — the detail rows stand them small and heavy ({@link StateMark}), the overview's
+ * seal large and light, its fault lines light — so one module is what makes the detail rows'
+ * mark and the overview's the same one, and what keeps the two files' drawings from drifting apart
+ * again.
+ */
+export function CheckGlyph(props: { readonly stroke: number; readonly size?: number | undefined }): React.ReactElement {
+  return (
+    <svg viewBox="0 0 12 12" width={props.size} height={props.size} aria-hidden="true">
+      <path d="M2.5 6.5l2.4 2.4 4.6-5.4" fill="none" stroke="currentColor" strokeWidth={props.stroke} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+/** The pause: two bars, not a circle — the turning ring already means "still moving", so the two are told apart by shape alone, at a glance. */
+export function PauseGlyph(props: { readonly stroke: number; readonly size?: number | undefined }): React.ReactElement {
+  return (
+    <svg viewBox="0 0 12 12" width={props.size} height={props.size} aria-hidden="true">
+      <path d="M4.6 2.6v6.8M7.4 2.6v6.8" fill="none" stroke="currentColor" strokeWidth={props.stroke} strokeLinecap="round" />
+    </svg>
+  )
+}
+
+/** The failed circle: the drawing a failed row wears, and the one a broken window's fault line stands up — a reader who met it in a feed meets it again on the band with the same meaning. */
+export function FaultGlyph(props: { readonly stroke: number; readonly size?: number | undefined }): React.ReactElement {
+  return (
+    <svg viewBox="0 0 12 12" width={props.size} height={props.size} aria-hidden="true">
+      <circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" strokeWidth={props.stroke} />
+      <path d="M6 3.8v2.8" fill="none" stroke="currentColor" strokeWidth={props.stroke} strokeLinecap="round" />
+      <circle cx="6" cy="8.2" r="0.9" fill="currentColor" />
+    </svg>
+  )
+}
+
+/**
+ * State mark: the model's one bucket, drawn. A detail row that wants a person (a gate, or the
+ * shelved verdict, which is its own gate) takes the pause mark; the line's hold takes the spinner;
+ * the row's own state draws the rest. Nothing here judges the record again. A stranded dispatch
  * outranks the bucket — the round is out and nothing is moving it, which is a wait no other
  * reading can say.
  */
@@ -67,9 +103,7 @@ export function StateMark(props: { readonly node: NodeReading; readonly at: Date
   if (bucket === 'gate' || bucket === 'shelved') {
     return (
       <span className="superworker-state is-gate" title={gateTitle(t, node, props.at)}>
-        <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-          <path d="M4.6 2.6v6.8M7.4 2.6v6.8" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-        </svg>
+        <PauseGlyph stroke={1.7} size={12} />
       </span>
     )
   }
@@ -81,9 +115,7 @@ export function StateMark(props: { readonly node: NodeReading; readonly at: Date
   }
   return (
     <span className="superworker-state is-done" title={t('state.done')}>
-      <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-        <path d="M2.5 6.5l2.4 2.4 4.6-5.4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <CheckGlyph stroke={1.6} size={12} />
     </span>
   )
 }
@@ -92,7 +124,7 @@ export function StateMark(props: { readonly node: NodeReading; readonly at: Date
  * The stranded dispatch's own mark: the failed mark's ring, worn in the amber this
  * panel reserves for "a person has to move". Its hover carries the remedy — one
  * sentence with the line's id, the cell's id and the two commands in it. The same
- * drawing stands on the map's card and on the detail row, the way every state mark does.
+ * drawing stands on the map's card and on the detail row.
  */
 export function StrandedMark(props: { readonly cycleId: string; readonly nodeId: string }): React.ReactElement {
   const t = useT()

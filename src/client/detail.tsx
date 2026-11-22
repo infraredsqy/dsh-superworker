@@ -16,7 +16,7 @@ import { useT } from './locale.ts'
 import type { WordKey } from './locales/index.ts'
 import { gateTitle, gateWord, stateWord, unit } from './words.ts'
 import { nodeName, nodeHover } from './nodes.ts'
-import { Grip, PaneFrame } from './widgets.tsx'
+import { FoldSection, Grip, PaneFrame } from './widgets.tsx'
 import { DepsChip, LineMark, StateMark } from './marks.tsx'
 
 /**
@@ -156,18 +156,18 @@ function DetailGroup(props: { readonly group: Group; readonly nodes: readonly No
   const t = useT()
   const [folded, setFolded] = React.useState(false)
   return (
-    <section className={`superworker-sec${folded ? ' is-folded' : ''}`}>
-      <button
-        type="button"
-        className="superworker-rowhead"
-        aria-expanded={!folded}
-        onClick={() => setFolded((value) => !value)}
-      >
-        <span className="superworker-rowhead-key">{t(group.word)}</span>
-        {folded
-          ? <span className="superworker-rowhead-figs superworker-rowcount"><b className="superworker-num">{props.nodes.length}</b>{unit(t, 'detail.folded.cells.one', 'detail.folded.cells.other', props.nodes.length)}</span>
-          : null}
-      </button>
+    <FoldSection
+      folded={folded}
+      onToggle={() => setFolded((value) => !value)}
+      title={t(group.word)}
+      figs={folded ? (
+        <React.Fragment>
+          <b className="superworker-num">{props.nodes.length}</b>
+          {unit(t, 'detail.folded.cells.one', 'detail.folded.cells.other', props.nodes.length)}
+        </React.Fragment>
+      ) : null}
+      figsClass="superworker-rowcount"
+    >
       {props.nodes.map((node) => (
         <div className={`superworker-row ${group.cls}`} key={node.id} data-id={node.id} title={gateTitle(t, node, props.at)}>
           <StateMark node={node} at={props.at} dead={props.stranded[node.id] ?? null} />
@@ -192,6 +192,6 @@ function DetailGroup(props: { readonly group: Group; readonly nodes: readonly No
             : null}
         </div>
       ))}
-    </section>
+    </FoldSection>
   )
 }

@@ -107,6 +107,7 @@ import {
   type StageSize,
 } from './overview-geom.ts'
 import { useT, type Translate } from './locale.ts'
+import { CheckGlyph, FaultGlyph, PauseGlyph } from './marks.tsx'
 import { elapsedOf } from './words.ts'
 import type { WordKey } from './locales/index.ts'
 
@@ -269,13 +270,8 @@ function KindMark(props: { readonly kind: OverviewRowKind }): React.ReactElement
         </svg>
       )
     case 'fail':
-      return (
-        <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-          <circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" strokeWidth="1" />
-          <path d="M6 3.8v2.8" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
-          <circle cx="6" cy="8.2" r="0.9" fill="currentColor" />
-        </svg>
-      )
+      /* The failed circle: the same glyph the fault line on a broken window stands — one drawing, two places, one meaning. */
+      return <FaultGlyph stroke={1} size={12} />
     case 'tool':
       return (
         <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
@@ -285,61 +281,11 @@ function KindMark(props: { readonly kind: OverviewRowKind }): React.ReactElement
   }
 }
 
-/**
- * The check the main window's record verdict wears: the panel's own drawing for work handed in, in
- * the same 12-unit box every other mark is drawn in; the size and the pen that land on screen are
- * `overview-geom.ts`'s. It is the only mark a window carries — a break's drawing is the fault line,
- * and that has a glyph of its own.
- */
-function FinishedMark(props: { readonly stroke: number }): React.ReactElement {
-  return (
-    <svg viewBox="0 0 12 12" aria-hidden="true">
-      <path
-        d="M2.5 6.5l2.4 2.4 4.6-5.4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={props.stroke}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-/**
- * The mark a window held at a person's gate wears: the panel's own drawing for "a word is owed", the
- * very one the map's cards and the detail rows stand up, drawn in the check's square. Two bars and
- * not a circle — the turning ring already means "still moving", and the two marks are read at a
- * glance from across the stage, so they may never be told apart by ink alone.
- */
-function GatedMark(props: { readonly stroke: number }): React.ReactElement {
-  return (
-    <svg viewBox="0 0 12 12" aria-hidden="true">
-      <path
-        d="M4.6 2.6v6.8M7.4 2.6v6.8"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={props.stroke}
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
-/**
- * The fault line's glyph: the panel's own failed drawing, the same one a failed row wears — a
- * reader who has met it in a feed meets it again here with the same meaning. Its size is the
- * geometry's (`FAULT_MARK`), and the line it stands in is the geometry's too.
- */
-function FaultMark(): React.ReactElement {
-  return (
-    <svg viewBox="0 0 12 12" width={FAULT_MARK} height={FAULT_MARK} aria-hidden="true">
-      <circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" strokeWidth="1" />
-      <path d="M6 3.8v2.8" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
-      <circle cx="6" cy="8.2" r="0.9" fill="currentColor" />
-    </svg>
-  )
-}
+/* The verdict marks a window carries are the shared glyphs (`marks.tsx`) — the very ones the detail
+ * rows stand up (`StateMark`) and the ones this overview stands itself, on its seal and its fault
+ * line; the map's cards wear none of them, a card speaking through its frame's color and its gate
+ * word instead. The pen each place takes is its own: the seal's sizes and stroke are this stage's
+ * geometry's (`MARK_CHECK`, `MARK_CHECK_STROKE`), the small marks' are their own. */
 
 /** One window's feed: the rows it holds, newest at the bottom, the top fading when the room ran out.
  * A live row is the streaming step's own tail: it redraws at the animation frame, and its clip is
@@ -599,7 +545,7 @@ function WindowPane(props: {
             '--superworker-seal-scrim': `${MARK_SCRIM}px`,
           } as React.CSSProperties}
         >
-          {handed ? <FinishedMark stroke={mark.stroke} /> : <GatedMark stroke={mark.stroke} />}
+          {handed ? <CheckGlyph stroke={mark.stroke} /> : <PauseGlyph stroke={mark.stroke} />}
         </span>
       )}
       {fault === undefined ? null : (
@@ -612,7 +558,7 @@ function WindowPane(props: {
           style={{ left: fault.left, top: fault.top, width: fault.width, height: fault.height }}
         >
           <span className="superworker-ofault-n">
-            <FaultMark />
+            <FaultGlyph stroke={1} size={FAULT_MARK} />
             <span>{t(faultWordOf(pane.ending))}</span>
           </span>
         </span>

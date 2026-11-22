@@ -174,6 +174,7 @@ export const zh = {
   'config.unregistered-caption': '这一键还没有它的说法，值合不合法由工具判',
   'config.layer.default': '默认',
   'config.layer.project': '本项目',
+  'config.global-only.caption': '只有全局层能改',
   'config.row.worktree_mode.name': 'worktree 档',
   'config.row.worktree_mode.caption': '一格的活要不要开在自己的 worktree 里跑',
   'config.row.test_tier.name': '测试档',

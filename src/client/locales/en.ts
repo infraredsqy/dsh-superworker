@@ -155,6 +155,7 @@ export const en: Readonly<Record<WordKey, string>> = {
   'config.unregistered-caption': 'No description is on file for this key; the tool judges whether the value is legal',
   'config.layer.default': 'Default',
   'config.layer.project': 'This project',
+  'config.global-only.caption': 'Only the global layer can change this key',
   'config.row.worktree_mode.name': 'worktree mode',
   'config.row.worktree_mode.caption': 'Whether a cell’s work runs in its own worktree',
   'config.row.test_tier.name': 'test tier',

@@ -1,6 +1,6 @@
 /**
- * The widgets shared by the client's panes: a movable split, a count pill, a modal shell, a
- * commit-style input, and the pane shell every view stands in.
+ * The widgets shared by the client's panes: a movable split, a foldable section, a count pill, a
+ * modal shell, a commit-style input, and the pane shell every view stands in.
  *
  * Each exists only once: the drag measurement differs in three places, but draggable + keyboard +
  * double-click-to-default is written down in one way; the modal's overlay, Escape, and focus all
@@ -45,6 +45,39 @@ export function PaneFrame(props: {
       hidden={!props.active}
     >
       {props.noNodes ? <p className="superworker-innone">{t(NOT_ENABLED_WORD)}</p> : props.children}
+    </section>
+  )
+}
+
+/**
+ * A foldable section: the head switch, its figures row, and the folding state stand once here; the
+ * callers contribute only their own head word, their own counts, and the rows under the head. The
+ * folded state is controlled — the caller owns it, one boolean or one key in its own table, so a
+ * pane that folds by a table of its own keeps that table.
+ *
+ * The figures row (`figs`) stands at the head's right end; `null` stands none. `figsClass` carries
+ * an extra class on that row — the detail's folded count wears the rule that prints it only while
+ * folded.
+ */
+export function FoldSection(props: {
+  readonly title: React.ReactNode
+  /** The head's right end: the counts, already spelled by the caller; `null` stands none. */
+  readonly figs?: React.ReactNode
+  /** An extra class for the figures row, on top of the row's own. */
+  readonly figsClass?: string | undefined
+  readonly folded: boolean
+  readonly onToggle: () => void
+  readonly children?: React.ReactNode
+}): React.ReactElement {
+  return (
+    <section className={`superworker-sec${props.folded ? ' is-folded' : ''}`}>
+      <button type="button" className="superworker-rowhead" aria-expanded={!props.folded} onClick={props.onToggle}>
+        <span className="superworker-rowhead-key">{props.title}</span>
+        {props.figs === undefined || props.figs === null ? null : (
+          <span className={`superworker-rowhead-figs${props.figsClass === undefined ? '' : ` ${props.figsClass}`}`}>{props.figs}</span>
+        )}
+      </button>
+      {props.children}
     </section>
   )
 }

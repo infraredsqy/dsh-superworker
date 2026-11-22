@@ -528,7 +528,11 @@ export function MapPane(props: {
             <div className="superworker-mnodes">
               {placement.drawn.map((node) => {
                 const at = placement.pos[node.id]
-                if (at === undefined) return null
+                /* A placed card is a card the record placed: `drawn` is empty when no record is
+                 * under the pane, so the reading's own moment is always in hand here — the render's
+                 * own clock is never a stand-in for it. */
+                const project = props.project
+                if (at === undefined || project === null) return null
                 return (
                   <Card
                     key={node.id}
@@ -538,7 +542,7 @@ export function MapPane(props: {
                     ahead={emphasis.ahead.has(node.id)}
                     focused={node.id === focusId}
                     go={props.go}
-                    at={props.project === null ? new Date() : props.project.at}
+                    at={project.at}
                     t={t}
                     dead={props.stranded[node.id] ?? null}
                     onPress={() => press(node)}

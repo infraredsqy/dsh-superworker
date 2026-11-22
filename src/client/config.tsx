@@ -10,7 +10,9 @@
  * Both reading and writing go through the tool: which keys exist, the valid values, and "which
  * layer a value comes from" are all printed by the tool; row order and category follow this side's
  * table, and writes land on this project's layer. This layer makes no second set of judgments — the
- * tool says whether keys and values are valid. No optimistic updates on the page: controls always
+ * tool says whether keys and values are valid. A key the tool holds only on the global layer draws
+ * read-only: the write has that one road, so a control there would be drawn dead. No optimistic
+ * updates on the page: controls always
  * show the most recently read-back reading; a change is written, then read again, and when the tool
  * refuses, the control returns to its place on its own.
  */
@@ -67,8 +69,12 @@ export interface ConfigPaneProps {
   readonly noNodes: boolean
   /** Whether this pane is visible right now: the read happens only on the pass it becomes visible. */
   readonly active: boolean
-  /** The note line at the bottom of the panel: what this pane has to say, or `null` to take back the last note it left. */
-  readonly onNote: (note: Note | null) => void
+  /**
+   * The note line at the bottom of the panel: what this pane has to say. Taking a word back is
+   * written in the updater form, and the update clears only when the line still holds exactly the
+   * note this pane left — a word another pane left in between is not this pane's to take back.
+   */
+  readonly onNote: React.Dispatch<React.SetStateAction<Note | null>>
 }
 
 export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
@@ -97,13 +103,14 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
      flag swallows that one report so the index does not wander back to the category the reader just
      left; the line they clicked keeps the light. */
   const jumped = React.useRef(false)
-  /* Who left the last note on the note line: a failed read's note is retracted by the next
-     successful read; a failed write's by the next successful write. A note left by other parts
-     of the panel is not touched by this pane. */
-  const said = React.useRef<'read' | 'write' | null>(null)
+  /* This pane's own last word on the note line, kept as the exact note object it handed over: a
+   * successful read takes back only what this pane said, and only while the line still holds that
+   * object — a note another pane left in between stays where it is. (The shell's `keep` writes the
+   * same discipline for its own notes.) */
+  const said = React.useRef<{ readonly who: 'read' | 'write'; readonly note: Note } | null>(null)
   const speak = React.useRef(props.onNote)
   React.useEffect(() => { speak.current = props.onNote }, [props.onNote])
-  const note = React.useCallback((next: Note | null): void => {
+  const note = React.useCallback((next: Note | null | ((held: Note | null) => Note | null)): void => {
     speak.current(next)
   }, [])
 
@@ -112,7 +119,8 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
    *
    * A successful read retracts only the previous failed-read note; the failed-write note is the
    * write's own business — otherwise every refused write would be wiped away on the spot by the
-   * re-read that follows, and the reader would see nothing. */
+   * re-read that follows, and the reader would see nothing. The retraction is the updater form and
+   * clears only while the line still holds this pane's own note object. */
   React.useEffect(() => {
     if (noNodes || !active || sessionId.length === 0) return undefined
     let live = true
@@ -121,15 +129,16 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
         if (!live) return
         setLoad({ phase: 'ok', reading })
         if (reading.ok) {
-          if (said.current === 'read') {
+          const held = said.current
+          if (held !== null && held.who === 'read') {
             said.current = null
-            note(null)
+            note((line) => (line === held.note ? null : line))
           }
         } else {
-          said.current = 'read'
+          said.current = { who: 'read', note: { kind: 'failure', failure: reading.refusal ?? { code: 'config-unreadable' } } }
           /* The tool's run failed: why is a code, spelled by the shell when the note line is drawn.
            * A refusal carrying nothing at all still reads as "the settings could not be read". */
-          note({ kind: 'failure', failure: reading.refusal ?? { code: 'config-unreadable' } })
+          note(said.current.note)
         }
       },
       (error: unknown) => {
@@ -148,7 +157,16 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
   const send = React.useCallback((key: string, next: string): void => {
     void writeToNote(() => port.setConfig(sessionId, workspaceRoot, key, next), {
       note: (left) => {
-        said.current = left?.kind === 'failure' ? 'write' : null
+        /* A silent success takes the pane's own last word back — and only while the line still
+         * holds it, the same compare the read retraction makes. A word that arrived in the meantime
+         * is someone else's; this write has nothing to say over it. */
+        if (left === null) {
+          const held = said.current
+          said.current = null
+          if (held !== null) note((line) => (line === held.note ? null : line))
+          return
+        }
+        said.current = left.kind === 'failure' ? { who: 'write', note: left } : null
         note(left)
       },
       after: () => { setTick((round) => round + 1) },
@@ -316,7 +334,9 @@ function Row(props: {
           ? <NumberBox row={row} entry={entry} noteId={noteId} revision={props.revision} onWrite={props.onWrite} />
           : row.kind === 'toggle'
             ? <Toggle row={row} entry={entry} noteId={noteId} onWrite={props.onWrite} />
-            : <TextBox row={row} entry={entry} noteId={noteId} revision={props.revision} onWrite={props.onWrite} />}
+            : row.kind === 'readonly'
+              ? <ReadonlyValue entry={entry} />
+              : <TextBox row={row} entry={entry} noteId={noteId} revision={props.revision} onWrite={props.onWrite} />}
       {entry === undefined || entry.layer === null
         ? null
         : <span className="superworker-tag superworker-vlayer" data-layer={entry.layer}>{t(LAYER_WORDS[entry.layer])}</span>}
@@ -416,6 +436,15 @@ function TextBox(props: {
       }}
     />
   )
+}
+
+/**
+ * The read-only value: a knob the tool only accepts on the global layer — the layer this pane's one
+ * write road (the project layer) cannot reach — draws what the record holds and no control. A
+ * control drawn here would stand there and never move; the row's caption says who can change it.
+ */
+function ReadonlyValue(props: { readonly entry: ConfigEntry | undefined }): React.ReactElement {
+  return <span className="superworker-cfgvalue">{props.entry?.value ?? ''}</span>
 }
 
 /** The on / off control: two buttons, the pressed one being the current value; neither lights when the record does not carry the key. */

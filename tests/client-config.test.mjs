@@ -77,6 +77,20 @@ test('registered keys render per the table: a key in the reading that is in the 
   assert.deepEqual(rows[0], KNOWN_CONFIG_ROWS['worktree_mode'])
 })
 
+test('a knob only the global layer accepts is in the table as read-only: no text-box fallback, no control kind, no candidates', () => {
+  /* `answer` declares layers: ['global'] and the pane writes the project layer only, so the old
+   * fallback drew it as an unregistered text row — a control the tool refuses every time. */
+  const rows = configRowsOf({ answer: entry('plain', 'default') })
+  assert.deepEqual(rows.map((row) => row.key), ['answer'])
+  const row = rows[0]
+  assert.equal(row, KNOWN_CONFIG_ROWS['answer'], 'the global-only knob is described by the table, not drawn as an unregistered text box')
+  assert.equal(row.kind, 'readonly', 'the write road cannot reach its layer: the row stands read-only, no dead control')
+  assert.equal(row.options, undefined, 'a read-only row offers no candidates')
+  assert.equal(row.name, null, 'the knob\'s name is a record word, printed as it stands in every language')
+  assert.ok(rowWords(t, row).name.length > 0, 'the name cell still prints the key itself')
+  assert.ok(rowWords(t, row).caption.length > 0, 'the caption says who can change it')
+})
+
 test('one control per row: the dropdown kind carries candidates, the other three do not', () => {
   for (const row of Object.values(KNOWN_CONFIG_ROWS)) {
     if (row.kind === 'pick') {

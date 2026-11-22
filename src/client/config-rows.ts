@@ -20,7 +20,12 @@ import type { ConfigEntry, ConfigLayer } from '../host/project-config.ts'
 import type { Translate } from './locale.ts'
 import type { WordKey } from './locales/index.ts'
 
-export type ControlKind = 'pick' | 'num' | 'toggle' | 'text'
+/**
+ * How a row's value is held. `readonly` is a knob the tool only accepts on a layer this pane cannot
+ * write (the write side has one road, the project layer): the row stands and states the value, and
+ * no control is drawn for it — what is drawn has to be usable.
+ */
+export type ControlKind = 'pick' | 'num' | 'toggle' | 'readonly' | 'text'
 
 /** The categories the index names, in the order they stand there. */
 export type ConfigGroup = 'general' | 'issue' | 'test'
@@ -120,6 +125,19 @@ export const KNOWN_CONFIG_ROWS: Readonly<Record<string, ConfigRow>> = {
     caption: 'config.row.test_seconds_limit.caption',
     kind: 'num',
     group: 'test',
+  },
+  /**
+   * A knob whose plugin declares `layers: ['global']` only: the write side lands on the project
+   * layer and the tool refuses that, so a control here would be drawn dead. It keeps its table row
+   * — value and layer tag still read — and draws read-only; the caption says who can change it.
+   * The key name is a record's word, so `name` stays unset and prints as it stands.
+   */
+  answer: {
+    key: 'answer',
+    name: null,
+    caption: 'config.global-only.caption',
+    kind: 'readonly',
+    group: 'general',
   },
 }
 

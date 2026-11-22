@@ -9,8 +9,7 @@
  * changes the panel (or that injection) on the spot.
  */
 import * as React from 'react'
-import { PANEL_PREF_FIELDS } from '../host/settings-fields.ts'
-import { DEFAULT_SOURCE } from './prefs.ts'
+import { DEFAULT_SOURCE, PANEL_PREF_FIELDS } from './prefs.ts'
 import type { PrefField, PrefsForm, PrefsSource, PrefsStore } from './prefs.ts'
 import { serviceAt } from './data.ts'
 import { injectAt, report, serveOn, type SlotsService } from './context.ts'
@@ -109,6 +108,39 @@ function Row(props: {
 }
 
 /**
+ * One row whose control is the switch: the row's words and the settings-document field are the
+ * caller's, and the switch drawing itself stands once here — a fifth switch is one more row, not
+ * one more copy.
+ */
+function SwitchRow(props: {
+  readonly label: string
+  readonly desc: string
+  /** Which settings-document field this switch writes. */
+  readonly field: PrefField
+  readonly value: boolean
+  readonly write: (field: PrefField, value: unknown) => void
+}): React.ReactElement {
+  return (
+    <Row
+      label={props.label}
+      desc={props.desc}
+      control={(
+        <button
+          type="button"
+          className="superworker-settings-switch"
+          role="switch"
+          aria-checked={props.value}
+          aria-label={props.label}
+          onClick={() => props.write(props.field, !props.value)}
+        >
+          <span className="superworker-settings-swthumb" />
+        </button>
+      )}
+    />
+  )
+}
+
+/**
  * The section's page.
  *
  * It wraps itself in the language provider: DSH draws this page inside its own settings panel, a
@@ -135,69 +167,33 @@ function SettingsPage(props: SettingsSectionProps): React.ReactElement {
 
   return (
     <div className="superworker-settings-page">
-      <Row
+      <SwitchRow
         label={t('settings.archived.label')}
         desc={t('settings.archived.desc')}
-        control={(
-          <button
-            type="button"
-            className="superworker-settings-switch"
-            role="switch"
-            aria-checked={prefs.archived}
-            aria-label={t('settings.archived.label')}
-            onClick={() => write(PANEL_PREF_FIELDS.showArchived, !prefs.archived)}
-          >
-            <span className="superworker-settings-swthumb" />
-          </button>
-        )}
+        field={PANEL_PREF_FIELDS.showArchived}
+        value={prefs.archived}
+        write={write}
       />
-      <Row
+      <SwitchRow
         label={t('settings.other-states.label')}
         desc={t('settings.other-states.desc')}
-        control={(
-          <button
-            type="button"
-            className="superworker-settings-switch"
-            role="switch"
-            aria-checked={prefs.otherStates}
-            aria-label={t('settings.other-states.label')}
-            onClick={() => write(PANEL_PREF_FIELDS.showOtherStates, !prefs.otherStates)}
-          >
-            <span className="superworker-settings-swthumb" />
-          </button>
-        )}
+        field={PANEL_PREF_FIELDS.showOtherStates}
+        value={prefs.otherStates}
+        write={write}
       />
-      <Row
+      <SwitchRow
         label={t('settings.auto-relay.label')}
         desc={t('settings.auto-relay.desc')}
-        control={(
-          <button
-            type="button"
-            className="superworker-settings-switch"
-            role="switch"
-            aria-checked={prefs.autoRelay}
-            aria-label={t('settings.auto-relay.label')}
-            onClick={() => write(PANEL_PREF_FIELDS.autoRelay, !prefs.autoRelay)}
-          >
-            <span className="superworker-settings-swthumb" />
-          </button>
-        )}
+        field={PANEL_PREF_FIELDS.autoRelay}
+        value={prefs.autoRelay}
+        write={write}
       />
-      <Row
+      <SwitchRow
         label={t('settings.inject.label')}
         desc={t('settings.inject.desc')}
-        control={(
-          <button
-            type="button"
-            className="superworker-settings-switch"
-            role="switch"
-            aria-checked={prefs.injectInstructions}
-            aria-label={t('settings.inject.label')}
-            onClick={() => write(PANEL_PREF_FIELDS.injectInstructions, !prefs.injectInstructions)}
-          >
-            <span className="superworker-settings-swthumb" />
-          </button>
-        )}
+        field={PANEL_PREF_FIELDS.injectInstructions}
+        value={prefs.injectInstructions}
+        write={write}
       />
       {snapshot.status === 'unavailable'
         ? (
