@@ -497,3 +497,29 @@ describe('retry and the claim: the ticket a rerun leaves, and what a dead sessio
     expect(sim.dispatched).toHaveLength(2);
   });
 });
+
+describe('the unnamed line with two active lines: a refusal that names them, never a silent first pick', () => {
+  it('two lines in service and no name: dispatch refuses with cycle_not_found naming both, and no session opens', async () => {
+    const lab = freshLab('superworker-execute-');
+    await lab.superworker.ledger.init();
+    const node = (await lab.superworker.ledger.dag.add({ title: 'work for one line' })).id;
+    await lab.superworker.ledger.cycles.create({ id: 'first', tags: ['coding'] });
+    // The second active line is the `force` case `cycle create` allows explicitly; from here on an
+    // unnamed call has no default: the same criterion `cycles.current` reads by.
+    await lab.superworker.ledger.cycles.create({ id: 'second', tags: ['coding'], force: true });
+    const sim = new SimulatedExecutor();
+    const superworker = open(lab.root, { executor: sim });
+
+    const refusal = await superworker.conductor.dispatch({}).catch((error: unknown) => error);
+    expect(isRecordError(refusal, 'cycle_not_found')).toBe(true);
+    if (isRecordError(refusal, 'cycle_not_found')) {
+      expect(refusal.message).toContain('several active cycles');
+      expect(refusal.message).toContain('first');
+      expect(refusal.message).toContain('second');
+    }
+    // The refusal happened at the line reading, before any material or claim: not one byte of the dispatch papers exists.
+    expect(sim.dispatched).toHaveLength(0);
+    expect(existsSync(join(lab.root, '.superworker', 'meta', 'launch', 'first', node, 'prompt.txt'))).toBe(false);
+    expect(existsSync(markerOf(lab.root, 'first', node))).toBe(false);
+  });
+});

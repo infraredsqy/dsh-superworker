@@ -256,8 +256,11 @@ describe('conductor: the closing answers, the plugin words and the ticket shape'
       expect(form.readings.map((slot) => slot.key)).toEqual(['measured']);
       expect(form.readings[0]?.ask).toBe('the measured number of the run');
 
-      // A line that is not on the account is refused instead of answering an empty shape.
-      await expect(lab.superworker.conductor.handoffForm({ cycle: 'nope' })).rejects.toThrow(/no cycle/u);
+      // A line that is not on the account is refused instead of answering an empty shape — with the
+      // engine's one finding-and-refusing sentence, the same one the cycles verbs refuse by.
+      await expect(lab.superworker.conductor.handoffForm({ cycle: 'nope' })).rejects.toThrow(
+        /not found in state\.json/u,
+      );
     } finally {
       lab.cleanup();
     }

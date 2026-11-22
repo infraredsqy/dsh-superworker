@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { nowSeconds } from './clock';
-import { findCycleRecord, holdingCycles, readStateLedger, type StateLedger } from './cycles';
+import { cycleRecordOrRefuse, holdingCycles, readStateLedger, type StateLedger } from './cycles';
 import { RecordError } from './errors';
 import { atomicWriteJson, jsonOptionsForRecord, readJsonFile } from './jsonio';
 import { assertLedgerInitialized } from './initledger';
@@ -580,16 +580,9 @@ function cycleLayerValues(
   return mergeLayerValues(policies as Record<string, unknown>, specs, 'cycle');
 }
 
-/** The refusal of a line id that is not on the record: the same code and sentence for every verb that names one. */
-function cycleNotFound(paths: RecordPaths, cycleId: string): RecordError {
-  return new RecordError('cycle_not_found', paths.stateJson, `this project's record has no cycle "${cycleId}"`);
-}
-
-/** Find one line's record in state.json through the engine's one lines reading; an id that is not there reports `cycle_not_found`. */
+/** Find one line's record in state.json through the engine's one lines reading; an id that is not there reports `cycle_not_found` — the one finding-and-refusing (`cycleRecordOrRefuse`) the cycles verbs and the conductor's line reader answer through too. */
 async function cycleRecordOf(paths: RecordPaths, cycleId: string): Promise<CycleRecord> {
-  const record = findCycleRecord(await readStateLedger(paths), cycleId);
-  if (record === undefined) throw cycleNotFound(paths, cycleId);
-  return record;
+  return cycleRecordOrRefuse(paths, await readStateLedger(paths), cycleId);
 }
 
 /**
@@ -671,8 +664,7 @@ async function chainValues(
     const ledger = await readStateLedger(paths);
     const lineId = narrow.cycle ?? (narrow.node === undefined ? null : cycleHoldingNode(ledger, paths, narrow.node));
     if (lineId !== null) {
-      const record = findCycleRecord(ledger, lineId);
-      if (record === undefined) throw cycleNotFound(paths, lineId);
+      const record = cycleRecordOrRefuse(paths, ledger, lineId);
       stated.push(['cycle', cycleLayerValues(record.policies, specs)]);
     }
   }
@@ -739,8 +731,7 @@ async function writeCyclePolicy(
   assertLedgerInitialized(paths);
   await withLedgerLock(paths, async () => {
     const ledger = await readStateLedger(paths);
-    const record = findCycleRecord(ledger, cycleId);
-    if (record === undefined) throw cycleNotFound(paths, cycleId);
+    const record = cycleRecordOrRefuse(paths, ledger, cycleId);
     const raw: unknown = record.policies;
     const stated: CyclePolicies = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
       ? (raw as CyclePolicies)

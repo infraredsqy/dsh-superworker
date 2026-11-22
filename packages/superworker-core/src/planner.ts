@@ -11,7 +11,7 @@ import type {
   StopPlan,
   WaitPlan,
 } from './conductor';
-import { cycleHoldingIds, cyclePolicy, readStateLedger } from './cycles';
+import { cycleHoldingIds, cyclePolicy, defaultActiveCycle, readStateLedger } from './cycles';
 import {
   eisenhowerOrder,
   inTagScope,
@@ -181,11 +181,16 @@ function normalizeMode(mode: unknown): NodeMode {
   return (word || 'auto') as NodeMode;
 }
 
-/** The single active line by default; a named line that is not on the account hands back null. */
+/**
+ * The single active line by default; a named line that is not on the account hands back null. The
+ * unnamed reading is the engine's one default-line reader (`defaultActiveCycle`): exactly one active
+ * line is taken, and none and several both hand back null here — the plan answers ask_user below,
+ * naming the candidates either way.
+ */
 function findCycle(cycles: CycleRecord[], cycleId: string | null): CycleRecord | null {
   if (cycleId !== null) return cycles.find((cycle) => cycle.id === cycleId) ?? null;
-  const active = cycles.filter((cycle) => cycle.status === 'active');
-  return active.length === 1 ? active[0]! : null;
+  const pick = defaultActiveCycle(cycles);
+  return pick.kind === 'one' ? pick.cycle : null;
 }
 
 /** {node: line}: one node appears on only one line's roster at a time (the first to register keeps it). */
@@ -318,8 +323,7 @@ function rankedReady(
  * A line wider than its `parallel` cap (a record edited by hand) answers 0 rather than a negative.
  */
 export function freeSlots(cycle: CycleRecord): number {
-  const parallel = cyclePolicy(cycle).parallel;
-  const cap = typeof parallel === 'number' ? parallel : 1;
+  const cap = cyclePolicy(cycle).parallel;
   return Math.max(cap - cycleHoldingIds(cycle).length, 0);
 }
 
@@ -759,8 +763,7 @@ async function readLedger(paths: RecordPaths): Promise<LedgerView> {
  */
 async function pickNext(cycle: CycleRecord, view: LedgerView): Promise<NextPlan> {
   const tags = Array.isArray(cycle.tags) ? cycle.tags : [];
-  const parallel = cyclePolicy(cycle).parallel;
-  const slots = typeof parallel === 'number' ? parallel : 1;
+  const slots = cyclePolicy(cycle).parallel;
   const ready = rankedReady(view.nodes, view.cycles, { limit: slots, tags });
   if (ready.length > 0) return openAction(cycle, ready);
   const holders = nodeHolders(view.cycles);
@@ -853,9 +856,9 @@ async function settleAnswers(
   let decision: 'continue' | 'stop' = carryOn ? 'continue' : 'stop';
   const tags = Array.isArray(cycle.tags) ? cycle.tags : [];
   // How many slots this close can open, and whether the line takes one at a time or several: the line's own
-  // `parallel` minus what is still in hand.
-  const parallelRaw = policy.parallel;
-  const parallel = typeof parallelRaw === 'number' ? parallelRaw : 1;
+  // `parallel` minus what is still in hand. The reading (`cyclePolicy`) normalizes parallel to a number,
+  // so no caller guards the kind a second time.
+  const parallel = policy.parallel;
   const slots = Math.max(parallel - others.length, 0);
   const several = parallel > 1;
   // The closing command has not run yet and this node is still todo on the graph. Only by reading "delivered" in
@@ -1012,8 +1015,7 @@ async function closeOwnNode(
 ): Promise<NextPlan> {
   const settle = await settleAnswers(cycle, nodeId, signal, lineActive, view);
   const nodes = view.nodes;
-  const parallelRaw = cyclePolicy(cycle).parallel;
-  const several = (typeof parallelRaw === 'number' ? parallelRaw : 1) > 1;
+  const several = cyclePolicy(cycle).parallel > 1;
   if (settle.decision === 'stop' || settle.filled.length === 0) {
     return stopAction(nodes, cycle, settle.reason, {
       nodeId,

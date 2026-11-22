@@ -1,4 +1,5 @@
 import { createDagNamespace } from './dag';
+import { parseConfigValue } from './config';
 import { nowMicro, nowSeconds } from './clock';
 import { RecordError } from './errors';
 import { unlinkWithRetry } from './fs-helpers';
@@ -157,6 +158,39 @@ export function findCycleRecord(ledger: StateLedger, cycleId: string): CycleReco
   return ledger.cycles.find((record) => record.id === cycleId);
 }
 
+/**
+ * Find one line by the exact id the caller named, and refuse `cycle_not_found` when the account does
+ * not hold it — the one finding-and-refusing for every caller that names a line: the cycles verbs, the
+ * settings chain's cycle layer and the conductor's line reader. The code is the error table's; the
+ * sentence is written here, once, so one absence has one answer wherever a caller meets it.
+ */
+export function cycleRecordOrRefuse(paths: RecordPaths, ledger: StateLedger, cycleId: string): CycleRecord {
+  const record = findCycleRecord(ledger, cycleId);
+  if (record === undefined) {
+    throw new RecordError('cycle_not_found', paths.stateJson, `cycle "${cycleId}" not found in state.json`);
+  }
+  return record;
+}
+
+/**
+ * The default line when the caller names none: exactly one active line is taken; none reads as "no
+ * default"; several is a refusal that names the lines — never a silent pick. The one criterion behind
+ * every unnamed line call: `cycles.current` throws and names the ids, the conductor's line reader
+ * refuses the same way, and the plan folds both absences into its ask_user answer. The criterion
+ * lives here, once; each caller spells its own face of the refusal.
+ */
+export type DefaultActiveCycle =
+  | { readonly kind: 'one'; readonly cycle: CycleRecord }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'several'; readonly ids: readonly string[] };
+
+export function defaultActiveCycle(cycles: readonly CycleRecord[]): DefaultActiveCycle {
+  const active = cycles.filter((record) => record.status === 'active');
+  if (active.length === 1) return { kind: 'one', cycle: active[0]! };
+  if (active.length === 0) return { kind: 'none' };
+  return { kind: 'several', ids: active.map((record) => String(record.id)) };
+}
+
 /** The lines holding one node right now, read through the same claim reader: both on-disk shapes count. */
 export function holdingCycles(ledger: StateLedger, nodeId: string): CycleRecord[] {
   return ledger.cycles.filter((record) => holdingIds(record).includes(nodeId));
@@ -167,22 +201,20 @@ function parseCycleTags(raw: Iterable<string>): string[] {
   return normalizeTags(raw);
 }
 
-/** Parse one policy value by kind: a value that fails this gate is refused on the spot (the write side gates, the read side tolerates). */
-function parsePolicyValue(kind: PolicyKind, value: unknown, values?: readonly string[]): unknown {
+/** Parse one policy value by kind: whether a value belongs to its kind, and what it reads as in the record's own domain — `undefined` when it does not. The one gate both sides of the line layer come through: the read side (`cyclePolicy`) takes a value that fails as never written, the write side (`policyValueForRecord`) refuses with its own sentence — one judgement, two faces. The integer and word branches are the settings chain's own gate (`parseConfigValue`), so the spellings a write takes are exactly the spellings a read takes; `text` (the model route) is this layer's refinement: one word without blanks. */
+function parsePolicyValue(kind: PolicyKind, value: unknown, values?: readonly string[]): string | number | undefined {
   if (kind === 'integer') {
-    if (typeof value === 'boolean') return undefined;
-    let candidate = value;
-    if (typeof candidate === 'string') {
-      const trimmed = candidate.trim();
-      if (!/^-?\d+$/.test(trimmed)) return undefined;
-      candidate = Number(trimmed);
-    }
-    return typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 1
-      ? candidate
-      : undefined;
+    // The integer branch of the gate only ever answers a number (a boolean never becomes one); the wide
+    // ConfigValue union is the settings chain's, not what this branch hands back.
+    return parseConfigValue('integer', value) as number | null ?? undefined;
+  }
+  if (kind === 'word') {
+    // The word branch only ever answers a word of the vocabulary it was given.
+    return parseConfigValue('word', value, values) as string | null ?? undefined;
   }
   if (typeof value !== 'string') return undefined;
-  return values === undefined || values.includes(value) ? value : undefined;
+  const text = value.trim();
+  return text === '' || /\s/u.test(text) ? undefined : text;
 }
 
 /**
@@ -191,21 +223,24 @@ function parsePolicyValue(kind: PolicyKind, value: unknown, values?: readonly st
  *
  * The one read-side place: the line account's own verbs use it, and the planner (parallel / when_shelved)
  * reads from here too — the same defaults and the same parsing are not written a second time anywhere else.
+ * `parallel` is normalized right here: the default table states a number and the gate only lets integers
+ * land, so the parallel this set carries always reads as a number — the callers read it, none of them
+ * guards the kind a second time.
  */
-export function cyclePolicy(record: CycleRecord): CyclePolicySet {
-  const out: CyclePolicySet = { ...POLICY_DEFAULTS };
+export function cyclePolicy(record: CycleRecord): CyclePolicySet & { parallel: number } {
+  const out: CyclePolicySet & { parallel: number } = { ...POLICY_DEFAULTS, parallel: LINE_POLICIES.parallel.default };
   const stated = record.policies;
   if (stated === undefined || stated === null || typeof stated !== 'object') return out;
   for (const [key, value] of Object.entries(stated as CyclePolicies)) {
     const spec = POLICY_TABLE[key];
     if (spec === undefined) continue;
     const parsed = parsePolicyValue(spec.kind, value, spec.values);
-    if (parsed !== undefined) out[key] = parsed as string | number;
+    if (parsed !== undefined) out[key] = parsed;
   }
   return out;
 }
 
-/** One policy value on the write side: `off` / null clears the entry; a value that fails the kind gate is refused. */
+/** One policy value on the write side: `off` / null clears the entry; the value is judged by the one gate (`parsePolicyValue`), and a value that fails it is refused. */
 function policyValueForRecord(key: string, value: CyclePolicyValue): string | number | null {
   const spec = POLICY_TABLE[key];
   if (spec === undefined) {
@@ -213,36 +248,22 @@ function policyValueForRecord(key: string, value: CyclePolicyValue): string | nu
   }
   if (value === null) return null;
   if (typeof value === 'string' && value.trim().toLowerCase() === 'off') return null;
-  if (spec.kind === 'integer') {
-    const candidate = typeof value === 'string' ? value.trim() : value;
-    let parsed: number | undefined;
-    if (typeof candidate === 'number' && Number.isInteger(candidate)) parsed = candidate;
-    else if (typeof candidate === 'string' && /^-?\d+$/.test(candidate)) parsed = Number(candidate);
-    if (parsed === undefined) {
-      throw new Error(`policy ${key} takes a positive integer or \`off\`, got ${JSON.stringify(value)}`);
+  const parsed = parsePolicyValue(spec.kind, value, spec.values);
+  if (parsed === undefined) {
+    if (spec.kind === 'integer') {
+      throw new Error(
+        `policy ${key} takes a positive integer (at least 1) or \`off\`, got ${JSON.stringify(value)}`,
+      );
     }
-    if (parsed < 1) {
-      throw new Error(`policy ${key} must be at least 1 (a line holds at least one node)`);
-    }
-    return parsed;
-  }
-  if (spec.kind === 'text') {
-    if (typeof value !== 'string') {
-      throw new Error(`policy ${key} takes one word, got ${JSON.stringify(value)}`);
-    }
-    const text = value.trim();
-    if (text === '' || /\s/u.test(text)) {
+    if (spec.kind === 'text') {
       throw new Error(`policy ${key} takes one word without blanks, got ${JSON.stringify(value)}`);
     }
-    return text;
-  }
-  if (typeof value !== 'string' || !spec.values!.includes(value)) {
     throw new Error(
       `policy ${key} must be one of ${JSON.stringify(spec.values ?? [])} or \`off\`, ` +
         `got ${JSON.stringify(value)}`,
     );
   }
-  return value;
+  return parsed;
 }
 
 /** The roster a line holds, canonical shape: `[{id, since}]`; the old on-disk shape (a bare id string) reads as since null. */
@@ -267,6 +288,22 @@ function holdingIds(record: CycleRecord): string[] {
 /** The ids of the nodes one line holds right now, accepting both on-disk shapes — the canonical one and a bare id string (the single exit of the read side). */
 export function cycleHoldingIds(record: CycleRecord): string[] {
   return holdingIds(record);
+}
+
+/**
+ * The refusal of "this node is not on this line's claim list": the criterion and the sentence in one
+ * place. The code is the error table's `not_holding`; the settle's gate, the ticket's gate and the
+ * closing verb all throw this one error, so the same absence presents the same (coded) face on every
+ * caller. `tail` is the caller's own continuation after the shared sentence.
+ */
+export function notHoldingError(paths: RecordPaths, cycle: CycleRecord, nodeId: string, tail: string): RecordError {
+  const cycleId = String(cycle.id ?? '');
+  const names = cycleHoldingIds(cycle).map((id) => short(id)).join(', ') || 'nothing';
+  return new RecordError(
+    'not_holding',
+    paths.stateJson,
+    `cycle "${cycleId}" is not holding ${nodeId} (it is holding ${names})${tail}`,
+  );
 }
 
 /** Write the canonical shape back onto this line: `holding` has exactly one shape. */
@@ -315,20 +352,6 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
   /** Write state.json: the whole document is written back as it was (only the cycles table is changed), in construction order (state is not sorted). */
   async function writeState(ledger: StateLedger): Promise<void> {
     await atomicWriteJson(paths.stateJson, ledger.data, jsonOptionsForRecord('state'));
-  }
-
-  /**
-   * Find this line: by exact id, never guessing a prefix for the caller; an id not on the account is
-   * refused on the spot with the record's own `cycle_not_found` — the same code and the same landing
-   * (`state.json`) the settings chain refuses a line id with, so one absence has one answer wherever
-   * a caller meets it and the code table covers the whole path.
-   */
-  function findCycle(ledger: StateLedger, id: string): CycleRecord {
-    const found = findCycleRecord(ledger, id);
-    if (found === undefined) {
-      throw new RecordError('cycle_not_found', paths.stateJson, `cycle "${id}" not found in state.json`);
-    }
-    return found;
   }
 
   /** The block both set-up verbs share: tags must be declared, the id must be unused, only one line may be active at a time (force overrides it explicitly). */
@@ -503,7 +526,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
 
     async rename(id: string, title: string): Promise<CycleRecord> {
       return mutate(async (ledger) => {
-        const record = findCycle(ledger, id);
+        const record = cycleRecordOrRefuse(paths, ledger, id);
         record.title = title;
         record.updated_at = nowSeconds();
         await writeState(ledger);
@@ -513,7 +536,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
 
     async setStatus(id: string, status: CycleStatus): Promise<CycleRecord> {
       return mutate(async (ledger) => {
-        const record = findCycle(ledger, id);
+        const record = cycleRecordOrRefuse(paths, ledger, id);
         if (!VALID_CYCLE_STATUSES.includes(status)) {
           throw new Error(
             `cycle status must be one of ${JSON.stringify([...VALID_CYCLE_STATUSES].sort())}`,
@@ -533,7 +556,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
 
     async setPolicy(id: string, key: string, value: CyclePolicyValue): Promise<CyclePolicySet> {
       return mutate(async (ledger) => {
-        const record = findCycle(ledger, id);
+        const record = cycleRecordOrRefuse(paths, ledger, id);
         const stored = policyValueForRecord(key, value);
         const policies: CyclePolicies = (record.policies ?? {}) as CyclePolicies;
         if (stored === null) delete policies[key];
@@ -553,21 +576,19 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
 
     async current(): Promise<CycleRecord | null> {
       const { cycles } = await readState();
-      const active = cycles.filter((record) => record.status === 'active');
-      if (active.length === 1) {
-        const record = active[0]!;
-        return { ...record, holding: holdingOf(record) };
+      const pick = defaultActiveCycle(cycles);
+      if (pick.kind === 'several') {
+        // A second active line set up with force: it has to be named, never picked for the caller.
+        throw new Error(`several active cycles: continue which one? ${JSON.stringify(pick.ids)}`);
       }
-      if (active.length === 0) return null;
-      // A second active line set up with force: it has to be named, never picked for the caller.
-      throw new Error(
-        `several active cycles: continue which one? ${JSON.stringify(active.map((record) => record.id))}`,
-      );
+      if (pick.kind === 'none') return null;
+      const record = pick.cycle;
+      return { ...record, holding: holdingOf(record) };
     },
 
     async show(id: string): Promise<CycleRecord> {
       const ledger = await readState();
-      const record = findCycle(ledger, id);
+      const record = cycleRecordOrRefuse(paths, ledger, id);
       return { ...record, holding: holdingOf(record) };
     },
 
@@ -593,7 +614,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
     /** One line's effective policy set: the defaults, then whatever this line states, in one reading. */
     async policies(id: string): Promise<CyclePolicySet> {
       const ledger = await readState();
-      return cyclePolicy(findCycle(ledger, id));
+      return cyclePolicy(cycleRecordOrRefuse(paths, ledger, id));
     },
 
     /**
@@ -603,7 +624,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
      */
     async standing(id: string, node: string): Promise<CycleStanding> {
       const ledger = await readState();
-      const record = findCycle(ledger, id);
+      const record = cycleRecordOrRefuse(paths, ledger, id);
       const standing: CycleStanding = { cycle: id, node, standing: 'nothing', signal: null };
       const held = holdingOf(record).find((item) => item.id === node);
       if (held !== undefined) {
@@ -646,7 +667,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
         throw new Error('hold needs at least one node id; nothing was changed.');
       }
       return mutate(async (ledger) => {
-        const record = findCycle(ledger, id);
+        const record = cycleRecordOrRefuse(paths, ledger, id);
         const holding = holdingOf(record);
         const now = nowSeconds();
         for (const node of wanted) {
@@ -673,7 +694,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
 
     async close(id: string, input: CycleCloseInput): Promise<CycleRecord> {
       return mutate(async (ledger) => {
-        const record = findCycle(ledger, id);
+        const record = cycleRecordOrRefuse(paths, ledger, id);
         if (!VALID_NODE_RESULTS.includes(input.result)) {
           throw new Error(
             `result must be one of ${JSON.stringify([...VALID_NODE_RESULTS].sort())}`,
@@ -682,10 +703,8 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
         const holding = holdingOf(record);
         const item = holding.find((entry) => entry.id === input.node);
         if (item === undefined) {
-          const names = holding.map((entry) => short(entry.id)).join(', ') || 'nothing';
-          throw new Error(
-            `cycle "${id}" is not holding ${input.node} (it holds ${names}); nothing was changed.`,
-          );
+          // The same coded refusal the settle gate and the ticket gate throw (`notHoldingError`): one absence, one error face.
+          throw notHoldingError(paths, record, input.node, '; nothing was changed.');
         }
         const now = nowSeconds();
         // One settle lands one entry: who, from when to when, and with what result. The handoff ticket is not written here (a conductor-layer action).
@@ -704,7 +723,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
 
     async retry(id: string, node?: string, options?: { drop?: boolean; summary?: string }): Promise<CycleRecord> {
       return mutate(async (ledger) => {
-        const record = findCycle(ledger, id);
+        const record = cycleRecordOrRefuse(paths, ledger, id);
         // The default step: the single one in hand, otherwise the one walked most recently; with neither there is nothing to re-run.
         let target = node;
         if (target === undefined || target === null) {

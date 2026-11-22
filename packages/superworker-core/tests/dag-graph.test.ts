@@ -119,6 +119,19 @@ describe('validate: the whole-graph check', () => {
     expect(report.problems.some((line) => line.includes('no_cycles'))).toBe(true);
     expect(report.problems.some((line) => line.includes('no_dangling'))).toBe(true);
   });
+
+  it('an edge to an inherited key (toString) is a phantom edge: validate names it, and the node reads ready', async () => {
+    // The membership test owns the node table: a name every object inherits (`toString`) is not a
+    // member, so the dangling check reports the edge — a bare `in` would have read the borrowed key
+    // as a member and stayed silent about it while readiness stalled the node forever.
+    const a = 'aaaaaaaa-1111-4111-8111-111111111111';
+    await plantNodes({ [a]: nodeOf('A', ['toString']) });
+    const report = await superworker.ledger.dag.validate();
+    expect(report.ok).toBe(false);
+    expect(report.problems).toEqual([`FAIL  check=no_dangling  node=${a}  references=toString`]);
+    // A dangling dependency counts as delivered: the phantom edge is named, it does not stall the line.
+    expect((await superworker.ledger.dag.info(a)).ready).toBe(true);
+  });
 });
 
 describe('context: the transitive upstream and downstream closure', () => {

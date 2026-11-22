@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { isRecordError } from '../src/errors';
 import { open } from '../src/open';
 
 /**
@@ -251,6 +252,20 @@ describe('close: closing and the path', () => {
     expect((await superworker.ledger.cycles.show('main')).path).toEqual([]);
   });
 
+  it('a node not in hand is the coded refusal (not_holding), the same error the settle gate and the ticket gate throw', async () => {
+    const node = await addNode('not in hand', { tags: ['coding'] });
+    await superworker.ledger.cycles.create({ id: 'main', tags: ['coding'] });
+    const refusal = await superworker.ledger.cycles
+      .close('main', { node: node.id, result: 'completed' })
+      .catch((error: unknown) => error);
+    expect(isRecordError(refusal, 'not_holding')).toBe(true);
+    if (isRecordError(refusal, 'not_holding')) {
+      expect(refusal.message).toContain('is not holding');
+      expect(refusal.path).toContain('state.json');
+    }
+    expect((await superworker.ledger.cycles.show('main')).path).toEqual([]);
+  });
+
   it('a retry is legal: the same node enters path again and again, one step per run', async () => {
     const node = await addNode('rework', { tags: ['coding'] });
     await superworker.ledger.cycles.create({ id: 'main', tags: ['coding'] });
@@ -353,6 +368,22 @@ describe('policy: the cycle\'s own policies', () => {
       parallel: 1,
     });
     expect((await superworker.ledger.cycles.show('main')).policies).toEqual({});
+  });
+
+  it('the number spellings are one gate on both sides: 1_000 written lands as 1000 and reads back the same', async () => {
+    // The line policy's integer gate is the settings chain's own (`parseConfigValue`), so a write that
+    // takes a spelling is a read that takes it — `1_000` used to be refused on the write and skipped
+    // on the read, two grammars that could drift apart.
+    await superworker.ledger.cycles.create({ id: 'main', tags: ['coding'] });
+    expect(await superworker.ledger.cycles.setPolicy('main', 'parallel', '1_000')).toEqual({
+      when_shelved: 'stop',
+      parallel: 1000,
+    });
+    expect((await superworker.ledger.cycles.policies('main')).parallel).toBe(1000);
+    expect((await superworker.ledger.cycles.show('main')).policies).toEqual({ parallel: 1000 });
+    // The range stays this layer's own boundary: below 1 is refused, and the refusal names the floor.
+    await expect(superworker.ledger.cycles.setPolicy('main', 'parallel', 0)).rejects.toThrow('at least 1');
+    await expect(superworker.ledger.cycles.setPolicy('main', 'parallel', 'many')).rejects.toThrow('positive integer');
   });
 
   it('a policy key this engine does not know is skipped as an unknown key: the line still reads, and the word is in no effective set', async () => {

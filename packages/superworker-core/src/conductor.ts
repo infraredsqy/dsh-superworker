@@ -32,7 +32,7 @@ import { launchPromptPath, recordPaths, signalPath, startedMarkerPath } from './
 import type { CycleRecord, HandoffRecord, NodeMode, NodeResult } from './types';
 import type { PluginCommandEntry, PluginContext, PluginFolder } from './plugins/types';
 import { withLedgerLock } from './ledgerlock';
-import { createCyclesNamespace, cycleHoldingIds, cyclePolicy, findCycleRecord, readStateLedger } from './cycles';
+import { createCyclesNamespace, cycleHoldingIds, cyclePolicy, cycleRecordOrRefuse, defaultActiveCycle, notHoldingError, readStateLedger } from './cycles';
 
 /** The verdict words a handoff ticket takes: these three only (`pending` is the marker a re-run leaves, coming from the re-run verb, not from a session). */
 const HANDOFF_RESULTS: readonly NodeResult[] = ['completed', 'failed', 'stopped'];
@@ -523,33 +523,32 @@ export function createConductorNamespace(
   const cycles = createCyclesNamespace(root);
 
   /**
-   * The reading of a line record: name an id and find that line; without a name the first active one is
-   * taken (and if there is none, it stops on the spot). The table comes from the engine's one reading of
+   * The reading of a line record: name an id and find that line; without a name the one active line is
+   * taken — the same criterion every unnamed line call reads by (`defaultActiveCycle`): none refuses,
+   * several refuses naming the lines, one is taken. The named reading refuses with the engine's one
+   * finding-and-refusing (`cycleRecordOrRefuse`). The table comes from the engine's one reading of
    * `state.json` (`readStateLedger`) — normalized once, so a hand-edited entry cannot crash this reader
    * while it is looked past elsewhere.
    */
   async function resolveCycle(targetCycle: string | undefined): Promise<CycleRecord> {
     const ledger = await readStateLedger(paths);
-    if (targetCycle !== undefined) {
-      const named = findCycleRecord(ledger, targetCycle);
-      if (named === undefined) {
-        throw new RecordError(
-          'cycle_not_found',
-          paths.stateJson,
-          `this project's record has no cycle "${targetCycle}"`,
-        );
-      }
-      return named;
-    }
-    const current = ledger.cycles.find((cycle) => cycle.status === 'active');
-    if (current === undefined) {
+    if (targetCycle !== undefined) return cycleRecordOrRefuse(paths, ledger, targetCycle);
+    const pick = defaultActiveCycle(ledger.cycles);
+    if (pick.kind === 'none') {
       throw new RecordError(
         'cycle_not_found',
         paths.stateJson,
         'no active cycle to act on (name one with { cycle }); nothing was changed',
       );
     }
-    return current;
+    if (pick.kind === 'several') {
+      throw new RecordError(
+        'cycle_not_found',
+        paths.stateJson,
+        `several active cycles: continue which one? ${JSON.stringify(pick.ids)} (name one with { cycle}); nothing was changed`,
+      );
+    }
+    return pick.cycle;
   }
 
   /** The node this step works on: the named one when one is named, otherwise the line's claim; with neither it stops. */
@@ -641,16 +640,11 @@ export function createConductorNamespace(
     }
     // Gate one of the closing: the node must be on this line's claim list (the same gate as the closing itself).
     // The claim is read in one place for every shape on disk (`cycleHoldingIds`): the canonical `[{ id, since }]`
-    // and the bare id string an older disc carries.
+    // and the bare id string an older disc carries. The refusal is the one not_holding error (`notHoldingError`)
+    // the ticket gate and the closing verb throw too.
     const inHand = cycleHoldingIds(cycle).includes(nodeId);
     if (!inHand) {
-      const names = cycleHoldingIds(cycle).map(short);
-      throw new RecordError(
-        'not_holding',
-        paths.stateJson,
-        `cycle "${cycleId}" is not holding ${nodeId} (it is holding ` +
-          `${names.join(', ') || 'nothing'}); there is nothing to settle`,
-      );
+      throw notHoldingError(paths, cycle, nodeId, '; there is nothing to settle');
     }
     // Gate two of the closing: the ticket has to be on disk and it has to state a result. A missing ticket, or one
     // still pending, is a blocker (nothing was handed in, or it is a re-run marker) — there is no verdict to
@@ -877,18 +871,16 @@ export function createConductorNamespace(
       }
       // Two gates pass first, and the refusal writes nothing: the line must be on the account and the node must
       // be on its claim list — a ticket vouching for work nobody ran is worse than no ticket (the same gate as
-      // handoff, read off the one shape-tolerant reader every reader of a claim goes through).
+      // handoff, read off the one shape-tolerant reader every reader of a claim goes through; the refusal is the
+      // one not_holding error the settle gate and the closing verb throw too).
       const cycle = await resolveCycle(cycleId);
-      const held = cycleHoldingIds(cycle);
-      const inHand = held.includes(nodeId);
-      if (!inHand) {
-        const names = held.map(short);
-        throw new RecordError(
-          'not_holding',
-          paths.stateJson,
-          `cycle "${cycleId}" is not holding ${nodeId} (it is holding ` +
-            `${names.join(', ') || 'nothing'}); nothing was written. A node this line already ` +
-            'closed out is the usual reason: put it back in play and pin the line on it again.',
+      if (!cycleHoldingIds(cycle).includes(nodeId)) {
+        throw notHoldingError(
+          paths,
+          cycle,
+          nodeId,
+          '; nothing was written. A node this line already closed out is the usual reason: ' +
+            'put it back in play and pin the line on it again.',
         );
       }
       // The ticket's six keys land in the fixed shape and key order; the write is atomic, and a second ticket

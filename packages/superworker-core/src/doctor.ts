@@ -10,7 +10,7 @@ import {
 import { hasLegacyRecord, isRecognizableLegacyRecord, migrationPreconditions } from './legacy';
 import type { DagNamespace } from './ledger';
 import { RECORD_DIR_NAME, type RecordPaths } from './paths';
-import { readGraphSnapshot } from './graph';
+import { ownsKey, readGraphSnapshot } from './graph';
 
 /**
  * The check-up's record and git face: whether `init`'s layout is all there, whether the graph holds
@@ -67,7 +67,7 @@ export async function recordChecks(
     // The claim is read off the one shape-tolerant reader (`cycleHoldingIds`), so a bare id string on an older
     // disc is checked against the graph like any other claim instead of passing for an empty hand.
     for (const id of cycleHoldingIds(cycle)) {
-      if (!(id in snapshot.nodes)) {
+      if (!ownsKey(snapshot.nodes, id)) {
         dangling.push(`cycle "${cycle.id}" holds ${id}, which is not on the graph`);
       }
     }

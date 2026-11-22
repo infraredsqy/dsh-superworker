@@ -77,6 +77,17 @@ describe('add: registering a node', () => {
     expect(existsSync(join(root, '.superworker', 'nodes', 'not-a-node'))).toBe(false);
   });
 
+  it('a dependency spelling that is only an inherited key (toString) is not a node: the add is refused and the graph keeps no trace', async () => {
+    // The node table is a plain object: a membership test that walked the prototype would read
+    // `toString` as a member and let an edge to a phantom node land. The check owns the table, so
+    // the spelling refuses like any other name the graph has never heard of.
+    await expect(
+      superworker.ledger.dag.add({ title: 'phantom edge', depends_on: ['toString'] }),
+    ).rejects.toThrow('dependency toString not found');
+    const graph = await superworker.ledger.dag.list();
+    expect(graph).toEqual([]);
+  });
+
   it('tags are trimmed, deduplicated and kept in order', async () => {
     const node = await superworker.ledger.dag.add({ title: 'with tags', tags: [' coding ', 'art', 'coding'] });
     expect(node.tags).toEqual(['coding', 'art']);
@@ -281,6 +292,12 @@ describe('remove: taking a node away', () => {
 describe('get / specPath: single-node reads', () => {
   it('a node not on the graph comes back as null', async () => {
     expect(await superworker.ledger.dag.get('nobody')).toBeNull();
+  });
+
+  it('a spelling that only names an inherited key (toString) is no node: get answers null, never a borrowed function', async () => {
+    const node = await superworker.ledger.dag.add({ title: 'findable' });
+    expect(await superworker.ledger.dag.get('toString')).toBeNull();
+    expect((await superworker.ledger.dag.get(node.id))!.title).toBe('findable');
   });
 
   it('a unique prefix matches, and an ambiguous prefix is rejected', async () => {

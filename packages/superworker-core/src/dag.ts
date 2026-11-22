@@ -39,8 +39,10 @@ import {
   inTagScope,
   nodeReady,
   normalizeTags,
+  ownsKey,
   rankScores,
   resolveNodeId,
+  resolveNodeKey,
   reverseAdjacency,
   tagsOf,
   type NodeMap,
@@ -208,7 +210,7 @@ export function createDagNamespace(root: string): DagNamespace {
         mkdirSync(nodeDir(paths, uid), { recursive: true });
 
         for (const dep of normalizeTags(input.depends_on ?? [])) {
-          if (!(dep in nodes)) {
+          if (!ownsKey(nodes, dep)) {
             // The dependency does not exist: the node just set up is withdrawn as a whole — wiped from the record
             // (write back atomically) and its directory taken away.
             delete nodes[uid];
@@ -285,7 +287,7 @@ export function createDagNamespace(root: string): DagNamespace {
               throw new Error(`row ${at}: ref must be a non-empty string`);
             }
             if (byRef.has(ref)) throw new Error(`row ${at}: ref "${ref}" is carried by an earlier row`);
-            if (ref in nodes) throw new Error(`row ${at}: ref "${ref}" is already a node id on the graph`);
+            if (ownsKey(nodes, ref)) throw new Error(`row ${at}: ref "${ref}" is already a node id on the graph`);
           }
 
           const uid = randomUUID();
@@ -517,13 +519,11 @@ export function createDagNamespace(root: string): DagNamespace {
 
     async get(id: string): Promise<NodeRecord | null> {
       const { nodes } = await readIdeas();
-      if (id in nodes) return nodes[id]!;
-      const matches = Object.keys(nodes).filter((key) => key.startsWith(id));
-      if (matches.length === 1) return nodes[matches[0]!]!;
-      if (matches.length > 1) {
-        throw new Error(`"${id}" matches multiple nodes (${matches.join(', ')})`);
-      }
-      return null;
+      // The one resolution of an id spelling (`resolveNodeKey` — the matching `resolveNodeId` itself
+      // is built on), with the one difference `get` owes its callers: an absence answers `null`
+      // instead of refusing; a spelling naming several nodes still refuses.
+      const key = resolveNodeKey(id, nodes);
+      return key === null ? null : nodes[key]!;
     },
 
     /**
@@ -774,7 +774,7 @@ export function createDagNamespace(root: string): DagNamespace {
       const seenEdges = new Set<string>();
       for (const [uid, node] of Object.entries(nodes)) {
         for (const dep of node.dependencies ?? []) {
-          if (!(dep in nodes)) {
+          if (!ownsKey(nodes, dep)) {
             problems.push(`FAIL  check=no_dangling  node=${uid}  references=${dep}`);
           }
           const edge = `${uid}->${dep}`;

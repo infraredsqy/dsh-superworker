@@ -115,4 +115,27 @@ describe('references do not dangle, nothing forms a cycle', () => {
     expect(cycles.detail).toContain('cycle "main" holds 88888888-8888-4888-8888-888888888888');
     expect(cycles.detail).toContain('not on the graph');
   });
+
+  it('a hold naming an inherited key (toString) is not on the graph either: the cycles check stays red, not silent', async () => {
+    // The held-node check owns the graph table: a name every object inherits is not a member, so the
+    // phantom claim is named instead of passing for a held node the graph has.
+    await superworker.ledger.init();
+    write('.superworker/state.json', {
+      cycles: [
+        {
+          id: 'main',
+          title: 'one line',
+          status: 'active',
+          holding: [{ id: 'toString', since: '2026-01-01T00:00:00Z' }],
+          path: [],
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+    });
+    const cycles = (await superworker.conductor.doctor()).checks.find((check) => check.name === 'cycles')!;
+    expect(cycles.ok).toBe(false);
+    expect(cycles.detail).toContain('cycle "main" holds toString');
+    expect(cycles.detail).toContain('not on the graph');
+  });
 });

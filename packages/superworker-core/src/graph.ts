@@ -75,19 +75,39 @@ export function short(id: string): string {
 }
 
 /**
- * Resolve an id spelling the caller gives back to a key of a table: a full id is taken as it is, and
- * a prefix long enough to be unique is taken too. A prefix matching several keys is refused (no
- * guessing), and so is one matching none. Every verb on the graph that speaks in ids shares this, so
- * one prefix gets the same verdict on every verb.
+ * Whether a keyed table owns this name itself: the node table and the adjacency tables are plain
+ * objects, so a membership test that walked the prototype would read `constructor`, `toString`,
+ * `__proto__` and their kin as members of a graph that never heard of them — a read would answer
+ * from a wider layer under a name the graph has never heard of, and a write would mint an edge to
+ * one. The one membership test of the node table and the adjacency tables; the settings chain
+ * gates its own tables the same way (`Object.hasOwn` in `config.ts`).
  */
-export function resolveNodeId(uid: string, nodes: Readonly<Record<string, unknown>>): string {
-  if (uid in nodes) return uid;
+export function ownsKey(table: Readonly<Record<string, unknown>>, key: string): boolean {
+  return Object.hasOwn(table, key);
+}
+
+/**
+ * The key one id spelling names on the node table: a full id is taken as it is, and a prefix long
+ * enough to be unique is taken too. A prefix matching several keys is refused (no guessing), and
+ * one matching none comes back as `null` — `resolveNodeId` throws that absence, `dag.get` folds it
+ * into `null`. The one matching of an id spelling: every verb on the graph that speaks in ids
+ * shares it, so one prefix gets the same verdict on every verb.
+ */
+export function resolveNodeKey(uid: string, nodes: Readonly<Record<string, unknown>>): string | null {
+  if (ownsKey(nodes, uid)) return uid;
   const matches = Object.keys(nodes).filter((key) => key.startsWith(uid));
   if (matches.length === 1) return matches[0]!;
   if (matches.length > 1) {
     throw new Error(`"${uid}" matches multiple nodes (${matches.join(', ')})`);
   }
-  throw new Error(`node ${uid} not found`);
+  return null;
+}
+
+/** The id spelling resolved all the way: the key `resolveNodeKey` names, refused when it names nothing. */
+export function resolveNodeId(uid: string, nodes: Readonly<Record<string, unknown>>): string {
+  const key = resolveNodeKey(uid, nodes);
+  if (key === null) throw new Error(`node ${uid} not found`);
+  return key;
 }
 
 export function adjacency(nodes: NodeMap): Adjacency {
@@ -104,7 +124,7 @@ export function reverseAdjacency(adj: Adjacency): Adjacency {
   for (const uid of Object.keys(adj)) rev[uid] = [];
   for (const [uid, deps] of Object.entries(adj)) {
     for (const dep of deps) {
-      if (dep in rev) rev[dep]!.push(uid);
+      if (ownsKey(rev, dep)) rev[dep]!.push(uid);
     }
   }
   return rev;
@@ -121,7 +141,7 @@ export function canReach(
   if (visited.has(start)) return [false, []];
   visited.add(start);
   for (const next of adj[start] ?? []) {
-    if (!(next in adj)) continue; // a dangling dependency: skip it
+    if (!ownsKey(adj, next)) continue; // a dangling dependency: skip it
     const [found, path] = canReach(adj, next, target, visited);
     if (found) return [true, [start, ...path]];
   }
@@ -135,7 +155,7 @@ export function topologicalOrder(adj: Adjacency): string[] {
   for (const [uid, deps] of Object.entries(adj)) {
     let count = 0;
     for (const dep of deps) {
-      if (dep in adj) count += 1;
+      if (ownsKey(adj, dep)) count += 1;
     }
     inDegree[uid] = count;
   }
@@ -145,7 +165,7 @@ export function topologicalOrder(adj: Adjacency): string[] {
     const uid = queue.shift()!;
     order.push(uid);
     for (const dependent of rev[uid] ?? []) {
-      if (dependent in inDegree) {
+      if (ownsKey(inDegree, dependent)) {
         inDegree[dependent] -= 1;
         if (inDegree[dependent] === 0) queue.push(dependent);
       }
@@ -168,8 +188,10 @@ export function urgencyScores(adj: Adjacency): Record<string, number> {
   for (const uid of topo) {
     const set = new Set<string>([uid]);
     for (const dep of adj[uid] ?? []) {
-      const upstream = depSet[dep];
-      if (upstream !== undefined) for (const item of upstream) set.add(item);
+      // The dep-set table is keyed by node id and owns its keys: a dependency naming an inherited key
+      // has no set of its own (the same membership test as the tables above).
+      if (!ownsKey(depSet, dep)) continue;
+      for (const item of depSet[dep]!) set.add(item);
     }
     depSet[uid] = set;
   }
@@ -191,8 +213,9 @@ export function importanceScores(adj: Adjacency): Record<string, number> {
   for (const uid of [...topo].reverse()) {
     const set = new Set<string>([uid]);
     for (const dependent of rev[uid] ?? []) {
-      const downstream = dependentSet[dependent];
-      if (downstream !== undefined) for (const item of downstream) set.add(item);
+      // The same membership test as the dep-set table above: an inherited key is no member.
+      if (!ownsKey(dependentSet, dependent)) continue;
+      for (const item of dependentSet[dependent]!) set.add(item);
     }
     dependentSet[uid] = set;
   }
@@ -256,7 +279,7 @@ export function nodeReady(uid: string, allNodes: NodeMap, options: ReadyOptions 
   if (node === undefined) return false;
   if ((node.status ?? 'todo') !== 'todo') return false;
   for (const dep of node.dependencies ?? []) {
-    if (!(dep in allNodes)) continue; // a dangling dependency: delivered
+    if (!ownsKey(allNodes, dep)) continue; // a dangling dependency: delivered
     if (assumed !== undefined && assumed.has(dep)) continue;
     if ((allNodes[dep]!.status ?? 'todo') !== 'completed') return false;
   }
