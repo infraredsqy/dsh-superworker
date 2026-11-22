@@ -4,9 +4,9 @@
 > [api.md](api.md)（接口面）与 [merge.md](merge.md)（合并驱动）。
 > 这里只放「不知道就会写错」的条文；读数、一次性的计划与报告不进来。
 
-## 硬边界（`tests/guard.test.ts` 钉着，违反即红）
+## 硬边界（运行期边界由 `tests/guard.test.ts` 钉着，违反即红）
 
-- 纯 TypeScript：源码树（`src/`、`tests/`）里没有 .py 文件；不出现 `@deepseek-ai/*`，不打开会话、不联网。
+- 纯 TypeScript：源码树（`src/`、`tests/`）不出现 `@deepseek-ai/*`，不打开会话、不联网。
 - 进程面只有一个入口——`sw-merge-ledger`（git 的合并驱动只能靠进程叫它）；本包没有命令面：没有 CLI、没有安装期脚本、包根没有 `bin/`（调用它的那一层在包外）。接口面里写了它的产物与出口。
 - 引擎不管仓库：工作树、分支、提交、合并、工作树状态、git 那边的锁与目录布局都不是它的事，那些 git 命令由 agent 自己敲。注入的 git（`src/git.ts` 只有形状）只用来问 git 自己的事实——这个目录在不在 checkout 里、`info/exclude` 落在哪、项目根在仓库根下哪一段——以及经 git 自己的命令做三件事：写、读配置里的两个合并驱动键，和给 `.superworker` 立它自己要的那个仓库（`ledger.init` 的 `ownRepo`：要才立，已经在场的一个字节不碰）。
 - 「不起进程」这半是暂定的：管线宿主的半端会照常起进程。执行只能经 `RecordOpenOptions.executor` 从外面注入。
@@ -17,7 +17,7 @@
 五种记录（节点、线、问题、交接单、会话档）在磁盘上的格式逐字节定死：形状与词汇以 `src/types.ts` 为准，落点以 `src/paths.ts` 为准。记录与四份布局文件在任何平台都写 LF；给人读的文本产物（提示词、运行稿）随平台换行尾。
 
 - 记录归一个模块所有，谁拥有谁写：节点、线、交接单、会话档归引擎，问题池归问题池插件，指令清单归 `instruction` 插件（它的形状、落点与字节契约都在那个文件夹里，引擎不读也不写）。引擎那几份走 `src/jsonio.ts`（读者与写者各一处，写是原子的）与 `src/ledgerlock.ts`（同进程与跨进程的写者互斥，持锁体内的再入放行）；可判定的错误码在 `src/errors.ts`。
-- 跨模块只守两条。**写者唯一**：同一个记录文件同一时刻只有一个写者，跨进程也一样——每种记录带自己的锁，池子的锁是 `.superworker/meta/issues.lock`、指令清单的是 `.superworker/meta/instructions.lock`，与项目锁不同名、也不共用一把。**字节格式一致**：同一种记录落在盘上的字节一致；两个实现不共用代码时靠一条字节契约测试钉住（`tests/issue-pool-bytes.test.ts`），指令清单是插件自己写的，那条契约在插件自己的语料里（`tests/fixtures/instruction-*` 逐字节比它写出来的文件）。
+- 跨模块只守一条。**写者唯一**：同一个记录文件同一时刻只有一个写者，跨进程也一样——每种记录带自己的锁，池子的锁是 `.superworker/meta/issues.lock`、指令清单的是 `.superworker/meta/instructions.lock`，与项目锁不同名、也不共用一把。
 - 任何一次操作不得同时持有两把锁（不嵌套）。
 - 节点目录 `.superworker/nodes/<id>/` 由 add 立起、remove 带走：add 只立目录、不立 spec.md（它的缺席就是「要求还没写」），run.md 由派发准备立起。
 - 并行档（`worktree_mode` 为 `fork`）：工作树 `.superworker/worktrees/<短 id>`、出口分支 `sw/<短 id>`；那几步 git 由 agent 自己敲，引擎不留那几步的记录、不做合回、也不替它写判决。
@@ -37,7 +37,7 @@
   被跳过并留一条点名的 WARNING；`doctor` 把这条缺口当提示列出，不当声明问题。
 - **组合只能是一个名字就写着合成的动词。** `advance` = 认领 + 材料 + 会话；`close` = 结算 + 补槽 /
   停线。要按次序做几步就跑那个动词本身；标准流程永远可以用单动作拼出来（`plan` → `hold` →
-  `dispatch`），合成词不新增语义。`tests/words-surface.test.ts` 钉着这几个动词的选项表。
+  `dispatch`），合成词不新增语义。
 - **状态归状态、单归单。** 停线跑 `cycle status`，点名下一个跑 `hold`，写约束跑 `instruction`；
   收尾只管它自己那一单。读用 `plan`，写用那几个写动词，各有各的名字。
 - **批量是同一个操作的 N 条。** 同一个动作套在 N 条记录上时，给它一个批量形状，
@@ -50,10 +50,10 @@
 
 ## 语料与测试
 
-- 黄金语料一个用例一个目录（`tests/fixtures/<用例名>/`）：`input/` 是操作前的记录，`op.json` 是一次操作（参数按位展开、不经过 argv），`expected/` 是操作后的产物。`"expect": "return"` 的用例只比返回值，产物带当天日期的用例用 `"clock"` 钉死时钟。用例要把一份自带插件装进它的临时项目（走 `conductor.pluginCommand` 的用例就是这样）时，用 `op.json` 的 `plugins` 点名那个文件夹，铺台时从 `plugins/` 拷进去——不在 `input/` 里养第二份插件文件。
-- token 规则、比对尺子与生成侧入口都在 `tests/helpers/corpus.ts`：期望产物由它铺台生成，别手写。
-- 新增逻辑补测试，且只锁不变量：锁冻结面、锁记录词汇、锁哈希不变，不锁易变的实现细节。测试都放 `tests/`；引擎操作（读写 `.superworker` 记录）一律在临时目录做，完整套件前后仓库根 `.superworker` 的哈希不变。
-- 守卫只看源码树与包的形状：`.py` 文件、外部依赖、包根 `bin/`、进程入口与安装期脚本，命中即红。
+- `tests/fixtures/plan-tie-stable-order/` 只是输入材料：`conductor-plan` 的重放器自检拿它铺台、对拍期望产物。
+- 重放器在 `tests/helpers/corpus.ts`：铺台、对拍与那份输入材料的读取都从它走。
+- 新增逻辑补测试，且只锁不变量：锁行为不变量与幂等 / 事务性，不锁易变的实现细节。测试都放 `tests/`；引擎操作（读写 `.superworker` 记录）一律在临时目录做，完整套件前后仓库根 `.superworker` 的哈希不变。
+- 守卫只看源码树的运行期边界：无 spawn、无外部依赖（import 只许相对与 `node:` 前缀）、不出现 `@deepseek-ai/*`、不开会话、不联网，命中即红。
 
 ## 文档
 

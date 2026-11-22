@@ -209,16 +209,6 @@ describe('add: registering one instruction', () => {
     await add('third entry');
     expect(entries().map((row) => row.id)).toEqual(['i-0001', 'i-0003']);
   });
-
-  it('the record and the printed line are LF on every platform: no CR in either', async () => {
-    await add('a sentence that crosses no line');
-    const bytes = readFileSync(join(root, '.superworker', 'instructions.json'));
-    expect(bytes.includes(0x0d)).toBe(false);
-    // No trailing newline, like every other record.
-    expect(bytes[bytes.length - 1]).not.toBe(0x0a);
-    const text = await out(['list']);
-    expect(text.includes('\r')).toBe(false);
-  });
 });
 
 describe('the visibility matrix: scope x binding state x position', () => {

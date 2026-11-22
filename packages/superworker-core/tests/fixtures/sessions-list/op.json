@@ -1,5 +1,0 @@
-{
-  "path": "sessions.list",
-  "args": [],
-  "expect": "return"
-}

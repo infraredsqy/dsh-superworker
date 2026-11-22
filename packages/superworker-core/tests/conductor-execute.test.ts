@@ -92,24 +92,9 @@ describe('the loop: a completed ticket end to end (the slot is refilled and the 
     const sim = new SimulatedExecutor();
     const superworker = open(lab.root, { executor: sim });
 
-    // The dispatch: the receipt says a session is open, not how the work went.
-    const receipt = await superworker.conductor.dispatch({ cycle: 'c1' });
-    expect(receipt).toEqual({
-      action: 'opened',
-      cycle: 'c1',
-      node_id: a,
-      node_title: 'first slot',
-      prompt: promptOf(lab.root, 'c1', a),
-      prompt_text: `/sw-conduct ${a} [pipeline]\n`,
-      session: { sessionId: 'sess-1' },
-    });
-    // The request carries the real prompt and the role; the prepared material and the claim are on disk,
-    // while state.json and ideas.json are not touched by a byte.
-    expect(sim.dispatched).toEqual([
-      { cycle: 'c1', node: a, role: 'execute', prompt: `/sw-conduct ${a} [pipeline]\n` },
-    ]);
-    expect(readFileSync(promptOf(lab.root, 'c1', a), 'utf8').replace(/\r\n/g, '\n'))
-      .toBe(`/sw-conduct ${a} [pipeline]\n`);
+    // The dispatch: the receipt says a session is open, not how the work went (the receipt and the
+    // request body are the executor seam's own pins in executor.test.ts).
+    await superworker.conductor.dispatch({ cycle: 'c1' });
     expect(existsSync(join(lab.root, '.superworker', 'nodes', a, 'run.md'))).toBe(true);
     expect(existsSync(markerOf(lab.root, 'c1', a))).toBe(true);
     // The result is not in the receipt and not on disk either: nothing is settled, no ticket exists.

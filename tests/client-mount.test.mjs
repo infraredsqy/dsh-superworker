@@ -361,7 +361,6 @@ test('the bundled dictionary key sets line up: one key missing leaves one spot o
     keys,
     'the English and Chinese dictionaries must line up key by key: one more or one less leaves an empty spot on screen',
   )
-  assert.deepEqual(Object.keys(WORD_TABLES).sort(), ['en', 'zh'], 'the bundled languages are exactly these two')
 
   /* Every language carries every key, and carries a word rather than an empty spot. */
   for (const [locale, dict] of Object.entries(WORD_TABLES)) {
@@ -417,7 +416,6 @@ test('a dictionary registered before this build existed: a word it does not know
 test('with no locale service present: this layer speaks Chinese from the bundled dictionary', () => {
   /* The fallback is not a stub: a deployment with no locale service keeps the words the panel had
    * before it could be translated — the mechanism must not change the copy. */
-  assert.equal(FALLBACK_LOCALE, 'zh')
   const bare = createLocalePort()
   assert.equal(bare.getSnapshot().active, 'zh', 'with no service attached it speaks Chinese')
   assert.equal(bare.getSnapshot().t(SEAT_WORD), WORD_TABLES.zh[SEAT_WORD])

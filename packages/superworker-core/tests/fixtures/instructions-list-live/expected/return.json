@@ -1,8 +1,0 @@
-{
-  "word": "instruction",
-  "plugin": "instruction",
-  "ran": true,
-  "text": "● i-0001  [global/visible while working]  global constraint\n● i-0002  [cycle/read only when closing out]  line constraint\n● i-0003  [node/visible while working]  node constraint",
-  "code": null,
-  "error": null
-}

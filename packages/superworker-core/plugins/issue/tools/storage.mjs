@@ -8,16 +8,11 @@
  * (`src/jsonio.ts`) serves the core's own records and never goes into the package exports, so this
  * layer carries the pool's reads and writes itself, under the same byte rules as core (two-space
  * indent, non-ASCII as it is, deeply sorted keys, LF on every platform, no trailing newline), and a
- * write is atomic. That sameness is not maintained by editing both sides together: a contract test
- * (`tests/issue-pool-bytes.test.ts`) runs one batch of values through both implementations and
- * compares the encoded bytes, so a change to either side's indent / key order / line ending /
- * number spelling turns it red on the spot.
+ * write is atomic; the two sides are held to that sameness by review.
  *
  * The moment this layer writes (`now` and the `microTimestampOf` / anchor pair under it) is a copy of
  * `src/clock.ts`, and the pool's `discovered` / `updated_at` are the engine's MicroTimestamp spelled
- * the same way. This copy is not kept in step by reading both sides either: the same contract test
- * (`tests/issue-pool-bytes.test.ts`) runs one batch of epoch-microsecond readings through both
- * spellings, so a change to either side's padding, literal `Z` or six-digit tail turns it red.
+ * the same way.
  *
  * Whether a record directory counts as init-ed is `src/initledger.ts`'s reading alone — this layer
  * does not answer that question a second time.

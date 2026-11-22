@@ -15,17 +15,14 @@ import { readLine, readPool, readProject } from '../src/model/index.ts'
 import { SEVERITY_WEIGHTS } from '../packages/superworker-core/plugins/issue/tools/storage.mjs'
 import { AT, cycle, issue, record } from './helpers/record-fixtures.mjs'
 
-/* The table is the plugin's own constant, imported rather than re-spelled: a test that wrote the
- * numbers down would be the second copy this change exists to remove
- * (`pool-weights-one-home.test.mjs`). */
+/* The table is the plugin's own constant, imported rather than re-spelled. */
 const WEIGHTS = { ...SEVERITY_WEIGHTS }
 
 test('the weight table is what the reading is handed: the issues weigh by it, and nothing in the record is scraped for it', () => {
   /* The node's text still carries the old sentence; it must feed nothing. A table written into a
    * record's own words is exactly what stopped existing, so this holds a reading to the table it was
    * given and to no other. The sentence is *composed* from the plugin's constant rather than spelled
-   * out: a literal copy here would be the second home the one-home guard hunts for, and what this
-   * case needs is only the shape the retired scrape used to look for. */
+   * out; what this case needs is only the shape the retired scrape used to look for. */
   /* The tiers heaviest-last, which is the order the retired sentence used. */
   const chain = Object.keys(SEVERITY_WEIGHTS).reverse().join('/')
   const run = Object.keys(SEVERITY_WEIGHTS).reverse().map((tier) => String(SEVERITY_WEIGHTS[tier])).join('/')

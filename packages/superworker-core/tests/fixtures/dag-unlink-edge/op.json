@@ -1,7 +1,0 @@
-{
-  "path": "ledger.dag.unlink",
-  "args": [
-    "@node-d@",
-    "@node-b@"
-  ]
-}

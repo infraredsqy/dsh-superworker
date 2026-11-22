@@ -1,1 +1,0 @@
-/sw-conduct @node-a@ [pipeline]

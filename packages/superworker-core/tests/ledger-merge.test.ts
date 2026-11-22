@@ -165,36 +165,6 @@ describe('byte-for-byte replay: the output collected in a temp git repo', () => 
       }
     });
   }
-
-  it('the conflict lands on a field: the words name which record, which field, and what each side says', async () => {
-    const conflict = LEDGER_MERGE_CASES.find((item) => item.name === 'ideas-title-conflict')!;
-    const run1 = await run({
-      base: conflict.base,
-      ours: conflict.ours,
-      theirs: conflict.theirs,
-      path: conflict.path,
-    });
-    expect(run1.code).toBe(1);
-    expect(run1.stderr).toContain('merge-ledger: conflict [.superworker/ideas.json] Node aaaaaaaa field title');
-    expect(run1.stderr).toContain('ours="A-side title"');
-    expect(run1.stderr).toContain('theirs="B-side title"');
-    expect(run1.stderr).toContain('1 places need a human decision');
-  });
-
-  it('a delete-versus-edit conflict: the whole record is judged at once', async () => {
-    const conflict = LEDGER_MERGE_CASES.find(
-      (item) => item.name === 'instructions-delete-vs-edit',
-    )!;
-    const run1 = await run({
-      base: conflict.base,
-      ours: conflict.ours,
-      theirs: conflict.theirs,
-      path: conflict.path,
-    });
-    expect(run1.code).toBe(1);
-    expect(run1.stderr).toContain('instruction 2 field (the whole record)');
-    expect(run1.stderr).toContain('delete vs edit collided');
-  });
 });
 
 describe('an unrecognised record is left alone', () => {

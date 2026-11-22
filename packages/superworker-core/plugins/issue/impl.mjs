@@ -21,16 +21,13 @@
  *      engine's layout, not a plugin's.
  *
  * The convergence point for 1, 3, 4, 6 and 7 is those `ctx` seams; none of them exists yet, and the
- * convergence is never one plugin importing the other's file. What holds the two copies together
- * today is a contract test that pairs them (`tests/plugin-issue-test-audit-copies.test.ts`), so a
- * change to either side is a red test rather than a difference somebody has to notice by reading two
- * files. 2 and 5 stay copies by design; the pairing test is what keeps them saying the same thing.
+ * convergence is never one plugin importing the other's file. The two copies are held to the same
+ * shapes by review; 2 and 5 stay copies by design.
  *
  * **One cell of that pairing is a known divergence, and it is a debt, not a promise.** For a reading
  * whose six-digit rounding carries into a new decade (999999.7: seven significant digits, six of them
  * rounding up to 1000000) this side's formatter notices the carry and spells `1e+06`; the test-audit
- * side keeps the fixed spelling `1000000`. The contract test records both spellings as they stand
- * today rather than blessing the difference. The debt is on this side's carry branch: when one
+ * side keeps the fixed spelling `1000000`. The debt is on this side's carry branch: when one
  * spelling is chosen — the fixed one reads better — this side changes, and that cell becomes an
  * equality like every other cell in the batch.
  *

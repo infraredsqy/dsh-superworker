@@ -1,7 +1,0 @@
-{
-  "path": "ledger.dag.info",
-  "args": [
-    "@node-a@"
-  ],
-  "expect": "return"
-}

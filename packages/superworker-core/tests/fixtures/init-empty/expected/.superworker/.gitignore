@@ -1,4 +1,0 @@
-# This tool's own machinery: where dispatch lands, worktrees, the temp files a node produces.
-meta/
-worktrees/
-temp/

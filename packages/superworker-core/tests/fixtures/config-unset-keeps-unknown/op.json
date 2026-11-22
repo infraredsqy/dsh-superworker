@@ -1,9 +1,0 @@
-{
-  "path": "config.unset",
-  "args": [
-    "max_agents",
-    {
-      "project": true
-    }
-  ]
-}

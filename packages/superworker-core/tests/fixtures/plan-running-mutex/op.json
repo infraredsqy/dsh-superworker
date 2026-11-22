@@ -1,9 +1,0 @@
-{
-  "path": "conductor.next",
-  "args": [
-    {
-      "cycle": "c1"
-    }
-  ],
-  "expect": "return"
-}

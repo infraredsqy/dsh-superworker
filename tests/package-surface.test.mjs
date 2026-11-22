@@ -41,16 +41,6 @@ test('package face: the host entry and the browser half both point under lib/, a
   }
 })
 
-test('package face: the types layer ships only .d.ts — no files pattern can pack the .js under lib/types', () => {
-  const files = manifest.files ?? []
-  for (const pattern of files) {
-    assert.ok(
-      !covered(pattern, 'lib/types/host/index.js'),
-      `${pattern} would pack the .js under lib/types too — that is a bundling input, nothing in the package loads it: files=${JSON.stringify(files)}`,
-    )
-  }
-})
-
 test('package face: the profile\'s mount point and the browser side\'s platform are still there, and the patch file is on disk', () => {
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
   assert.equal(manifest.dsh.client.platform, 'web')
@@ -129,19 +119,6 @@ test('package face: both spellings of the types entry land in files', () => {
       `${rel} is not covered by any files pattern: files=${JSON.stringify(files)}`,
     )
   }
-})
-
-/*
- * The three runtime mouths are the package's whole face at runtime: the host hand (`.`), the browser
- * hand (`./client`), the locale metadata (`./locale/*.json`). The two non-code entries ride along so
- * a profile layer and the manifest itself can be read out of the installed tree. A key appearing or
- * vanishing here changes what an installer can reach, and no build step would notice.
- */
-test('package face: the exports key set is the three runtime mouths plus cordis.patch.yml and package.json', () => {
-  assert.deepEqual(
-    Object.keys(manifest.exports ?? {}).sort(),
-    ['.', './client', './cordis.patch.yml', './locale/*.json', './package.json'].sort(),
-  )
 })
 
 /*

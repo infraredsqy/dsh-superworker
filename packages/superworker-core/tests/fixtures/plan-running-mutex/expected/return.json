@@ -1,9 +1,0 @@
-{
-  "action": "stop_pipeline",
-  "cycle": "c1",
-  "node_id": null,
-  "reason": "These nodes in the graph are ready, but another cycle already occupies them, so this line cannot pick them:\n  - busy elsewhere (@node-a@): cycle c2 is holding it\nTo get them, wait for that line to run them out (another line being busy is not a fault of this line).",
-  "note": "cycle parked; nothing more to do without a human",
-  "attention": [],
-  "settling": true
-}

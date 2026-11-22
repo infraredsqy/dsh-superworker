@@ -1,6 +1,0 @@
-{
-  "path": "ledger.dag.revive",
-  "args": [
-    "@node-c@"
-  ]
-}

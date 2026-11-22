@@ -15,9 +15,8 @@
  *
  * The scope list is this side's copy of the record vocabulary: the panel picks one of three words and
  * the write path forwards it verbatim, so a scope word that reaches a record is the word the user
- * chose, never a pre-judged one. The plugin's `--scope` choices are the authority — the vocabulary is
- * frozen with the record (`types.ts`) — and this list is kept in step with it by the test that runs
- * each of these words through the plugin's own command surface (`tests/host-instruction-lines.test.mjs`).
+ * chose, never a pre-judged one. The plugin's `--scope` choices are the authority — the vocabulary
+ * is frozen with the record (`types.ts`) — and this list stays in step with it.
  */
 
 /** The scopes an entry can bind to, in the order the command surface lists them. */

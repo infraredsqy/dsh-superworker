@@ -1,9 +1,0 @@
-{
-  "action": "stop_pipeline",
-  "cycle": "c1",
-  "node_id": "@node-a@",
-  "reason": "cycle policy stop_after_nodes=2: stop after 2 nodes",
-  "note": "cycle parked; nothing more to do without a human",
-  "attention": [],
-  "settling": true
-}

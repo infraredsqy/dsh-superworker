@@ -1,8 +1,0 @@
-{
-  "path": "conductor.dispatch",
-  "args": [
-    {
-      "cycle": "c1"
-    }
-  ]
-}

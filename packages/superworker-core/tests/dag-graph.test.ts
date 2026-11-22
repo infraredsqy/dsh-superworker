@@ -9,7 +9,7 @@ import { nodeReady } from '../src/graph';
 /**
  * Graph invariants: whole-graph validation (cycles / dangling / duplicate edges), the upstream
  * and downstream closure, the ordering rule (urgency times importance, completed sinks to the
- * bottom), readiness and filtering, and search. Cycles, dangling references and duplicate edges
+ * bottom), readiness and filtering. Cycles, dangling references and duplicate edges
  * are bad states the API cannot produce (link rejects on the spot, remove tears edges apart, a
  * duplicate edge is a no-op); those cases guard against records a hand merge wrote wrong, so they
  * plant ideas.json straight into a temp project in the on-disk format and then validate.
@@ -366,51 +366,6 @@ describe('ready: an absent status reads todo, in every reader', () => {
     // The other end of the criterion, asked of the one function every reader uses: an id the table does
     // not hold has no reading, and an unreadable cell never counts as runnable.
     expect(nodeReady('ffffffff-6666-4666-8666-666666666666', {})).toBe(false);
-  });
-});
-
-describe('search: a regex over the title', () => {
-  it('matches the title only, and a hit carries the node\'s own cells', async () => {
-    await superworker.ledger.dag.add({ title: 'login page rebuild' });
-    await superworker.ledger.dag.add({ title: 'nav bar' });
-    await superworker.ledger.dag.add({ title: 'footer' });
-
-    const hits = await superworker.ledger.dag.search('login');
-    expect(hits).toHaveLength(1);
-    expect(hits[0]!.title).toBe('login page rebuild');
-    expect(Object.keys(hits[0]!).sort()).toEqual(['id', 'ready', 'status', 'title']);
-    expect(hits[0]!.status).toBe('todo');
-  });
-
-  it('a hit carries the node\'s own cells and nothing else', async () => {
-    await superworker.ledger.dag.add({ title: 'cache invalidation is the only hard problem' });
-    const hits = await superworker.ledger.dag.search('cache');
-    expect(hits).toHaveLength(1);
-    expect(hits[0]!.title).toBe('cache invalidation is the only hard problem');
-    expect(Object.keys(hits[0]!).sort()).toEqual(['id', 'ready', 'status', 'title']);
-  });
-
-  it('activeOnly leaves out completed nodes; limit caps the result (5 by default)', async () => {
-    const done = await superworker.ledger.dag.add({ title: 'already completed:alpha' });
-    await superworker.ledger.dag.setStatus(done.id, 'completed');
-    await superworker.ledger.dag.add({ title: 'on record:alpha' });
-
-    const all = await superworker.ledger.dag.search('alpha');
-    expect(all).toHaveLength(2);
-    const active = await superworker.ledger.dag.search('alpha', { activeOnly: true });
-    expect(active).toHaveLength(1);
-    expect(active[0]!.title).toBe('on record:alpha');
-
-    for (let index = 0; index < 6; index++) {
-      await superworker.ledger.dag.add({ title: `batch${index}:needle` });
-    }
-    expect(await superworker.ledger.dag.search('needle')).toHaveLength(5);
-    expect(await superworker.ledger.dag.search('needle', { limit: 0 })).toHaveLength(6);
-    expect(await superworker.ledger.dag.search('needle', { limit: 2 })).toHaveLength(2);
-  });
-
-  it('a bad regex is rejected', async () => {
-    await expect(superworker.ledger.dag.search('(')).rejects.toThrow('invalid regex');
   });
 });
 

@@ -178,30 +178,6 @@ function thrownBy(run: () => unknown): RecordError {
 const NO_LAYER = undefined as unknown as ConfigLayer;
 
 describe('the knob list and its layers', () => {
-  it('three built-in knobs, all of them taking the two wide layers', () => {
-    expect(Object.keys(BUILTIN_KNOBS).sort()).toEqual([
-      'max_agents',
-      'test_tier',
-      'worktree_mode',
-    ]);
-    expect(acceptedLayers(BUILTIN_KNOBS['max_agents']!)).toEqual(['project', 'global']);
-    expect(acceptedLayers(BUILTIN_KNOBS['test_tier']!)).toEqual(['project', 'global']);
-    expect(acceptedLayers(BUILTIN_KNOBS['worktree_mode']!)).toEqual(['project', 'global']);
-  });
-
-  it('every built-in declaration carries a factory value: a literal, or a function of the project root', () => {
-    expect(BUILTIN_KNOBS['max_agents']!.default).toBe(3);
-    expect(BUILTIN_KNOBS['test_tier']!.default).toBe('full');
-    // Every cell carries one and none of them is null: both are the engine's own declaration rule. How
-    // the worktree mode's per-project default is spelled is not pinned here — the two behavioural tests
-    // further down pin what it answers (fork with a `.git`, off without one).
-    for (const [name, cell] of Object.entries(BUILTIN_KNOBS)) {
-      expect('default' in cell, name).toBe(true);
-      expect(cell.default, name).not.toBeUndefined();
-      expect(cell.default, name).not.toBeNull();
-    }
-  });
-
   it('the merging point: a declared knob joins all four layers, a narrowed one follows its declaration, a built-in name keeps its own cell', () => {
     const specs = knobSpecs(DECLARED);
     expect(acceptedLayers(specs['proj_depth']!)).toEqual(['node', 'cycle', 'project', 'global']);

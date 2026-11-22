@@ -17,8 +17,7 @@ function pool({ weights, line, weight, rows = [] }) {
   return { weights, line, weight, rows, groups: [], standing: [], census: {} }
 }
 
-/* The table is the plugin's own constant, never re-spelled here: a test that wrote the numbers down
- * would be the second copy this change exists to remove (`pool-weights-one-home.test.mjs`). */
+/* The table is the plugin's own constant, imported rather than re-spelled. */
 const WEIGHTS = { ...SEVERITY_WEIGHTS }
 
 test('a table and a line both obtained: the gauge draws that line and that sum, as read', () => {

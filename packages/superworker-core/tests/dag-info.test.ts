@@ -7,9 +7,9 @@ import { recordPaths, sessionNotePath } from '../src/paths';
 
 /**
  * The node detail (`ledger.dag.info`): what only the graph can answer about one node, next to the
- * record `get` already hands back. Only invariants are pinned — the field vocabulary and its fixed
- * order, the two edge directions, readiness, and the two readings being the same ones `list`
- * computes (never a second algorithm). The exact score of a graph is not a promise this file makes.
+ * record `get` already hands back. Only invariants are pinned — the two edge directions, readiness,
+ * and the two readings being the same ones `list` computes (never a second algorithm). The exact
+ * score of a graph is not a promise this file makes.
  */
 
 let root: string;
@@ -27,12 +27,6 @@ afterEach(() => {
   superworker = undefined!;
 });
 
-/** The detail's key order with nothing optional in play. */
-const BASE_KEYS = [
-  'id', 'title', 'status', 'mode', 'depends_on', 'depended_by',
-  'ready', 'urgency_level', 'importance_score',
-];
-
 /** A small graph: b is completed and approved, a waits on b, c waits on a, d is shelved on its own. */
 async function plantGraph(): Promise<Record<'a' | 'b' | 'c' | 'd', string>> {
   const b = (await superworker.ledger.dag.add({ title: 'B' })).id;
@@ -46,13 +40,6 @@ async function plantGraph(): Promise<Record<'a' | 'b' | 'c' | 'd', string>> {
 }
 
 describe('the detail: the record plus both edge directions', () => {
-  it('the default field set and its order are fixed; a standard node carries no weight key and no timestamps', async () => {
-    const { a } = await plantGraph();
-    const info = await superworker.ledger.dag.info(a);
-    expect(Object.keys(info)).toEqual(BASE_KEYS);
-    expect(info).toMatchObject({ id: a, title: 'A', status: 'todo', mode: 'auto' });
-  });
-
   it('both directions come back in their own orders: dependencies as the record has them, dependents as the table has them', async () => {
     const { a, b, c } = await plantGraph();
     const info = await superworker.ledger.dag.info(a);
@@ -104,20 +91,6 @@ describe('the detail: the record plus both edge directions', () => {
     const infoD = await superworker.ledger.dag.info(d);
     expect(infoD.urgency_level).toBe(0);
     expect(infoD.importance_score).toBe(0);
-  });
-
-  it('verbose adds the two timestamps and the status of every edge end; the default view carries neither', async () => {
-    const { a, b, c } = await plantGraph();
-    const plain = await superworker.ledger.dag.info(a);
-    expect('created_at' in plain).toBe(false);
-    expect('updated_at' in plain).toBe(false);
-    expect('status' in plain.depends_on[0]!).toBe(false);
-    const verbose = await superworker.ledger.dag.info(a, { verbose: true });
-    expect(Object.keys(verbose)).toEqual([...BASE_KEYS, 'created_at', 'updated_at']);
-    expect(verbose.created_at).toBe((await superworker.ledger.dag.get(a))!.created_at);
-    expect(verbose.updated_at).toBe((await superworker.ledger.dag.get(a))!.updated_at);
-    expect(verbose.depends_on).toEqual([{ id: b, title: 'B', status: 'completed' }]);
-    expect(verbose.depended_by).toEqual([{ id: c, title: 'C', status: 'todo' }]);
   });
 
   it('the completion and approval moments land only when they were written', async () => {

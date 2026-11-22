@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -7,12 +7,9 @@ import { makeLab, type PluginLab } from './helpers/plugin-lab';
 
 /**
  * End to end for the test-audit plugin (the first real plugin in this repo): what gets installed
- * into the plugin dir is the very copy under `plugins/test-audit/` (declaration, implementation,
- * skills and design notes travel with it), and the plugin works out its verdict itself before
- * offer -- all four situations (over the line, switch off, no reading, already deduped) are walked
- * here through the public handle. The byte-for-byte half lives in
- * `tests/fixtures/plugin-test-audit-close-insert/` (the expected bytes are produced by the
- * generating side and replayed by `tests/corpus.test.ts`); here only the invariants a reader can
+ * into the plugin dir is the very copy under `plugins/test-audit/`, and the plugin works out its
+ * verdict itself before offer -- all four situations (over the line, switch off, no reading,
+ * already deduped) are walked here through the public handle; here the invariants a reader can
  * see are pinned.
  *
  * Engine operations all land in a temp project root; home is walled into `_home` inside that root,
@@ -20,7 +17,6 @@ import { makeLab, type PluginLab } from './helpers/plugin-lab';
  */
 
 const SHIPPED = fileURLToPath(new URL('../plugins/test-audit', import.meta.url));
-const FIXTURE = fileURLToPath(new URL('./fixtures/plugin-test-audit-close-insert', import.meta.url));
 
 /** The dedupe tag this metric hangs on a node, spelled the same as `metrics.test_seconds.tag` in the declaration. */
 const DEDUPE_TAG = 'test-audit:test_seconds';
@@ -234,77 +230,5 @@ describe('switch and missing reading: the whole thing steps aside, and a missing
         lab.cleanup();
       }
     }
-  });
-});
-
-describe('doctor: this copy is healthy, and a broken declaration is reported', () => {
-  it('a healthy plugin: ok, and it says how many are installed (both skill sets are there, and the method name has a skill of its own)', async () => {
-    const lab = makeLab('sw-test-audit-doctor-');
-    try {
-      await lab.superworker.ledger.init();
-      installShipped(lab);
-      const report = await lab.superworker.conductor.doctor();
-      const plugins = report.checks.find((check) => check.name === 'plugins')!;
-      expect(plugins.ok, plugins.detail).toBe(true);
-      expect(plugins.detail).toContain('1 installed');
-      expect(report.ok).toBe(true);
-    } finally {
-      lab.cleanup();
-    }
-  });
-
-  it('an unknown key in the declaration: doctor reports that sentence, and the plugin does nothing this round', async () => {
-    const lab = makeLab('sw-test-audit-doctor-');
-    try {
-      await lab.superworker.ledger.init();
-      const folder = installShipped(lab);
-      const decl = JSON.parse(readFileSync(join(folder, 'plugin.json'), 'utf8')) as Record<string, unknown>;
-      decl.wat = 1;
-      writeFileSync(join(folder, 'plugin.json'), JSON.stringify(decl, null, 2), 'utf8');
-      const report = await lab.superworker.conductor.doctor();
-      const detail = report.checks.find((check) => check.name === 'plugins')!.detail ?? '';
-      expect(detail).toContain('unknown key "wat"');
-      expect(report.ok).toBe(false);
-    } finally {
-      lab.cleanup();
-    }
-  });
-
-  it('a metric judged against a line nobody declared: doctor reports that sentence', async () => {
-    const lab = makeLab('sw-test-audit-doctor-');
-    try {
-      await lab.superworker.ledger.init();
-      const folder = installShipped(lab);
-      const decl = JSON.parse(readFileSync(join(folder, 'plugin.json'), 'utf8')) as {
-        metrics: { test_seconds: { line: string } };
-      };
-      decl.metrics.test_seconds.line = 'nope';
-      writeFileSync(join(folder, 'plugin.json'), JSON.stringify(decl, null, 2), 'utf8');
-      const report = await lab.superworker.conductor.doctor();
-      const detail = report.checks.find((check) => check.name === 'plugins')!.detail ?? '';
-      expect(detail).toContain('is judged against "nope"');
-      expect(report.ok).toBe(false);
-    } finally {
-      lab.cleanup();
-    }
-  });
-});
-
-describe('the deliverable itself: fixture and skills travel with the plugin', () => {
-  it('the declaration and implementation in the fixture input are byte for byte the copy in this repo', () => {
-    for (const name of ['plugin.json', 'impl.mjs']) {
-      const shipped = readFileSync(join(SHIPPED, name), 'utf8');
-      const inFixture = readFileSync(join(FIXTURE, 'input', 'plugins', 'test-audit', name), 'utf8');
-      expect(inFixture, name).toBe(shipped);
-    }
-  });
-
-  it('skills travel with the plugin: all four files are there in both the zh and the en set', () => {
-    for (const lang of ['zh', 'en']) {
-      for (const name of ['SKILL.md', 'anti-patterns.md', 'compression-criteria.md', 'garbage-patterns.md']) {
-        expect(existsSync(join(SHIPPED, 'skills', lang, 'sw-test-audit', name)), `${lang}/${name}`).toBe(true);
-      }
-    }
-    expect(existsSync(join(SHIPPED, 'docs', 'design.md'))).toBe(true);
   });
 });

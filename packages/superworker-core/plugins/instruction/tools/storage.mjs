@@ -10,19 +10,17 @@
  *   other top-level key (a foreign section another tool keeps in the same file) comes back in its
  *   own place;
  * - key order is construction order, never sorted (the engine's writer for this record does not
- *   sort, and the golden corpus compares the bytes);
+ *   sort);
  * - two-space indent, non-ASCII as it is, LF on every platform, no trailing newline; a write is
  *   atomic (a temp file in the target's own directory is fsynced and renamed over it).
  *
  * **The account belongs to this plugin, and whoever owns a record writes it.** The engine's
  * foundation (`src/jsonio.ts`) serves the engine's own records and never goes into the package
- * exports, so this layer carries the account's reads and writes itself. The sameness is not kept by
- * editing both sides together: the golden corpus cases that replay this plugin's verbs compare the
- * file byte for byte (`tests/fixtures/instruction-*`), so a change to either side's indent, key
- * order, line ending, number spelling or timestamp shape turns them red on the spot. The moment this
- * layer writes (`nowSeconds` and the microsecond anchor under it) is a copy of `src/clock.ts`; the
- * corpus cases compare the seconds spelling, so a change to either side's padding or literal `Z`
- * turns them red the same way.
+ * exports, so this layer carries the account's reads and writes itself, under the same byte rules as
+ * the engine's records — two-space indent, non-ASCII as it is, LF on every platform, no trailing
+ * newline — and the two sides are held to that sameness by review. The moment this layer writes
+ * (`nowSeconds` and the microsecond anchor under it) is a copy of `src/clock.ts` and keeps its
+ * spelling.
  *
  * The runtime hands in two facts:
  * - Locking: a write lands atomically, so a reader never sees half a record; and every

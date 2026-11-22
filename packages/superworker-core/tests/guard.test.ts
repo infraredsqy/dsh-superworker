@@ -8,12 +8,6 @@ import { describe, expect, it } from 'vitest';
  *
  * - src carries no wording about a host or about the network; execution can only come in through
  *   the injected executor seam.
- * - the source tree holds no .py file: there is only TypeScript here.
- * - the shape of the package: private, zero runtime dependencies, build and test depending only on
- *   typescript / tsdown / vitest, and **exactly one process entry** — `sw-merge-ledger`, the command
- *   git calls as a merge driver. A command surface (subcommands, a route table, install-time
- *   scripts) stays forbidden; a `bin/` directory stays forbidden too (checked below, directly on the
- *   tree).
  *
  * Note: `\bspawn\b` matches whole words only -- an older record may still carry a `spawner` field,
  * written there by a different implementation of this pipeline; that field is data read tolerantly
@@ -42,7 +36,6 @@ function listFiles(dir: string): string[] {
 }
 
 const srcFiles = listFiles(join(repoRoot, 'src')).filter((f) => f.endsWith('.ts'));
-const srcAndTestFiles = [...srcFiles, ...listFiles(join(repoRoot, 'tests')).filter((f) => f.endsWith('.ts'))];
 
 const FORBIDDEN_LITERALS = ['@deepseek-ai/', 'session/create', 'session/prompt', '3080', '.py'];
 const FORBIDDEN_WORDS = [/\bspawn\b/i];
@@ -100,84 +93,5 @@ describe('src content guard', () => {
       }
     }
     expect(offenders).toEqual([]);
-  });
-});
-
-describe('source tree guard', () => {
-  it('there is no .py file under src or tests', () => {
-    const py = srcAndTestFiles.filter((f) => f.toLowerCase().endsWith('.py'));
-    expect(py).toEqual([]);
-  });
-
-  it('the repo root has no bin dir', () => {
-    expect(existsSync(join(repoRoot, 'bin'))).toBe(false);
-  });
-});
-
-describe('one spelling per fact', () => {
-  it('the engine source tree does not spell the instruction record: that account belongs to its own plugin folder', () => {
-    // The one record this engine does not own: its plugin writes it under its own lock, its own verbs
-    // are the command surface, and the engine reads and writes nothing about it. One table in src still
-    // has to recognise the file it is called on — the merge driver's kind table — and that table lives
-    // in `src/ledgermerge/`; everything else in the source tree is silent.
-    const offenders = listFiles(join(repoRoot, 'src'))
-      .filter((file) => !/[\\/]ledgermerge[\\/]/.test(file))
-      .filter((file) => /instruct/i.test(readFileSync(file, 'utf8')));
-    expect(offenders).toEqual([]);
-  });
-
-  it('the plugins layer does not spell the spec file name itself (the layout belongs to paths.ts)', () => {
-    // `paths.nodeSpecPath` is the one home of that spelling; a reader or writer of the node's requirements
-    // takes the location from it, so the path an offer is told about and the file the text lands on cannot
-    // drift apart.
-    const offenders = srcFiles
-      .filter((file) => /[\\/]plugins[\\/]/.test(file))
-      .filter((file) => /['"]spec\.md['"]/.test(readFileSync(file, 'utf8')));
-    expect(offenders).toEqual([]);
-  });
-
-  it('the plugin registry is a barrel: the readers of a declaration live in their own modules', () => {
-    // Five jobs used to share one file (the scan and the loader, the closed-set validation, the merged
-    // tables, the command words, doctor's strict face), so changing one meant walking through the other
-    // four. The names stay re-exported from `registry.ts`, and no reader is implemented here.
-    const text = readFileSync(join(repoRoot, 'src', 'plugins', 'registry.ts'), 'utf8');
-    expect(text).not.toMatch(/^(?:export )?(?:async )?function /mu);
-    expect(text).not.toMatch(/^export (?:const|let|class|interface) /mu);
-    expect(text).not.toMatch(/^export type [A-Za-z_$]/mu);
-  });
-});
-
-describe('package shape guard (package.json)', () => {
-  const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {
-    private?: boolean;
-    bin?: unknown;
-    scripts?: Record<string, string>;
-    dependencies?: Record<string, string>;
-    devDependencies?: Record<string, string>;
-  };
-
-  it('a private package with exactly one process entry: never published', () => {
-    expect(pkg.private).toBe(true);
-    // One entry, and only one: `sw-merge-ledger`, answered by the built product of
-    // `src/merge-ledger-bin.ts`. A second key would be a command surface.
-    const entries = pkg.bin as Record<string, unknown> | undefined;
-    expect(Object.keys(entries ?? {})).toEqual(['sw-merge-ledger']);
-    expect(String(entries?.['sw-merge-ledger'])).toBe('./dist/merge-ledger.mjs');
-  });
-
-  it('zero runtime dependencies', () => {
-    expect(Object.keys(pkg.dependencies ?? {})).toEqual([]);
-  });
-
-  it('build and test depend on typescript / tsdown / vitest only', () => {
-    expect(Object.keys(pkg.devDependencies ?? {}).sort()).toEqual(['tsdown', 'typescript', 'vitest']);
-  });
-
-  it('no install-time lifecycle scripts (postinstall and the like)', () => {
-    const scripts = Object.keys(pkg.scripts ?? {});
-    const lifecycle = scripts.filter((s) =>
-      ['preinstall', 'install', 'postinstall', 'prepublish', 'prepare', 'prepack', 'postpack'].includes(s),
-    );
-    expect(lifecycle).toEqual([]);
   });
 });

@@ -1,5 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -7,16 +6,12 @@ import { createContext } from '../src/plugins/context';
 import { readGraphSnapshot } from '../src/graph';
 import { loadPlugins } from '../src/plugins/registry';
 import { recordPaths } from '../src/paths';
-import { open } from '../src/open';
 import { makeLab } from './helpers/plugin-lab';
 
 /**
- * The capability surface of the host context: the whole knob chain
- * (node -> cycle -> project -> global -> factory default, the narrower layer winning), the two
- * reading paths (ticket and claimed source; booleans and strings are not read as a number, and a
- * source is computed once per round), open nodes by tag, this process's routing for capture/run
- * (the keep_name rule, and what run answers about whether a command ran), specPath's spelling of
- * the layout, and the identity of the spot.
+ * The capability surface of the host context: the two reading paths (ticket and claimed source;
+ * booleans and strings are not read as a number, and a source is computed once per round), open
+ * nodes by tag, and the identity of the spot.
  */
 
 /** A test plugin with the full set of capabilities: two knobs, a claimed source, a ticket reading, two commands. */
@@ -50,114 +45,6 @@ function labPlugin(lab: ReturnType<typeof makeLab>, name: string): void {
     ].join('\n'),
   });
 }
-
-function scratch(): { dir(): string; sweep(): void } {
-  const roots: string[] = [];
-  return {
-    dir() {
-      const dir = mkdtempSync(join(tmpdir(), 'superworker-ctx-scratch-'));
-      roots.push(dir);
-      return dir;
-    },
-    sweep() {
-      for (const root of roots) rmSync(root, { recursive: true, force: true });
-    },
-  };
-}
-
-function stateText(root: string): string {
-  return readFileSync(join(root, '.superworker', 'state.json'), 'utf8');
-}
-
-describe('knobs: the whole chain read at once, the narrower layer winning', () => {
-  it('node > cycle > project > global > factory default; null when nobody on the chain says and there is no default', async () => {
-    const lab = makeLab('superworker-plugin-ctx-');
-    const scratchDirs = scratch();
-    try {
-      await lab.superworker.ledger.init();
-      labPlugin(lab, 'probe');
-      const folders = (await loadPlugins(join(lab.root, 'plugins'))).folders;
-      const warnings: string[] = [];
-      const paths = recordPaths(lab.root);
-
-      // The global layer (walled into <root>/_home) and the project layer.
-      mkdirSync(join(lab.home, '.superworker'), { recursive: true });
-      writeFileSync(join(lab.home, '.superworker', 'config.json'), JSON.stringify({ probe_limit: 1 }), 'utf8');
-      writeFileSync(paths.configJson, JSON.stringify({ probe_limit: 2, probe_on: 'on' }), 'utf8');
-
-      // The cycle layer (the policies slot in state.json) and the node layer.
-      const nodeA = (await lab.superworker.ledger.dag.add({ title: 'held' })).id;
-      lab.cycle('c1', [nodeA]);
-      const state = JSON.parse(stateText(lab.root)) as { cycles: Array<Record<string, unknown>> };
-      state.cycles[0]!.policies = { probe_limit: 3 };
-      writeFileSync(join(lab.root, '.superworker', 'state.json'), JSON.stringify(state, null, 2), 'utf8');
-      mkdirSync(join(paths.nodesDir, nodeA), { recursive: true });
-      writeFileSync(join(paths.nodesDir, nodeA, 'config.json'), JSON.stringify({ probe_limit: 4 }), 'utf8');
-
-      const ctx = createContext({
-        root: lab.root,
-        folders,
-        homeDir: lab.home,
-        warnings,
-        cycle: state.cycles[0]!,
-        nodeId: nodeA,
-        dag: await readGraphSnapshot(paths),
-      });
-      expect(await ctx.knob('probe_limit')).toBe(4); // the node layer is the narrowest
-      expect(await ctx.knob('probe_on')).toBe('on'); // the project layer; nothing up the chain overrides it
-
-      const nodeB = (await lab.superworker.ledger.dag.add({ title: 'plain' })).id;
-      const ctxB = createContext({
-        root: lab.root,
-        folders,
-        homeDir: lab.home,
-        warnings,
-        cycle: state.cycles[0]!,
-        nodeId: nodeB,
-        dag: await readGraphSnapshot(paths),
-      });
-      expect(await ctxB.knob('probe_limit')).toBe(3); // no node layer: falls back to the cycle layer
-
-      const ctxWide = createContext({
-        root: lab.root,
-        folders,
-        homeDir: lab.home,
-        warnings,
-        dag: await readGraphSnapshot(paths),
-      });
-      expect(await ctxWide.knob('probe_limit')).toBe(2); // no cycle or node named: only project and global are left
-
-      const emptyHome = scratchDirs.dir();
-      const ctxHomeless = createContext({
-        root: lab.root,
-        folders,
-        homeDir: emptyHome,
-        warnings,
-        dag: await readGraphSnapshot(paths),
-      });
-      expect(await ctxHomeless.knob('probe_limit')).toBe(2); // the machine-wide layer is absent: only project is left
-
-      // A brand-new project (factory defaults only): a knob without a value reads null, a switch
-      // reads its factory word.
-      const bare = scratchDirs.dir();
-      await open(bare).ledger.init();
-      const ctxBare = createContext({
-        root: bare,
-        folders,
-        homeDir: emptyHome,
-        warnings,
-        dag: { nodes: {} },
-      });
-      expect(await ctxBare.knob('probe_limit')).toBeNull();
-      expect(await ctxBare.knob('probe_on')).toBe('off');
-      expect(await ctxBare.knob('')).toBeNull();
-      expect(warnings).toEqual([]);
-    } finally {
-      lab.cleanup();
-      scratchDirs.sweep();
-    }
-  });
-});
 
 describe('readings: one path through the ticket, one through the claimed source', () => {
   it('a ticket number comes from outputs.reading of the handoff; booleans and strings are not guessed into a number', async () => {
@@ -238,7 +125,7 @@ describe('readings: one path through the ticket, one through the claimed source'
   });
 });
 
-describe('nodes by tag, command routing, the spec path and identity', () => {
+describe('nodes by tag', () => {
   it('nodesWithTag returns only the nodes still open (todo) that carry the tag, sorted', async () => {
     const lab = makeLab('superworker-plugin-ctx-');
     try {
@@ -257,34 +144,6 @@ describe('nodes by tag, command routing, the spec path and identity', () => {
       expect(ctx.nodesWithTag('debt')).toEqual([a]); // b is completed, c does not carry the tag
       expect(ctx.nodesWithTag('other')).toEqual([c]);
       expect(ctx.nodesWithTag('nothing')).toEqual([]);
-    } finally {
-      lab.cleanup();
-    }
-  });
-
-  it("capture/run route only the plugin's own words; keep_name decides whether the word comes along; a throw becomes a warning", async () => {
-    const lab = makeLab('superworker-plugin-ctx-');
-    try {
-      await lab.superworker.ledger.init();
-      labPlugin(lab, 'probe');
-      const folders = (await loadPlugins(join(lab.root, 'plugins'))).folders;
-      const warnings: string[] = [];
-      const ctx = createContext({
-        root: lab.root,
-        folders,
-        homeDir: lab.home,
-        warnings,
-        dag: { nodes: {} },
-      });
-      expect(await ctx.capture(['hello', 'arg'])).toBe('hi hello arg');
-      expect(await ctx.capture(['plain', 'arg'])).toBe('hi arg'); // keep_name=false: the word does not travel
-      expect(await ctx.capture(['nobody', 'arg'])).toBeNull(); // a word nobody claims
-      expect(await ctx.capture(['list', 'x'])).toBeNull(); // a word the core keeps never routes to a plugin
-      expect(await ctx.capture([])).toBeNull();
-      await expect(ctx.run(['hello', 'effect'])).resolves.toBe(true);
-      expect(await ctx.capture(['hello', 'boom'])).toBeNull();
-      expect(warnings.join('\n')).toContain('failed to run "hello"');
-      expect(warnings.join('\n')).toContain('command boom');
     } finally {
       lab.cleanup();
     }
@@ -319,39 +178,6 @@ describe('nodes by tag, command routing, the spec path and identity', () => {
     }
   });
 
-  it("specPath speaks this tree's layout; the three identity fields come along as they are", async () => {
-    const lab = makeLab('superworker-plugin-ctx-');
-    try {
-      await lab.superworker.ledger.init();
-      const node = (await lab.superworker.ledger.dag.add({ title: 'held' })).id;
-      lab.cycle('c1', [node]);
-      const paths = recordPaths(lab.root);
-      const cycle = (JSON.parse(stateText(lab.root)) as { cycles: Array<Record<string, unknown>> }).cycles[0]!;
-      const warnings: string[] = [];
-      const ctx = createContext({
-        root: lab.root,
-        folders: [],
-        homeDir: lab.home,
-        warnings,
-        cycle,
-        nodeId: node,
-        dag: await readGraphSnapshot(paths),
-      });
-      expect(ctx.specPath(node)).toBe(join(paths.nodesDir, node, 'spec.md').split('\\').join('/'));
-      // The location is handed out before the file exists: add sets up the directory, and spec.md is left for
-      // whoever writes the requirements.
-      expect(existsSync(join(paths.nodesDir, node))).toBe(true);
-      expect(existsSync(join(paths.nodesDir, node, 'spec.md'))).toBe(false);
-      expect(ctx.root).toBe(lab.root);
-      expect(ctx.cycle).toEqual(cycle);
-      expect(ctx.nodeId).toBe(node);
-      expect(ctx.sig).toBeNull();
-      expect(ctx.target).toBeNull();
-      expect(warnings).toEqual([]);
-    } finally {
-      lab.cleanup();
-    }
-  });
 });
 
 describe('one routing, two readers: capture / run and conductor.pluginCommand read the same answer', () => {

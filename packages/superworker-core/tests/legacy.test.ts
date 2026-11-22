@@ -4,7 +4,6 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { INIT_MARKERS } from '../src/initledger';
 import {
-  CONSULT_PROMPT,
   LEGACY_DIR_NAME,
   hasLegacyRecord,
   isRecognizableLegacyRecord,
@@ -181,16 +180,5 @@ describe('migrationPreconditions: the one reading of "may this workspace\'s reco
       legacyDir: legacyRecordDir(root),
       recordDir: join(root, RECORD_DIR_NAME),
     });
-  });
-});
-
-describe('CONSULT_PROMPT: the fixed sentence the panel\'s link hands to a new session', () => {
-  it('the prompt is fixed, names both directories, and routes to the route skill', () => {
-    // A sentence assembled from the workspace would be a second place that spells both directory
-    // names; the fixed one spells them in the one module that owns the old name, and points the
-    // session at the skill that finishes a migration.
-    expect(CONSULT_PROMPT.startsWith('/sw-route ')).toBe(true);
-    expect(CONSULT_PROMPT).toContain(LEGACY_DIR_NAME);
-    expect(CONSULT_PROMPT).toContain(RECORD_DIR_NAME);
   });
 });

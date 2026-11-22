@@ -1,7 +1,0 @@
-{
-  "path": "ledger.dag.setStatus",
-  "args": [
-    "@node-b@",
-    "shelved"
-  ]
-}

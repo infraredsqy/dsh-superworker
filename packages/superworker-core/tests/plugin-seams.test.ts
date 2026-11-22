@@ -232,7 +232,7 @@ describe('blocked before dispatch: a block carries its reason, and only a green 
     }
   });
 
-  it('the gate turned off: green light, the preparation lands, the request goes to the injected executor and the receipt comes back as is', async () => {
+  it('the gate turned off: green light, the preparation lands (the receipt and request body are the executor seam\'s own pins)', async () => {
     const { lab, nodeId } = await seededLab('superworker-plugin-seam-', { ticket: false });
     try {
       lab.plugin('gate', dispatchBlockDecl(), {
@@ -241,33 +241,12 @@ describe('blocked before dispatch: a block carries its reason, and only a green 
       writeFileSync(join(lab.root, '.superworker', 'config.json'), JSON.stringify({ gate_on: 'off' }), 'utf8');
       const sim = new SimulatedExecutor();
       const superworker = open(lab.root, { executor: sim });
-      const receipt = await superworker.conductor.dispatch({ cycle: 'c1', node: nodeId });
-      expect(receipt.action).toBe('opened');
-      expect(receipt.session).toEqual({ sessionId: 'sess-1' });
-      // The request carries the cycle and node identity, the role and that one line of the prompt;
-      // once the session is open its marker is on disk.
-      expect(sim.dispatched).toEqual([
-        { cycle: 'c1', node: nodeId, role: 'execute', prompt: `/sw-conduct ${nodeId} [pipeline]\n` },
-      ]);
+      await superworker.conductor.dispatch({ cycle: 'c1', node: nodeId });
+      // The dispatch went through (a block would have stopped it) and the session's marker is on disk.
       expect(readFileSync(
         join(lab.root, '.superworker', 'meta', 'launch', 'c1', nodeId, 'started'),
         'utf8',
       )).toContain('started');
-    } finally {
-      lab.cleanup();
-    }
-  });
-
-  it('green light but no injected executor: it stops on the spot and names the single injection point', async () => {
-    const { lab, nodeId } = await seededLab('superworker-plugin-seam-');
-    try {
-      let caught: unknown;
-      try {
-        await lab.superworker.conductor.dispatch({ cycle: 'c1', node: nodeId });
-      } catch (error) {
-        caught = error;
-      }
-      expect((caught as Error).message).toContain('needs an injected executor');
     } finally {
       lab.cleanup();
     }

@@ -1,7 +1,0 @@
-{
-  "path": "ledger.cycles.retry",
-  "args": [
-    "main",
-    "@node-a@"
-  ]
-}

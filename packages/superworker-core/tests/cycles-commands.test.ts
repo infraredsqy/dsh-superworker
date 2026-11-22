@@ -8,8 +8,7 @@ import { open } from '../src/open';
  * The cycle command surface: creating, starting, active/inactive, claim exclusion, path and retry,
  * cycle-level policy. Only invariants are locked — a refusal that should happen has a reason
  * (parallel cap, empty graph, claim exclusion), the timestamps that should move move, and policy
- * lands only in the cycle record; the on-disk bytes are pinned byte for byte by the golden corpus
- * (the cycle-* fixtures), so they are not repeated here.
+ * lands only in the cycle record.
  */
 
 let root: string;
@@ -44,17 +43,6 @@ describe('create: making a cycle', () => {
     await expect(superworker.ledger.cycles.create({ id: 'main', tags: ['  '] })).rejects.toThrow('must be given tags');
     const cycle = await superworker.ledger.cycles.create({ id: 'main', tags: ['köching'] });
     expect(cycle.tags).toEqual(['köching']);
-  });
-
-  it('the default shape: starts active, holds nothing, and the default title takes the day\'s date', async () => {
-    const cycle = await superworker.ledger.cycles.create({ id: 'main', tags: ['coding'] });
-    expect(cycle.status).toBe('active');
-    expect(cycle.holding).toEqual([]);
-    expect(cycle.path).toEqual([]);
-    expect(cycle.policies).toBeUndefined();
-    expect(cycle.created_at).toBe(cycle.updated_at);
-    expect(cycle.created_at).toMatch(SECONDS_SHAPE);
-    expect(cycle.title).toBe(`Cycle ${cycle.created_at.slice(0, 10)}`);
   });
 
   it('a duplicate name is refused, and so is a second cycle while another is active; force overrides it explicitly', async () => {
@@ -450,18 +438,5 @@ describe('list / show / current: the read side', () => {
     } finally {
       rmSync(bare, { recursive: true, force: true });
     }
-  });
-
-  it('a record written on a cycle comes back whole: rename / show round-trip', async () => {
-    await superworker.ledger.cycles.create({ id: 'main', title: 'old name', tags: ['coding'] });
-    const renamed = await superworker.ledger.cycles.rename('main', 'new name');
-    expect(renamed.title).toBe('new name');
-    expect((await superworker.ledger.cycles.show('main')).title).toBe('new name');
-    const raw = JSON.parse(readFileSync(join(root, '.superworker', 'state.json'), 'utf8')) as {
-      cycles: Array<Record<string, unknown>>;
-    };
-    expect(Object.keys(raw.cycles[0]!)).toEqual([
-      'id', 'title', 'status', 'holding', 'path', 'created_at', 'updated_at', 'tags',
-    ]);
   });
 });

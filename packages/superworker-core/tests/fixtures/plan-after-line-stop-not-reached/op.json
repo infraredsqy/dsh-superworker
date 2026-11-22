@@ -1,9 +1,0 @@
-{
-  "path": "conductor.next",
-  "args": [
-    {
-      "after": "@node-a@"
-    }
-  ],
-  "expect": "return"
-}

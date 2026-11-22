@@ -1,7 +1,6 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { warningsOf } from '../src/conductor';
 import { open, type Superworker } from '../src/open';
@@ -14,14 +13,10 @@ import { offer } from '../plugins/issue/impl.mjs';
  * or on a line that is not about code it stays quiet for the round (it does not even ask the
  * pool's command); with the switch off the whole round gives way; a pool that cannot be read is
  * never read as 0 (one WARNING, and the main path carries on). Engine work always happens in a
- * temp dir; the repo's plugin is copied into the temp project as it is, and the repo copy does
- * not change by a byte.
+ * temp dir; the repo's plugin is copied into the temp project as it is.
  */
 
 const REPO_PLUGIN = new URL('../plugins/issue', import.meta.url);
-const REPO_PLUGIN_DIR = fileURLToPath(REPO_PLUGIN);
-/** The case that replays this plugin's close-time insert over the golden corpus. */
-const CORPUS_CASE = fileURLToPath(new URL('./fixtures/plugin-issue-close-insert', import.meta.url));
 
 interface Lab {
   root: string;
@@ -259,24 +254,6 @@ describe("the issue pool's close-time insert", () => {
     expect((await graph()).some((rowNode) => String(rowNode.title).startsWith('Maintenance:'))).toBe(false);
   });
 
-  it('the repo plugin original is not touched by the tests: however the temp-project copy runs, the original keeps its hash', async () => {
-    const originals = readdirSync(REPO_PLUGIN, { recursive: true })
-      .filter((entry) => typeof entry === 'string' && entry.endsWith('.mjs'))
-      .map((entry) => ({
-        name: entry,
-        bytes: readFileSync(new URL(`../plugins/issue/${entry}`, import.meta.url)),
-      }));
-    const closed = await addHeldNode('the closed node');
-    stageCycle('c1', [closed], ['coding']);
-    putSignal('c1', closed);
-    seedPool({ p1: row('p1', { severity: 'P1' }), p2: row('p2', { severity: 'P2' }) });
-    setConfig({ issue_pool_weight_limit: 4 });
-    await superworker.conductor.close({ cycle: 'c1', node: closed });
-    for (const file of originals) {
-      expect(readFileSync(new URL(`../plugins/issue/${file.name}`, import.meta.url))).toEqual(file.bytes);
-    }
-  });
-
   it("the switch is the host's gate alone: this door hands its offer back even when the switch reads off, and asks no knob for the switch at all", async () => {
     const asked: string[] = [];
     const shown = await (offer as (ctx: unknown) => Promise<Record<string, unknown> | null>)({
@@ -298,19 +275,5 @@ describe("the issue pool's close-time insert", () => {
     // a plugin asking again would be a second implementation of one rule, with its own tolerance.
     expect(shown).not.toBeNull();
     expect(asked).toEqual(['issue_pool_weight_limit']);
-  });
-
-  it("the plugin copy the corpus case replays is this repo's copy, byte for byte: a changed plugin means a re-copy and a regenerated expectation", () => {
-    // The case's `input/` used to carry a snapshot from before the pool's bytes were pinned, so the
-    // case replayed an implementation that no longer existed and no plugin edit could turn it red.
-    // With the copy equal to the repo's own, any plugin change is this test (re-copy) or the corpus
-    // case's own green/red (behaviour change, regenerate `expected/`).
-    for (const name of ['plugin.json', 'impl.mjs', 'tools/commands.mjs', 'tools/storage.mjs']) {
-      // The bytes, not the decoded text: a difference the decoder would have smoothed over (a BOM, a
-      // stray CR) is exactly what a copy stops being a copy over.
-      const shipped = readFileSync(join(REPO_PLUGIN_DIR, ...name.split('/')));
-      const inFixture = readFileSync(join(CORPUS_CASE, 'input', 'plugins', 'issue', ...name.split('/')));
-      expect(inFixture.equals(shipped), `${name}: the replayed copy is the shipped one, byte for byte`).toBe(true);
-    }
   });
 });

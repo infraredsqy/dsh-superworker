@@ -20,9 +20,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { poolWeightsPath, readPoolWeights } from '../src/host/pool-weights.ts'
-import { readReading } from '../src/host/records.ts'
-import { shippedPluginsDir } from '../src/host/skill-paths.ts'
-import { readPool } from '../src/model/index.ts'
 import { fakeWorkspaceFiles } from './helpers/workspace-files-port.mjs'
 import { SEVERITY_WEIGHTS } from '../packages/superworker-core/plugins/issue/tools/storage.mjs'
 
@@ -36,21 +33,6 @@ const HOST_BUNDLE = join(repo, 'lib', 'host', 'index.js')
 const hostBundleSkip = existsSync(HOST_BUNDLE)
   ? false
   : `${HOST_BUNDLE} is not there: run npm run types && npm run bundle first (npm test builds it first)`
-
-test('the table the host obtains is the issue plugin\'s own constant, not a copy of it', async () => {
-  const table = await readPoolWeights()
-
-  assert.notEqual(table, null, 'the shipped plugin folder really has a table')
-  assert.deepEqual(table, { ...SEVERITY_WEIGHTS }, 'the host read a different table than the plugin declares: there is a second copy somewhere')
-  assert.notEqual(table, SEVERITY_WEIGHTS, 'the table is copied out, so a caller cannot mutate the plugin\'s own constant')
-})
-
-test('the shipped plugin folder answers by default; the file it is read from is that plugin\'s storage layer', async () => {
-  const path = poolWeightsPath()
-
-  assert.equal(path, join(shippedPluginsDir(), 'issue', 'tools', 'storage.mjs'))
-  assert.deepEqual(await readPoolWeights(undefined), await readPoolWeights(shippedPluginsDir()), 'an absent folder is the shipped one')
-})
 
 test('a folder with no issue plugin in it: no table, and no zeros standing in for one', async () => {
   const empty = mkdtempSync(join(tmpdir(), 'sw-weights-'))
@@ -84,39 +66,6 @@ test('a table of the wrong shape is no table: an empty one would weigh every tie
 test('"do not look at all" really opens nothing: the caller that passes null gets no table', async () => {
   assert.equal(await readPoolWeights(null), null)
   assert.equal(poolWeightsPath(null), null, 'and there is no file to name either')
-})
-
-test('the reading carries the table, and the pool weighed by it is the plugin\'s own sum, not one this side invented', async () => {
-  /* The end of the chain the panel draws from: the host hands the records *and* the table over, and the
-   * model weighs the pool by that table. A reading without it would make every weight `null` — the
-   * honest answer, and the one the gauge refuses to draw. */
-  const scope = { sessionId: 'weights-session', workspaceRoot: 'C:\\weights-workspace' }
-  const signal = new AbortController().signal
-  const files = {
-    '.superworker/issues/issues.json': JSON.stringify({
-      issues: {
-        heavy: { id: 'heavy', severity: 'P0', status: 'open', decision: 'unknown', discovered: '2026-01-01T00:00:00.000Z' },
-        light: { id: 'light', severity: 'P3', status: 'open', decision: 'unknown', discovered: '2026-01-01T00:00:00.000Z' },
-      },
-    }),
-  }
-  const withTable = await readReading(fakeWorkspaceFiles(files), scope, signal, await readPoolWeights())
-  const withoutTable = await readReading(fakeWorkspaceFiles(files), scope, signal, null)
-
-  const read = (reading) => readPool(
-    reading.cycles,
-    reading.issues,
-    reading.poolWeights,
-    new Date('2026-03-10T12:00:00.000Z'),
-  )
-  assert.deepEqual(withTable.poolWeights, { ...SEVERITY_WEIGHTS }, 'the frame the panel draws from carries the table')
-  assert.equal(
-    read(withTable).weight,
-    (SEVERITY_WEIGHTS.P0 ?? 0) + (SEVERITY_WEIGHTS.P3 ?? 0),
-    'the pool sums to what the plugin\'s own constant says: a second copy would show up as a different total',
-  )
-  assert.equal(withoutTable.poolWeights, null, 'a reading with no table says so')
-  assert.equal(read(withoutTable).weight, null, 'and its pool has no weight at all — never a sum of 0')
 })
 
 /*

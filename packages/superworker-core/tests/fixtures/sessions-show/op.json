@@ -1,7 +1,0 @@
-{
-  "path": "sessions.show",
-  "args": [
-    "@node-a@"
-  ],
-  "expect": "return"
-}

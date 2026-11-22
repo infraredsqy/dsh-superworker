@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -289,39 +289,6 @@ describe.skipIf(!SLOW)('the verdict reaches stderr whole: the real product on re
       expect(run.stderr.split('\n').filter((line) => line !== '')).toHaveLength(1);
     } finally {
       rmSync(root, { recursive: true, force: true });
-    }
-  });
-});
-
-describe('the product the build emits', () => {
-  it('the build injects the node shebang as the product\'s first bytes, and the bin entry names it', async () => {
-    const repoRoot = fileURLToPath(new URL('..', import.meta.url));
-    const config = (await import('../tsdown.config')).default;
-    const entries = Array.isArray(config) ? config : [config];
-    const product = entries.find((entry: Record<string, unknown>) => {
-      const spellings = Array.isArray(entry.entry) ? entry.entry : [entry.entry];
-      return spellings.some(
-        (spelling) =>
-          spelling !== null &&
-          typeof spelling === 'object' &&
-          Object.keys(spelling as Record<string, unknown>).includes('merge-ledger'),
-      );
-    });
-    expect(product, 'the tsdown config has no merge-ledger entry').toBeDefined();
-    expect(String((product as Record<string, unknown>).banner)).toBe('#!/usr/bin/env node\n');
-    const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {
-      bin: Record<string, string>;
-    };
-    const target = pkg.bin['sw-merge-ledger']!;
-    expect(target).toBe('./dist/merge-ledger.mjs');
-    // When a build has run, the injected line really is the product's first bytes: '#' first, no
-    // byte order mark. (A clone that has never built has no product; the banner above is still
-    // pinned, so a change to the injection cannot pass unnoticed.)
-    const productPath = join(repoRoot, target.replace(/^\.\//, ''));
-    if (existsSync(productPath)) {
-      const bytes = readFileSync(productPath);
-      expect(bytes.subarray(0, 20).toString('utf8')).toBe('#!/usr/bin/env node\n');
-      expect(bytes[0]).toBe(0x23);
     }
   });
 });

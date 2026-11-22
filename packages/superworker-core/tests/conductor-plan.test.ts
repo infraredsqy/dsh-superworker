@@ -12,11 +12,11 @@ import { hashDirectory } from './helpers/hash-dir.ts';
 /**
  * `conductor.next`: a plan that can be read, explained and not executed.
  *
- * The corpus (tests/fixtures/plan-*) already pins the **bytes** of every answer; this file adds
- * the faces the corpus cannot reach: a scene built from the public verbs (the seam from records to
- * plan), the mutual exclusion of `running` and `ready`, cycle width and the two cycle policies,
- * and the "read only" boundary itself. What is locked is the criterion (who enters the ready set,
- * why it stops, where it stops), not the shape of the implementation.
+ * This file pins the faces a byte comparison cannot reach: a scene built from the public verbs (the
+ * seam from records to plan), the mutual exclusion of `running` and `ready`, cycle width and the two
+ * cycle policies, and the "read only" boundary itself. What is locked is the criterion (who enters
+ * the ready set, why it stops, where it stops), not the shape of the implementation. The replayer's
+ * own mechanism self-check replays `plan-tie-stable-order` from `fixtures/` (input material only).
  */
 
 const fixturesDir = fileURLToPath(new URL('./fixtures', import.meta.url));

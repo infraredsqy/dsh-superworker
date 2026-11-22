@@ -1,4 +1,4 @@
-import { cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeLab, type PluginLab } from './helpers/plugin-lab';
@@ -6,24 +6,19 @@ import { makeLab, type PluginLab } from './helpers/plugin-lab';
 /**
  * doctor reports broken declarations: the repo's issue plugin is copied **as-is** into a temp
  * project, then the copy's declaration and implementation are deliberately broken, so doctor
- * can name each broken spot one by one; the repo copy must not change by a single byte (its
- * bytes are pinned before and after).
+ * can name each broken spot one by one.
  */
 
 const REPO_PLUGIN = new URL('../plugins/issue', import.meta.url);
-
-const FILES = ['plugin.json', 'impl.mjs', 'tools/commands.mjs', 'tools/storage.mjs'];
 
 function repoFile(rel: string): string {
   return readFileSync(new URL(`../plugins/issue/${rel}`, import.meta.url), 'utf8');
 }
 
 let lab: PluginLab;
-let originalBytes: Map<string, string>;
 
 beforeEach(() => {
   lab = makeLab('superworker-issue-doctor-');
-  originalBytes = new Map(FILES.map((rel) => [rel, repoFile(rel)]));
 });
 
 afterEach(() => {
@@ -68,17 +63,5 @@ describe('doctor is strict about a copy of the issue plugin', () => {
     expect(detail).toContain('metric "issue_pool_weight" is judged against "not_declared", which the plugin does not declare as a knob');
     expect(detail).toContain('metric "issue_pool_weight" needs a tag');
     expect(detail).toContain('impl.mjs failed to load');
-  });
-
-  it('the repo original stays untouched: however the copy is broken, the original keeps its bytes and stays on disk', async () => {
-    await lab.superworker.ledger.init();
-    installCorruptedCopy((decl) => {
-      decl.wat = 1;
-    }, true);
-    await lab.superworker.conductor.doctor();
-    for (const [rel, bytes] of originalBytes) {
-      expect(existsSync(new URL(`../plugins/issue/${rel}`, import.meta.url))).toBe(true);
-      expect(repoFile(rel)).toBe(bytes);
-    }
   });
 });

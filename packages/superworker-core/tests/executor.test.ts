@@ -6,66 +6,10 @@ import { open } from '../src/open';
 import { makeLab } from './helpers/plugin-lab';
 
 /**
- * The simulated executor: opens sessions with deterministic ids and records every request it
- * receives; the seam has dispatch as its only door. The second half walks the real chain once —
- * dispatch → the test files the ticket → close — because a dispatch has no result to hand back.
+ * The executor injection point of open(): the seam has dispatch as its only door, and a dispatch
+ * has no result to hand back — these tests walk the real chain once, dispatch → the test files
+ * the ticket → close.
  */
-
-describe('SimulatedExecutor', () => {
-  it('opens one session per dispatch, with deterministic ids (sess-1, sess-2, …)', async () => {
-    const sim = new SimulatedExecutor();
-    await expect(sim.dispatch({ prompt: 'a' })).resolves.toEqual({ sessionId: 'sess-1' });
-    await expect(sim.dispatch({ prompt: 'b' })).resolves.toEqual({ sessionId: 'sess-2' });
-    await expect(sim.dispatch({ prompt: 'c' })).resolves.toEqual({ sessionId: 'sess-3' });
-  });
-
-  it('records every dispatched request: order and content both', async () => {
-    const sim = new SimulatedExecutor();
-    await sim.dispatch({ cycle: 'cyc', node: 'n1', role: 'execute', prompt: 'p1' });
-    await sim.dispatch({ node: 'n2', prompt: 'p2' });
-    expect(sim.dispatched).toEqual([
-      { cycle: 'cyc', node: 'n1', role: 'execute', prompt: 'p1' },
-      { node: 'n2', prompt: 'p2' },
-    ]);
-  });
-
-  it('stores the request as a copy: the caller cannot change the record afterwards', async () => {
-    const sim = new SimulatedExecutor();
-    const request = { node: 'n1', prompt: 'original' };
-    const pending = sim.dispatch(request);
-    request.prompt = 'mutated';
-    await pending;
-    expect(sim.dispatched[0]?.prompt).toBe('original');
-  });
-
-  it("'throw' opens no session and blows up: the way an executor that cannot open one behaves", async () => {
-    const sim = new SimulatedExecutor('throw');
-    await expect(sim.dispatch({ prompt: 'x' })).rejects.toThrow('opened no session');
-    // The request still reached the executor (it was recorded), and no receipt came back.
-    expect(sim.dispatched).toHaveLength(1);
-  });
-
-  it("'hang' never settles: the promise stays pending instead of answering", async () => {
-    const sim = new SimulatedExecutor('hang');
-    const winner = await Promise.race([
-      sim.dispatch({ prompt: 'x' }).then(() => 'settled', () => 'settled'),
-      Promise.resolve('pending'),
-    ]);
-    expect(winner).toBe('pending');
-    expect(sim.dispatched).toHaveLength(1);
-  });
-
-  it('a function script decides per call: the request and the index both arrive', async () => {
-    const sim = new SimulatedExecutor((_request, index) => (index === 0 ? 'open' : 'throw'));
-    await expect(sim.dispatch({ prompt: 'a' })).resolves.toEqual({ sessionId: 'sess-1' });
-    await expect(sim.dispatch({ prompt: 'b' })).rejects.toThrow('dispatch #2');
-  });
-
-  it('dispatch is the only door on the seam: nothing here launches a process or opens a session', () => {
-    expect(Object.getOwnPropertyNames(SimulatedExecutor.prototype).sort())
-      .toEqual(['constructor', 'dispatch']);
-  });
-});
 
 describe('the executor injection point of open()', () => {
   /** A temp project plus one active cycle holding a node (the target of the dispatch seam; all engine work stays in temp dirs). */

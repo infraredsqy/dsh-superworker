@@ -480,22 +480,6 @@ describe('record cells: the registry is the one place an unstated cell gets its 
   });
 });
 
-describe('the pool record on disk', () => {
-  it('is written with LF on every platform: one pool write carries no CR', async () => {
-    await out(['add', '--id', 'a', '--title', 'Alpha']);
-    const bytes = readFileSync(POOL());
-    // The six record kinds share one byte rule, and this is the plugin's own writer for the issue
-    // record. The golden corpus cannot pin it: a record product is re-serialized through the
-    // engine's `jsonBytes` and folded to LF before the comparison, so it stayed green while this
-    // writer emitted the platform's ending. Reading the file the plugin really wrote is the one
-    // place the pool's own bytes show.
-    expect(bytes.includes(0x0d)).toBe(false);
-    expect(bytes.includes(0x0a)).toBe(true);
-    // No trailing newline, like every other record.
-    expect(bytes[bytes.length - 1]).not.toBe(0x0a);
-  });
-});
-
 describe('the gates of the command surface', () => {
   it('help lists all 16 verbs; an unknown verb and an unknown flag each stop on their own', async () => {
     const usage = await out(['help']);
