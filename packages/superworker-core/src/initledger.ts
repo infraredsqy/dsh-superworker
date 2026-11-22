@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { GitResult, GitRunner } from './git';
-import { isMissingPath } from './fs-helpers';
+import { bytesEqual, isMissingPath, messageOf } from './fs-helpers';
 import { atomicWriteBytes } from './jsonio';
 import { withLedgerLock } from './ledgerlock';
 import { RECORD_DIR_NAME, recordPaths, type RecordPaths } from './paths';
@@ -261,18 +261,17 @@ export interface InitReport {
 
 // ── the layout files ─────────────────────────────────────────────────────────
 
+/**
+ * Whether the layout file is already the bytes this run would write: the file's own bytes read in,
+ * compared by the foundation's one byte reading (`fs-helpers.bytesEqual`); a file that cannot be
+ * read is simply not a match.
+ */
 async function bytesMatch(path: string, payload: Uint8Array): Promise<boolean> {
-  let current: Uint8Array;
   try {
-    current = await readFile(path);
+    return bytesEqual(await readFile(path), payload);
   } catch {
     return false;
   }
-  if (current.byteLength !== payload.byteLength) return false;
-  for (let index = 0; index < payload.byteLength; index += 1) {
-    if (current[index] !== payload[index]) return false;
-  }
-  return true;
 }
 
 /** Whether the file is there and is a file (a directory or an unreadable cell is not). Exported: the migration's machine-layer copy asks the same question about two files. */
@@ -362,10 +361,6 @@ async function probeCheckout(root: string, git: GitRunner | undefined): Promise<
   } catch (error) {
     return { kind: 'not-a-checkout', note: `git could not be run (${messageOf(error)})` };
   }
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** Ask git for a path it knows the location of; null when it will not say. Exported: the migration asks where the same file lives before it writes it. */

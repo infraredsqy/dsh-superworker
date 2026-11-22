@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createDagNamespace } from './dag';
 import { nowSeconds } from './clock';
@@ -23,13 +23,15 @@ import type { DispatchRequest, Executor, OpenedSession } from './executor';
 import { envModel, envSpawnDryRun } from './env';
 import { RecordError } from './errors';
 import type { GitRunner } from './git';
+import { messageOf } from './fs-helpers';
 import { atomicWriteBytes, atomicWriteJson, EOL, jsonOptionsForRecord, readJsonFile } from './jsonio';
 import { assertLedgerInitialized } from './initledger';
 import { materialOf, pinSlots, planNext, promptTextOf, settleClose, settleGate, short } from './planner';
+import type { CellMaterial } from './planner';
 import { prepareDispatch, ticketReadings } from './prepare';
 import type { PreparedDispatch } from './prepare';
-import { launchPromptPath, recordPaths, signalPath, startedMarkerPath } from './paths';
-import type { CycleRecord, HandoffRecord, NodeMode, NodeResult } from './types';
+import { launchPromptPath, nodeDir, recordPaths, sessionNotePath, signalPath, startedMarkerPath } from './paths';
+import type { CycleRecord, HandoffRecord, NodeMode, NodeRecord, NodeResult } from './types';
 import type { PluginCommandEntry, PluginContext, PluginFolder } from './plugins/types';
 import { withLedgerLock } from './ledgerlock';
 import { createCyclesNamespace, cycleHoldingIds, cyclePolicy, cycleRecordOrRefuse, defaultActiveCycle, notHoldingError, readStateLedger } from './cycles';
@@ -600,7 +602,7 @@ export function createConductorNamespace(
    * session id and says the plain thing — dispatching the same cell again opens a second session.
    */
   function claimMissingError(nodeId: string, session: OpenedSession, error: unknown): Error {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = messageOf(error);
     const opened = session.sessionId === undefined ? 'the session' : `session ${session.sessionId}`;
     return new Error(
       `the \`started\` claim for ${short(nodeId)} could not be written (${reason}). ` +
@@ -620,6 +622,30 @@ export function createConductorNamespace(
   }
 
   /**
+   * The opening of one dispatch-shaped call, read once for its three callers (the dispatch, its
+   * rehearsal and the settle scene): the line resolved, the node it acts on, the node's record on
+   * the graph, and the cell's disk facts. `node … not found` is the one refusal of a node absent
+   * from the graph, and the material is the planner's one cell reading — neither is spelled a
+   * second time by any of the three.
+   */
+  async function dispatchScene(input: ConductorTarget | undefined): Promise<{
+    cycle: CycleRecord;
+    cycleId: string;
+    nodeId: string;
+    known: NodeRecord;
+    material: CellMaterial;
+  }> {
+    const cycle = await resolveCycle(input?.cycle);
+    const cycleId = String(cycle.id ?? '');
+    const nodeId = heldNodeId(cycle, input?.node);
+    const known = await dag.get(nodeId);
+    if (known === null) {
+      throw new Error(`node ${nodeId} not found`);
+    }
+    return { cycle, cycleId, nodeId, known, material: await materialOf(root, cycleId, nodeId) };
+  }
+
+  /**
    * The two gates of a settle, and the scene they read: the line must hold the node, and the ticket on disk must
    * state a verdict. The write and its rehearsal share this one block — a rehearsal refuses exactly what the write
    * refuses (refusing is not a write), and neither copies the other's sentences.
@@ -631,13 +657,7 @@ export function createConductorNamespace(
     sig: Record<string, unknown>;
   }> {
     assertLedgerInitialized(paths);
-    const cycle = await resolveCycle(input?.cycle);
-    const cycleId = String(cycle.id ?? '');
-    const nodeId = heldNodeId(cycle, input?.node);
-    const known = await dag.get(nodeId);
-    if (known === null) {
-      throw new Error(`node ${nodeId} not found`);
-    }
+    const { cycle, cycleId, nodeId } = await dispatchScene(input);
     // Gate one of the closing: the node must be on this line's claim list (the same gate as the closing itself).
     // The claim is read in one place for every shape on disk (`cycleHoldingIds`): the canonical `[{ id, since }]`
     // and the bare id string an older disc carries. The refusal is the one not_holding error (`notHoldingError`)
@@ -733,11 +753,18 @@ export function createConductorNamespace(
       const settle = await settleClose(root, line, nodeId, gate.ticket);
       const target = settle.filled[0]?.id ?? null;
       // Transactional: a snapshot is taken before the records move, and a mid-way failure puts them back by the
-      // snapshot — no half record is left.
+      // snapshot — no half record is left. The node directories on disk are counted here too: the closing
+      // insertion seam's `dag.add` sets directories (and session notes) up inside the transaction, and the
+      // two record snapshots do not carry them.
       const before = [
         await snapshotRecord(paths.stateJson),
         await snapshotRecord(paths.ideasJson),
       ];
+      const dirsBefore = new Set(
+        existsSync(paths.nodesDir)
+          ? readdirSync(paths.nodesDir, { withFileTypes: true }).map((entry) => entry.name)
+          : [],
+      );
       try {
         // The mechanical steps of the settle, and only these: the step goes into path (the verdict with it), the
         // graph node is marked (a delivery lands completed, a non-delivery lands shelved), and the record's own
@@ -760,6 +787,17 @@ export function createConductorNamespace(
       } catch (error) {
         for (const snap of before) {
           if (snap !== null) await atomicWriteBytes(snap.path, snap.bytes);
+        }
+        // The directories the insertion seam laid down this round are not records the snapshots restore:
+        // the restore above took their graph rows back out of ideas.json, so the directories — and the
+        // session notes dag.add may have hung beside them — would stay behind naming nodes no record
+        // holds. They go with the rollback, the same pair dag.remove takes away.
+        for (const id of existsSync(paths.nodesDir)
+          ? readdirSync(paths.nodesDir, { withFileTypes: true }).map((entry) => entry.name)
+          : []) {
+          if (dirsBefore.has(id)) continue;
+          rmSync(nodeDir(paths, id), { recursive: true, force: true });
+          rmSync(sessionNotePath(paths, id), { force: true });
         }
         throw error;
       }
@@ -898,19 +936,10 @@ export function createConductorNamespace(
     },
 
     dispatch: async (input) => {
-      const cycle = await resolveCycle(input?.cycle);
-      const cycleId = String(cycle.id ?? '');
-      const nodeId = heldNodeId(cycle, input?.node);
-      const known = await dag.get(nodeId);
-      if (known === null) {
-        throw new Error(`node ${nodeId} not found`);
-      }
+      // The cell's disk facts come off the one scene reading (the dispatch gate below calls them
+      // `cell`, as the plan does); the prompt material this call hands over stays `material`.
+      const { cycle, cycleId, nodeId, known, material: cell } = await dispatchScene(input);
       const nodeTitle = String(known.title ?? '');
-      // One reading of the cell's disk facts (the planner's `materialOf`): the claim of an earlier
-      // dispatch and whether the material is already landed. This pair is the dispatch gate — a prompt
-      // there with no `started` stamp is a dispatch of its own — and the plan, this call and its
-      // rehearsal all read it here.
-      const cell = await materialOf(root, cycleId, nodeId);
       // The claim of an earlier dispatch, read first: this cell's session is out already, so there is
       // nothing to open and nothing to write — one executor call here would be a second session.
       if (cell.started) {
@@ -1014,18 +1043,11 @@ export function createConductorNamespace(
      * not asked for a session — a rehearsal is a reading of what the real call would hand over.
      */
     dispatchPreview: async (input) => {
-      const cycle = await resolveCycle(input?.cycle);
-      const cycleId = String(cycle.id ?? '');
-      const nodeId = heldNodeId(cycle, input?.node);
-      const known = await dag.get(nodeId);
-      if (known === null) {
-        throw new Error(`node ${nodeId} not found`);
-      }
+      const { cycle, cycleId, nodeId, known, material: cell } = await dispatchScene(input);
       const { assembly, folders, ctx, warnings } = await pluginContext({ cycle, nodeId, preview: true });
       // Refusing is the thing being rehearsed: the reasons come back as data, in the same order the real gate
       // would join them, instead of the refusal's exception.
       const blocked = await collectGates('dispatch', ctx, folders, warnings, true, assembly);
-      const cell = await materialOf(root, cycleId, nodeId);
       const prompt = launchPromptPath(paths, cycleId, nodeId);
       const model = modelOf(cycle, input?.model);
       return {
@@ -1115,20 +1137,10 @@ export function createConductorNamespace(
         answer.error = 'a plugin command needs a word';
         return answer;
       }
-      const assembly = pluginAssemblyOf(root, options.pluginsDir);
-      const folders = await assembly.folders();
-      // The context is the same one a timing's door gets: the knobs' chain, the readings, the tag lookup, the
-      // graph snapshot and the node layout. A plugin word run from outside the pipeline stands on no node and no line,
-      // so both cells are empty and the whole graph is handed over as the snapshot.
-      const warnings: string[] = [];
-      const ctx = createContext({
-        root,
-        folders,
-        assembly,
-        homeDir: options.homeDir,
-        warnings,
-        dag: await readGraphSnapshot(paths),
-      });
+      // The context is the same one a timing's door gets, through the one factory: the knobs' chain,
+      // the readings, the tag lookup, the graph snapshot and the node layout. A plugin word run from
+      // outside the pipeline stands on no node and no line, so the scene hands both cells empty.
+      const { assembly, folders, ctx, warnings } = await pluginContext({ cycle: null, nodeId: null });
       // The one routing both readers take: this word is routed exactly the way `capture` / `run` route it, and
       // its four cells (ran / text / code / error) are the same answer those two read.
       const route = await routeCommand(argv, folders, ctx, warnings, await assembly.routable());

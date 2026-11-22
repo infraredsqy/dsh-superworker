@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RETRY_ATTEMPTS, unlinkWithRetry } from '../src/fs-helpers.ts';
+import { bytesEqual, messageOf, RETRY_ATTEMPTS, unlinkWithRetry } from '../src/fs-helpers.ts';
 
 /**
  * The shared exit for unlinking: an absent file counts as already unlinked; a hold backs off on
@@ -87,5 +87,34 @@ describe('unlinkWithRetry: unlinking a record file', () => {
     await expect(unlinkWithRetry(target)).rejects.toMatchObject({ code: 'EPERM' });
     expect(unlinkProbe.calls).toBe(RETRY_ATTEMPTS);
     expect(existsSync(target)).toBe(true);
+  });
+});
+
+describe('messageOf: the one line an error answer carries', () => {
+  it('an Error answers with its message; anything thrown otherwise is spelled as a string', () => {
+    expect(messageOf(new Error('the record is held'))).toBe('the record is held');
+    expect(messageOf('a plain refusal')).toBe('a plain refusal');
+    expect(messageOf(42)).toBe('42');
+    expect(messageOf(undefined)).toBe('undefined');
+  });
+});
+
+describe('bytesEqual: the one byte comparison', () => {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode('same bytes');
+
+  it('the same bytes answer true, including two empty strings', () => {
+    expect(bytesEqual(bytes, encoder.encode('same bytes'))).toBe(true);
+    expect(bytesEqual(new Uint8Array(0), new Uint8Array(0))).toBe(true);
+  });
+
+  it('a different length answers false before a single byte is compared', () => {
+    expect(bytesEqual(bytes, encoder.encode('same byte'))).toBe(false);
+    expect(bytesEqual(bytes, encoder.encode('same bytes!'))).toBe(false);
+  });
+
+  it('one differing byte answers false, at the end included', () => {
+    expect(bytesEqual(bytes, encoder.encode('same bytex'))).toBe(false);
+    expect(bytesEqual(bytes, encoder.encode('Xame bytes'))).toBe(false);
   });
 });

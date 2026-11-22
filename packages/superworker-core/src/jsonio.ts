@@ -7,6 +7,7 @@ import {
   RETRY_BASE_MS,
   isBusyPath,
   isMissingPath,
+  messageOf,
   sleep,
   tryUnlinkWithRetry,
 } from './fs-helpers.ts';
@@ -185,7 +186,7 @@ export async function readJsonFile(
   try {
     text = strictUtf8.decode(bytes);
   } catch (error) {
-    throw new RecordError('invalid_utf8', path, `${label} is not valid UTF-8: ${reasonOf(error)}`, {
+    throw new RecordError('invalid_utf8', path, `${label} is not valid UTF-8: ${messageOf(error)}`, {
       cause: error,
     });
   }
@@ -194,14 +195,10 @@ export async function readJsonFile(
     if (options.numberLiterals !== true) return { kind: 'present', value };
     return { kind: 'present', value, numberLiterals: topLevelNumberLiterals(text) };
   } catch (error) {
-    throw new RecordError('parse_failure', path, `${label} parse failure: ${reasonOf(error)}`, {
+    throw new RecordError('parse_failure', path, `${label} parse failure: ${messageOf(error)}`, {
       cause: error,
     });
   }
-}
-
-function reasonOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**

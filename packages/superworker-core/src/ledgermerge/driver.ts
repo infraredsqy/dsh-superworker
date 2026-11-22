@@ -47,7 +47,7 @@
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { isRecordError } from '../errors';
-import { isMissingPath } from '../fs-helpers';
+import { bytesEqual, isMissingPath, messageOf } from '../fs-helpers';
 import { assertLedgerInitialized, isLedgerInitialized } from '../initledger';
 import { atomicWriteBytes, jsonBytes, jsonOptionsForRecord, readJsonFile } from '../jsonio';
 import { withLedgerLock } from '../ledgerlock';
@@ -254,7 +254,9 @@ export async function runMergeDriver(
   }
 
   const current = ours?.bytes ?? null;
-  if (current !== null && sameBytes(current, payload)) return EXIT_OK;
+  // "The merged result is the bytes %A already holds" is the foundation's one byte reading
+  // (`fs-helpers.bytesEqual`) — the same strictness the layout repair judges a layout file by.
+  if (current !== null && bytesEqual(current, payload)) return EXIT_OK;
 
   const root = request.root ?? recordRootOf(named, process.cwd());
   if (root === null) {
@@ -414,16 +416,4 @@ async function readSide(path: string, side: SideRole, io: MergeDriverIo): Promis
     );
     throw error;
   }
-}
-
-function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
-  for (let index = 0; index < left.byteLength; index += 1) {
-    if (left[index] !== right[index]) return false;
-  }
-  return true;
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

@@ -3,6 +3,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { nowMicro } from './clock';
 import { envSessionId } from './env';
+import { messageOf } from './fs-helpers';
 import {
   atomicWriteJson,
   jsonOptionsForRecord,
@@ -660,7 +661,7 @@ export function createDagNamespace(root: string): DagNamespace {
       try {
         pattern = new RegExp(query, 'i');
       } catch (error) {
-        throw new Error(`invalid regex: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`invalid regex: ${messageOf(error)}`);
       }
       const deep = options.verbose === true;
 

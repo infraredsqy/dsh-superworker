@@ -30,6 +30,29 @@ export function errorCodeOf(error: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * The one line an error answer carries: an error's message as a sentence, whatever was thrown. The
+ * one spelling for every sentence that names a failure, so the record IO foundation and its readers
+ * cannot drift into two wordings of the same throw.
+ */
+export function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Whether two byte strings are the same: length first, then byte by byte. The one reading behind
+ * both "is the file already the bytes we would write" (the layout repair) and "would the merged
+ * result rewrite the file" (the merge driver) — one comparison, so the two judgements cannot change
+ * their strictness separately.
+ */
+export function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
 /** This step failed because the target was absent all along (even the enclosing directory is only a plain file). */
 export function isMissingPath(error: unknown): boolean {
   const code = errorCodeOf(error);

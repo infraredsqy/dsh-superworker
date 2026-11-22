@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prepareDispatch } from '../src/prepare';
 import { open } from '../src/open';
 import { main as instruction } from '../plugins/instruction/tools/commands.mjs';
@@ -16,6 +16,22 @@ import { hashDirectory } from './helpers/hash-dir.ts';
  * moves not a byte; a run doc the session wrote is not overwritten), the "only plans that
  * dispatch" gate, and the spot-name refusals.
  */
+
+/** How many times each path was read through `fs/promises.readFile` (the mock only counts; it delegates). */
+const readFileProbe = vi.hoisted(() => ({ counts: new Map<string, number>() }));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  const realReadFile = actual.readFile as (path: string, options?: unknown) => Promise<Uint8Array>;
+  return {
+    ...actual,
+    readFile: async (path: string, options?: unknown) => {
+      const key = String(path);
+      readFileProbe.counts.set(key, (readFileProbe.counts.get(key) ?? 0) + 1);
+      return realReadFile(path, options);
+    },
+  };
+});
 
 const roots: string[] = [];
 
@@ -133,6 +149,34 @@ describe('dispatch preparation: landing spots and idempotence', () => {
     expect(doc).not.toContain('User instructions in effect');
     // The verified facts end with the settings readings: nothing was appended after them.
     expect(doc.trimEnd().split('\n').at(-1)).toBe('- max_agents=3');
+  });
+});
+
+describe('dispatch preparation: the settings chain is read once for the whole preparation', () => {
+  it('preparing three slots reads the machine and project layer files one time each, not once per slot', async () => {
+    const root = freshRoot();
+    const superworker = open(root);
+    await superworker.ledger.init();
+    const ids: string[] = [];
+    for (const title of ['slot a', 'slot b', 'slot c']) {
+      ids.push((await superworker.ledger.dag.add({ title })).id);
+    }
+    await superworker.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
+    await superworker.ledger.cycles.setPolicy('c1', 'parallel', 3);
+    for (const id of ids) await superworker.ledger.cycles.hold('c1', id);
+
+    const home = join(root, '_home');
+    const projectConfig = join(root, '.superworker', 'config.json');
+    const globalConfig = join(home, '.superworker', 'config.json');
+    readFileProbe.counts.clear();
+    const prepared = await prepareDispatch(root, { cycle: 'c1' }, { homeDir: home });
+    expect(prepared.nodes.map((entry) => entry.node_id)).toEqual(ids);
+    // One resolution of the whole chain at the preparation's start: the layers every slot shares
+    // (machine, project, the line's own) are read one time each however many slots the line holds —
+    // each slot's own settings reading used to re-read both files, and the run doc's three settings
+    // readings alone made that 3×N reads of the same layers.
+    expect(readFileProbe.counts.get(projectConfig)).toBe(1);
+    expect(readFileProbe.counts.get(globalConfig)).toBe(1);
   });
 });
 

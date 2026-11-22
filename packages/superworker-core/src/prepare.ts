@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
-import { resolveConfig, createConfigNamespace } from './config';
-import type { ConfigValue } from './config';
+import { resolveConfig, withNodeLayer } from './config';
+import type { ConfigReading, ConfigValue } from './config';
 import type { ConductorTarget } from './conductor';
 import { createCyclesNamespace, cycleHoldingIds, cyclePolicy } from './cycles';
 import { createDagNamespace } from './dag';
@@ -143,23 +143,42 @@ export function handoffTemplate(
  * chain, in declaration order. The gate on values follows `ticket_readings`: written on some layer, or the
  * declaration gives a factory default — both count as "in force"; when nobody on the chain says anything and
  * there is no default, measuring it would be judged by no one, so it is not asked.
+ *
+ * `chain` is the whole-chain reading the caller already resolved (a dispatch preparation reads the chain
+ * once for all its slots): handed in, the chain is not read again here and only the named node's own layer
+ * — the one layer that differs per slot — is laid on top (`withNodeLayer`); without it the whole chain is
+ * read here, as before.
  */
 export async function ticketReadings(
   root: string,
   folders: readonly PluginFolder[],
-  options: { readonly homeDir?: string; readonly cycle: string; readonly node?: string },
+  options: {
+    readonly homeDir?: string;
+    readonly cycle: string;
+    readonly node?: string;
+    readonly chain?: Record<string, ConfigReading>;
+  },
 ): Promise<Array<{ readonly key: string; readonly ask: string }>> {
   const entries = readingsOf(folders).filter((entry) => entry.source === 'ticket');
   if (entries.length === 0) return [];
   if (entries.every((entry) => entry.whenKnob === '')) {
     return entries.map((entry) => ({ key: entry.key, ask: entry.ask }));
   }
-  const effective = await resolveConfig(root, {
-    homeDir: options.homeDir,
-    declaredKnobs: declaredKnobSpecs(folders),
-    cycle: options.cycle,
-    node: options.node,
-  });
+  const declaredKnobs = declaredKnobSpecs(folders);
+  const effective = options.chain === undefined
+    ? await resolveConfig(root, {
+        homeDir: options.homeDir,
+        declaredKnobs,
+        cycle: options.cycle,
+        node: options.node,
+      })
+    : options.node === undefined
+      ? options.chain
+      : await withNodeLayer(root, options.chain, {
+          homeDir: options.homeDir,
+          declaredKnobs,
+          node: options.node,
+        });
   const out: Array<{ key: string; ask: string }> = [];
   for (const entry of entries) {
     if (entry.whenKnob !== '') {
@@ -271,15 +290,20 @@ export async function prepareDispatch(
   }
   assertLedgerInitialized(paths);
   const dag = createDagNamespace(root);
-  const config = createConfigNamespace(
-    root,
-    options.homeDir === undefined ? {} : { homeDir: options.homeDir },
-  );
   const cycle = await createCyclesNamespace(root).show(plan.cycle);
   // The template's reading cells come from the plugin declarations (the `source: ticket` ones); with no plugins installed this cell never appears.
   const folders = options.assembly === undefined
     ? (await loadPlugins(pluginsDirOf(root, options.pluginsDir))).folders
     : await options.assembly.folders();
+  // One reading of the whole settings chain for the whole preparation: the run doc's three settings
+  // readings and the knobs the ticket readings gate on are the same chain, and the layers every slot
+  // shares (machine, project, this line's own) are read once here instead of once per slot — a
+  // preparation of many slots does not re-read the chain once per slot on top.
+  const chain = await resolveConfig(root, {
+    homeDir: options.homeDir,
+    declaredKnobs: declaredKnobSpecs(folders),
+    cycle: plan.cycle,
+  });
   const prepared: PreparedNode[] = [];
   for (const entry of slots) {
     const record = await dag.get(entry.node_id);
@@ -292,9 +316,9 @@ export async function prepareDispatch(
       specPath,
       method,
       knobs: {
-        test_tier: (await config.get('test_tier')).value,
-        worktree_mode: (await config.get('worktree_mode')).value,
-        max_agents: (await config.get('max_agents')).value,
+        test_tier: chain['test_tier']?.value ?? null,
+        worktree_mode: chain['worktree_mode']?.value ?? null,
+        max_agents: chain['max_agents']?.value ?? null,
       },
     });
     // The run doc: exclusive creation — the first preparation lands it whole; one already on disk
@@ -314,6 +338,7 @@ export async function prepareDispatch(
       homeDir: options.homeDir,
       cycle: plan.cycle,
       node: entry.node_id,
+      chain,
     });
     prepared.push({
       node_id: entry.node_id,

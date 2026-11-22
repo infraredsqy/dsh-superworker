@@ -703,6 +703,31 @@ export async function resolveConfig(
   return chainValues(root, options, { cycle: options.cycle, node: options.node });
 }
 
+/**
+ * One node's own layer laid on top of a whole-chain reading the caller already holds: `readings` comes
+ * back with that node's settings file merged in, the same way the chain lays it (the narrow layer wins
+ * over whatever is beneath), and without re-reading the wide layers the caller has just read. A caller
+ * that resolves one chain for a whole round and needs the per-node layer on top of it per slot asks
+ * here instead of re-reading the chain once per slot.
+ */
+export async function withNodeLayer(
+  root: string,
+  readings: Record<string, ConfigReading>,
+  options: ConfigResolutionOptions & { readonly node: string },
+): Promise<Record<string, ConfigReading>> {
+  const specs = await specsFor(root, options);
+  const stated = await readLayerValues(
+    nodeConfigPath(recordPaths(root), options.node),
+    specs,
+    'node',
+  );
+  const out: Record<string, ConfigReading> = { ...readings };
+  for (const [key, value] of Object.entries(stated)) {
+    out[key] = { value, source: 'node' };
+  }
+  return out;
+}
+
 // ── writing: one layer at a time ────────────────────────────────────────────
 
 /** The read-change-write of one layer file as a whole document: unknown keys are kept as they are, and a document that is not an object is rewritten as an empty table. */

@@ -7,7 +7,13 @@ import {
   driverRunsHere,
   readAbsoluteForm,
 } from './initledger';
-import { hasLegacyRecord, isRecognizableLegacyRecord, migrationPreconditions } from './legacy';
+import {
+  hasLegacyRecord,
+  isRecognizableLegacyRecord,
+  legacyRecordDir,
+  migrationPreconditions,
+  migrationRefusalSentence,
+} from './legacy';
 import type { DagNamespace } from './ledger';
 import { RECORD_DIR_NAME, type RecordPaths } from './paths';
 import { ownsKey, readGraphSnapshot } from './graph';
@@ -310,21 +316,18 @@ export async function migrationChecks(
   if (hasLegacyRecord(root) && isRecognizableLegacyRecord(root)) {
     const reading = await migrationPreconditions(root, git);
     if (!reading.ready) {
-      const detail =
-        reading.refusal === 'both-present'
-          ? `both ${RECORD_DIR_NAME}/ and the older directory are here: this plugin reads ` +
-            `${RECORD_DIR_NAME}/ only, and which records are the true ones is a judgement — consult an agent`
-          : reading.refusal === 'tracked-by-git'
-            ? 'the older record directory is tracked by this project\'s git: renaming it would ' +
-              'half-remove it from history — consult an agent'
-            : reading.refusal === 'locked'
-              ? 'a run is holding the record lock right now: move the records once it has finished, ' +
-                'or consult an agent'
-              : reading.refusal === 'worktrees'
-                ? 'a parallel-mode worktree is checked out, and its git metadata holds absolute ' +
-                  'paths: consult an agent before moving the records'
-                : 'the records cannot be moved forward from here — consult an agent';
-      cells.push({ name: 'record-directory', ok: true, detail });
+      // The refusal's fact is the one sentence table `legacy.ts` keeps beside the refusal type — the
+      // same sentences a refused migration throws — and this cell folds in only its own closing
+      // clause (a check-up says whom to ask; it never attempted the move, so it says nothing moved).
+      cells.push({
+        name: 'record-directory',
+        ok: true,
+        detail:
+          `${migrationRefusalSentence(reading.refusal, {
+            oldDir: legacyRecordDir(root),
+            newDir: join(root, RECORD_DIR_NAME),
+          })} — consult an agent`,
+      });
     } else {
       cells.push({
         name: 'record-directory',

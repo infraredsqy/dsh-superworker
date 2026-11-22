@@ -1,7 +1,7 @@
 import { readFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { GitRunner } from './git';
-import { isExistingPath, isMissingPath } from './fs-helpers';
+import { isExistingPath, isMissingPath, messageOf } from './fs-helpers';
 import {
   excludeDecoder,
   excludeLineFor,
@@ -20,7 +20,7 @@ import {
   readJsonFile,
 } from './jsonio';
 import { withLedgerLock } from './ledgerlock';
-import { LEGACY_DIR_NAME, legacyRecordDir, migrationPreconditions } from './legacy';
+import { LEGACY_DIR_NAME, legacyRecordDir, migrationPreconditions, migrationRefusalSentence } from './legacy';
 import type { MigrationRefusal } from './legacy';
 import { RECORD_DIR_NAME, globalConfigPath, globalHomeDir, recordPaths } from './paths';
 import type { RecordPaths } from './paths';
@@ -245,23 +245,15 @@ function quietReport(generation: string, known?: readonly KnownGeneration[]): Mi
 /**
  * The error a refused migration throws. Each sentence names the fact that stopped the move and hands
  * the job to an agent: every one of these refusals is a judgement or a removal this engine must not
- * make, and talking a person into a hand edit is how a record tree gets hurt.
+ * make, and talking a person into a hand edit is how a record tree gets hurt. The fact per refusal
+ * is the one table `legacy.ts` keeps beside the refusal type — the same sentences the doctor's
+ * record-directory cell says — and this side folds in only its own closing clause.
  */
 function refusalError(root: string, refusal: MigrationRefusal): Error {
-  const oldDir = legacyRecordDir(root);
-  const newDir = join(root, RECORD_DIR_NAME);
-  const sentence =
-    refusal === 'both-present'
-      ? `both ${oldDir} and ${newDir} are here, and which records are the true ones is a judgement no word can make`
-      : refusal === 'unrecognizable'
-        ? `${oldDir} is here but does not carry the marks an init lays down, so it may not be a record directory of this pipeline at all`
-        : refusal === 'tracked-by-git'
-          ? `${oldDir} is tracked by this project's git, and renaming it would half-remove it from the repository's history`
-          : refusal === 'locked'
-            ? `${oldDir} holds the record lock, so a run is in flight and the records must not move under it`
-            : refusal === 'worktrees'
-              ? `${oldDir} holds a parallel-mode worktree, and a worktree's git metadata carries absolute paths`
-              : 'there is nothing to move here';
+  const sentence = migrationRefusalSentence(refusal, {
+    oldDir: legacyRecordDir(root),
+    newDir: join(root, RECORD_DIR_NAME),
+  });
   return new Error(
     `${sentence} — consult an agent rather than editing anything by hand; nothing was moved.`,
   );
@@ -516,9 +508,4 @@ async function rewritePlanPaths(paths: RecordPaths): Promise<PlanPathStep> {
     };
   }
   return { rewritten };
-}
-
-/** The one line an error answer carries, here and in `initledger`: an error's message as a sentence, whatever was thrown. */
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

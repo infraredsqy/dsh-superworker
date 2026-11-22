@@ -96,6 +96,37 @@ export type MigrationReading =
   | { readonly ready: false; readonly refusal: MigrationRefusal };
 
 /**
+ * The one sentence per refusal, beside the type it is exhaustive over: `migrate` folds it into the
+ * error a refused move throws, and `doctor`'s record-directory cell says the same fact — one table,
+ * so a sixth refusal lands in both at once instead of falling quietly into two privately-written
+ * fallback sentences. Each entry spells its fact with the two record directories of the workspace
+ * it refused; the caller adds its own half (what to do next, what did not happen).
+ */
+const MIGRATION_REFUSAL_SENTENCES: Readonly<
+  Record<MigrationRefusal, (dirs: { readonly oldDir: string; readonly newDir: string }) => string>
+> = {
+  absent: () => 'there is nothing to move here',
+  'both-present': ({ oldDir, newDir }) =>
+    `both ${oldDir} and ${newDir} are here, and which records are the true ones is a judgement no word can make`,
+  unrecognizable: ({ oldDir }) =>
+    `${oldDir} is here but does not carry the marks an init lays down, so it may not be a record directory of this pipeline at all`,
+  'tracked-by-git': ({ oldDir }) =>
+    `${oldDir} is tracked by this project's git, and renaming it would half-remove it from the repository's history`,
+  locked: ({ oldDir }) =>
+    `${oldDir} holds the record lock, so a run is in flight and the records must not move under it`,
+  worktrees: ({ oldDir }) =>
+    `${oldDir} holds a parallel-mode worktree, and a worktree's git metadata carries absolute paths`,
+};
+
+/** The sentence one refusal is said with, spelled with this workspace's two record directories. */
+export function migrationRefusalSentence(
+  refusal: MigrationRefusal,
+  dirs: { readonly oldDir: string; readonly newDir: string },
+): string {
+  return MIGRATION_REFUSAL_SENTENCES[refusal](dirs);
+}
+
+/**
  * Whether one record directory an `init` laid down holds a worktree of the parallel mode. The
  * directory is the record tree's own, not a repository's: an empty `worktrees/` is a worktree
  * reading of zero.
