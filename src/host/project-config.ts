@@ -8,7 +8,16 @@
  * prints and makes no second set of judgments. Which keys the tool accepts is
  * also the tool's business: no key list is kept here — whatever is printed
  * gets read.
+ *
+ * The reading carries one more thing the printed lines never did: each key's
+ * candidate words, read off the engine's own declaration (`knobSpecs`, the
+ * one merge of the engine's built-ins and the plugins' declarations). That
+ * declaration is the only copy of a vocabulary there is — the client spells
+ * none of it, so an engine edit moves the panel without a client change. A
+ * key whose declaration states no vocabulary carries no candidates, and the
+ * row drawn for it falls back to a text box.
  */
+import { knobSpecs } from 'superworker-core'
 import type { RecordRefusal } from './failure.ts'
 
 /** Which layer a value actually lives on. */
@@ -56,6 +65,12 @@ export interface ConfigEntry {
   readonly value: string
   /** Which layer this value lives on; `null` when the layer name is unreadable. */
   readonly layer: ConfigLayer | null
+  /**
+   * The words this key's declaration accepts, in the order the engine states them. Absent for a key
+   * whose declaration states no vocabulary: the row drawn for it falls back to a text box, and no
+   * options are invented for it.
+   */
+  readonly options?: readonly string[]
 }
 
 /**
@@ -103,6 +118,39 @@ export function parseConfigList(text: string): Record<string, ConfigEntry> {
     if (key === undefined || value === undefined || layer === undefined) continue
     if (value.length === 0) continue
     out[key] = { value, layer: layerOf(layer) }
+  }
+  return out
+}
+
+/**
+ * The candidate words the engine's declaration states, keyed by setting name: read off the engine's
+ * own list, so the reading carries the declaration itself rather than a copy of it. Only keys whose
+ * declaration states a vocabulary are here; a key absent from this table draws a text box, never
+ * invented options. The table is a plain copy, so no caller can reach back into the engine's cells
+ * through it.
+ */
+export function declaredOptions(): Record<string, readonly string[]> {
+  const out: Record<string, readonly string[]> = {}
+  for (const [key, spec] of Object.entries(knobSpecs())) {
+    const values = spec.values
+    if (values !== undefined && values.length > 0) out[key] = [...values]
+  }
+  return out
+}
+
+/**
+ * Lay the declaration's candidates onto the parsed entries: an entry keeps whatever its key declares,
+ * and a key the declaration says nothing about — or one the tool never printed — is left untouched,
+ * since candidates ride on readings and are never fabricated for a key the reading does not hold.
+ */
+export function withDeclaredOptions(
+  entries: Record<string, ConfigEntry>,
+  candidates: Readonly<Record<string, readonly string[]>> = declaredOptions(),
+): Record<string, ConfigEntry> {
+  const out: Record<string, ConfigEntry> = {}
+  for (const [key, entry] of Object.entries(entries)) {
+    const options = candidates[key]
+    out[key] = options === undefined ? entry : { ...entry, options }
   }
   return out
 }

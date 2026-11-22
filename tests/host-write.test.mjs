@@ -18,6 +18,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { answer, open } from 'superworker-core'
 import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
+import { declaredOptions } from '../src/host/project-config.ts'
 import { readReading } from '../src/host/records.ts'
 import { shippedPluginsDir } from '../src/host/skill-paths.ts'
 import { pinHome } from './helpers/env.mjs'
@@ -247,7 +248,9 @@ test('Reading settings: every line the engine printed parses into the table, and
     assert.equal(reading.workspaceRoot, stage.root, 'reads this workspace root')
     assert.equal(reading.refusal, null)
     assert.ok(reading.text.length > 0, 'the success branch carries the lines the engine printed')
-    assert.deepEqual(reading.entries['worktree_mode'], { value: 'fork', layer: 'project' }, 'the value written to the project layer is here')
+    assert.equal(reading.entries['worktree_mode']?.value, 'fork', 'the value written to the project layer is here')
+    assert.equal(reading.entries['worktree_mode']?.layer, 'project', 'the layer it was written to is the layer the tag reads')
+    assert.deepEqual(reading.entries['worktree_mode']?.options, declaredOptions()['worktree_mode'], 'the declaration\'s candidates ride along')
     assert.equal(reading.entries['max_agents']?.layer, 'default', 'an unwritten key reads as the factory default')
   } finally {
     stage.done()

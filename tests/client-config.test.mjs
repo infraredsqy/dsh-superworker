@@ -3,10 +3,12 @@
  *
  * The tool is the single source of truth for config keys; this side never declares "which keys the
  * tool has": rows grow out of `config list` readings, registered keys render per the table, and
- * unregistered ones fall back to raw key name + text input. No UI snapshots are locked; instead a
- * few things that could silently drift are: a key present in the reading losing its row, a
- * dropdown settling on its first option when the reading has no value, and out-of-table candidate
- * values being silently snapped back to the first option.
+ * unregistered ones fall back to raw key name + text input. The dropdown candidates are the
+ * engine's own declaration, handed in with the reading — this side spells no candidate word of its
+ * own. No UI snapshots are locked; instead a few things that could silently drift are: a key
+ * present in the reading losing its row, a dropdown settling on its first option when the reading
+ * has no value, an out-of-list candidate value being silently snapped back to the first option,
+ * and a second candidate list growing back on this side.
  *
  *   node --test tests/
  */
@@ -27,8 +29,8 @@ import { createLocalePort } from '../src/client/locale.ts'
 const t = createLocalePort().getSnapshot().t
 
 /** A synthetic reading: key names are arbitrary — the rendering only cares "one row per printed key". */
-function entry(value, layer = 'project') {
-  return { value, layer }
+function entry(value, layer = 'project', options) {
+  return options === undefined ? { value, layer } : { value, layer, options }
 }
 
 test('every registered key is described: name, caption, group, none missing', () => {
@@ -71,10 +73,18 @@ test('unregistered keys: raw key name + text input, after the known rows, none d
   assert.ok(rowWords(t, stranger).caption.length > 0, 'an unregistered key still has a caption saying who judges the value')
 })
 
-test('registered keys render per the table: a key in the reading that is in the table uses the table\'s row', () => {
-  const rows = configRowsOf({ worktree_mode: entry('fork') })
-
-  assert.deepEqual(rows[0], KNOWN_CONFIG_ROWS['worktree_mode'])
+test('registered keys render per the table: the table\'s description stands whatever control the reading grows', () => {
+  /* With candidates in the reading, the drawn row is the table's own, carrying the reading's words. */
+  const options = ['off', 'fork']
+  const described = configRowsOf({ worktree_mode: entry('fork', 'project', options) })
+  assert.deepEqual(described[0], { ...KNOWN_CONFIG_ROWS['worktree_mode'], options })
+  /* Without them the row falls back to a text box, but stays the table's: name, caption and group
+   * keep standing, so a described key never degrades into a raw unregistered row. */
+  const fallback = configRowsOf({ worktree_mode: entry('off') })[0]
+  assert.equal(fallback.kind, 'text')
+  assert.equal(fallback.name, KNOWN_CONFIG_ROWS['worktree_mode'].name)
+  assert.equal(fallback.caption, KNOWN_CONFIG_ROWS['worktree_mode'].caption)
+  assert.equal(fallback.group, KNOWN_CONFIG_ROWS['worktree_mode'].group)
 })
 
 test('a knob only the global layer accepts is in the table as read-only: no text-box fallback, no control kind, no candidates', () => {
@@ -91,31 +101,64 @@ test('a knob only the global layer accepts is in the table as read-only: no text
   assert.ok(rowWords(t, row).caption.length > 0, 'the caption says who can change it')
 })
 
-test('one control per row: the dropdown kind carries candidates, the other three do not', () => {
+test('the table spells no candidates: the engine\'s declaration is the only vocabulary, the reading is where it arrives', () => {
+  /* A candidate word spelled here would be a second copy of the engine's list, drifting the moment
+   * the engine edits its declaration — the very debt this face once carried. */
   for (const row of Object.values(KNOWN_CONFIG_ROWS)) {
-    if (row.kind === 'pick') {
-      assert.ok((row.options ?? []).length > 1, `${row.key} is a dropdown but has no candidates`)
-      assert.equal(new Set(row.options).size, row.options?.length, `${row.key} has duplicate candidates`)
-    } else {
-      assert.equal(row.options, undefined, `${row.key} is not a dropdown but carries candidates`)
-    }
+    assert.equal(row.options, undefined, `${row.key} hand-copies candidates; candidates grow from the reading only`)
   }
 })
 
+test('candidates are the reading\'s own words: a vocabulary this client has never spelled is offered as it stands (the engine edits its declaration, the client changes nothing)', () => {
+  /* The words below are spelled nowhere in this client — the engine's declaration is their only
+   * home. The row's options are the entry's options, whatever they are; nothing here pins which
+   * words the engine states. */
+  const options = ['alpha', 'beta', 'gamma']
+  const rows = configRowsOf({ worktree_mode: entry('beta', 'project', options) })
+  assert.deepEqual(rows[0].options, options, 'the row offers exactly the reading\'s words, in the reading\'s order')
+  assert.deepEqual(
+    pickState({ value: 'gamma', layer: 'project' }, rows[0].options),
+    { value: 'gamma', extra: null },
+    'a declared word draws as its own option',
+  )
+})
+
+test('a key the engine declares no vocabulary for falls back to a text box, even when the table calls it a dropdown; only the dropdown kind reads the candidates', () => {
+  const rows = configRowsOf({
+    worktree_mode: entry('off'),
+    max_agents: entry('1', 'project', ['1', '2']),
+    spawner: entry('dsh', 'project', ['dsh', 'other']),
+  })
+  const fallback = rows.find((row) => row.key === 'worktree_mode')
+  assert.equal(fallback.kind, 'text', 'no declared vocabulary, no dropdown — a control with no words in it is not drawn')
+  assert.equal(fallback.options, undefined, 'the fallback invents no candidates')
+  assert.equal(rows.find((row) => row.key === 'max_agents').kind, 'num', 'a number row stays a number row')
+  assert.equal(rows.find((row) => row.key === 'max_agents').options, undefined, 'a non-dropdown row ignores the candidates')
+  assert.equal(rows.find((row) => row.key === 'spawner').kind, 'text', 'an unregistered key stays a text box')
+  assert.equal(rows.find((row) => row.key === 'spawner').options, undefined, 'an unregistered row takes no candidates either')
+})
+
 test('when the reading has no value for the key, neither dropdown settles on an option (left empty), not the first one', () => {
-  const picks = Object.values(KNOWN_CONFIG_ROWS).filter((row) => row.kind === 'pick')
+  const readings = configRowsOf({
+    worktree_mode: entry('off', 'project', ['off', 'fork', 'reuse']),
+    test_tier: entry('full', 'project', ['full', 'minimal']),
+  })
+  const picks = readings.filter((row) => row.kind === 'pick')
   assert.deepEqual(picks.map((row) => row.key), ['worktree_mode', 'test_tier'])
   for (const row of picks) {
-    const options = row.options ?? []
+    const options = row.options
     assert.deepEqual(pickState(undefined, options), { value: '', extra: null }, `${row.key} settled on an option with no value`)
-    /* Leaving empty is not done by stuffing an empty word into the candidates: the table keeps only the words the tool recognizes. */
+    /* Leaving empty is not done by stuffing an empty word into the candidates: the list keeps only the words the declaration states. */
     assert.ok(!options.includes(''), `${row.key} had an empty word stuffed into its candidates`)
   }
 })
 
-test('a value in the reading: show it if it is in the table, add it as its own option if not, never fall back to the first option', () => {
-  for (const row of Object.values(KNOWN_CONFIG_ROWS).filter((one) => one.kind === 'pick')) {
-    const options = row.options ?? []
+test('a value in the reading: show it among the options, add it as its own option if not among them, never fall back to the first option', () => {
+  for (const row of configRowsOf({
+    worktree_mode: entry('fork', 'project', ['off', 'fork', 'reuse']),
+    test_tier: entry('minimal', 'project', ['full', 'minimal']),
+  }).filter((one) => one.kind === 'pick')) {
+    const options = row.options
     assert.deepEqual(pickState({ value: options[1], layer: 'project' }, options), { value: options[1], extra: null })
     assert.deepEqual(pickState({ value: 'partial', layer: 'project' }, options), { value: 'partial', extra: 'partial' })
   }

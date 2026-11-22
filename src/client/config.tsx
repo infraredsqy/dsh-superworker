@@ -8,7 +8,8 @@
  * that, not the window, so a narrow panel is not left with a stranded column.
  *
  * Both reading and writing go through the tool: which keys exist, the valid values, and "which
- * layer a value comes from" are all printed by the tool; row order and category follow this side's
+ * layer a value comes from" all come off the reading (the values are the engine's own declaration,
+ * handed along by the host); row order and category follow this side's
  * table, and writes land on this project's layer. This layer makes no second set of judgments — the
  * tool says whether keys and values are valid. A key the tool holds only on the global layer draws
  * read-only: the write has that one road, so a control there would be drawn dead. No optimistic
@@ -363,7 +364,7 @@ function Pick(props: {
         {/* No value: leave an empty slot for it to land on, so the browser does not pick the first option; this option is not offered for picking. */}
         {pick.value === '' ? <option value="" hidden /> : null}
         {(props.row.options ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
-        {/* A value in the reading but not in the candidate table: laid out as its own option, keeping the view consistent with the record. */}
+        {/* A value in the reading but not among the options: laid out as its own option, keeping the view consistent with the record. */}
         {pick.extra === null ? null : <option value={pick.extra}>{pick.extra}</option>}
       </select>
     </span>

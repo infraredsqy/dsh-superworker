@@ -27,7 +27,7 @@ import { openConsultSession, openConductSession, openRouteSession, type SessionO
 import type { RecordOutcome } from './failure.ts'
 import { RecordsPump } from './pump.ts'
 import { readPoolWeights, type PoolWeightsFolder } from './pool-weights.ts'
-import { parseConfigList, type SuperworkerConfigReading } from './project-config.ts'
+import { parseConfigList, withDeclaredOptions, type SuperworkerConfigReading } from './project-config.ts'
 import { dispatchCell } from './relay.ts'
 import { readReading } from './records.ts'
 import { aliveAgentIds, weightsFolderOf, workspaceRootOf } from './seams.ts'
@@ -268,6 +268,11 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * only the words layer can tell the effective value and which layer it came
    * from — so this asks it instead of reading a file.
    *
+   * Each entry also carries the candidate words its key's declaration states,
+   * read off the engine here and handed along with the reading: the client
+   * spells no vocabulary of its own, so an engine edit moves the panel without
+   * a client change.
+   *
    * The parameter list stays on one line with no trailing comma, same reason as `read`.
    * @param workspaceRoot - The workspace root to read; an empty string means this session's own root.
    */
@@ -288,7 +293,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
       ok: true,
       text: outcome.text,
       refusal: null,
-      entries: parseConfigList(outcome.text),
+      entries: withDeclaredOptions(parseConfigList(outcome.text)),
     }
   }
 

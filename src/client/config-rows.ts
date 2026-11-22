@@ -1,7 +1,8 @@
 /**
  * The reading face of the settings view: how known keys are described (display name, caption,
- * control kind, the category it belongs in, a copy of the dropdown candidates); the rows themselves
- * grow out of the `config list` reading.
+ * control kind, the category it belongs in); the rows themselves grow out of the `config list`
+ * reading, dropdown candidates included — those are the engine's own declaration, handed in with
+ * the reading, and this side spells none of them.
  *
  * No JSX and no DOM here, so it can be measured standalone where no browser is installed. The tool
  * is the single source of settings keys, so this file does not declare "which keys the tool has":
@@ -53,16 +54,16 @@ export interface ConfigRow {
   readonly kind: ControlKind
   /** The category whose section this row stands in. */
   readonly group: ConfigGroup
-  /** Only the dropdown kind has it: the words the tool accepts, in the order the dropdown lists them. */
+  /** Only the dropdown kind has it, and only because the reading grew it there: the words the engine's declaration accepts, in the order the engine states them. */
   readonly options?: readonly string[]
 }
 
 /**
- * How known keys are described, in the order readers meet them. The tool only
- * mentions its accepted values in the prose of `config --help`, with no machine-readable list, so
- * the candidates are copied here. When the tool side adds a word, the reading will carry an
- * off-table value; {@link pickState} then promotes it to an option on the spot instead of silently
- * falling to the first one.
+ * How known keys are described, in the order readers meet them. The candidates a dropdown offers are
+ * not described here: they are the engine's own declaration, handed in with the reading and grown
+ * onto the row where {@link configRowsOf} lays the table out. A key the declaration gives no
+ * vocabulary to falls back to a text box there — so the table also keeps no copy that could drift
+ * from the engine's word list.
  *
  * `issue_repair` is the older reading of the two issue switches: tools that print it still get a
  * name and a sentence here, and a reading prints one switch or the other, never both.
@@ -74,7 +75,6 @@ export const KNOWN_CONFIG_ROWS: Readonly<Record<string, ConfigRow>> = {
     caption: 'config.row.worktree_mode.caption',
     kind: 'pick',
     group: 'general',
-    options: ['off', 'fork', 'reuse'],
   },
   test_tier: {
     key: 'test_tier',
@@ -82,7 +82,6 @@ export const KNOWN_CONFIG_ROWS: Readonly<Record<string, ConfigRow>> = {
     caption: 'config.row.test_tier.caption',
     kind: 'pick',
     group: 'general',
-    options: ['full', 'minimal'],
   },
   max_agents: {
     key: 'max_agents',
@@ -160,15 +159,18 @@ export function groupOfUnregistered(key: string): ConfigGroup {
  * Grow this view's rows out of a reading: only keys present in the reading get rows, none are added.
  *
  * Registered keys are laid out per {@link KNOWN_CONFIG_ROWS}, in its order too (the order readers
- * recognize, and one that does not wobble with the order the tool prints);
- * unregistered keys follow, in reading order, showing the key name directly with a text box — the
- * write side does not filter keys, and the tool judges whether a value is valid.
- * @param entries - The key to "value + layer" table read out of `config list`.
+ * recognize, and one that does not wobble with the order the tool prints); a dropdown row's
+ * candidates are the entry's own options, so the words offered are the engine's declaration and
+ * nothing else. An unregistered key follows, in reading order, showing the key name directly with a
+ * text box — the write side does not filter keys, and the tool judges whether a value is valid.
+ * @param entries - The key to "value + layer (+ candidates)" table read out of `config list`.
  */
 export function configRowsOf(entries: Readonly<Record<string, ConfigEntry>>): readonly ConfigRow[] {
   const rows: ConfigRow[] = []
   for (const known of Object.values(KNOWN_CONFIG_ROWS)) {
-    if (entries[known.key] !== undefined) rows.push(known)
+    const entry = entries[known.key]
+    if (entry === undefined) continue
+    rows.push(known.kind === 'pick' ? pickRowOf(known, entry.options) : known)
   }
   for (const key of Object.keys(entries)) {
     if (KNOWN_CONFIG_ROWS[key] === undefined) {
@@ -176,6 +178,16 @@ export function configRowsOf(entries: Readonly<Record<string, ConfigEntry>>): re
     }
   }
   return rows
+}
+
+/**
+ * The dropdown row a reading grows: the candidates are the entry's own, handed in by the host from
+ * the engine's declaration — this side keeps no list to compare against. A key the declaration gives
+ * no vocabulary to has nothing to offer a dropdown, so the row falls back to a text box instead of
+ * drawing a control with no words in it.
+ */
+function pickRowOf(known: ConfigRow, options: readonly string[] | undefined): ConfigRow {
+  return options !== undefined && options.length > 0 ? { ...known, options } : { ...known, kind: 'text' }
 }
 
 export interface ConfigSection {
@@ -214,7 +226,7 @@ export function rowWords(t: Translate, row: ConfigRow): { readonly name: string;
 export interface PickState {
   /** The option that should be selected; an empty string when nothing matches (left blank). */
   readonly value: string
-  /** The off-table entry: a value present in the reading but not in the table, promoted to an option; `null` when none. */
+  /** The off-list entry: a value present in the reading but not among the options, promoted to an option; `null` when none. */
   readonly extra: string | null
 }
 
@@ -223,12 +235,13 @@ export interface PickState {
  * blank) rather than defaulting to the first option.
  *
  * A controlled select with a `value` matching no option falls back to the first one by the
- * browser's own hand — `worktree_mode` would land on `off` and `test_tier` on `full`, exactly the
- * two keys' factory default words, leaving the reader unable to tell "absent from the record" from
- * "the record says off / full". Nothing is drawn for what does not exist: this function blocks that
- * move up front, leaving the select blank when there is no value. When the value exists in the
- * reading but not in the candidate table (the tool side added a word), it is not hidden: it is
- * promoted to an option on the spot, keeping the view consistent with the record.
+ * browser's own hand — `worktree_mode` would land on its first declared word and `test_tier` on
+ * its first, exactly the two keys' factory default words, leaving the reader unable to tell
+ * "absent from the record" from "the record says that word". Nothing is drawn for what does not
+ * exist: this function blocks that move up front, leaving the select blank when there is no value.
+ * When the value exists in the reading but not among the options handed in (a word the engine's
+ * declaration grew since the reading was laid out), it is not hidden: it is promoted to an option
+ * on the spot, keeping the view consistent with the record.
  */
 export function pickState(entry: ConfigEntry | undefined, options: readonly string[]): PickState {
   const value = entry?.value ?? ''

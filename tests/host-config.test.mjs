@@ -1,10 +1,12 @@
-/* The two endpoints of the config section: locks in "what the engine's printed lines parse into"
- * and "what a write lands on disk".
+/* The two endpoints of the config section: locks in "what the engine's printed lines parse into",
+ * "what a write lands on disk", and "where the reading's candidate words come from".
  *
  * Reading parses the lines the words layer prints; writing hands a `config set` line to that same
  * words layer — keys and values pass through unfiltered for it to judge (an unknown key or a value
  * outside the knob's kind is refused, nothing is written, and its own sentence rides back as
- * `detail`), and no path under `.superworker` is assembled locally.
+ * `detail`), and no path under `.superworker` is assembled locally. The candidates a dropdown row
+ * offers are read off the engine's own declaration, not spelled here: the table this half hands is
+ * the declaration read key by key.
  *
  *   node --test tests/
  */
@@ -12,8 +14,9 @@ import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { knobSpecs } from 'superworker-core'
 import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
-import { parseConfigList } from '../src/host/project-config.ts'
+import { declaredOptions, parseConfigList, withDeclaredOptions } from '../src/host/project-config.ts'
 import { pinHome } from './helpers/env.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
 import { project as throwaway } from './helpers/superworker-project.mjs'
@@ -99,6 +102,26 @@ test('Anything but a setting line is dropped: the extra warning, blank lines, th
   assert.deepEqual(Object.keys(entries), ['max_agents'])
 })
 
+test('The candidates this half hands are the engine\'s own declaration, read key by key — not a second list', () => {
+  const options = declaredOptions()
+  assert.ok(Object.keys(options).length > 0, 'the engine declares at least one vocabulary; an empty table would hand the panel nothing')
+  for (const [key, spec] of Object.entries(knobSpecs())) {
+    const declared = spec.values === undefined || spec.values.length === 0 ? undefined : [...spec.values]
+    assert.deepEqual(options[key], declared, `${key}: the table is the declaration's, whatever the declaration says`)
+  }
+})
+
+test('Candidates are laid onto the parsed entries: only keys the declaration gives a vocabulary, nothing fabricated for the rest', () => {
+  const options = declaredOptions()
+  const entries = withDeclaredOptions(parseConfigList(LISTED), options)
+  assert.deepEqual(entries['worktree_mode'], { value: 'off', layer: 'project', options: options['worktree_mode'] })
+  assert.deepEqual(entries['test_tier'], { value: 'full', layer: 'project', options: options['test_tier'] })
+  assert.deepEqual(entries['max_agents'], { value: '1', layer: 'project' }, 'a key with no declared vocabulary carries no candidates')
+  assert.deepEqual(entries['issue_repair'], { value: 'on', layer: 'default' })
+  /* A key the declaration knows but the tool never printed gets no entry: candidates ride on readings, never stand alone. */
+  assert.deepEqual(withDeclaredOptions({}, options), {})
+})
+
 test('A read answers `config list` at this workspace root; the table is the lines it printed', async () => {
   const stage = await project()
   try {
@@ -108,8 +131,13 @@ test('A read answers `config list` at this workspace root; the table is the line
     assert.equal(reading.ok, true, reading.refusal?.detail)
     assert.equal(reading.workspaceRoot, stage.root, 'reads this session\'s own root')
     assert.equal(reading.refusal, null, 'the success branch carries no refusal')
-    assert.deepEqual(reading.entries['worktree_mode'], { value: 'off', layer: 'default' }, 'unset means the factory default')
+    assert.deepEqual(
+      reading.entries['worktree_mode'],
+      { value: 'off', layer: 'default', options: declaredOptions()['worktree_mode'] },
+      'unset means the factory default, and the declaration\'s candidates ride along',
+    )
     assert.equal(reading.entries['max_agents']?.layer, 'default')
+    assert.equal(reading.entries['max_agents']?.options, undefined, 'a key with no declared vocabulary carries no candidates')
   } finally {
     stage.done()
   }

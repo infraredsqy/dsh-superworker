@@ -17,6 +17,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
+import { declaredOptions } from '../src/host/project-config.ts'
 import { absentError, readPage } from './helpers/workspace-files-port.mjs'
 import { pinHome } from './helpers/env.mjs'
 
@@ -334,6 +335,11 @@ test('The three write endpoints and the two settings ones also answer through th
     assert.equal(listed.value.refusal, null, 'the success branch carries no refusal')
     assert.ok(listed.value.text.length > 0, 'a successful reading carries the lines the engine printed')
     assert.ok(Object.keys(listed.value.entries).length > 0, 'those lines parse into settings entries')
+    assert.deepEqual(
+      listed.value.entries['test_tier']?.options,
+      declaredOptions()['test_tier'],
+      'the declaration\'s candidates survive the wire: the panel reads them off this reading',
+    )
     const written = await call('setConfig', { sessionId: 's1', workspaceRoot: '', key: 'test_tier', value: 'minimal' })
     assert.equal(written.ok, true, String(written.message))
   } finally {

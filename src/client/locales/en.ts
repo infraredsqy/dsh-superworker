@@ -159,7 +159,7 @@ export const en: Readonly<Record<WordKey, string>> = {
   'config.row.worktree_mode.name': 'worktree mode',
   'config.row.worktree_mode.caption': 'Whether a cell’s work runs in its own worktree',
   'config.row.test_tier.name': 'test tier',
-  'config.row.test_tier.caption': 'full runs the whole suite; minimal runs only the project’s own checks',
+  'config.row.test_tier.caption': 'One tier runs the whole suite; the other runs only the checks the project names',
   'config.row.max_agents.name': 'Parallel subagent cap',
   'config.row.max_agents.caption': 'How many subagents one session may have in flight at once',
   'config.row.issue_repair.name': 'issue repair',

@@ -127,7 +127,12 @@ export type {
   ConfigReading,
   ConfigSource,
   ConfigValue,
+  KnobSpec,
 } from './config';
+/* The knob list and its one merge, exported rather than respelled: the settings a caller hands to a
+   reader (the panel's per-row candidates) are read off this declaration, so no caller keeps a second
+   copy of a vocabulary the engine already states. */
+export { BUILTIN_KNOBS, knobSpecs } from './config';
 export type { SessionNoteRole, SessionNoteSummary, SessionShow, SessionsNamespace } from './sessions';
 export type { PreparedDispatch, PreparedNode } from './prepare';
 export type {

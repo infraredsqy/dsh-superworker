@@ -178,7 +178,7 @@ export const zh = {
   'config.row.worktree_mode.name': 'worktree 档',
   'config.row.worktree_mode.caption': '一格的活要不要开在自己的 worktree 里跑',
   'config.row.test_tier.name': '测试档',
-  'config.row.test_tier.caption': 'full 跑整套测试套件，minimal 只跑项目自己的几条检查',
+  'config.row.test_tier.caption': '一档跑整套测试套件，一档只跑项目自己点名的几条检查',
   'config.row.max_agents.name': '并行 subagent 上限',
   'config.row.max_agents.caption': '一个 session 同时在飞的 subagent 数量上限',
   'config.row.issue_repair.name': 'issue 开关',
