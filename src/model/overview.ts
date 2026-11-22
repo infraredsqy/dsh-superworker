@@ -1464,13 +1464,20 @@ export function readOverview(input: OverviewInput): OverviewReading {
     if (input.nodeOf?.[id] === undefined) continue
     ghosts.push(id)
   }
-  /* A leg that stopped keeps its bar only while nothing came after it: a leg whose conversation
-     began later took its place, and the line is standing where the newest of them stands. Only this
-     line's own conversations count — the session list is every workspace's, and a conversation opened
-     afterwards in another one is no step of this pipeline. A leg with no readable word of its own
-     cannot be placed in that order, and stands. A dead **child** is held to one more judgment, the
-     same one the stage has always kept: it stands while the line stands still, because a step still
-     running means that cut is history rather than where the line is. */
+  /* A conversation that began after another one took its place on the **stage**: the line is standing
+     where the newest of them stands. Only this line's own conversations count — the session list is
+     every workspace's, and a conversation opened afterwards in another one is no step of this
+     pipeline. A conversation with no readable word of its own cannot be placed in that order, and
+     stands. A dead **child** is held to one more judgment, the same one the stage has always kept:
+     it stands while the line stands still, because a step still running means that cut is history
+     rather than where the line is.
+
+     This is a judgment about *which page the stage draws*, never about *which steps the line still
+     has*. It is read in exactly one place — the seat a dead child keeps — and it compares against
+     `mainId`, which the reader's own pick decides. Reading it on the rail put the display in a
+     feedback loop with itself: the picked leg dropped out of the order, the leg after it lost its
+     bar, and pressing the last two bars took the whole rail off the stage (a rail of one step is no
+     switch). Which steps are on the table is the record's answer, read at `legIds` below. */
   const ofThisLine = (id: string): boolean => parentOf(id) === mainId
     || (named === undefined ? order.includes(id) : named.has(id))
   const supersededBy = (id: string): boolean => {
@@ -1516,34 +1523,49 @@ export function readOverview(input: OverviewInput): OverviewReading {
     if (cell.length === 0) return isLeg(id) ? !handed.has(cell) : ending.kind !== 'completed'
     return !handed.has(cell) && (ending.kind !== 'completed' || !yielding(id))
   }
-  /* The legs the rail offers: the steps still on the table, in the reading's own order, with the main
-     window's own leg among them — the bar that stands lit — whenever the main is a step of the line.
-     Three kinds are offered: a step still running, a step that stopped owing work, and a step **at a
-     person's gate** — a finished checkpoint still owes a person a word, and a rail that hid it would
-     be hiding the one thing the record asks the reader to do. A gate is a stop, though, so only a leg
-     at rest is offered for it: a step still running is being worked. The pick can land on a leg that
-     stopped, and then that leg is the main window: the rail is how a reader asks to read it, so it is
-     offered here like any other. */
+  /* The legs the rail offers: the steps still on the table, in the reading's own order. The rail is
+     the line's own list and **nothing else feeds it** — not which page the stage happens to draw, not
+     the reader's pick, not one step's progress. That independence is the whole of what a switch is: a
+     reader who presses a bar asks to look at that step, and a list that dropped the step it was asked
+     about would be an answer to a question nobody asked. Reading `supersededBy` here — a judgment
+     whose reference point is the stage's own page — put the display in a loop with itself and cost
+     the rail its bars, one press at a time. */
   const legIds: string[] = []
-  /* The step this page itself belongs to is always offered while the record names it — the reader's
-     way home, when the seat says which conversation the panel stands in. A switch takes the stage off
-     that conversation, and every other step that owes nobody a look has left the rail by then; without
-     this the pick would be a one-way door into a finished leg, with nothing to press to come back. */
   const self = text(input.ownSession)
   /* A **step** of the line is what the rail switches between, and nothing else is. A **seat** — a subagent
      conversation of the step being drawn, ghost or running — is already on the stage beside that step, and
      a bar for it would stand one conversation twice on one page, offering a switch to where the reader
-     already is. The stage's seat keeps its window; the rail keeps the steps. */
-  const aStep = (id: string): boolean => isLeg(id) && (movingLegs.includes(id) || standing.includes(id))
+     already is. The stage's seat keeps its window; the rail keeps the steps.
+
+     A step is on the table while **the record still owes its work** — the caller's own
+     `undeliveredSessions`, which the panel reads off each node's state. A step whose node is delivered
+     has left the line and owes nobody a look: it drops off the rail with its check, and the map is
+     where its history stays. A gate is no exception in the end: a finished checkpoint still owes a
+     person a word, so `atGate` keeps its bar. The list's own running bit keeps it too — a step being
+     worked this moment is on the table by definition, whatever the record has round to saying about
+     its state yet.
+
+     A caller that names no undelivered list has said nothing about the record's debts, and the rail
+     then falls back to what the session list alone can prove — a step the list still calls running or
+     one the record still holds. Silence is never read as "the line owes nothing": that would empty the
+     rail of every leg the caller did not enumerate. */
+  const owes = input.undeliveredSessions === undefined
+    ? (id: string): boolean => rows[id]?.running === true || held.has(id)
+    : (id: string): boolean => undelivered.has(id) || rows[id]?.running === true || atGate(id)
+  /* The stage's own page keeps its bar whatever the record owes, and so does the page this panel
+     itself stands in: a bar that vanished from under the page being drawn would be a switch with no
+     way back to it, and the reader who picked a finished step needs the door they came in by. */
+  const aStep = (id: string): boolean => isLeg(id) && (owes(id) || id === mainId || id === self)
   for (const id of rowIds) {
-    const offered = id === mainId
-      ? isLeg(id)
-      : aStep(id)
-        || atGate(id)
-        || (self !== undefined && id === self && isLeg(id))
-    if (offered && !legIds.includes(id)) legIds.push(id)
+    if (!aStep(id) || legIds.includes(id)) continue
+    legIds.push(id)
   }
-  for (const id of standing) if (isLeg(id) && !legIds.includes(id)) legIds.push(id)
+  /* A step the list has let go of altogether keeps its bar while the record owes the work: the debt is
+     the whole of what is known about it, and the bar is the only place that debt can be read. */
+  for (const id of undelivered) {
+    if (legIds.includes(id) || !isLeg(id)) continue
+    legIds.push(id)
+  }
   const mainWindow = main === undefined || mainId === undefined
     ? null
     : {

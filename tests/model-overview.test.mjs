@@ -923,6 +923,39 @@ test('the leg the reader picked is the stage, ahead of the panel\'s own conversa
   assert.deepEqual(reading.legs.map((leg) => leg.id), [conductor, fast, slow], 'the rail lost a step it was offering')
 })
 
+test('the rail is the line\'s list, not the stage\'s: a press never costs it a bar', () => {
+  /* Three steps of one parallel line, each between turns — the ordinary state of a leg between its
+   * rounds. Which step the stage draws is a reader's pick; which steps the line still has is the
+   * record's answer, and the two are never the same question. Reading the stage's own page into the
+   * rail made the press that asked for a step drop another one, and a two-bar rail pressed at either
+   * end fell to one bar — a rail of one step, which is no switch at all, so the whole rail left the
+   * stage under the reader's hand. */
+  const steps = ['session-leg-a', 'session-leg-b', 'session-leg-c']
+  const scene = (shownSession) => readOverview({
+    sessions: snapshot(steps, Object.fromEntries(steps.map((id) => [id, pipelineRow(id, { updatedAt: '2026-11-17T06:20:40.000Z' })]))),
+    pipelineSessions: steps,
+    ownSession: steps[2],
+    shownSession,
+    nodeOf: Object.fromEntries(steps.map((id) => [id, `n-${id}`])),
+    nodes: Object.fromEntries(steps.map((id) => [`n-${id}`, { title: id, mode: 'auto' }])),
+    /* The record owes all three: none of them has been delivered. */
+    undeliveredSessions: steps,
+    heldSessions: steps,
+    events: {
+      [steps[0]]: [said(10, undefined, 'a 的行')],
+      [steps[1]]: [said(20, undefined, 'b 的行')],
+      [steps[2]]: [said(30, undefined, 'c 的行')],
+    },
+  })
+
+  const offered = scene(undefined).legs.map((leg) => leg.id)
+  assert.deepEqual(offered, steps, `the rail offers ${offered}`)
+  for (const pick of steps) {
+    const after = scene(pick).legs.map((leg) => leg.id)
+    assert.deepEqual(after, steps, `a press on ${pick} cost the rail a bar: ${after}`)
+  }
+})
+
 test('a pick the list no longer holds is no pick: the fallback answers', () => {
   const conductor = 'session-conductor'
   const fast = 'session-fast-leg'
