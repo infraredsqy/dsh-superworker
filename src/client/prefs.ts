@@ -53,9 +53,9 @@ export interface PanelPrefs {
 
 export const DEFAULT_PREFS: PanelPrefs = {
   sideWidth: PANEL_PREF_DEFAULTS.sideWidth,
-  tab: 'overview',
-  archived: false,
-  otherStates: false,
+  tab: PANEL_PREF_DEFAULTS.lastTab,
+  archived: PANEL_PREF_DEFAULTS.showArchived,
+  otherStates: PANEL_PREF_DEFAULTS.showOtherStates,
   autoRelay: PANEL_PREF_DEFAULTS.autoRelay,
   injectInstructions: PANEL_PREF_DEFAULTS.injectInstructions,
 }
@@ -181,14 +181,14 @@ function sameSnapshot(left: PrefsSnapshot, right: PrefsSnapshot): boolean {
     && samePrefs(left.prefs, right.prefs)
 }
 
-/** Whether the panel's values say the same thing: item by item, object identity not consulted. */
+/** Whether the panel's values say the same thing: key by key over the defaults' own key set — the
+ * keys `DEFAULT_PREFS` carries are the keys compared, so a preference added there joins the
+ * comparison on its own and the hand-written field list stays gone. */
 function samePrefs(left: PanelPrefs, right: PanelPrefs): boolean {
-  return left.sideWidth === right.sideWidth
-    && left.tab === right.tab
-    && left.archived === right.archived
-    && left.otherStates === right.otherStates
-    && left.autoRelay === right.autoRelay
-    && left.injectInstructions === right.injectInstructions
+  for (const key of Object.keys(DEFAULT_PREFS) as readonly (keyof PanelPrefs)[]) {
+    if (left[key] !== right[key]) return false
+  }
+  return true
 }
 
 /**

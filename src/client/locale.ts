@@ -100,14 +100,22 @@ function interpolate(template: string, params: WordParams | undefined): string {
 }
 
 /**
+ * One word out of the bundled tables: the locale's own table first, then the source-of-truth table,
+ * then the key itself — the one fallback chain both translators below share.
+ */
+function bundledWord(locale: string, key: WordKey): string {
+  return WORD_TABLES[locale]?.[key] ?? zh[key] ?? key
+}
+
+/**
  * A translator reading straight from the bundled lookup tables.
  *
  * Used before any service attaches and whenever none does. A key the active table is missing
- * falls back to the source-of-truth table and only then to the key itself — a deployment
- * cannot end up drawing a bare `notes.add` on a button.
+ * falls back through {@link bundledWord} — a deployment cannot end up drawing a bare `notes.add`
+ * on a button.
  */
 function bundledAt(locale: string): Translate {
-  return (key, params) => interpolate(WORD_TABLES[locale]?.[key] ?? zh[key] ?? key, params)
+  return (key, params) => interpolate(bundledWord(locale, key), params)
 }
 
 /**
@@ -128,7 +136,7 @@ function boundAt(bind: (key: string) => string, activeAt: () => string): Transla
       said = undefined
     }
     const word = said === undefined || said === key
-      ? (WORD_TABLES[activeAt()]?.[key] ?? zh[key] ?? key)
+      ? bundledWord(activeAt(), key)
       : said
     return interpolate(word, params)
   }

@@ -43,8 +43,9 @@ export function unit(t: Translate, one: WordKey, other: WordKey, n: number): str
   return t(n === 1 ? one : other)
 }
 
-/** What each of a node's three states reads as. */
-const NODE_WORDS: Readonly<Record<NodeState, WordKey>> = {
+/** What each of a node's three states reads as; the sections that head a node state take their word
+ * from this table rather than spelling the key a second time. */
+export const NODE_WORDS: Readonly<Record<NodeState, WordKey>> = {
   todo: 'state.todo',
   shelved: 'state.shelved',
   completed: 'state.done',

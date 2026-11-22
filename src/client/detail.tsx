@@ -14,7 +14,7 @@ import { nodesOf } from '../model/index.ts'
 import { clampSide, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN } from './prefs.ts'
 import { useT } from './locale.ts'
 import type { WordKey } from './locales/index.ts'
-import { gateTitle, gateWord, stateWord, unit } from './words.ts'
+import { gateTitle, gateWord, NODE_WORDS, stateWord, unit } from './words.ts'
 import { nodeName, nodeHover } from './nodes.ts'
 import { FoldSection, Grip, PaneFrame } from './widgets.tsx'
 import { DepsChip, LineMark, StateMark } from './marks.tsx'
@@ -39,13 +39,15 @@ interface Group {
 }
 
 /* The five sections always start expanded: this pane is called detail, and the rows are what the
- * reader came to see. The folding move survives, triggered by the reader. */
+ * reader came to see. The folding move survives, triggered by the reader. The three sections that
+ * head a node state take their word from the vocabulary layer's own table (`NODE_WORDS`); `run` and
+ * `ready` head line-level judgments, which that table does not hold. */
 const GROUPS: readonly Group[] = [
-  { key: 'shelved', word: 'state.shelved', cls: 'is-shelved', deps: false, silences: ['shelved'] },
+  { key: 'shelved', word: NODE_WORDS.shelved, cls: 'is-shelved', deps: false, silences: ['shelved'] },
   { key: 'run', word: 'state.running', cls: 'is-running', deps: false, silences: [] },
   { key: 'ready', word: 'state.ready', cls: 'is-todo', deps: false, silences: [] },
-  { key: 'wait', word: 'state.todo', cls: 'is-todo', deps: true, silences: [] },
-  { key: 'done', word: 'state.done', cls: 'is-done', deps: false, silences: [] },
+  { key: 'wait', word: NODE_WORDS.todo, cls: 'is-todo', deps: true, silences: [] },
+  { key: 'done', word: NODE_WORDS.completed, cls: 'is-done', deps: false, silences: [] },
 ]
 
 /** How far one keyboard move of the detail split travels; Shift takes two steps. */

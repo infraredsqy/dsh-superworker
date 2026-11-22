@@ -267,7 +267,6 @@
   display: block;
   height: 2px;
   border-radius: 1px;
-  corner-shape: round;
   background: color-mix(in srgb, var(--superworker-ink-1) 26%, transparent);
 }
 .superworker-page .superworker-orail button.is-on b {

@@ -1,28 +1,51 @@
 /* dsh-superworker — the panel's common ground: what more than one view says, on top
  * of `theme.css`. No colour is named here (every ink is an alias, or a percentage of
  * one); the two contrast floors at the top are the panel's own numbers. */
+
 /* Box sizing, the page's own height and its reading ink. The theme keeps the
  * canvas, the palette, the focus ring and the scrollbar; a panel that re-states
- * any of those is drawing a second theme. */.superworker-page, .superworker-page *, .superworker-page::before, .superworker-page *::before, .superworker-page::after, .superworker-page *::after{
+ * any of those is drawing a second theme. */
+.superworker-page,
+.superworker-page *,
+.superworker-page::before,
+.superworker-page *::before,
+.superworker-page::after,
+.superworker-page *::after {
   box-sizing: border-box;
-}.superworker-page{
+}
+
+.superworker-page {
   margin: 0;
   height: 100%;
-}.superworker-page{
+}
+
+.superworker-page {
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-s-14);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-}.superworker-page{
+}
+
+.superworker-page {
   /* The page's side padding: one value for every page that stands on this panel, stated here so a
    * second page cannot take a different one. */
   --superworker-pad: 24px;
-}@media (prefers-reduced-motion: reduce){.superworker-page, .superworker-page *, .superworker-page::before, .superworker-page *::before, .superworker-page::after, .superworker-page *::after{
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .superworker-page,
+  .superworker-page *,
+  .superworker-page::before,
+  .superworker-page *::before,
+  .superworker-page::after,
+  .superworker-page *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
-}/* The panel's marks are drawn twice over: the register's rows and the issue
+}
+
+/* The panel's marks are drawn twice over: the register's rows and the issue
  * band's pills are a 7px cell, the boards, the detail rows and the map's card in
  * hand a 14px drawing, and every one of them has to survive both palettes. The
  * theme has no tier between "reading text" and "structure",
@@ -64,7 +87,8 @@
  * `--dsw-alias-*` on `body`, custom properties inherit downward only, and a
  * var() is substituted where its declaration sits. Declared on `:root` the
  * ladder would resolve against `html`, find no alias there, and come out empty
- * — every mark it feeds would paint nothing, in both palettes. */.superworker-page{
+ * — every mark it feeds would paint nothing, in both palettes. */
+.superworker-page {
   --superworker-mark-floor: 3;
   --superworker-mark-floor-dense: 1.5;
 
@@ -72,7 +96,9 @@
   --superworker-ink-2: var(--dsw-alias-label-secondary);
   --superworker-ink-3: var(--dsw-alias-label-tertiary);
   --superworker-ink-4: color-mix(in srgb, var(--dsw-alias-label-tertiary) 50%, transparent);
-}/* One cell = one issue. The register's rows and the issue band's pills read the
+}
+
+/* One cell = one issue. The register's rows and the issue band's pills read the
  * same values, so a reader who has learned one has learned the other:
  *
  *   filled ink      settled — resolved
@@ -81,21 +107,32 @@
  *   ink-3 ring      on the books and turned down
  *
  * A ring is an inset shadow, not a border: the mark keeps its box and the
- * outline costs no layout. */.superworker-page .superworker-cell{
+ * outline costs no layout. */
+.superworker-page .superworker-cell {
   width: 7px;
   height: 7px;
   border-radius: 2px;
   background: var(--superworker-ink-2);
-}.superworker-page .superworker-cell.is-rejected{
+}
+
+.superworker-page .superworker-cell.is-rejected {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--superworker-ink-3);
-}/* Awaiting handling: the one mark that says a person has to move. */.superworker-page .superworker-cell.is-open{
+}
+
+/* Awaiting handling: the one mark that says a person has to move. */
+.superworker-page .superworker-cell.is-open {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--dsw-alias-state-warn-primary);
-}/* On the books and still counted, but nobody owes it yet. */.superworker-page .superworker-cell.is-acknowledged{
+}
+
+/* On the books and still counted, but nobody owes it yet. */
+.superworker-page .superworker-cell.is-acknowledged {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--superworker-ink-2);
-}/* ---- one line row, two panes ----------------------------------------------
+}
+
+/* ---- one line row, two panes ----------------------------------------------
  * Both left columns list the record's lines, and a line is one row in each of them:
  * one height, one inset, one 14px cell, and the name standing right of it. Every
  * row holds that cell open, so the two panes' names fall on one edge; a name that
@@ -105,7 +142,9 @@
  * the name there), so it wears both halves: the row's box, which the detail pane's
  * `.superworker-lineitem` shares, and the pressable line, which is `.superworker-linepick` there.
  * Both inks ride the name — the row is what gets pressed, the name is what
- * answers. */.superworker-page .superworker-lineitem, .superworker-page .superworker-rail-item{
+ * answers. */
+.superworker-page .superworker-lineitem,
+.superworker-page .superworker-rail-item {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -116,7 +155,10 @@
   border: 0;
   border-radius: var(--dsw-radius-xs);
   text-align: left;
-}.superworker-page .superworker-linepick, .superworker-page .superworker-rail-item{
+}
+
+.superworker-page .superworker-linepick,
+.superworker-page .superworker-rail-item {
   min-width: 0;
   display: flex;
   align-items: center;
@@ -127,40 +169,60 @@
   color: inherit;
   text-align: left;
   cursor: pointer;
-}.superworker-page .superworker-lineitem:hover, .superworker-page .superworker-rail-item:hover:not(:disabled){
+}
+
+.superworker-page .superworker-lineitem:hover,
+.superworker-page .superworker-rail-item:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
-}/* The picked line: the row's ground brightens a tier (the value the settings list's
+}
+
+/* The picked line: the row's ground brightens a tier (the value the settings list's
  * current item takes) and the name turns body-ink. The map's rail reads a pick off
- * its pressed row and says the same thing, so both panes answer a pick the same way. */.superworker-page .superworker-lineitem:has(.superworker-linepick[aria-current='true']), .superworker-page .superworker-rail-item[aria-pressed='true']{
+ * its pressed row and says the same thing, so both panes answer a pick the same way. */
+.superworker-page .superworker-lineitem:has(.superworker-linepick[aria-current='true']),
+.superworker-page .superworker-rail-item[aria-pressed='true'] {
   background: var(--dsw-alias-interactive-bg-active);
-}/* The name: the record's id. Both left columns print the same word, so it wears one
- * face — the reading face; the code face is what a column of figures is set in. */.superworker-page .superworker-cycle{
+}
+
+/* The name: the record's id. Both left columns print the same word, so it wears one
+ * face — the reading face; the code face is what a column of figures is set in. */
+.superworker-page .superworker-cycle {
   min-width: 0;
   overflow: hidden;
   font: var(--dsw-font-xs-13);
   color: var(--dsw-alias-label-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
-}.superworker-page .superworker-lineitem:has(.superworker-linepick[aria-current='true']) .superworker-cycle, .superworker-page .superworker-rail-item[aria-pressed='true'] .superworker-cycle{
+}
+
+.superworker-page .superworker-lineitem:has(.superworker-linepick[aria-current='true']) .superworker-cycle,
+.superworker-page .superworker-rail-item[aria-pressed='true'] .superworker-cycle {
   color: var(--dsw-alias-label-primary);
-}/* The cell left of the name: this line's state at this moment. Running wears the
+}
+
+/* The cell left of the name: this line's state at this moment. Running wears the
  * shared ring below, blocked carries an amber dot — this layout's colour reserved
  * for "waiting for a person". A line that has stopped draws nothing in the cell and
- * keeps it, which is what holds the two panes' names on one edge. */.superworker-page .superworker-linemark{
+ * keeps it, which is what holds the two panes' names on one edge. */
+.superworker-page .superworker-linemark {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: var(--superworker-mark);
   height: var(--superworker-mark);
-}.superworker-page .superworker-linemark.is-blocked::before{
+}
+
+.superworker-page .superworker-linemark.is-blocked::before {
   content: '';
   width: 7px;
   height: 7px;
   border-radius: 50%;
   corner-shape: round;
   background: var(--dsw-alias-state-warn-primary);
-}/* ---- the state mark -------------------------------------------------------
+}
+
+/* ---- the state mark -------------------------------------------------------
  * The 14px drawing the boards put on a card, the detail list on a row, and the map
  * on the one card that is in hand: a spinning ring while a step is open, a glyph for
  * what it ended as, a pause for a gate, a dashed ring for work that has not
@@ -174,39 +236,56 @@
  *
  * The spinning ring's track is the one place a structure colour stands as a
  * graphic (DSH's own spinner draws its track the same way) and the head of the
- * ring is the mark's own ink, so the ring keeps its width. */.superworker-page .superworker-state{
+ * ring is the mark's own ink, so the ring keeps its width. */
+.superworker-page .superworker-state {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 14px;
   height: 14px;
-}.superworker-page .superworker-state svg{
+}
+
+.superworker-page .superworker-state svg {
   display: block;
-}.superworker-page .superworker-state.is-run, .superworker-page .superworker-linemark.is-run{
+}
+
+.superworker-page .superworker-state.is-run,
+.superworker-page .superworker-linemark.is-run {
   color: var(--dsw-alias-link);
   border: 1.5px solid var(--dsw-alias-border-l3);
   border-top-color: currentColor;
   border-radius: 50%;
   corner-shape: round;
   animation: superworker-spin 0.9s linear infinite;
-}.superworker-page .superworker-state.is-done{
+}
+
+.superworker-page .superworker-state.is-done {
   color: var(--dsw-alias-state-success-primary);
-}/* Human gate: amber, the color this layout reserves for "this cell wants a person". The
+}
+
+/* Human gate: amber, the color this layout reserves for "this cell wants a person". The
    mark itself is a pause: it is not running and delivered nothing, it is waiting for a
-   person; which gate it is, the word right of the mark says. */.superworker-page .superworker-state.is-gate{
+   person; which gate it is, the word right of the mark says. */
+.superworker-page .superworker-state.is-gate {
   color: var(--dsw-alias-state-warn-primary);
-}/* The stranded dispatch: a round is out, its claim is on disk, and nothing is moving it —
+}
+
+/* The stranded dispatch: a round is out, its claim is on disk, and nothing is moving it —
    it wears the failed mark's ring, the shape the panel already keeps for turned-down
    work; the amber ink says "a person has to move" and the hover carries the remedy, so
-   ink and words make the distinction and the panel gains no shape. */.superworker-page .superworker-state.is-dead{
+   ink and words make the distinction and the panel gains no shape. */
+.superworker-page .superworker-state.is-dead {
   color: var(--dsw-alias-state-warn-primary);
   border: 1px solid currentColor;
   border-radius: 50%;
   corner-shape: round;
-}/* Next in line: a dashed circle. It has not started and has not earned a state color, so it
+}
+
+/* Next in line: a dashed circle. It has not started and has not earned a state color, so it
    drops to the ink ladder's third step. The circle is a drawn mark, so it takes the 1px
-   stroke tier; the half-pixel tier is left for edges on the flat. */.superworker-page .superworker-state.is-next{
+   stroke tier; the half-pixel tier is left for edges on the flat. */
+.superworker-page .superworker-state.is-next {
   border: 1px dashed var(--superworker-ink-3);
   border-radius: 50%;
   corner-shape: round;
@@ -216,11 +295,17 @@
   to {
     transform: rotate(1turn);
   }
-}@media (prefers-reduced-motion: reduce){.superworker-page .superworker-state.is-run, .superworker-page .superworker-linemark.is-run{
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .superworker-page .superworker-state.is-run,
+  .superworker-page .superworker-linemark.is-run {
     animation: none;
     border-style: dashed;
   }
-}/* A node a person has to act on. It carries the state colour as a ring, and on
+}
+
+/* A node a person has to act on. It carries the state colour as a ring, and on
  * the panels it always stands first: it is the one reading that cannot move
  * until someone moves it. The gates wear it — out of play waiting to be
  * revived, a manual node that lives in the conversation, a checkpoint that
@@ -230,47 +315,73 @@
  * The ring is for a gate the reader can move on now. A gate that is only coming
  * up — a node no line has taken in hand — waits without it: the warn colour is
  * what says "look here" on this panel, and spending it on a node the reader can
- * do nothing about yet is how the one that can be acted on gets missed. */.superworker-page .superworker-card.is-shelved, .superworker-page .superworker-card.is-gate, .superworker-page .superworker-card.is-dead{
+ * do nothing about yet is how the one that can be acted on gets missed. */
+.superworker-page .superworker-card.is-shelved,
+.superworker-page .superworker-card.is-gate,
+.superworker-page .superworker-card.is-dead {
   box-shadow: inset 0 0 0 1px var(--dsw-alias-state-warn-primary);
-}/* ---- marks and readouts that ride along a name ---------------------------- */
+}
+
+/* ---- marks and readouts that ride along a name ---------------------------- */
+
 /* Anything with digits in it gets tabular figures — a column of timestamps is
- * a column, and a proportional face makes it ragged. */.superworker-page .superworker-num{
+ * a column, and a proportional face makes it ragged. */
+.superworker-page .superworker-num {
   font-family: var(--ds-font-family-code);
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
-}/* The panel's nameplate voice. DSH reserves Montserrat for its wordmark, so a
+}
+
+/* The panel's nameplate voice. DSH reserves Montserrat for its wordmark, so a
  * panel that wears it is claiming an identity, not borrowing a display face.
  * One declaration, because the nameplate is the same object on every view: only
- * its size follows the header it sits in. */.superworker-page .superworker-brand{
+ * its size follows the header it sits in. */
+.superworker-page .superworker-brand {
   font-family: var(--dsw-font-family-brand);
   font-weight: 500;
   letter-spacing: 0.08em;
   font-size: 13px;
   color: var(--dsw-alias-label-primary);
-}/* The word on a gate. On a card it sits right of the pause glyph; in the detail
+}
+
+/* The word on a gate. On a card it sits right of the pause glyph; in the detail
  * list it is the small line under the row. Loud where the reader can act, quiet
- * where the node is still on its way in. */.superworker-page .superworker-gate{
+ * where the node is still on its way in. */
+.superworker-page .superworker-gate {
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-state-warn-primary);
   white-space: nowrap;
-}.superworker-page .superworker-gate.is-quiet{
+}
+
+.superworker-page .superworker-gate.is-quiet {
   color: var(--dsw-alias-label-caption);
-}/* ---- what a node is waiting on -------------------------------------------
+}
+
+/* ---- what a node is waiting on -------------------------------------------
  * Reads as graph vocabulary, not as a deficit: ready-to-start is a node whose
  * dependencies are all met, "N prerequisite nodes" counts the ones that are not. Never
  * "N short" -- that describes a gap in an unknown process instead of naming the
- * thing in the way, and the thing in the way is what the reader needs. */.superworker-page .superworker-deps{
+ * thing in the way, and the thing in the way is what the reader needs. */
+.superworker-page .superworker-deps {
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-caption);
   white-space: nowrap;
-}.superworker-page .superworker-deps.is-ready{
+}
+
+.superworker-page .superworker-deps.is-ready {
   color: var(--dsw-alias-label-tertiary);
-}.superworker-page .superworker-deps b{
+}
+
+.superworker-page .superworker-deps b {
   font-weight: 500;
   color: var(--dsw-alias-label-tertiary);
-}.superworker-page .superworker-deps.is-ready b{
+}
+
+.superworker-page .superworker-deps.is-ready b {
   color: var(--dsw-alias-label-secondary);
-}/* ---- tags ------------------------------------------------------------------
+}
+
+/* ---- tags ------------------------------------------------------------------
  * coding / writing / art are the ledger's own three kinds, and they are a
  * filter set, not a category tree -- `maint:*` rides alongside them. A tag is
  * a pill: rounded, a touch lighter than its ground, the whole word inside.
@@ -279,7 +390,8 @@
  * The same pill carries the settings row's layer chip (`data-layer`): it is the
  * same small object — a word, quieter than the row it sits in. The three pages
  * that show it each spell the factory tier after their own config key
- * (`default` / `builtin`), so the selector names both. */.superworker-page .superworker-tag{
+ * (`default` / `builtin`), so the selector names both. */
+.superworker-page .superworker-tag {
   padding: 0 8px;
   font: var(--dsw-font-xxxs-11);
   font-family: var(--ds-font-family-code);
@@ -288,9 +400,14 @@
   border-radius: 999px;
   corner-shape: round;
   white-space: nowrap;
-}.superworker-page .superworker-tag[data-layer='default'], .superworker-page .superworker-tag[data-layer='builtin']{
+}
+
+.superworker-page .superworker-tag[data-layer='default'],
+.superworker-page .superworker-tag[data-layer='builtin'] {
   color: var(--dsw-alias-label-caption);
-}/* The picker. Every view that offers a choice out of a list says it the same way,
+}
+
+/* The picker. Every view that offers a choice out of a list says it the same way,
  * so the field is one object: the engine's own arrow is painted over by a caret
  * of ours (the native arrow ignores the theme), and the field keeps its reading
  * ink quiet — it is a control, not a reading. One wrapper, four call sites: the
@@ -299,12 +416,15 @@
  *
  * The open list belongs to the engine, so the body colour goes back on every row
  * through `option`. Without it the whole column follows the field's grey and
- * only the row under the pointer is readable. */.superworker-page .superworker-pick{
+ * only the row under the pointer is readable. */
+.superworker-page .superworker-pick {
   position: relative;
   flex: none;
   display: inline-flex;
   align-items: center;
-}.superworker-page .superworker-pick select{
+}
+
+.superworker-page .superworker-pick select {
   appearance: none;
   -webkit-appearance: none;
   margin: 0;
@@ -315,12 +435,18 @@
   border-radius: var(--dsw-radius-xs);
   font: var(--dsw-font-xxs-12);
   cursor: pointer;
-}.superworker-page .superworker-pick select:hover{
+}
+
+.superworker-page .superworker-pick select:hover {
   background: var(--dsw-alias-interactive-bg-hover);
-}.superworker-page .superworker-pick select option{
+}
+
+.superworker-page .superworker-pick select option {
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
-}.superworker-page .superworker-pick::after{
+}
+
+.superworker-page .superworker-pick::after {
   content: '\25BE';
   position: absolute;
   right: 9px;
@@ -330,32 +456,44 @@
   line-height: 1;
   color: var(--dsw-alias-label-caption);
   pointer-events: none;
-}/* The counter over a list: one line of arithmetic, not one cell per entry — a
+}
+
+/* The counter over a list: one line of arithmetic, not one cell per entry — a
  * matrix that scales with the ledger stops being readable long before the ledger
- * stops growing. The issue band is the one place that still totals. */.superworker-page .superworker-count{
+ * stops growing. The issue band is the one place that still totals. */
+.superworker-page .superworker-count {
   display: flex;
   align-items: center;
   gap: 14px;
   padding-top: 4px;
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-caption);
-}.superworker-page .superworker-pill{
+}
+
+.superworker-page .superworker-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}.superworker-page .superworker-pill .superworker-cell{
+}
+
+.superworker-page .superworker-pill .superworker-cell {
   width: 8px;
   height: 8px;
   border-radius: 2px;
-}.superworker-page .superworker-pill b{
+}
+
+.superworker-page .superworker-pill b {
   font-weight: 500;
   color: var(--dsw-alias-label-tertiary);
-}/* ---- a segmented control --------------------------------------------------
+}
+
+/* ---- a segmented control --------------------------------------------------
  * Two or three readings of one thing, all named, one of them in play. Geometry
  * is DSH's shared control: a 4px inset track in the hover fill, 2px between R8
  * segments, and the segment in play on a layer fill with the soft elevation
  * material — which is where its hairline lives, so it takes no border of its
- * own. */.superworker-page .superworker-seg{
+ * own. */
+.superworker-page .superworker-seg {
   display: inline-grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
@@ -363,10 +501,13 @@
   padding: 4px;
   border-radius: var(--dsw-radius-md);
   background: var(--dsw-alias-interactive-bg-hover);
-}/* The segment's inset is one notch narrower than DSH's own copy (0 16px): the labels here are
+}
+
+/* The segment's inset is one notch narrower than DSH's own copy (0 16px): the labels here are
  * two CJK characters while DSH's are one English word, and 16px padding overflows the 900-wide
  * footprint tier. 12px is the largest padding that fits this footprint tier at the same font
- * size, weight, radius and inset. */.superworker-page .superworker-segbtn{
+ * size, weight, radius and inset. */
+.superworker-page .superworker-segbtn {
   box-sizing: border-box;
   height: 28px;
   margin: 0;
@@ -379,29 +520,45 @@
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-}.superworker-page .superworker-segbtn:hover{
+}
+
+.superworker-page .superworker-segbtn:hover {
   color: var(--dsw-alias-label-primary);
-}.superworker-page .superworker-segbtn[aria-pressed='true']{
+}
+
+.superworker-page .superworker-segbtn[aria-pressed='true'] {
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: var(--dsw-elevation-soft);
   color: var(--dsw-alias-label-primary);
-}.superworker-page .superworker-segbtn:focus-visible{
+}
+
+.superworker-page .superworker-segbtn:focus-visible {
   outline-offset: -2px;
-}/* A list's own scroller: it takes the height it is given and never lets the
- * page scroll instead. */.superworker-page .superworker-scroll{
+}
+
+/* A list's own scroller: it takes the height it is given and never lets the
+ * page scroll instead. */
+.superworker-page .superworker-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-}.superworker-page .superworker-sec{
+}
+
+.superworker-page .superworker-sec {
   margin: 0;
-}.superworker-page .superworker-sec + .superworker-sec{
+}
+
+.superworker-page .superworker-sec + .superworker-sec {
   margin-top: 14px;
-}/* A section head is a title bar: a shade above the page, four corners taken,
+}
+
+/* A section head is a title bar: a shade above the page, four corners taken,
  * and the title one step brighter than the rows under it. The word starts at
  * the bar's own left edge and the fold glyph follows it — a glyph with a cell
  * of its own would push the title into the second column, where it would read
- * as one more option in the list. */.superworker-page .superworker-rowhead{
+ * as one more option in the list. */
+.superworker-page .superworker-rowhead {
   flex: none;
   width: 100%;
   height: 28px;
@@ -416,23 +573,34 @@
   border-radius: var(--dsw-radius-xs);
   text-align: left;
   cursor: pointer;
-}.superworker-page .superworker-rowhead:hover{
+}
+
+.superworker-page .superworker-rowhead:hover {
   background: var(--dsw-alias-bg-layer-2);
-}.superworker-page .superworker-rowhead-key{
+}
+
+.superworker-page .superworker-rowhead-key {
   grid-column: 1 / -1;
   grid-row: 1;
   justify-self: start;
   font: var(--dsw-font-xs-strong-13);
   color: var(--dsw-alias-label-primary);
-}/* The fold glyph follows the title: it points at what the section still holds
- * back, so it belongs to the words, not to a column of its own. */.superworker-page .superworker-rowhead-key::after{
+}
+
+/* The fold glyph follows the title: it points at what the section still holds
+ * back, so it belongs to the words, not to a column of its own. */
+.superworker-page .superworker-rowhead-key::after {
   content: '\25BE';
   margin-left: 8px;
   font-size: 10px;
   color: var(--dsw-alias-label-tertiary);
-}.superworker-page .superworker-rowhead[aria-expanded='false'] .superworker-rowhead-key::after{
+}
+
+.superworker-page .superworker-rowhead[aria-expanded='false'] .superworker-rowhead-key::after {
   content: '\25B8';
-}.superworker-page .superworker-rowhead-figs{
+}
+
+.superworker-page .superworker-rowhead-figs {
   min-width: 0;
   grid-column: 1 / -1;
   grid-row: 1;
@@ -441,12 +609,17 @@
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-caption);
   white-space: nowrap;
-}.superworker-page .superworker-rowhead-figs b{
+}
+
+.superworker-page .superworker-rowhead-figs b {
   font-weight: 500;
   color: var(--dsw-alias-label-tertiary);
-}/* The tail's own expand control: it reports how many rows are still folded
+}
+
+/* The tail's own expand control: it reports how many rows are still folded
  * under it. Hover moves the fill under a row that is a control, never the
- * surface of a card. */.superworker-page .superworker-trim{
+ * surface of a card. */
+.superworker-page .superworker-trim {
   flex: none;
   width: 100%;
   height: 28px;
@@ -458,20 +631,31 @@
   color: var(--dsw-alias-label-caption);
   text-align: left;
   cursor: pointer;
-}.superworker-page .superworker-trim:hover{
+}
+
+.superworker-page .superworker-trim:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-tertiary);
-}/* The setting's name: the row's one prominent word, at the reading tier. */.superworker-page .superworker-setlabel{
+}
+
+/* The setting's name: the row's one prominent word, at the reading tier. */
+.superworker-page .superworker-setlabel {
   font: var(--dsw-font-s-14);
   color: var(--dsw-alias-label-primary);
-}/* The line under the name. It does not describe the interface: it says what the
+}
+
+/* The line under the name. It does not describe the interface: it says what the
  * number is and what crossing it does — a reader should not have to guess where
- * a value comes from or what it triggers. */.superworker-page .superworker-setcaption{
+ * a value comes from or what it triggers. */
+.superworker-page .superworker-setcaption {
   margin-top: 1px;
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-tertiary);
-}/* A number box, at the standard control's height and radius. Digits go through the
- * code face with tabular figures, and the view that draws it sets its own width. */.superworker-page .superworker-numin{
+}
+
+/* A number box, at the standard control's height and radius. Digits go through the
+ * code face with tabular figures, and the view that draws it sets its own width. */
+.superworker-page .superworker-numin {
   flex: none;
   width: 76px;
   height: 34px;
@@ -485,16 +669,22 @@
   background: var(--dsw-alias-bg-layer-3);
   border: 0.5px solid var(--dsw-alias-border-l3);
   border-radius: var(--dsw-radius-md);
-}/* The line has never written this number: the box says so. It carries no digits,
- * so it does not wear the code face. */.superworker-page .superworker-numin.is-unset{
+}
+
+/* The line has never written this number: the box says so. It carries no digits,
+ * so it does not wear the code face. */
+.superworker-page .superworker-numin.is-unset {
   font-family: var(--dsw-font-family);
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
-}/* ---- a small action -------------------------------------------------------
+}
+
+/* ---- a small action -------------------------------------------------------
  * The panel's quiet button: a word, a hairline, R4. It owns nothing but its own drawing:
  * a view that only reveals it under the pointer hides it from its own selector,
- * so the same object can stand in a row that is always visible. */.superworker-page .superworker-mini{
+ * so the same object can stand in a row that is always visible. */
+.superworker-page .superworker-mini {
   flex: none;
   padding: 1px 8px;
   font: var(--dsw-font-xxs-12);
@@ -503,10 +693,14 @@
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-xs);
   cursor: pointer;
-}.superworker-page .superworker-mini:hover{
+}
+
+.superworker-page .superworker-mini:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
-}/* ---- the width handle ------------------------------------------------------
+}
+
+/* ---- the width handle ------------------------------------------------------
  * One object on this panel: the seam between the detail pane's two halves. It
  * stands in the flow and moves the sidebar's width; the body swaps, the window
  * does not. The hit box is 10px wide, and what the reader sees is the edge of
@@ -516,7 +710,8 @@
  * The mark is one 2px segment, 72px tall and soft at both ends, standing at the
  * seam's middle; nothing is drawn until the pointer lands or the keyboard
  * reaches it. A solid segment is not a divider, so it is painted with the
- * scrollbar ink rather than a border alpha. */.superworker-page .superworker-grip{
+ * scrollbar ink rather than a border alpha. */
+.superworker-page .superworker-grip {
   flex: none;
   position: relative;
   width: 10px;
@@ -525,7 +720,9 @@
   background: none;
   cursor: col-resize;
   touch-action: none;
-}.superworker-page .superworker-grip::after{
+}
+
+.superworker-page .superworker-grip::after {
   content: '';
   position: absolute;
   top: 0;
@@ -540,6 +737,9 @@
     transparent calc(50% + 36px));
   opacity: 0;
   pointer-events: none;
-}.superworker-page .superworker-grip:hover::after, .superworker-page .superworker-grip:focus-visible::after{
+}
+
+.superworker-page .superworker-grip:hover::after,
+.superworker-page .superworker-grip:focus-visible::after {
   opacity: 1;
 }

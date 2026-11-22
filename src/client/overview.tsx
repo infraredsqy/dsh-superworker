@@ -77,6 +77,8 @@
 import * as React from 'react'
 import type { OverviewEnding, OverviewReading, OverviewRowKind, OverviewWindow } from '../model/index.ts'
 import {
+  BORN_BASE_W,
+  BORN_SCALE,
   CHILD_FOOT,
   CHILD_HEAD,
   BOX_BORDER,
@@ -128,8 +130,6 @@ const ENTER_SPAN_MS = 260
  * arrivals cannot strip the mark mid-animation — stripping it was what made the newest row blink. */
 const FRESH_SPAN_MS = 240
 
-/** How long a window's first box is allowed to take in reaching its real numbers — the span the
- *  sheet's expansion runs, and a breath past it so a second batch of rows joins the same growth. */
 /** How long the opening's growth is spent for: a breath past the sheet's own expansion, so a second
  *  batch of rows landing right behind the first belongs to the same growth rather than snapping. */
 const GROW_SPAN_MS = 360
@@ -358,7 +358,6 @@ function Feed(props: {
 function WindowPane(props: {
   readonly box: OverviewBox
   readonly window: OverviewWindow
-  readonly at: Date
   readonly main: boolean
   readonly leave: boolean
   readonly fresh: boolean
@@ -603,7 +602,7 @@ export function OverviewPane(props: {
    */
   readonly pick?: ((session: string) => void) | null
 }): React.ReactElement {
-  const { reading, at } = props
+  const { reading } = props
   const bodyRef = React.useRef<HTMLDivElement | null>(null)
   const [stage, setStage] = React.useState<StageSize>({ width: 0, height: 0 })
   const measure = React.useCallback((): void => {
@@ -807,14 +806,21 @@ export function OverviewPane(props: {
   }, [handedOn])
   const appearing = arrivalNow || stageEntered || handEntered || handedOn
   const goneNow = swappedMain ? [] : [...heldIds.current].filter((id) => !currentIds.has(id))
-  const goneKey = goneNow.join('|')
+  /* The leave list as a stable reference: Set equivalence — same length, every id present — keeps
+   * the array the memo below already saw when a render re-reads the same difference, so only a real
+   * change re-runs it. Written while drawing, the way the other refs above are. */
+  const goneRef = React.useRef<readonly string[]>([])
+  const gone = goneRef.current.length === goneNow.length && goneNow.every((id) => goneRef.current.includes(id))
+    ? goneRef.current
+    : goneNow
+  goneRef.current = gone
   const leavingIds = React.useMemo(
     () => {
       const out = [...leaving]
-      for (const id of goneKey === '' ? [] : goneKey.split('|')) if (!out.includes(id)) out.push(id)
+      for (const id of gone) if (!out.includes(id)) out.push(id)
       return out
     },
-    [leaving, goneKey],
+    [leaving, gone],
   )
 
   /* The windows that arrived on THIS beat, read the same way and for the same reason — the other
@@ -897,6 +903,117 @@ export function OverviewPane(props: {
     () => layoutSpill({ children: placement.children, hiddenChildren: reading.hiddenChildren }),
     [placement, reading.hiddenChildren],
   )
+
+  /* When the last fold has run, the room closes up: the survivors take the numbers the folded window
+   * freed, and they spend that on the way rather than snapping to it. This is the leave's own second
+   * half, not a re-measure — a stage that changed for another reason still takes its new numbers at
+   * once, exactly as the sheet's own note asks.
+   *
+   * The mark is raised inside the leave's own timer, in the same batch as the removal, so the render
+   * that hands out the new boxes is the render that carries `is-settle`. Setting it from an effect
+   * instead would land one paint too late: the boxes would already have snapped by the time the
+   * transition arrived, and the transition would have nothing left to spend. */
+  const [settling, setSettling] = React.useState(false)
+  const settleTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  /* Fresh row: the feed's end carries a settled row this window has never shown. The row's own
+   * moment (`at`, the record's) is the identity the judgment reads, so an update of the newest
+   * row's words — a tail settling into its row, a correction landing — keeps the identity and
+   * redraws in place, where replaying the entrance read as a one-frame blink. The mark is held for
+   * its span and shed by a timer, the way `joined` is: a set that mirrored each beat would strip
+   * the mark on the quiet beat between two arrivals, and the class coming back would restart the
+   * animation from its first frame. The comparison runs in an effect and lands in state, never
+   * while drawing: a host's double render (StrictMode) would run the comparison twice and the
+   * second pass would find the row it recorded itself. The ref is the effect's own memory; state
+   * commits what the beat saw. */
+  const lastRowKeyRef = React.useRef<Map<string, string>>(new Map())
+  const [freshIds, setFreshIds] = React.useState<ReadonlySet<string>>(new Set())
+  const freshTimers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  React.useEffect(() => {
+    const arrived = new Set<string>()
+    for (const one of [reading.main, ...reading.children]) {
+      if (one === null) continue
+      const settled = one.rows.filter((row) => row.live !== true)
+      const newest = settled[settled.length - 1]
+      const key = newest === undefined || newest.at === undefined
+        ? ''
+        : `${newest.at}:${newest.kind}:${newest.callId ?? ''}`
+      const was = lastRowKeyRef.current.get(one.id)
+      if (was !== undefined && key !== '' && key !== was) arrived.add(one.id)
+      if (key !== '') lastRowKeyRef.current.set(one.id, key)
+    }
+    if (arrived.size === 0) return
+    setFreshIds((held) => {
+      const next = new Set(held)
+      for (const id of arrived) next.add(id)
+      return next
+    })
+    for (const id of arrived) {
+      const known = freshTimers.current.get(id)
+      if (known !== undefined) clearTimeout(known)
+      freshTimers.current.set(id, setTimeout(() => {
+        freshTimers.current.delete(id)
+        setFreshIds((held) => {
+          if (!held.has(id)) return held
+          const next = new Set(held)
+          next.delete(id)
+          return next
+        })
+      }, FRESH_SPAN_MS))
+    }
+  }, [reading])
+
+  /* A window's first box is a provisional one. The rows that fill it are its own conversation's, and
+   * the pane cannot read them until the session windows are held open — so every window first stands
+   * measured over nothing, a title line, and reaches its real numbers a beat later. That growth is
+   * the one box change worth spending on the way: the panel opens with its windows expanding into
+   * place instead of snapping from a flat bar to a full one (the sheet's own note says why only this
+   * one bit of travel is allowed).
+   *
+   * So the mark covers a window's **opening**: it is on from the first beat the window stands, and it
+   * stays until the rows it was waiting for have landed and their growth has had its span — a breath
+   * past that, and the pane is drawn by the geometry alone, exactly like every window after its
+   * opening. The arm has to be on the pane *before* the change it is there for: a commit that grows
+   * the box with nothing to travel from is the jump this is here to end. A window that never reads a
+   * row keeps the arm only as long as the opening could plausibly last, so a re-measure later is
+   * never spent. */
+  const openings = React.useRef<Map<string, { readonly at: number; rowsAt?: number }>>(new Map())
+  const openingTimers = React.useRef<Map<string, { readonly until: number; readonly timer: ReturnType<typeof setTimeout> }>>(new Map())
+  const [, setOpeningPass] = React.useState(0)
+  const rowsIn = new Map<string, number>()
+  if (reading.main !== null) rowsIn.set(reading.main.id, reading.main.rows.length)
+  for (const one of reading.children) rowsIn.set(one.id, one.rows.length)
+  const opening: string[] = []
+  {
+    const now = Date.now()
+    for (const id of currentIds) {
+      let held = openings.current.get(id)
+      if (held === undefined) {
+        held = { at: now }
+        openings.current.set(id, held)
+      }
+      if (held.rowsAt === undefined && (rowsIn.get(id) ?? 0) > 0) held.rowsAt = now
+      if (held.rowsAt === undefined ? now - held.at >= OPENING_MAX_MS : now - held.rowsAt >= GROW_SPAN_MS) continue
+      opening.push(id)
+      /* The rows landing is what shortens this window's deadline, so the timer is re-read from the
+       * deadline it was set for rather than only when there is none: a stale 3s wait would hold the
+       * mark long past the opening and spend a re-measure the reader did not ask for. */
+      const until = held.rowsAt === undefined ? held.at + OPENING_MAX_MS : held.rowsAt + GROW_SPAN_MS
+      const scheduled = openingTimers.current.get(id)
+      if (scheduled !== undefined) {
+        if (scheduled.until === until) continue
+        clearTimeout(scheduled.timer)
+      }
+      /* The span running out is what sheds the mark: a class left standing would spend the next
+       * change too, and only the opening's growth is allowed to travel. */
+      const timer = setTimeout(() => {
+        openingTimers.current.delete(id)
+        setOpeningPass((pass) => pass + 1)
+      }, Math.max(0, until - now) + 40)
+      openingTimers.current.set(id, { until, timer })
+    }
+  }
+
   React.useEffect(() => {
     const before = heldIds.current
     heldIds.current = currentIds
@@ -1023,18 +1140,6 @@ export function OverviewPane(props: {
     [],
   )
 
-  /* When the last fold has run, the room closes up: the survivors take the numbers the folded window
-   * freed, and they spend that on the way rather than snapping to it. This is the leave's own second
-   * half, not a re-measure — a stage that changed for another reason still takes its new numbers at
-   * once, exactly as the sheet's own note asks.
-   *
-   * The mark is raised inside the leave's own timer, in the same batch as the removal, so the render
-   * that hands out the new boxes is the render that carries `is-settle`. Setting it from an effect
-   * instead would land one paint too late: the boxes would already have snapped by the time the
-   * transition arrived, and the transition would have nothing left to spend. */
-  const [settling, setSettling] = React.useState(false)
-  const settleTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-
   /* The join's own room: a window arriving re-seats everyone else around it in the same beat, and
    * the survivors spend that move on the way — the same spend a fold's close-up gets (`is-settle`).
    * The mark is read during the very render that first draws the joiner, so the transition stands on
@@ -1044,53 +1149,6 @@ export function OverviewPane(props: {
    * design — and a hand-over arrives whole instead, by the stage's own appearance (`is-first`):
    * one cast replacing another has no source point, so nothing of it travels. */
   const joining = arrivedNow.length > 0 || joined.size > 0
-
-  /* Fresh row: the feed's end carries a settled row this window has never shown. The row's own
-   * moment (`at`, the record's) is the identity the judgment reads, so an update of the newest
-   * row's words — a tail settling into its row, a correction landing — keeps the identity and
-   * redraws in place, where replaying the entrance read as a one-frame blink. The mark is held for
-   * its span and shed by a timer, the way `joined` is: a set that mirrored each beat would strip
-   * the mark on the quiet beat between two arrivals, and the class coming back would restart the
-   * animation from its first frame. The comparison runs in an effect and lands in state, never
-   * while drawing: a host's double render (StrictMode) would run the comparison twice and the
-   * second pass would find the row it recorded itself. The ref is the effect's own memory; state
-   * commits what the beat saw. */
-  const lastRowKeyRef = React.useRef<Map<string, string>>(new Map())
-  const [freshIds, setFreshIds] = React.useState<ReadonlySet<string>>(new Set())
-  const freshTimers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-  React.useEffect(() => {
-    const arrived = new Set<string>()
-    for (const one of [reading.main, ...reading.children]) {
-      if (one === null) continue
-      const settled = one.rows.filter((row) => row.live !== true)
-      const newest = settled[settled.length - 1]
-      const key = newest === undefined || newest.at === undefined
-        ? ''
-        : `${newest.at}:${newest.kind}:${newest.callId ?? ''}`
-      const was = lastRowKeyRef.current.get(one.id)
-      if (was !== undefined && key !== '' && key !== was) arrived.add(one.id)
-      if (key !== '') lastRowKeyRef.current.set(one.id, key)
-    }
-    if (arrived.size === 0) return
-    setFreshIds((held) => {
-      const next = new Set(held)
-      for (const id of arrived) next.add(id)
-      return next
-    })
-    for (const id of arrived) {
-      const known = freshTimers.current.get(id)
-      if (known !== undefined) clearTimeout(known)
-      freshTimers.current.set(id, setTimeout(() => {
-        freshTimers.current.delete(id)
-        setFreshIds((held) => {
-          if (!held.has(id)) return held
-          const next = new Set(held)
-          next.delete(id)
-          return next
-        })
-      }, FRESH_SPAN_MS))
-    }
-  }, [reading])
 
   /* The box and the reading each id drew from on this beat: a leaving pane reads them back below, and
    * the cast above reads a held window's row count from `windowsRef` after the reading drops it. */
@@ -1175,61 +1233,10 @@ export function OverviewPane(props: {
     const mark = {
       dx: Math.round(born.x - box.left),
       dy: Math.round(born.y - box.top),
-      s: Math.min(0.28, 44 / Math.max(1, box.width)),
+      s: Math.min(BORN_SCALE, BORN_BASE_W / Math.max(1, box.width)),
     }
     flying.current.set(id, mark)
     return mark
-  }
-
-  /* A window's first box is a provisional one. The rows that fill it are its own conversation's, and
-   * the pane cannot read them until the session windows are held open — so every window first stands
-   * measured over nothing, a title line, and reaches its real numbers a beat later. That growth is
-   * the one box change worth spending on the way: the panel opens with its windows expanding into
-   * place instead of snapping from a flat bar to a full one (the sheet's own note says why only this
-   * one bit of travel is allowed).
-   *
-   * So the mark covers a window's **opening**: it is on from the first beat the window stands, and it
-   * stays until the rows it was waiting for have landed and their growth has had its span — a breath
-   * past that, and the pane is drawn by the geometry alone, exactly like every window after its
-   * opening. The arm has to be on the pane *before* the change it is there for: a commit that grows
-   * the box with nothing to travel from is the jump this is here to end. A window that never reads a
-   * row keeps the arm only as long as the opening could plausibly last, so a re-measure later is
-   * never spent. */
-  const openings = React.useRef<Map<string, { readonly at: number; rowsAt?: number }>>(new Map())
-  const openingTimers = React.useRef<Map<string, { readonly until: number; readonly timer: ReturnType<typeof setTimeout> }>>(new Map())
-  const [, setOpeningPass] = React.useState(0)
-  const rowsIn = new Map<string, number>()
-  if (reading.main !== null) rowsIn.set(reading.main.id, reading.main.rows.length)
-  for (const one of reading.children) rowsIn.set(one.id, one.rows.length)
-  const opening: string[] = []
-  {
-    const now = Date.now()
-    for (const id of currentIds) {
-      let held = openings.current.get(id)
-      if (held === undefined) {
-        held = { at: now }
-        openings.current.set(id, held)
-      }
-      if (held.rowsAt === undefined && (rowsIn.get(id) ?? 0) > 0) held.rowsAt = now
-      if (held.rowsAt === undefined ? now - held.at >= OPENING_MAX_MS : now - held.rowsAt >= GROW_SPAN_MS) continue
-      opening.push(id)
-      /* The rows landing is what shortens this window's deadline, so the timer is re-read from the
-       * deadline it was set for rather than only when there is none: a stale 3s wait would hold the
-       * mark long past the opening and spend a re-measure the reader did not ask for. */
-      const until = held.rowsAt === undefined ? held.at + OPENING_MAX_MS : held.rowsAt + GROW_SPAN_MS
-      const scheduled = openingTimers.current.get(id)
-      if (scheduled !== undefined) {
-        if (scheduled.until === until) continue
-        clearTimeout(scheduled.timer)
-      }
-      /* The span running out is what sheds the mark: a class left standing would spend the next
-       * change too, and only the opening's growth is allowed to travel. */
-      const timer = setTimeout(() => {
-        openingTimers.current.delete(id)
-        setOpeningPass((pass) => pass + 1)
-      }, Math.max(0, until - now) + 40)
-      openingTimers.current.set(id, { until, timer })
-    }
   }
 
   return (
@@ -1292,7 +1299,6 @@ export function OverviewPane(props: {
           <WindowPane
             box={placement.main}
             window={reading.main}
-            at={at}
             main
             leave={leavingIds.includes(reading.main.id)}
             fresh={freshIds.has(reading.main.id)}
@@ -1313,7 +1319,6 @@ export function OverviewPane(props: {
               key={one.id}
               box={box}
               window={one}
-              at={at}
               main={false}
               leave={leavingIds.includes(one.id)}
               fresh={freshIds.has(one.id)}
@@ -1353,7 +1358,6 @@ export function OverviewPane(props: {
               key={id}
               box={box}
               window={window}
-              at={at}
               main={false}
               leave
               fresh={false}
@@ -1372,7 +1376,6 @@ export function OverviewPane(props: {
             key={`past:${pane.id}`}
             box={pane.box}
             window={pane.window}
-            at={at}
             main={pane.main}
             leave
             verdict={false}

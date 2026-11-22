@@ -30,7 +30,8 @@
  *   live child the column is not drawn and the field is exactly the main window's width.
  * - The main window hugs its content. Only the stage itself cuts it, and the cut is the feed's
  *   fade, not a scrollbar. Its width is the stage's less the two lanes and the probe's own ground;
- *   it narrows under the pair's own 340 judge down to the width at which it can still be read.
+ *   it narrows under the pair's own judge — the two floors summed — down to the width at which it
+ *   can still be read.
  * - Past the width where two windows can no longer both keep their smallest sizes, the children
  *   column does not squeeze — it leaves, and the main window stands alone.
  * - A child's window is tied to the dispatch row that opened it by one line: out of the main
@@ -53,12 +54,6 @@ export const RAIL_LEFT = 16
 /** The windows' widest: a child is always the narrower one. */
 export const MAIN_MAX_W = 440
 export const CHILD_MAX_W = 420
-/** The pair's own judge, and only that: below it two windows can no longer both be read, so the
- * children column leaves whole. It is not the width the main window alone may not go under — on a
- * phone's stage keeping it would push the nameplate back inside the frame, so the window alone is
- * allowed down to `MAIN_FLOOR_W`. */
-export const MAIN_MIN_W = 340
-export const CHILD_MIN_W = 330
 
 /**
  * The narrowest the main window stands while the stage has the room for it.
@@ -236,8 +231,8 @@ export function layoutOverview(input: {
   if (!childrenShown) {
     /* The column leaves whole; the main window takes what the stage next to the rail can give, and
        narrows with the stage rather than running off it. Its floor is the readable one and not the
-       pair's judge: a phone's stage may put it under 340, never under the width its nameplate can
-       still be read at, and never past the room the stage actually has. */
+       pair's judge: a phone's stage may put it under the pair's judge, never under the width its
+       nameplate can still be read at, and never past the room the stage actually has. */
     mainW = Math.max(Math.min(MAIN_FLOOR_W, availW), Math.min(MAIN_MAX_W, availW))
     childW = 0
     shownGapX = 0
@@ -511,6 +506,12 @@ export function layoutLink(input: {
 /** The badge above the children column: its three dots, then the count. Its width holds the dots and
  * the widest count the cap can produce. */
 export const SPILL_W = 40
+
+/** The entrance flight's two numbers: a joining window starts `BORN_BASE_W` wide — its scale is
+ *  that width over the box it lands on — and never starts under the `BORN_SCALE` floor. Stated here
+ *  so the numbers the flight flies with live in the geometry, like every other table. */
+export const BORN_SCALE = 0.28
+export const BORN_BASE_W = 44
 
 /**
  * Where a window that joined this beat came from, in stage pixels: the point it grows out of.
