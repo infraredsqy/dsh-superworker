@@ -75,7 +75,7 @@
  * running bit is the authority.
  */
 import type { SuperworkerNode } from './records.ts'
-import { secondsBetween, text } from './fields.ts'
+import { asRecord, secondsBetween, text, toEpoch } from './fields.ts'
 
 /**
  * The window cap: more than this many child windows, and the overview draws
@@ -332,6 +332,18 @@ export interface OverviewReading {
    */
   readonly children: readonly OverviewWindow[]
   /**
+   * Every session the snapshot parents to the main window, **before** the
+   * five-window cap: the drawn {@link children} are at most five windows of
+   * these, and a child that ended — even one no seat keeps — is in here all the
+   * same. This is the panel's watch list: a child's own log decides whether its
+   * seat stays (the ghost's `turn/end`, read at the beat its dispatcher's cell
+   * was still held), so that log has to be open before the seat exists, and the
+   * cap must not fold a log this reading itself still reads. The snapshot's own
+   * shape (`byId`, `parentId`) is read here and nowhere else — the shell never
+   * re-spells it.
+   */
+  readonly mainChildIds: readonly string[]
+  /**
    * The legs this stage can be switched to, in the reading's own order — the node
    * rail's entries and never windows. The set is the steps of the line still on the
    * table: the record-named legs the list calls running, the ones that stopped while
@@ -342,9 +354,12 @@ export interface OverviewReading {
    */
   readonly legs: readonly OverviewLeg[]
   /**
-   * How many **running** children the five-window cap folded away — a count,
-   * never a window: 0 is 0. A session dropped for having nothing readable was
-   * never a window, so it is not counted here either.
+   * How many window seats the five-window cap folded away — a count, never a
+   * window: 0 is 0. Dead seats count with live ones: the ghost seats stand after
+   * the running children on the same column and compete for the same five, so a
+   * seat the cap left out is counted here whatever its conversation is doing. A
+   * session dropped for having nothing readable was never a window, so it is not
+   * counted here either.
    */
   readonly hiddenChildren: number
 }
@@ -509,11 +524,6 @@ function subjectOf(kind: OverviewRowKind, name: string, args: Record<string, unk
   return text(args?.word) ?? text(args?.description) ?? name
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-  return value as Record<string, unknown>
-}
-
 function rowsOf(snapshot: OverviewSnapshot): Readonly<Record<string, OverviewSessionRow>> {
   return asRecord(snapshot.byId) as Readonly<Record<string, OverviewSessionRow>> | undefined ?? {}
 }
@@ -556,23 +566,13 @@ function pipelineOf(input: OverviewInput): ReadonlySet<string> | undefined {
 
 /** When the list last moved a row: epoch milliseconds, 0 when it says nothing readable. */
 function movedAtOf(row: OverviewSessionRow | undefined): number {
-  const raw = row?.updatedAt
-  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
-  if (typeof raw === 'string' && raw.length > 0) {
-    const ms = Date.parse(raw)
-    if (!Number.isNaN(ms)) return ms
-  }
-  return 0
+  return toEpoch(row?.updatedAt) ?? 0
 }
 
 /** The moment a reading was taken at, read the same way a row's own moment is; absent says nothing. */
 function atOf(raw: unknown): Date | null {
-  if (typeof raw === 'number' && Number.isFinite(raw)) return new Date(raw)
-  if (typeof raw === 'string' && raw.length > 0) {
-    const ms = Date.parse(raw)
-    if (!Number.isNaN(ms)) return new Date(ms)
-  }
-  return null
+  const ms = toEpoch(raw)
+  return ms === null ? null : new Date(ms)
 }
 
 /**
@@ -1054,16 +1054,27 @@ function capped(rows: readonly OverviewRow[], capacity: unknown): readonly Overv
   return rows.length > capacity ? rows.slice(rows.length - capacity) : rows
 }
 
-/** When the conversation started: the earliest moment its own events carry. */
-function startedAtOf(events: readonly OverviewEvent[] | undefined): Date | null {
-  let earliest: number | undefined
+/**
+ * One end of the conversation's own span: the earliest moment its events carry
+ * when `latest` is false (when it started), the newest when true (when it last
+ * moved). The log's stamps are epoch milliseconds and read as numbers alone —
+ * the row's and the reading's epoch-or-string convention (`toEpoch` in
+ * fields.ts) is not the events'; a stamp that is not a finite number is not a
+ * moment here.
+ */
+function extremeAtOf(events: readonly OverviewEvent[] | undefined, latest: boolean): Date | null {
+  let best: number | undefined
   for (const event of events ?? []) {
     const time = event.time
-    if (typeof time === 'number' && Number.isFinite(time) && (earliest === undefined || time < earliest)) {
-      earliest = time
-    }
+    if (typeof time !== 'number' || !Number.isFinite(time)) continue
+    if (best === undefined || (latest ? time > best : time < best)) best = time
   }
-  return earliest === undefined ? null : new Date(earliest)
+  return best === undefined ? null : new Date(best)
+}
+
+/** When the conversation started: the earliest moment its own events carry. */
+function startedAtOf(events: readonly OverviewEvent[] | undefined): Date | null {
+  return extremeAtOf(events, false)
 }
 
 /**
@@ -1073,14 +1084,7 @@ function startedAtOf(events: readonly OverviewEvent[] | undefined): Date | null 
  * number counting for as long as the panel stays open.
  */
 function endedAtOf(events: readonly OverviewEvent[] | undefined): Date | null {
-  let latest: number | undefined
-  for (const event of events ?? []) {
-    const time = event.time
-    if (typeof time === 'number' && Number.isFinite(time) && (latest === undefined || time > latest)) {
-      latest = time
-    }
-  }
-  return latest === undefined ? null : new Date(latest)
+  return extremeAtOf(events, true)
 }
 
 /**
@@ -1131,15 +1135,32 @@ function titleOf(row: OverviewSessionRow, node: SuperworkerNode | undefined): st
   return text(node?.title) ?? dispatchLabelOf(row) ?? text(row.displayTitle) ?? null
 }
 
+/**
+ * The engine's weight word for light (`NodeWeight`, packages/superworker-core/src/types.ts:
+ * "`light` is implemented by the conductor alone; `standard` takes the standard path. A
+ * missing key means standard"). Only a written `light` ever lands on disk — the engine
+ * writes standard back by taking the key off — so a node whose word is absent, or spells
+ * anything else, is standard. This constant quotes that one word; the judgment stays the
+ * engine's and is not re-derived here.
+ */
+const WEIGHT_LIGHT = 'light'
+
+/**
+ * The engine's own default mode word (`NodeMode`, packages/superworker-core/src/types.ts:
+ * `auto` opens the next node by itself; the read side folds a missing key to `auto`).
+ * Quoted, not re-written: when the engine's default moves, this is the line to move with it.
+ */
+const MODE_UNWRITTEN = 'auto'
+
 /** The engine's own reading of weight: only `light` ever lands on disk, so anything unwritten or other is standard. */
 function weightOf(node: SuperworkerNode | undefined): 'light' | 'standard' | null {
   if (node === undefined) return null
-  return text(node.weight) === 'light' ? 'light' : 'standard'
+  return text(node.weight) === WEIGHT_LIGHT ? 'light' : 'standard'
 }
 
 function modeOf(node: SuperworkerNode | undefined): string | null {
   if (node === undefined) return null
-  return text(node.mode) ?? 'auto'
+  return text(node.mode) ?? MODE_UNWRITTEN
 }
 
 function windowOf(
@@ -1299,9 +1320,9 @@ function factsOf(input: {
  * the line stands, and it keeps its seat. A session of another conversation, and
  * any child of one, is never drawn here. Over five child windows the most recent
  * five are taken — taken whole from whoever is running at that moment, never the
- * first five pinned, never a gap filled at the end — and the running ones the five
- * leave out are counted, not drawn: `hiddenChildren` is how many running children
- * the cap folded away.
+ * first five pinned, never a gap filled at the end — and the seats the five leave
+ * out are counted, not drawn: `hiddenChildren` is how many window seats the cap
+ * folded away, the dead seats standing after the live ones included.
  *
  * The legs are the rail's entries and no windows at all ({@link OverviewLeg}): the
  * record-named steps the list still calls running, the ones that stopped while the
@@ -1475,6 +1496,26 @@ export function readOverview(input: OverviewInput): OverviewReading {
   const ownMoving = kids.length > 0
   const handed = namedSet(input.handedNodes)
   const standing = ghosts.filter((id) => !supersededBy(id) && (isLeg(id) || !moving))
+  /* Whether this conversation owes work nobody is doing — the one formula the ghost seat and
+     the rail bar share, so the two readers can never give one step two verdicts. The two words
+     it replaces were the same formula once each reader's own context is carried in:
+     - no readable ending: the caller's stranded judgment is the only witness;
+     - a cell the record names: a ticket excuses (the caller's `handedNodes`), and a turn still
+       owed a wake (`yielding`) is a yield, not a quit. The bar reads this clause only after its
+       own three rescues below — the step standing still, no worker of its own moving, no yield —
+       so `yielding` is false there and the clause reduces to the bare `!handed` the bar has
+       always spelled;
+     - no cell of its own: a worker owes nobody a delivery, and only a turn the log cut short is
+       its break. A leg is record-named for a node — the notes name both — so the bar never reads
+       this word on this input; a caller that names a pipeline without its node map does, and
+       keeps the leg's bare `!handed` there. */
+  const alertOf = (id: string): boolean => {
+    const cell = input.nodeOf?.[id] ?? ''
+    const ending = endingOf(input.events?.[id])
+    if (ending === undefined) return stranded.has(cell)
+    if (cell.length === 0) return isLeg(id) ? !handed.has(cell) : ending.kind !== 'completed'
+    return !handed.has(cell) && (ending.kind !== 'completed' || !yielding(id))
+  }
   /* The legs the rail offers: the steps still on the table, in the reading's own order, with the main
      window's own leg among them — the bar that stands lit — whenever the main is a step of the line.
      Three kinds are offered: a step still running, a step that stopped owing work, and a step **at a
@@ -1554,13 +1595,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
        a clean end in its own time, and a record running behind its own session is a lag, not a fault.
        Whether a cell is owed at all is read off the record (`nodeOf`), not off the caller's naming:
        a session working a node can owe a ticket even when the caller said nothing about a pipeline. */
-    const cell = input.nodeOf?.[id] ?? ''
-    const broken = !gated
-      && (ending === undefined
-        ? stranded.has(cell)
-        : cell.length > 0
-          ? !handed.has(cell) && (ending.kind !== 'completed' || !yielding(id))
-          : ending.kind !== 'completed')
+    const broken = !gated && alertOf(id)
     seats.push({
       ...window,
       settled: true,
@@ -1581,14 +1616,22 @@ export function readOverview(input: OverviewInput): OverviewReading {
        running step is being worked. A worker of this step's own that came home after its last word is
        no break either: the bar waits for the notice to land, the way the frame does. */
     if (gated) return { ...leg, waiting: true }
+    /* The bar's own rescues come first — a step still running is being worked, the main's own
+       work moving is the line at work, a yield is the notice still crossing — and then the one
+       debt formula the seat reads too. After these rescues `yielding` is false, so the formula's
+       yield clause folds away and the bar reads the same `!handed` it always has. */
     if (rows[id]?.running === true || ownMoving || yielding(id)) return leg
-    const ending = endingOf(input.events?.[id])
-    const node = input.nodeOf?.[id] ?? ''
-    const broken = ending === undefined
-      ? stranded.has(node)
-      : !handed.has(node)
-    return broken ? { ...leg, alert: true } : leg
+    return alertOf(id) ? { ...leg, alert: true } : leg
   })
+  /* The main's parented children, untruncated: the set the panel holds event windows open
+     for. It is the raw admission universe — running seats, dead seats, ended children no seat
+     keeps — deliberately wider than the drawn `children` (the five the cap kept), because each
+     child's own log decides whether its seat stays and that log has to be open before the seat
+     exists. The snapshot's `byId` shape is read once, here, the model's own way; the ids come
+     out in the map's own key order, which the watch list reads as a set. */
+  const mainChildIds = mainId === undefined
+    ? []
+    : Object.keys(rows).filter((id) => parentOf(id) === mainId)
   return {
     main: mainWindow,
     mainFrom: mainWindow === null || choice === undefined ? null : choice.from,
@@ -1596,6 +1639,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
       const dispatchCallId = anchors.get(window.id)
       return dispatchCallId === undefined ? window : { ...window, dispatchCallId }
     }),
+    mainChildIds,
     legs,
     /* Counted off the seats, never off the five the cap kept: what the cap folded away is the
        windows it left out. */

@@ -152,7 +152,7 @@ test('grouping comes from the reading: global first, cycles in record order, an 
     issues: {},
     at: AT,
   })
-  const groups = groupInstructions(project, project.instructions)
+  const groups = groupInstructions(project.cycles, project.instructions)
 
   assert.deepEqual(groups.map((group) => group.key), ['global', 'cycle:c1', 'cycle:c9', 'cycle:', 'node'], 'a cycle nothing falls into forms no group')
   assert.equal(groups.every((group) => !Object.hasOwn(group, 'label')), true, 'group heads no longer get words from the model: the key says which pile')
@@ -176,7 +176,7 @@ test('order within a group: still-standing first, newest first; empty groups are
     issues: {},
     at: AT,
   })
-  const groups = groupInstructions(project, project.instructions)
+  const groups = groupInstructions(project.cycles, project.instructions)
 
   assert.deepEqual(groups.map((group) => group.key), ['global'], 'a cycle nothing falls into forms no group')
   assert.deepEqual(groups[0].entries.map((entry) => entry.id), ['new-live', 'old-live', 'new-dead'])

@@ -535,15 +535,16 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     if (main !== undefined) out.add(main)
     for (const one of overview?.children ?? []) out.add(one.id)
     for (const leg of overview?.legs ?? []) out.add(leg.id)
-    if (main !== undefined) {
-      const byId = (props.sessions as { readonly byId?: Readonly<Record<string, { readonly parentId?: unknown }>> } | undefined)?.byId ?? {}
-      for (const [id, row] of Object.entries(byId)) {
-        if (row?.parentId === main) out.add(id)
-      }
-    }
+    /* The main's dispatched workers, untruncated: the reading's `children` are only the five
+     * windows the cap kept, but a seat's admission is decided off the child's own log — the
+     * ghost's `turn/end`, and when it began — so every session parented to the main, the dead
+     * ones included, keeps its log open while it could still become one. The ids come from the
+     * model's own reading of the snapshot (`mainChildIds`, the same set the reading draws its
+     * seats from); the snapshot's shape is never re-spelled here. */
+    for (const id of overview?.mainChildIds ?? []) out.add(id)
     for (const id of undeliveredSessions) out.add(id)
     return [...out]
-  }, [overview, props.sessions, undeliveredSessions])
+  }, [overview, undeliveredSessions])
   React.useEffect(() => {
     if (tab !== 'overview' || overview === null) {
       windows.watch([])

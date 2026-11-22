@@ -699,11 +699,11 @@ test('precedence: a gate beats a delivery beats a debt — gated, delivered and 
 })
 
 test('a snapshot nothing can be read off: an empty reading, and no throw', () => {
-  assert.deepEqual(readOverview({ sessions: {} }), { main: null, mainFrom: null, children: [], legs: [], hiddenChildren: 0 })
-  assert.deepEqual(readOverview({ sessions: { ids: 'nonsense', byId: 5 } }), { main: null, mainFrom: null, children: [], legs: [], hiddenChildren: 0 })
+  assert.deepEqual(readOverview({ sessions: {} }), { main: null, mainFrom: null, mainChildIds: [], children: [], legs: [], hiddenChildren: 0 })
+  assert.deepEqual(readOverview({ sessions: { ids: 'nonsense', byId: 5 } }), { main: null, mainFrom: null, mainChildIds: [], children: [], legs: [], hiddenChildren: 0 })
   assert.deepEqual(
     readOverview({ sessions: snapshot(['x'], { x: { retainedBy: 'nonsense' } }) }),
-    { main: null, mainFrom: null, children: [], legs: [], hiddenChildren: 0 },
+    { main: null, mainFrom: null, mainChildIds: [], children: [], legs: [], hiddenChildren: 0 },
   )
 })
 
@@ -850,7 +850,7 @@ test('the record names no session at all: no window, rather than an unrelated co
     ownSession: 'session-subagent',
     events: { [stale]: [said(1, undefined, '不该出现的行')] },
   })
-  assert.deepEqual(reading, { main: null, mainFrom: null, children: [], legs: [], hiddenChildren: 0 })
+  assert.deepEqual(reading, { main: null, mainFrom: null, mainChildIds: [], children: [], legs: [], hiddenChildren: 0 })
 })
 
 test("the main window's anchors are read off its own log, never the conversation beside it", () => {
@@ -1339,4 +1339,183 @@ test('an unreadable dispatch anchors nothing: still in flight, or answered by a 
     ['c-1'],
   )
   assert.equal('dispatchCallId' in isError.children[0], false)
+})
+
+/* ---- the one debt formula -------------------------------------------------
+ *
+ * The ghost seat and the rail bar read "owes work nobody is doing" off one
+ * formula, so the two readers can never give one step two verdicts. The cases
+ * below pin the shared word on both shapes: the same stopped conversation, read
+ * once as a record-named leg (the rail's bar) and once as a subagent's ghost
+ * (the stage's seat), and the one fork between them — a worker with no cell of
+ * its own owes nobody a delivery, so only a turn the log cut short is its break.
+ */
+
+const LEG = 'session-leg'
+const WORKER = 'session-leg-worker'
+
+/**
+ * The stopped leg the record still owes, its last ending as asked: `MAIN` the seat
+ * the panel stands in, the leg a rail bar beside it, and — with `worker` — the
+ * worker of its own whose wake is still crossing.
+ */
+function legScene(ending, { worker = false, ...extra } = {}) {
+  const byId = { [MAIN]: mainRow(MAIN), [LEG]: childRow(LEG, MAIN, false) }
+  if (worker) byId[WORKER] = childRow(WORKER, LEG, true)
+  return readOverview({
+    sessions: snapshot([MAIN, LEG], byId),
+    pipelineSessions: [MAIN, LEG],
+    ownSession: MAIN,
+    nodeOf: { [LEG]: OWED_NODE },
+    undeliveredSessions: [LEG],
+    ...(ending === undefined ? {} : { events: { [LEG]: [ending] } }),
+    ...extra,
+  })
+}
+
+/**
+ * The same stopped conversation, unnamed by the record: a subagent's ghost seat
+ * under the main. With a cell of its own it reads the ticket; without one, the
+ * cut-short word.
+ */
+function seatScene(ending, { worker = false, ...extra } = {}) {
+  const byId = { [MAIN]: mainRow(MAIN), [LEG]: childRow(LEG, MAIN, false) }
+  if (worker) byId[WORKER] = childRow(WORKER, LEG, true)
+  return readOverview({
+    sessions: snapshot([MAIN, LEG], byId),
+    pipelineSessions: [MAIN],
+    ownSession: MAIN,
+    nodeOf: { [MAIN]: OWED_NODE },
+    heldSessions: [MAIN],
+    undeliveredSessions: [LEG],
+    ...(ending === undefined ? {} : { events: { [LEG]: [ending] } }),
+    ...extra,
+  })
+}
+
+test('seat and bar read one debt: cut short with no ticket is a break on both shapes', () => {
+  const leg = legScene(turnEnd(6, 'aborted', 'user'))
+  assert.deepEqual(leg.legs.map((one) => one.id), [MAIN, LEG], 'the stopped leg was not on the rail')
+  assert.equal('alert' in leg.legs[0], false, 'the main window\'s own bar wore the break its seat already carries')
+  assert.equal(leg.legs[1].alert, true, 'the bar went quiet on a cut-short leg with no ticket')
+
+  const seat = seatScene(turnEnd(6, 'aborted', 'user'))
+  assert.deepEqual(seat.children.map((one) => one.id), [LEG], 'the cut-short worker lost its seat')
+  assert.equal(seat.children[0].alert, true, 'the seat went quiet on a cut-short worker with no ticket')
+})
+
+test('a ticket in hand quiets both shapes; a completed turn without one breaks the leg that owns the delivery', () => {
+  const legTicket = legScene(turnEnd(6, 'completed'), { handedNodes: [OWED_NODE] })
+  assert.equal('alert' in legTicket.legs[1], false, 'a leg that handed its ticket in was called broken')
+
+  const legQuit = legScene(turnEnd(6, 'completed'))
+  assert.equal(legQuit.legs[1].alert, true, 'a leg that quit before delivering read as merely resting')
+
+  /* The same completed word on a worker with no cell of its own is a hand-back, not
+     a quit: the fork is the cell the record names, and it is one formula that reads
+     it — not two readers disagreeing about the same step. */
+  const seatDone = seatScene(turnEnd(6, 'completed'))
+  assert.equal('alert' in seatDone.children[0], false, 'a worker that closed its own turn was drawn as a break')
+})
+
+test('a yield rescues before the formula: the bar waits for its worker\'s notice, the cut-short seat does not', () => {
+  /* The leg's own worker is still running — the notice that wakes the leg is crossing,
+     so the bar says nothing yet, whatever the last turn's word was. */
+  const leg = legScene(turnEnd(6, 'aborted', 'user'), { worker: true })
+  assert.equal('alert' in leg.legs[1], false, 'a leg yielding to its own worker was drawn as the break')
+
+  /* On a seat with a cell of its own the same yield rescues only a turn that closed
+     itself: a turn the log cut short is still the break the seat exists to show. */
+  const seatCut = seatScene(turnEnd(6, 'aborted', 'user'), { worker: true })
+  assert.equal(seatCut.children[0].alert, true, 'a yield rescued a turn the log had cut short')
+})
+
+/* ---- the moments ---------------------------------------------------------
+ *
+ * The row's and the reading's moment is the epoch-or-string convention, read one
+ * way; the log's own stamps are epoch numbers, and a window's span is the
+ * extremes of them — started at the earliest, a stopped window measured to the
+ * newest, a running one to the moment the reading was taken at.
+ */
+
+test('a row that moved last wins whatever spelling its moment came in, and arrival breaks the tie', () => {
+  const byNumber = 'session-by-number'
+  const byString = 'session-by-string'
+  const reading = readOverview({
+    sessions: snapshot([byNumber, byString], {
+      [byNumber]: pipelineRow(byNumber, { running: true, updatedAt: 1000 }),
+      [byString]: pipelineRow(byString, { running: true, updatedAt: '1970-01-01T00:00:02.000Z' }),
+    }),
+    pipelineSessions: [byNumber, byString],
+  })
+  assert.equal(reading.main.id, byString, 'the moment string was not read as the newer move')
+
+  /* Neither moment readable: the tie falls to the list's own arrival order, as ever. */
+  const tie = readOverview({
+    sessions: snapshot([byNumber, byString], {
+      [byNumber]: pipelineRow(byNumber, { running: true, updatedAt: 'not a moment' }),
+      [byString]: pipelineRow(byString, { running: true, updatedAt: 'not a moment' }),
+    }),
+    pipelineSessions: [byNumber, byString],
+  })
+  assert.equal(tie.main.id, byString, 'a list with no readable moments stopped answering in arrival order')
+})
+
+test('the span reads the log\'s extremes, and a running window measures to the reading\'s moment', () => {
+  const events = [said(30_000, undefined, '晚说的'), said(10_000, undefined, '先说的'), said(20_000, undefined, '中间说的')]
+  /* The stopped conversation this panel stands in: measured to its own last word,
+     the log's newest, not to the moment the reading was taken at. */
+  const stopped = readOverview({
+    sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN) }),
+    events: { [MAIN]: events },
+  })
+  assert.equal(stopped.main.startedAt?.getTime(), 10_000, 'the window did not start at the log\'s earliest word')
+  assert.equal(stopped.main.elapsedSeconds, 20, 'a stopped window measured its span to something other than its last word')
+
+  /* The reading's own moment speaks the epoch-or-string convention too: a moment
+     string measures the same span a number would. */
+  const running = readOverview({
+    sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN, { running: true }) }),
+    events: { [MAIN]: events },
+    at: '1970-01-01T00:00:44.000Z',
+  })
+  assert.equal(running.main.elapsedSeconds, 34, 'a running window did not measure its span to the reading moment')
+
+  /* A moment that reads as nothing says nothing: no span is stated at all. */
+  const timeless = readOverview({
+    sessions: snapshot([MAIN], { [MAIN]: mainRow(MAIN, { running: true }) }),
+    events: { [MAIN]: events },
+    at: 'not a moment',
+  })
+  assert.equal(timeless.main.elapsedSeconds, null, 'an unreadable reading moment invented a span')
+})
+
+/* ---- what the panel watches ----------------------------------------------
+ *
+ * The reading carries the main's parented children **before** the five-window
+ * cap: a seat's admission is decided off the child's own log, so the log has to
+ * stay open even for a child no seat keeps. The ids are the panel's watch list;
+ * the snapshot shape is read once, here.
+ */
+
+test('mainChildIds is the parented set untruncated: the ended ones in, the cap not applied', () => {
+  const ids = ['c-1', 'c-2', 'c-3', 'c-4', 'c-5', 'c-6']
+  const byId = { [MAIN]: mainRow(MAIN), ...Object.fromEntries(ids.map((id) => [id, childRow(id, MAIN)])) }
+  const reading = readOverview({ sessions: snapshot([MAIN, ...ids], byId) })
+  assert.equal(reading.children.length, 5, 'the cap stopped keeping five windows')
+  assert.deepEqual(reading.mainChildIds, ids, 'the parented set was folded by the cap or lost a child')
+
+  /* A child that ended keeps its id in the set — its own log decides whether its
+     seat comes back, so its window stays open while no seat is kept. */
+  const ended = readOverview({
+    sessions: snapshot([MAIN, ...ids], { ...byId, 'c-1': childRow('c-1', MAIN, false) }),
+  })
+  assert.equal(ended.children.some((one) => one.id === 'c-1'), false, 'the ended child drew a window')
+  assert.equal(ended.mainChildIds.includes('c-1'), true, 'the ended child left the watch set')
+
+  /* And with no main window there is no set: an orphaned list names nobody. */
+  const orphan = readOverview({
+    sessions: snapshot(ids, Object.fromEntries(ids.map((id) => [id, childRow(id, 'session-elsewhere')]))),
+  })
+  assert.deepEqual(orphan.mainChildIds, [], 'a reading with no main window still named children')
 })

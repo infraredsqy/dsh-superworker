@@ -15,13 +15,10 @@
  * session this node owns; the second is somebody else's conversation.
  */
 
+import { asRecord } from './fields.ts'
+
 /** The file-name suffix of a note: the file name itself is the node id. */
 const NOTE_SUFFIX = '.json'
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-  return value as Record<string, unknown>
-}
 
 /** The two lists a note carries, which are two different questions: `run` works the node, `discussion` was where it was born. */
 type NoteKind = 'discussion' | 'run'

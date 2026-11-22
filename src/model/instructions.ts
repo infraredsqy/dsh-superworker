@@ -14,7 +14,7 @@
  * unrecognized scope spelling, all read as in force.
  */
 import type { SuperworkerInstruction } from './records.ts'
-import type { CycleReading, InstructionGroupReading, InstructionReading, NodeReading, ProjectReading } from './contract.ts'
+import type { CycleReading, InstructionGroupReading, InstructionReading, NodeReading } from './contract.ts'
 import { cutAt, field, text, toMoment } from './fields.ts'
 
 /**
@@ -76,9 +76,10 @@ export function readInstructions(
  * meets the sentences currently governing them first; empty groups are not
  * collected.
  * @param entries - The entries that truly go on the page at this moment; whether archived ones show is the caller's prior filter.
+ * @param cycles - The line readings whose bound buckets are pre-registered, in the record's own order — the one slice of the whole reading the grouping actually reads.
  */
 export function groupInstructions(
-  project: ProjectReading,
+  cycles: readonly CycleReading[],
   entries: readonly InstructionReading[],
 ): readonly InstructionGroupReading[] {
   const groups = new Map<string, InstructionReading[]>()
@@ -93,7 +94,7 @@ export function groupInstructions(
    * in (record order, not first-entry order) and gives the two unnamed buckets a place to sit. What
    * each bucket is CALLED is the client's business — the key says which bucket it is. */
   group('global')
-  for (const cycle of project.cycles) group(`cycle:${cycle.id}`)
+  for (const cycle of cycles) group(`cycle:${cycle.id}`)
   group('cycle:')
   group('node')
 

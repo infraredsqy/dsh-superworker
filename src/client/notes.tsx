@@ -15,7 +15,7 @@ import type { Translate } from './locale.ts'
 import { useT } from './locale.ts'
 import { dayLabel, groupWord, timeOf, unit } from './words.ts'
 import { nameWithin, nodeName } from './nodes.ts'
-import { PaneFrame } from './widgets.tsx'
+import { FoldSection, PaneFrame } from './widgets.tsx'
 
 /** With archived entries collapsed, how many non-standing rows a group may show at most. */
 const NOTES_ROWS = 5
@@ -178,7 +178,7 @@ function InstructionBook(props: {
   const visible = props.showArchived
     ? project.instructions
     : project.instructions.filter((entry) => entry.standing)
-  const groups = groupInstructions(project, visible)
+  const groups = groupInstructions(project.cycles, visible)
   if (project.instructions.length === 0) {
     return <p className="superworker-innone">{t('notes.empty')}</p>
   }
@@ -193,20 +193,21 @@ function InstructionBook(props: {
           const hidden = Math.max(0, group.entries.length - live - NOTES_ROWS)
           const shown = isOpen ? group.entries : group.entries.slice(0, live + NOTES_ROWS)
           return (
-            <section className={`superworker-sec${isFolded ? ' is-folded' : ''}`} key={group.key}>
-              <button
-                type="button"
-                className="superworker-rowhead"
-                aria-expanded={!isFolded}
-                onClick={() => setFolded((table) => ({ ...table, [group.key]: !isFolded }))}
-              >
-                <span className="superworker-rowhead-key">{groupWord(t, group)}</span>
-                <span className="superworker-rowhead-figs">
+            <FoldSection
+              key={group.key}
+              folded={isFolded}
+              onToggle={() => setFolded((table) => ({ ...table, [group.key]: !isFolded }))}
+              title={groupWord(t, group)}
+              figs={(
+                <React.Fragment>
                   <b className="superworker-num">{live}</b>
                   {t('notes.in-force')}
-                  <React.Fragment>{' · '}<b className="superworker-num">{group.entries.length}</b>{unit(t, 'notes.entries.one', 'notes.entries.other', group.entries.length)}</React.Fragment>
-                </span>
-              </button>
+                  {' · '}
+                  <b className="superworker-num">{group.entries.length}</b>
+                  {unit(t, 'notes.entries.one', 'notes.entries.other', group.entries.length)}
+                </React.Fragment>
+              )}
+            >
               {shown.map((entry) => (
                 <InstructionRow
                   key={entry.id}
@@ -231,7 +232,7 @@ function InstructionBook(props: {
                   </button>
                 )
                 : null}
-            </section>
+            </FoldSection>
           )
         })}
     </React.Fragment>
