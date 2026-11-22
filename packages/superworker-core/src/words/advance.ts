@@ -13,18 +13,24 @@ import { EXIT, pyIndented, pyList, refuse, run, short } from './out';
 import type { Superworker } from '../open';
 import { actionText } from './plan';
 
+/** The dispatch cells sorted by their receipt: the ones that opened a session, and the ones already open. One spelling, shared by the JSON branch and the receipt text. */
+function openedAndSkipped(dispatches: readonly unknown[] | undefined): { opened: any[]; skipped: any[] } {
+  const cells = (dispatches ?? []) as any[];
+  return {
+    opened: cells.filter((cell) => cell.receipt?.action === 'opened'),
+    skipped: cells.filter((cell) => cell.receipt?.action === 'already_open'),
+  };
+}
+
 /** The cells one advance hands to the executor, as the receipt reads them. */
 function receiptText(receipt: Record<string, any>, spawnError?: string): string {
   const lines: string[] = ['action: advance', `cycle:  ${receipt.cycle}`];
   lines.push(`pinned: ${pyList((receipt.pinned ?? []) as string[])}`);
-  const opened = ((receipt.dispatches ?? []) as any[]).filter((cell) => cell.receipt?.action === 'opened');
-  const skipped = ((receipt.dispatches ?? []) as any[])
-    .filter((cell) => cell.receipt?.action === 'already_open')
-    .map((cell) => String(cell.node_id));
+  const { opened, skipped } = openedAndSkipped(receipt.dispatches);
   lines.push(
     `spawned: ${opened.length === 0 ? '[]' : pyList(opened.map((cell) => String(cell.receipt.session?.sessionId ?? cell.node_id)))}`,
   );
-  if (skipped.length > 0) lines.push(`spawn_skipped: ${pyList(skipped)}`);
+  if (skipped.length > 0) lines.push(`spawn_skipped: ${pyList(skipped.map((cell) => String(cell.node_id)))}`);
   if (spawnError !== undefined) lines.push(`spawn_error: ${spawnError}`);
   lines.push(`parked: ${receipt.parked === true ? 'yes' : 'no'}`);
   if (receipt.plan !== undefined) lines.push('', actionText(receipt.plan as Record<string, any>));
@@ -68,17 +74,14 @@ export const advanceVerb = run('advance', async (call) => {
   }
   const receipt = await superworker.conductor.advance(named);
   if (asJson) {
-    const opened = receipt.dispatches.filter((cell) => cell.receipt.action === 'opened');
-    const skipped = receipt.dispatches
-      .filter((cell) => cell.receipt.action === 'already_open')
-      .map((cell) => cell.node_id);
+    const { opened, skipped } = openedAndSkipped(receipt.dispatches);
     return {
       stdout: pyIndented({
         action: 'advance',
         cycle: receipt.cycle,
         pinned: receipt.pinned,
         spawned: opened.map((cell) => cell.receipt.session?.sessionId ?? cell.node_id),
-        spawn_skipped: skipped,
+        spawn_skipped: skipped.map((cell) => cell.node_id),
         parked: receipt.parked,
         plan: receipt.plan,
       }),

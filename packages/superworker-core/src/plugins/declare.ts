@@ -162,9 +162,9 @@ export function declarationProblems(folder: PluginFolder): string[] {
         'of its own kind, or null for "no factory value at all"');
     }
     if (kind === 'word' && cell.values !== undefined && cell.values !== null) {
-      const values = cell.values;
-      const words = Array.isArray(values) && values.length > 0 && values.every((v) => typeof v === 'string');
-      if (!words) {
+      // The shape check is `wordsCell`'s: the same read `defaultFits` hands its list to, so the two
+      // cannot disagree about what a `values` cell is.
+      if (wordsCell(cell.values) === undefined) {
         out.push(`plugin ${JSON.stringify(name)}: knob ${JSON.stringify(key)} takes \`values\` as a ` +
           'non-empty list of words');
       }

@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SimulatedExecutor } from '../src/executor';
 import { open } from '../src/open';
+import { CORE_SELF_VERBS } from '../src/words/core-words';
 import { answer } from '../src/words/router';
-import { COMMAND_ROWS } from '../src/words/table';
+import { COMMAND_ROWS, COMMANDS, GROUP_ROWS, TABLE_TOP } from '../src/words/table';
 import type { WordsIO } from '../src/words/types';
 
 /**
@@ -255,5 +256,18 @@ describe('the engine and the words agree', () => {
     const line = await open(root).ledger.cycles.show('c1');
     expect(line.holding.map((item) => item.id)).toEqual([plan.node_id]);
     expect((await open(root).conductor.next({ cycle: 'c1' })).action).not.toBe('open_node');
+  });
+});
+
+describe('the word table: the listing and the route table are the same words', () => {
+  it('every verb and group the top lists is a row the router answers, and no row goes unlisted', () => {
+    // The listing prints the top; the router routes the rows. The two self words (`doctor`,
+    // `version`) are rows without a verbs line of their own (the `the tool itself:` block prints
+    // them), so the guard reads the rows with those two taken out. A word added to the rows but
+    // not the top fails here instead of routing in silence.
+    const selfWords = CORE_SELF_VERBS.map(([word]) => word);
+    const routed = Object.keys(COMMANDS).filter((word) => !selfWords.includes(word));
+    expect([...routed].sort()).toEqual([...TABLE_TOP.verbs].sort());
+    expect(Object.keys(GROUP_ROWS).sort()).toEqual([...TABLE_TOP.groups].sort());
   });
 });

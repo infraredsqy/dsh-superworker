@@ -9,14 +9,6 @@ import type { TableTop, WordRow } from './types';
  * Frozen: edit a row only together with the surface it describes. This is the one copy: the
  * transport layer in front of the engine reads it from here.
  */
-/**
- * The command table: one row per word, and every cell states that word's shape -- the usage line's
- * required / repeated / exclusive shapes, the two section listings, each option's invocation and its
- * help. The parser, the help printer and the router all read this one table, so a word cannot be
- * routable and unprintable at the same time.
- *
- * Frozen: edit a row only together with the surface it describes.
- */
 export const TOP = {
   "prog": "superworker",
   "verbs": [
@@ -572,7 +564,6 @@ export const GROUPS = {
     "prog": "cycle",
     "summary": "one line of work",
     "description": "A cycle is one line of work: it picks ONE DAG node at a time, hands it to a session, and records the step when that session reports back. This group owns the line itself -- its identity, whether it is in service, its policies, and the path it has walked. Which nodes it holds is the `hold` word's business.",
-    "metavar": "{create,start,rename,status,policy,list,current,show,close,retry}",
     "dest": "cycle_command",
     "commands": [
       {
@@ -930,7 +921,6 @@ export const GROUPS = {
     "prog": "dag",
     "summary": "the graph",
     "description": "Manage a dependency graph (DAG) of project ideas/plugins.",
-    "metavar": "{add,rm,update,depend,undepend,status,approve,revive,list,info,context,search,open,validate,help}",
     "dest": "dag_command",
     "commands": [
       {
@@ -1479,7 +1469,6 @@ export const GROUPS = {
     "prog": "config",
     "summary": "this machine's and this project's settings",
     "description": "Every setting is a knob with a kind, and one chain: this node -> this line -> this project -> this machine -> factory default. Narrower layers cover wider ones, and the same name may be stated on several layers at once: the resolution is deterministic, and `list` / `get` always say which layer the value in force came from. The table is the built-in settings plus every knob the installed plugins declare -- `list` prints it, and a name nobody declares is refused. Not every knob takes every layer: a core setting takes the project and global layers, a plugin's knob takes all four (`set` names the layers a knob takes when it refuses one). The line's own policies -- `parallel`, `when_shelved`, `stop_after_nodes`, `model` -- are not settings and are not here: they live on the line record, written by `cycle policy`. The two file layers are `~/.superworker/config.json` (global: travels with the person and the machine, never generated for you) and `<project>/.superworker/config.json` (travels with the project; `init` puts an empty `{}` there); the two narrow ones ride on the cycle record and on one node's own `config.json`. `set` stores a value and `unset` drops that one layer's entry -- a switch is turned off by setting `off`, while dropping its entry is `unset` (the same split `cycle policy` explains). `set` / `unset` write exactly one layer: the project layer unless --global / --cycle / --node says otherwise.",
-    "metavar": "{list,get,set,unset}",
     "dest": "config_command",
     "commands": [
       {
@@ -1723,7 +1712,6 @@ export const GROUPS = {
     "prog": "session",
     "summary": "a node's own conversations, which live on this machine",
     "description": "A session id is machine-local -- a conversation lives on the machine that opened it -- so the ids live in `.superworker/meta/sessions/<node id>.json` instead of on the record: guaranteed dead on another machine, and impossible to tell apart from \"that session was deleted here\". `show` reads one node's note, and `list` reads every note this machine holds (keyed by node id, for a panel).",
-    "metavar": "{show,list}",
     "dest": "session_command",
     "commands": [
       {

@@ -301,6 +301,17 @@ function noTagsRefusal(verb: string) {
   );
 }
 
+/** The `CREATED:` line both creating words spell: the id, and the tags when the line carries any. */
+function createdLine(record: { id: unknown; tags?: readonly string[] }): string {
+  const tags = Array.isArray(record.tags) ? record.tags : [];
+  return `CREATED: cycle "${record.id}"${tags.length > 0 ? ` (tags=${pyList(tags)})` : ''}`;
+}
+
+/** The `name=value` run both policy-printing words spell: the `POLICY:` echo and `cycle current`'s line. */
+function policyLine(policy: object): string {
+  return Object.entries(policy).map(([name, held]) => `${name}=${pyScalar(held)}`).join(', ');
+}
+
 /** `cycle create`. */
 export const cycleCreateVerb = run("cycle create", async (call) => {
   const { values, superworker } = call;
@@ -314,8 +325,7 @@ export const cycleCreateVerb = run("cycle create", async (call) => {
     tags: splitTags(values.tags),
     ...(values.force === true ? { force: true } : {}),
   });
-  const tags = Array.isArray(record.tags) ? record.tags : [];
-  return { stdout: `CREATED: cycle "${record.id}"${tags.length > 0 ? ` (tags=${pyList(tags)})` : ''}` };
+  return { stdout: createdLine(record) };
 });
 
 /** `cycle start`: create and pin the opening node — two lines, the creation and the pinning. */
@@ -333,14 +343,13 @@ export const cycleStartVerb = run("cycle start", async (call) => {
     ...(values.parallel === undefined ? {} : { parallel: readCount(values.parallel) as number }),
   });
   const holding = Array.isArray(record.holding) ? record.holding : [];
-  const tags = Array.isArray(record.tags) ? record.tags : [];
   const pin = holding[0];
   const title = pin === undefined
     ? ''
     : String((await superworker.ledger.dag.get(pin.id))?.title ?? '');
   return {
     stdout:
-      `CREATED: cycle "${record.id}"${tags.length > 0 ? ` (tags=${pyList(tags)})` : ''}\n` +
+      `${createdLine(record)}\n` +
       `STARTED: cycle "${record.id}" → ${title}` +
       (holding.length > 1 ? `  (${holding.length} node(s) pinned)` : ''),
   };
@@ -368,7 +377,7 @@ export const cyclePolicyVerb = run("cycle policy", async (call) => {
   const [id, key, value] = positionals.map((words) => words[0]);
   const effective = await superworker.ledger.cycles.setPolicy(id, key, readPolicyValue(value) as CyclePolicyValue);
   return {
-    stdout: `POLICY: "${id}" → ${Object.entries(effective).map(([name, held]) => `${name}=${pyScalar(held)}`).join(', ')}`,
+    stdout: `POLICY: "${id}" → ${policyLine(effective)}`,
   };
 });
 
@@ -410,7 +419,7 @@ export const cycleCurrentVerb = run("cycle current", async (call) => {
     const policy = await superworker.ledger.cycles.policies(String(cycle.id));
     out.push(`${mark} ${cycle.id} — ${cycle.title ?? ''}  [${cycle.status ?? '?'}]  tags: ${tags}`);
     out.push(
-      `  Policy: ${Object.entries(policy).map(([name, held]) => `${name}=${pyScalar(held)}`).join(', ')}  ` +
+      `  Policy: ${policyLine(policy)}  ` +
         `Steps walked: ${(cycle.path ?? []).length}`,
     );
     const holding = Array.isArray(cycle.holding) ? cycle.holding : [];
