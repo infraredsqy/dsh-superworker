@@ -30,8 +30,14 @@ import { hashDirectory } from './helpers/hash-dir.ts';
  *   (`plugins/`) travel with the tree and are what the plugin and doctor cases stand on, so hiding
  *   them would take those cases' premise away. A case that needs the switch sets it itself and puts
  *   it back.
- * - Engine operations belong in temp dirs; whoever lands a change inside the repo root `.superworker` fails
- *   the whole suite.
+ * - The hash runs on the guard's face (`skipLiveFaces` in `helpers/hash-dir.ts`): the covered set is
+ *   the record tree's stable remainder — the seed files `init` lays into a checkout, and every byte
+ *   that is not one of the faces a running line writes in ordinary work. This repo's own record is a
+ *   live one: a parallel cycle of the pipeline that drives it has its sessions writing records for
+ *   the whole suite window (`nodes/`, `signals/`, the record files, the record repo), and hashing
+ *   those would fail the suite on another cell's ordinary work. What the face still catches is
+ *   exactly what this suite can do wrong: landing anything new in the record tree, or touching the
+ *   seed. Engine operations belong in temp dirs; the seed is where that shows first.
  */
 export default function globalSetup(): () => void {
   const saved = new Map<string, string | undefined>();
@@ -42,7 +48,7 @@ export default function globalSetup(): () => void {
   const homeSandbox = mkdtempSync(join(tmpdir(), 'superworker-suite-home-'));
   process.env.SUPERWORKER_HOME_DIR = homeSandbox;
   const recordDir = fileURLToPath(new URL('../../../.superworker', import.meta.url));
-  const before = hashDirectory(recordDir);
+  const before = hashDirectory(recordDir, { skipLiveFaces: true });
   return () => {
     try {
       rmSync(homeSandbox, { recursive: true, force: true, maxRetries: 3 });
@@ -54,11 +60,11 @@ export default function globalSetup(): () => void {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
-    const after = hashDirectory(recordDir);
+    const after = hashDirectory(recordDir, { skipLiveFaces: true });
     if (after !== before) {
       throw new Error(
-        `the repo root .superworker hash differs before and after the whole suite: before=${before} after=${after}. ` +
-          'Engine operations belong in temp dirs; nothing may land in the repo root .superworker.',
+        `the repo root .superworker's stable face differs before and after the whole suite: before=${before} after=${after}. ` +
+          'Engine operations belong in temp dirs; nothing the suite ran may land on the record tree or its seed.',
       );
     }
   };

@@ -23,6 +23,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { canonicalWorkspaceRoot, executorOf, openConductSession, openNodeSession, openRouteSession } from '../src/host/executor.ts'
+import { fakeAgents } from './helpers/agents-registry.mjs'
 import { pinHome } from './helpers/env.mjs'
 import { clearPlacement, placeOneSkill } from './helpers/skill-placement.mjs'
 import { until, flush } from './helpers/wait.mjs'
@@ -105,57 +106,6 @@ function createDoors(count = 2) {
   }
 }
 
-/**
- * The session-side stand-in: every create is recorded (options, the messages handed over), and each
- * create may be held on a gate so a test controls when it lands. An agent that carries a wait
- * interface records that it was asked: the open must never consult it, so a case can read the
- * absence rather than trust it.
- */
-function fakeAgents({ gate, asksWait } = {}) {
-  const created = []
-  return {
-    created,
-    registry: {
-      create(options) {
-        const record = { options, followups: [], registered: [], sequence: [], waitAsked: 0 }
-        created.push(record)
-        const agent = {
-          id: options.sessionId,
-          status: 'idle',
-          ctx: {
-            tools: {
-              register(definition) {
-                record.registered.push(definition)
-                record.sequence.push('register')
-                return () => {}
-              },
-              /* The gating half of the registry: kept so a case can prove the open never reaches for it — the
-               * tool is registered globally by the wake, not into this session's scope. */
-              resolve: async () => ({}),
-            },
-          },
-          followup(message) {
-            record.sequence.push('followup')
-            record.followups.push(message)
-          },
-          ...(asksWait === true
-            ? {
-                whenIdle: () => {
-                  record.waitAsked += 1
-                  /* A round that never ends: a wait consulted here would hold the case's answer forever. */
-                  return new Promise(() => {})
-                },
-              }
-            : {}),
-        }
-        record.agent = agent
-        const held = gate?.(record, created.length - 1) ?? Promise.resolve()
-        return held.then(() => ({ agent, dispose: async () => {} }))
-      },
-    },
-  }
-}
-
 /** The host context stand-in: the port as a property, an event bus with `on`/`emit`, and the store the opener reaches through `get('sessions')` — the inject requirement a stand-in that omits the live-session service still opens without. */
 function context({ files, agents, sessions, defaultModel, workspaceRegistry, agentPresets } = {}) {
   return fakeContext({
@@ -166,13 +116,13 @@ function context({ files, agents, sessions, defaultModel, workspaceRegistry, age
   })
 }
 
-/** A real workspace root for the note the opener writes, with the plan prompt in the port's dict. `prompt: null` means the cell has none. */
+/** A real workspace root for the note the opener writes, with the plan prompt in the port's dict. `prompt: null` means the cell has none. The registry stand-in comes with the tool-recording face on: this file's judgment reads what the open registered (`registered`, `sequence`). */
 function rig({ files = {}, node = 'n1', cycle = 'c1', prompt = PROMPT, ...rest } = {}) {
   mkdirSync(join(tmpdir(), 'superworker-executor-'), { recursive: true })
   const root = mkdtempSync(join(tmpdir(), 'superworker-executor-', 'ws-'))
   const dict = { ...files }
   if (prompt !== null) dict[promptPath(cycle, node)] = prompt
-  const agents = fakeAgents(rest)
+  const agents = fakeAgents({ recordTools: true, ...rest })
   const { ctx, events } = context({ files: dict, agents: agents.registry, sessions: {}, ...rest })
   return { root, cycle, node, agents, ctx, events }
 }

@@ -14,31 +14,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { pathToFileURL } from 'node:url'
-import { JSDOM } from 'jsdom'
-import { BUNDLE, bundleSkip } from './helpers/client-shell.mjs'
-
-/**
- * Load the bundle through the shell's own module loader, with a DOM in place.
- *
- * React touches `window`/`document` once at load time, so the document is installed before the
- * import — the same order the real shell produces.
- */
-async function loadBundle() {
-  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div></body></html>', { url: 'http://127.0.0.1/' })
-  const { window } = dom
-  for (const name of ['window', 'document', 'HTMLElement', 'Node', 'Event', 'MouseEvent', 'KeyboardEvent', 'getComputedStyle', 'localStorage', 'SVGElement']) {
-    Object.defineProperty(globalThis, name, { value: window[name], configurable: true, writable: true })
-  }
-  window.__ModuleLoader__ = { load: (spec) => { window.__spec__ = spec } }
-  await import(pathToFileURL(BUNDLE).href)
-  const spec = window.__spec__
-  if (!spec) throw new Error('the bundle loaded without handing the shell a spec')
-  return spec.factory((name) => {
-    if (name === 'react') return globalThis.__react__
-    throw new Error(`this module table has no ${name}`)
-  })
-}
+import { bundleSkip, loadSpecOnly } from './helpers/client-shell.mjs'
 
 /**
  * A stand-in context carrying `connection` and a `remote` whose `$mount` resolves on demand.
@@ -87,10 +63,7 @@ function harness() {
 
 /* One bundle per process: a second load re-runs the plugin's module scope, and the panel's
  * stylesheet markers are page-wide. */
-const client = bundleSkip === false ? await (async () => {
-  globalThis.__react__ = await import('react')
-  return loadBundle()
-})() : null
+const client = bundleSkip === false ? (await loadSpecOnly()).client : null
 
 test('applying the plugin provides the panel and mounts the namespace once', { skip: bundleSkip }, () => {
   const { ctx, provided } = harness()

@@ -8,6 +8,11 @@
  * took (`asked`, `consulted`, `consoleErrors`), and a `settle()` that lets every read it started
  * land before the judge.
  *
+ * `loadSpecOnly` is the boot's opt-in narrower face: the same globals, the same loader, the same
+ * spec→factory assembly — and no host half, no roster, no mount. A file that wants the plugin's
+ * units (`apply`, the descriptors) against a stand-in gateway it builds itself takes this face
+ * instead of re-stating the boot.
+ *
  * Needs `lib/client.js`; `npm test` builds it first. `bundleSkip` is that missing reason, so a file
  * can skip itself with it instead of failing on an import that cannot load.
  */
@@ -32,7 +37,9 @@ export const bundleSkip = existsSync(BUNDLE) ? false : `${BUNDLE} is not there: 
  */
 let loadedSpec = null
 
-/** Load the bundle through the shell's loader (the first time only) and hand back its spec. */
+/**
+ * Load the bundle through the shell's loader (the first time only) and hand back its spec.
+ */
 async function specOf(window) {
   if (loadedSpec !== null) return loadedSpec
   let loaded = null
@@ -41,6 +48,41 @@ async function specOf(window) {
   if (loaded === null) throw new Error('the bundle loaded without handing the shell a spec')
   loadedSpec = loaded
   return loadedSpec
+}
+
+/** The module table the shell hands the factory: react comes from the test's own install. */
+const clientOf = (loaded, React) => loaded.factory((name) => {
+  if (name === 'react') return React
+  throw new Error(`this module table has no ${name}`)
+})
+
+/**
+ * The jsdom page and the globals the bundle's load-time touches need, one copy for both faces of
+ * the boot: `pretendToBeVisual` so the frame callbacks exist, and `navigator` written separately
+ * because it is a getter-only property on Node.
+ */
+function bootPage() {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div></body></html>', {
+    url: 'http://127.0.0.1/',
+    pretendToBeVisual: true,
+  })
+  const globals = ['window', 'document', 'HTMLElement', 'Node', 'Event', 'MouseEvent', 'KeyboardEvent', 'getComputedStyle', 'localStorage', 'SVGElement', 'requestAnimationFrame', 'cancelAnimationFrame']
+  for (const name of globals) Object.defineProperty(globalThis, name, { value: dom.window[name], configurable: true, writable: true })
+  /* `navigator` is a getter-only property on Node, so its descriptor is written separately. */
+  Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true, writable: true })
+  return dom.window
+}
+
+/**
+ * The boot's spec-only face: the globals go up, the bundle loads through the shell's loader, the
+ * factory gets the module table — and nothing mounts. What comes back is the plugin unit a case
+ * applies against a gateway stand-in of its own.
+ */
+export async function loadSpecOnly() {
+  const window = bootPage()
+  const loaded = await specOf(window)
+  const React = await import('react')
+  return { client: clientOf(loaded, React), window }
 }
 
 /**
@@ -66,15 +108,7 @@ async function specOf(window) {
  * it and redraw.
  */
 export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-for-the-render-check', sessionId = 'render-check-session', useSessions, sessionsService, workspaces, settingsForm, onConsult, openSession, agents, weightsFolder }) {
-  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div></body></html>', {
-    url: 'http://127.0.0.1/',
-    pretendToBeVisual: true,
-  })
-  const { window } = dom
-  const globals = ['window', 'document', 'HTMLElement', 'Node', 'Event', 'MouseEvent', 'KeyboardEvent', 'getComputedStyle', 'localStorage', 'SVGElement', 'requestAnimationFrame', 'cancelAnimationFrame']
-  for (const name of globals) Object.defineProperty(globalThis, name, { value: window[name], configurable: true, writable: true })
-  /* `navigator` is a getter-only property on Node, so its descriptor is written separately. */
-  Object.defineProperty(globalThis, 'navigator', { value: window.navigator, configurable: true, writable: true })
+  const window = bootPage()
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
   /* Every `console.error` is a failure: this is the one reading a smoke case can take without
@@ -89,10 +123,7 @@ export async function mountBuiltPanel({ record, workspaceRoot = 'C:\\workspace-f
 
   /* ---- what the shell gets: one spec, then a factory ---- */
   const loaded = await specOf(window)
-  const client = loaded.factory((name) => {
-    if (name === 'react') return React
-    throw new Error(`this module table has no ${name}`)
-  })
+  const client = clientOf(loaded, React)
 
   /* ---- the host half behind it, read through the in-memory port ---- */
   const { SuperworkerRecordsGateway } = await import(pathToFileURL(join(repoRoot, 'src', 'host', 'index.ts')).href)

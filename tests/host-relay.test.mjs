@@ -24,6 +24,7 @@ import { join } from 'node:path'
 import { dispatchCell, installRelay } from '../src/host/relay.ts'
 import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
 import { PANEL_PREF_FIELDS } from '../src/host/settings-fields.ts'
+import { fakeAgents } from './helpers/agents-registry.mjs'
 import { pinHome } from './helpers/env.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
 import { clearPlacement, placeOneSkill } from './helpers/skill-placement.mjs'
@@ -70,27 +71,6 @@ async function settleClose(root, closed, next) {
 
 /** The negative wait behind the `wait` assertions: the shared drain (see `helpers/wait.mjs`) — it only ever disproves. */
 const drain = () => drainFor()
-
-/** The session-side stand-in: every create is recorded and its messages kept. */
-function fakeAgents() {
-  const created = []
-  return {
-    created,
-    registry: {
-      create(options) {
-        const record = { options, followups: [] }
-        created.push(record)
-        const agent = {
-          sessionId: options.sessionId,
-          status: 'idle',
-          followup(message) { record.followups.push(message) },
-        }
-        record.agent = agent
-        return Promise.resolve({ agent, dispose: async () => {} })
-      },
-    },
-  }
-}
 
 /** A workspace-files port that reads the real record directory, the way the real gateway does. */
 function fsPort(root, seen) {

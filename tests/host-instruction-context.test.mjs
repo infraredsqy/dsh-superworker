@@ -19,7 +19,6 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { execFile } from 'node:child_process'
 import { copyFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -38,6 +37,7 @@ import {
 import { PANEL_PREF_FIELDS } from '../src/host/settings-fields.ts'
 import { shippedPluginsDir } from '../src/host/skill-paths.ts'
 import { fakeContext } from './helpers/host-context.mjs'
+import { gitIn } from './helpers/git.mjs'
 import { project as throwaway } from './helpers/superworker-project.mjs'
 
 /** The seams one word line answers through, as the production path builds them. */
@@ -70,37 +70,6 @@ async function idsOn(stage) {
   const said = await answer(['instruction', 'list', '--json', '--project', stage.root], ioAt(stage.root))
   assert.equal(said.code, 0, said.stderr)
   return JSON.parse(said.stdout).map((row) => row.id)
-}
-
-/**
- * One git line in a directory, the conventions of the engine's own fixture runner: `cwd` always
- * given, a fixed identity through the environment, a non-zero exit throws (an unbuildable fixture
- * would make the case below assert about the wrong thing).
- */
-function gitIn(cwd, ...args) {
-  return new Promise((resolve, reject) => {
-    execFile(
-      'git',
-      args,
-      {
-        cwd,
-        encoding: 'utf8',
-        windowsHide: true,
-        env: {
-          ...process.env,
-          GIT_AUTHOR_NAME: 'superworker test',
-          GIT_AUTHOR_EMAIL: 'superworker-test@example.invalid',
-          GIT_COMMITTER_NAME: 'superworker test',
-          GIT_COMMITTER_EMAIL: 'superworker-test@example.invalid',
-          GIT_TERMINAL_PROMPT: '0',
-        },
-      },
-      (error, stdout, stderr) => {
-        if (error === null) resolve(stdout)
-        else reject(new Error(`git ${args.join(' ')} failed in ${cwd}: ${stderr || error.message}`))
-      },
-    )
-  })
 }
 
 /**

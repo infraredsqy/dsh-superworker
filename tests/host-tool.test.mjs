@@ -26,7 +26,6 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -36,6 +35,7 @@ import { executorOf } from '../src/host/executor.ts'
 import { TOOL_NAME, argvOf } from '../src/host/tool.ts'
 import { hasPipelineRecord, installToolWake, offersTool } from '../src/host/wake.ts'
 import { pinHome } from './helpers/env.mjs'
+import { gitIn } from './helpers/git.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
 
 /**
@@ -74,37 +74,6 @@ const agentOf = (id = 'agent-1') => ({ id })
 /** The tool names this step's request carries, asked through the host's own rule. */
 async function stepToolsOf(ctx, agent) {
   return [...(await ctx.tools.resolve({ agent })).keys()]
-}
-
-/**
- * One git line in a directory, the conventions of the engine's own fixture runner: `cwd` always
- * given, a fixed identity through the environment, a non-zero exit throws (an unbuildable fixture
- * would make the case below assert about the wrong thing).
- */
-function gitIn(cwd, ...args) {
-  return new Promise((resolve, reject) => {
-    execFile(
-      'git',
-      args,
-      {
-        cwd,
-        encoding: 'utf8',
-        windowsHide: true,
-        env: {
-          ...process.env,
-          GIT_AUTHOR_NAME: 'superworker test',
-          GIT_AUTHOR_EMAIL: 'superworker-test@example.invalid',
-          GIT_COMMITTER_NAME: 'superworker test',
-          GIT_COMMITTER_EMAIL: 'superworker-test@example.invalid',
-          GIT_TERMINAL_PROMPT: '0',
-        },
-      },
-      (error, stdout, stderr) => {
-        if (error === null) resolve(stdout)
-        else reject(new Error(`git ${args.join(' ')} failed in ${cwd}: ${stderr || error.message}`))
-      },
-    )
-  })
 }
 
 /** Settle one tool call through every `tools/post-execute` listener the context holds. */
