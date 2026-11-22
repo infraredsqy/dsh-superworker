@@ -197,7 +197,7 @@ test('The panel\'s instructions column follows the writes: add, archive, revive 
         }
       }
       const port = fakeWorkspaceFiles(files, { tier: 500 })
-      return readReading(port, { sessionId: 's1', workspaceRoot: stage.root }, new AbortController().signal)
+      return readReading(port, { sessionId: 's1', workspaceRoot: stage.root }, new AbortController().signal, null)
     }
     const entryIn = (reading) => reading.instructions.find((row) => row.text === 'the panel follows this one')
 

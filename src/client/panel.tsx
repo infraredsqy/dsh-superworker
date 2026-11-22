@@ -341,6 +341,10 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
         cycles: reading.cycles,
         instructions: reading.instructions,
         issues: reading.issues,
+        /* The table travels with the reading, read on the host off the issue plugin's own declaration:
+         * the browser half cannot open a file, and a second copy of the numbers here would be the
+         * drift this whole arrangement exists to prevent. */
+        poolWeights: reading.poolWeights ?? null,
         at,
       })),
     [reading, at],

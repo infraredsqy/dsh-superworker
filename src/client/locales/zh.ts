@@ -185,7 +185,7 @@ export const zh = {
   'config.row.issue_pool.name': '问题池越线插节点',
   'config.row.issue_pool.caption': '关单时问题池的加权和越过上限，就插一个修问题的节点；关掉就不插',
   'config.row.issue_pool_weight_limit.name': '问题池加权和上限',
-  'config.row.issue_pool_weight_limit.caption': '各等级按记录里的重量表折算出的总和，下一次关单要低于这个数；留空就不判',
+  'config.row.issue_pool_weight_limit.caption': '各等级按问题池插件声明的权值折算出的总和，下一次关单要低于这个数；留空就不判',
   'config.row.test_audit.name': '测试耗时越线插节点',
   'config.row.test_audit.caption': '关单时整套测试的实际耗时越过上限，就插一个精简测试的节点；关掉就不插',
   'config.row.test_seconds_limit.name': '测试耗时上限（秒）',

@@ -9,11 +9,12 @@
  * standing, just left out of the weighted sum.
  *
  * Neither the weight table nor the policy line sits on a ready-made field in
- * the records: the former is written in some maintenance node's own title
- * (`P3/P2/P1/P0 = 1/2/4/8`), the latter is a cycle's own
- * `issue_pool_weight_limit`.
+ * the records: the former is the issue plugin's own declaration of it, handed
+ * in with the reading (this layer never reads it off a node's text), the latter
+ * is a cycle's own `issue_pool_weight_limit`. A table that was not handed in is
+ * no table: every weight reading is `null` rather than a 0 nobody wrote.
  */
-import type { SuperworkerCycle, SuperworkerIssue, SuperworkerNode } from './records.ts'
+import type { SuperworkerCycle, SuperworkerIssue } from './records.ts'
 import type {
   IssueGroupReading,
   IssueReading,
@@ -23,9 +24,6 @@ import type {
   PoolWeights,
 } from './contract.ts'
 import { cutAt, field, text, toMoment, writtenBy } from './fields.ts'
-
-/** The weight table's sentence: how many times each tier counts. */
-const WEIGHT_MAP = /P3\s*\/\s*P2\s*\/\s*P1\s*\/\s*P0\s*=\s*(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)/u
 
 /** The policy line's setting name, verbatim as the tool spells it. */
 const WEIGHT_LIMIT = 'issue_pool_weight_limit'
@@ -47,12 +45,11 @@ const GROUPS: readonly { readonly key: IssueState; readonly standing: boolean }[
 ]
 
 export function readPool(
-  nodes: Readonly<Record<string, SuperworkerNode>>,
   cycles: readonly SuperworkerCycle[],
   issues: Readonly<Record<string, SuperworkerIssue>>,
+  weights: PoolWeights | null,
   at: Date,
 ): PoolReading {
-  const weights = readWeights(nodes)
   const line = readLine(cycles)
 
   const rows: IssueReading[] = []
@@ -81,7 +78,7 @@ export function readPool(
     const payable = decision !== 'external'
     const row: IssueReading = {
       id,
-      weight: severity === undefined ? 0 : (weights?.[severity] ?? 0),
+      weight: weightOf(weights, severity),
       status: statusOf(recordStatus, written, at),
       discoveredAt,
       updatedAt,
@@ -112,7 +109,9 @@ export function readPool(
       standing: pile.standing,
       entries,
       count: entries.length,
-      weight: sumWeight(entries),
+      /* Same reading as the pool's own sum below: with no table nothing in the pile could be weighed,
+       * and an external-only pile would otherwise add up to 0 — a number nobody wrote. */
+      weight: weights === null ? null : sumWeight(entries),
     })
   }
 
@@ -138,15 +137,17 @@ export function readPool(
   }
 }
 
-export function readWeights(nodes: Readonly<Record<string, SuperworkerNode>>): PoolWeights | null {
-  for (const node of Object.values(nodes)) {
-    const said = node.title ?? ''
-    const found = WEIGHT_MAP.exec(said)
-    if (found !== null) {
-      return { P3: Number(found[1]), P2: Number(found[2]), P1: Number(found[3]), P0: Number(found[4]) }
-    }
-  }
-  return null
+/**
+ * One tier's count in the table, or `null` when the table itself was not obtained.
+ *
+ * The two absences are different facts and read differently: no table at all is `null`, while a
+ * table that was read and names no such tier counts that tier as 0 — the table did speak, and it
+ * said this tier weighs nothing. `null` here is what keeps a gauge from drawing a number nobody wrote.
+ */
+function weightOf(weights: PoolWeights | null, severity: string | undefined): number | null {
+  if (weights === null) return null
+  if (severity === undefined) return 0
+  return weights[severity] ?? 0
 }
 
 /**
@@ -193,7 +194,17 @@ function touchedAt(row: IssueReading): number {
   return (row.updatedAt ?? row.discoveredAt)?.getTime() ?? 0
 }
 
-/** A pile's weighted sum: non-paying issues stay out of the sum. */
-function sumWeight(entries: readonly IssueReading[]): number {
-  return entries.filter((entry) => entry.payable).reduce((total, entry) => total + entry.weight, 0)
+/**
+ * A pile's weighted sum: non-paying issues stay out of the sum, and a sum with a term nobody could
+ * weigh is unknown (`null`) rather than short by that term — adding up what is known would print a
+ * number that claims to be the pile's weight.
+ */
+function sumWeight(entries: readonly IssueReading[]): number | null {
+  let total = 0
+  for (const entry of entries) {
+    if (!entry.payable) continue
+    if (entry.weight === null) return null
+    total += entry.weight
+  }
+  return total
 }

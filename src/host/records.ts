@@ -10,6 +10,7 @@
  */
 import { isRecognizableLegacyRecord } from 'superworker-core'
 import { RECORD_DIR, RECORD_SOURCES } from './contract.ts'
+import type { PoolWeights } from '../model/records.ts'
 import type {
   SuperworkerCycle,
   SuperworkerInstruction,
@@ -218,11 +219,16 @@ export async function readWholeFile(
  * `legacy`, every collection empty, and not one old file opened, because what
  * that workspace needs is a migration, not a read. Real errors (refused
  * directory listing, caller cancellation) are rethrown, not swallowed here.
+ *
+ * @param poolWeights - The issue pool's weight table, read by the caller off the issue plugin's own
+ * declaration (`pool-weights.ts`). Required on purpose: a default would let a caller that forgot the
+ * table quietly read as "no table was obtained". `null` is how a caller says that itself.
  */
 export async function readReading(
   port: WorkspaceFilesPort,
   scope: SuperworkerScope,
   signal: AbortSignal,
+  poolWeights: PoolWeights | null,
 ): Promise<SuperworkerReading> {
   const recording = new Map<string, readonly WorkspaceDirectoryEntry[] | undefined>()
   const listDir = async (dir: string): Promise<readonly WorkspaceDirectoryEntry[] | undefined> => {
@@ -255,6 +261,7 @@ export async function readReading(
     recordPath: RECORD_DIR,
     state,
     sources,
+    poolWeights,
     nodes,
     cycles,
     instructions,

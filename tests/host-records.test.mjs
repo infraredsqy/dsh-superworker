@@ -111,7 +111,7 @@ const record = () => ({
 
 test('Every source was read, and the entries are the record\'s own (weight / dsh_session as they are)', async () => {
   const { port } = fakeWorkspace(record(), { pageLines: 500 })
-  const reading = await readReading(port, scope, signal)
+  const reading = await readReading(port, scope, signal, null)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'read' })
   assert.equal(reading.recordPath, '.superworker')
@@ -130,7 +130,7 @@ test('A record spanning several pages still comes back whole', async () => {
   const files = record()
   files['.superworker/ideas.json'] = json({ nodes: many })
   const { port, calls } = fakeWorkspace(files, { pageLines: 3 })
-  const reading = await readReading(port, scope, signal)
+  const reading = await readReading(port, scope, signal, null)
 
   assert.deepEqual(reading.nodes, many)
   assert.ok(calls.filter(([kind]) => kind === 'read').length > 3, 'this one takes several pages to read')
@@ -138,7 +138,7 @@ test('A record spanning several pages still comes back whole', async () => {
 
 test('No record in the workspace: an empty reading comes back without a sound', async () => {
   const { port } = fakeWorkspace({})
-  const reading = await readReading(port, scope, signal)
+  const reading = await readReading(port, scope, signal, null)
 
   assert.deepEqual(reading.sources, { nodes: 'missing', cycles: 'missing', instructions: 'missing', issues: 'missing' })
   assert.deepEqual(reading.nodes, {})
@@ -151,7 +151,7 @@ test('Record present, one file short: only that one reports missing, the rest st
   const files = record()
   delete files['.superworker/state.json']
   const { port } = fakeWorkspace(files, { pageLines: 500 })
-  const reading = await readReading(port, scope, signal)
+  const reading = await readReading(port, scope, signal, null)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'missing', instructions: 'read', issues: 'read' })
   assert.deepEqual(reading.cycles, [])
@@ -163,7 +163,7 @@ test('The unreadable one reports unusable, the reading still comes back', async 
   files['.superworker/state.json'] = '{ this line is not JSON\n'
   files['.superworker/instructions.json'] = json({ instructions: { not: 'a list' } })
   const { port } = fakeWorkspace(files, { pageLines: 500 })
-  const reading = await readReading(port, scope, signal)
+  const reading = await readReading(port, scope, signal, null)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'unusable', instructions: 'unusable', issues: 'read' })
   assert.deepEqual(reading.cycles, [])
@@ -176,7 +176,7 @@ test('A read uses only list and read, and leaves the file table it was handed un
   const snapshot = structuredClone(files)
   const { port, calls } = fakeWorkspace(files, { pageLines: 500 })
 
-  await readReading(port, scope, signal)
+  await readReading(port, scope, signal, null)
 
   assert.ok(calls.length > 0)
   assert.deepEqual([...new Set(calls.map(([kind]) => kind))].sort(), ['list', 'read'])
@@ -204,7 +204,7 @@ test('When a page breaches the byte cap it shrinks and retries: the whole record
   files['.superworker/ideas.json'] = json({ nodes: many })
   // The whole record fits within 500 lines, but a page's byte count breaches the cap: the byte side is what gets hit.
   const { port, calls, refusals } = fakeWorkspace(files, { pageLines: 500, maxBytes: 4096 })
-  const reading = await readReading(port, scope, signal)
+  const reading = await readReading(port, scope, signal, null)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'read' })
   assert.deepEqual(reading.nodes, many)
@@ -225,7 +225,7 @@ test('A requested line count above the port tier shrinks and retries too: the wh
   files['.superworker/ideas.json'] = json({ nodes: many })
   // A page holds only 40 lines and the byte cap is 8192: after the cap is hit, the shrunk tier must first fit within 40 lines.
   const { port, refusals } = fakeWorkspace(files, { pageLines: 40, maxBytes: 8192 })
-  const reading = await readReading(port, scope, signal)
+  const reading = await readReading(port, scope, signal, null)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'read' })
   assert.deepEqual(reading.nodes, many)
@@ -239,7 +239,7 @@ test('When one line alone breaches the cap, that one really is unreadable', asyn
   const files = record()
   files['.superworker/ideas.json'] = json({ nodes: { n1: { ...NODES.n2, title: 't'.repeat(9000) } } })
   const { port } = fakeWorkspace(files, { pageLines: 500, maxBytes: 4096 })
-  const reading = await readReading(port, scope, signal)
+  const reading = await readReading(port, scope, signal, null)
 
   // That line cannot pass even as a page of its own; shrinking pages cannot save it.
   assert.deepEqual(reading.sources, { nodes: 'unusable', cycles: 'read', instructions: 'read', issues: 'read' })

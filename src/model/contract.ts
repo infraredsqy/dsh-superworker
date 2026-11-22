@@ -12,6 +12,7 @@ import type {
   SuperworkerInstruction,
   SuperworkerIssue,
   SuperworkerNode,
+  PoolWeights,
 } from './records.ts'
 
 /** What the model needs: the four records, plus "read up to which moment". */
@@ -22,6 +23,13 @@ export interface RecordsAtMoment {
   readonly instructions: readonly SuperworkerInstruction[]
   /** The issue pool reading's own input: which entries are on the books is decided by each one's discovered moment. */
   readonly issues: Readonly<Record<string, SuperworkerIssue>>
+  /**
+   * The issue pool's weight table, when this host could read it: not one of the four records, but
+   * the issue plugin's own declaration of how each tier counts, carried in beside them because the
+   * pool reading is computed from both. `null` (or absent) means no table was obtained — and then
+   * the reading says so rather than inventing a weight.
+   */
+  readonly poolWeights?: PoolWeights | null
   readonly at: Date
 }
 
@@ -275,8 +283,11 @@ export interface IssueReading {
   readonly title?: string
   /** The severity tier, verbatim. */
   readonly severity?: string
-  /** How many times that tier counts in the records' weight table; 0 when the table has no such tier. */
-  readonly weight: number
+  /**
+   * How many times that tier counts in the weight table; `null` when no table was obtained, and `0`
+   * when the table has no such tier. No table is not a weight of zero: the two read differently.
+   */
+  readonly weight: number | null
   /** Which state it sits in at that moment: the record's own word, `open` when not yet written down by that moment. */
   readonly status: IssueState
   /** The word the record itself wrote, verbatim; absent when not written. */
@@ -309,26 +320,34 @@ export interface IssueGroupReading {
   /** The issues in this pile, ordered as in {@link PoolReading}. */
   readonly entries: readonly IssueReading[]
   readonly count: number
-  /** This pile's weighted sum: non-paying issues stay out of the sum. */
-  readonly weight: number
+  /** This pile's weighted sum: non-paying issues stay out of the sum; `null` when a term could not be weighed (no table). */
+  readonly weight: number | null
 }
 
-/** The weight table: how many times a tier written in the records counts. */
-export type PoolWeights = Readonly<Record<string, number>>
+/**
+ * The weight table: how many times a tier written in the pool counts.
+ *
+ * Its one home is the issue plugin's own declaration (`SEVERITY_WEIGHTS` in that plugin's storage
+ * layer), which is also what its `issue weight` command adds up by. Nothing else writes the numbers
+ * down: the host reads that declaration, and this layer is handed the table rather than looking for
+ * it in the records.
+ */
+export type { PoolWeights }
 
 /** The issue pool's reading at that moment. */
 export interface PoolReading {
   /** The policy line: the number a cycle set via `issue_pool_weight_limit`; `null` when no record sets it — 0 is never printed. */
   readonly line: number | null
-  /** The weight table: the one written in the records (how many times each tier counts); `null` when the records have none. */
+  /** The table the weights were read by: `null` when none was obtained, and then no weight is printed at all. */
   readonly weights: PoolWeights | null
   readonly rows: readonly IssueReading[]
   /** The four piles, in the order a reader meets them; empty piles are not collected. */
   readonly groups: readonly IssueGroupReading[]
   /**
    * The issues still owed: open followed by acknowledged. The pool's weight
-   * is the weight of the entries in this list that enter the sum; without a
-   * weight table this list is absent too.
+   * is the weight of the entries in this list that enter the sum; the list is
+   * collected whether or not a weight table was obtained — without one, every
+   * weight on it is `null`.
    */
   readonly standing: readonly IssueReading[]
   /** The weighted sum of the standing issues, non-paying ones excluded; `null` when the weight table cannot be read. */

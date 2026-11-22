@@ -26,10 +26,11 @@ import type { SuperworkerFrame, SuperworkerReading, SuperworkerReadOptions, Supe
 import { openConsultSession, openConductSession, openRouteSession, type SessionOpenOutcome } from './executor.ts'
 import type { RecordOutcome } from './failure.ts'
 import { RecordsPump } from './pump.ts'
+import { readPoolWeights, type PoolWeightsFolder } from './pool-weights.ts'
 import { parseConfigList, type SuperworkerConfigReading } from './project-config.ts'
 import { dispatchCell } from './relay.ts'
 import { readReading } from './records.ts'
-import { aliveAgentIds, workspaceRootOf } from './seams.ts'
+import { aliveAgentIds, weightsFolderOf, workspaceRootOf } from './seams.ts'
 import { readClaims, readSessionNotes, readTickets, type SuperworkerSessionsReading } from './sessions.ts'
 import { runWords } from './write.ts'
 
@@ -116,12 +117,19 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
   readonly ctx: Context
   /** The one channel the panel watches: the reading pushed when the records change, never polled. */
   readonly #pump: RecordsPump
+  /** Where the issue pool's weight table is read from; `undefined` is the folder this package ships. */
+  readonly #weightsFolder: PoolWeightsFolder
 
   /**
    * @param serviceKey - The service key, i.e. the remote namespace; normally omitted.
    */
   constructor(ctx: Context, serviceKey = 'superworker') {
     this.ctx = ctx
+    /* Where the weight table is read from: the folder this package ships, unless this host names
+     * another one (`weightsFolderOf` makes that call — this half never spells a `ctx as …` itself).
+     * A host that names `null` runs with no table at all, which is the same reading as a folder with
+     * no issue plugin in it. */
+    this.#weightsFolder = weightsFolderOf(ctx)
     const registered = new Set<string>()
     for (const method of REMOTE_METHODS) {
       markRemote(this, method, method)
@@ -152,7 +160,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
   async read(sessionId: SessionId, workspaceRoot: string, options?: SuperworkerReadOptions): Promise<SuperworkerReading> {
     const signal = options?.signal ?? NEVER_ABORT
     const root = await rootFor(this.ctx, sessionId, workspaceRoot)
-    return readReading(this.ctx.workspaceFiles, { sessionId, workspaceRoot: root }, signal)
+    return readReading(this.ctx.workspaceFiles, { sessionId, workspaceRoot: root }, signal, await readPoolWeights(this.#weightsFolder))
   }
 
   /**
@@ -186,8 +194,13 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    */
   async #frameOf(sessionId: SessionId, workspaceRoot: string, signal: AbortSignal): Promise<SuperworkerFrame> {
     const scope = { sessionId, workspaceRoot }
+    /* The weight table first, then the records weighed by it: it is not one of the four records, but
+     * the frame that carries the issues has to carry the table they are weighed by. The read is a
+     * module load off the shipped plugin folder — after the first frame it costs a cached lookup — and
+     * it never touches the workspace's own files. */
+    const poolWeights = await readPoolWeights(this.#weightsFolder)
     const [reading, notes, claims, tickets] = await Promise.all([
-      readReading(this.ctx.workspaceFiles, scope, signal),
+      readReading(this.ctx.workspaceFiles, scope, signal, poolWeights),
       readSessionNotes(this.ctx.workspaceFiles, scope, signal),
       readClaims(this.ctx.workspaceFiles, scope, signal),
       readTickets(this.ctx.workspaceFiles, scope, signal),

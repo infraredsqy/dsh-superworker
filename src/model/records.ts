@@ -4,10 +4,25 @@
  * other fields a record carries come along untouched — plus the result shape
  * the host half hands back from one fetch.
  *
- * This is the model layer's bottom layer: it describes only the records
+ * One thing here is not a record: {@link PoolWeights}, the issue pool's weight table. It sits on this
+ * file because it travels with the reading rather than inside any collection, and because this is the
+ * one module the host half's compile face includes (see `tsconfig.host.json`) — the host has to name
+ * the table's shape to carry it, and a second alias for the shape would be one name too many.
+ *
+ * This is the model layer's bottom layer: apart from that shape it describes only the records
  * themselves and imports nothing; the host and browser halves both take these
  * shapes from here in turn (on the host side via `src/host/contract.ts`).
  */
+
+/**
+ * The weight table: how many times a tier written in the pool counts.
+ *
+ * Its one home is the issue plugin's own declaration of it (`SEVERITY_WEIGHTS` in that plugin's
+ * storage layer), which is also what its `issue weight` command adds up by. Nothing else writes those
+ * numbers down: the host half reads that declaration (`src/host/pool-weights.ts`), hands the table
+ * over with the reading, and every weighted reading is derived from this one copy.
+ */
+export type PoolWeights = Readonly<Record<string, number>>
 
 /** The outcome of one source's fetch this round. */
 export type SuperworkerSourceState =
@@ -167,6 +182,13 @@ export interface SuperworkerReading {
    * Sources that could not be fetched yield empty collections below: the panel draws "absent from the records".
    */
   readonly sources: Readonly<Record<RecordSourceKey, SuperworkerSourceState>>
+  /**
+   * The issue pool's weight table, read off the issue plugin's own declaration of it — the same
+   * constant its `issue weight` command adds up by. Not one of the four records and not a record
+   * field: it travels with the reading because every weighted reading is computed from it.
+   * `null` when this host could not obtain it, and then no weight is printed anywhere.
+   */
+  readonly poolWeights: PoolWeights | null
   /** Keys are node ids. */
   readonly nodes: Readonly<Record<string, SuperworkerNode>>
   readonly cycles: readonly SuperworkerCycle[]

@@ -2,7 +2,7 @@
 
 > 本文件是路牌，上限 15 行：一行一条——只说这一层有什么、什么时候看。
 
-- `plugin.json` — 声明：旋钮、读数、度量、命令面与自带的文件。唯一权威，先读它
+- `plugin.json` — 声明：旋钮、读数、度量、命令面与自带的文件。这几样的唯一权威，先读它；每档权值是代码里的常量，不在这份声明里
 - `impl.mjs` — 实现入口：收尾那一步读池子、判越线、交一条插入 offer
-- `tools/` — `issue` 的命令面与池子存储（`.superworker/issues/issues.json`）
+- `tools/` — `issue` 的命令面与池子存储（`.superworker/issues/issues.json`）；`storage.mjs` 的 `SEVERITY_WEIGHTS` 是每档权值的唯一一处，命令面与面板读数都从它取
 - `skills/` — 随插件装与卸的技能，zh / en 各一套：scan 扫、discuss 和用户裁定、repair 修到线下

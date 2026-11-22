@@ -4,7 +4,8 @@
  * This half declares four services as inject requirements (`workspaceFiles`, `sessions`,
  * `sandboxPolicy`, `tools`); everything else it touches — the agent registry, the preset roster, the
  * workspace registry, the skills catalog, the default model, the prompt service (the runtime-context
- * channel), the logger, the event bus, the effect seam — may or may not be mounted, so each is
+ * channel), the logger, the event bus, the effect seam, the folder the issue pool's weight table is
+ * read from — may or may not be mounted, so each is
  * fetched structurally by name and anything answering
  * another shape counts as absent. That decision is made here, once per service: a module reads the
  * seam it needs and never spells `(ctx as {...})` itself, so a host shape change lands in one place
@@ -379,6 +380,24 @@ export function loggerOf(ctx: unknown): LogFace | undefined {
 /** One line through the host's logger at `level`, when it carries one; nothing happens when it does not. */
 export function logLineOf(ctx: unknown, level: LogLevel, line: string): void {
   loggerOf(ctx)?.write(level, line)
+}
+
+/**
+ * The folder the issue pool's weight table is read from, when this host names one.
+ *
+ * The table's one home is the issue plugin's own declaration, and a normal deployment reads it out of
+ * the plugin folder this package ships — that is what `undefined` means here, and it is the answer on
+ * every real host. A host that names a folder is read instead, and one that names `null` runs with no
+ * table at all: the same reading as a folder whose issue plugin is missing, which the panel draws by
+ * withholding the gauge rather than by inventing a weight. Naming one is a test's or a diagnostic's
+ * move, not a deployment's.
+ *
+ * Read structurally like every seam here: a host carrying no such field answers "the shipped one",
+ * so this never asks a real deployment to know the field exists.
+ */
+export function weightsFolderOf(ctx: unknown): string | null | undefined {
+  const held = (ctx as { weightsFolder?: unknown } | undefined)?.weightsFolder
+  return typeof held === 'string' || held === null ? held : undefined
 }
 
 /** The event surface, when this host carries one; a stand-in without `on` takes no listeners and the callers answer as if unsubscribed. */

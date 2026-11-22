@@ -103,7 +103,7 @@ export function readProject(input: RecordsAtMoment): ProjectReading {
     cycleById,
     instructions: readInstructions(input.instructions, nodeById, cycleById, at),
     graph: readGraph(nodes),
-    pool: readPool(input.nodes, input.cycles, input.issues, at),
+    pool: readPool(input.cycles, input.issues, input.poolWeights ?? null, at),
   }
 }
 

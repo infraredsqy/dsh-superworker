@@ -285,7 +285,8 @@ describe('weight: the formula for how heavy the pool is', () => {
       done: row({ id: 'done', severity: 'P0', status: 'resolved' }),
       gone: row({ id: 'gone', severity: 'P0', status: 'rejected' }),
     });
-    // P0(8) + P1(4) + P2(2) = 14; external and settled issues contribute nothing.
+    // Each counted tier contributes its own SEVERITY_WEIGHTS share, so the three above add up to 14;
+    // external and settled issues contribute nothing.
     expect(await out(['weight'])).toBe(`14${EOL}`);
     const verbose = JSON.parse(await out(['weight', '-v']));
     expect(verbose.weight).toBe(14);
@@ -548,7 +549,8 @@ describe("the weight is a function of the pool, not a line of printed text", () 
       ext: row({ id: 'ext', severity: 'P0', decision: 'external' }),
       done: row({ id: 'done', severity: 'P0', status: 'resolved' }),
     });
-    // P0(8) + P1(4); the external one and the settled one count for nothing.
+    // Each counted tier contributes its own SEVERITY_WEIGHTS share, so the two above add up to 12;
+    // the external one and the settled one count for nothing.
     expect(await out(['weight'])).toBe(`12${EOL}`);
     expect(poolWeight(root)).toBe(12);
     // The declared source, handed a context with no `capture` at all: the number is computed from the

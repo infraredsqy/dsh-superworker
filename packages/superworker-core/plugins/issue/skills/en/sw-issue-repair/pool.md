@@ -42,9 +42,11 @@ behaves exactly like the single form.
   in the user's hands) / `unknown` (not ruled yet, the default on the way into the pool). **An
   entry whose call has already been made, with the solution written inside it, is `autofix`
   without exception** — landing on another node or another line counts too.
-- **The weighted sum** = P3/P2/P1/P0 = 1/2/4/8, counting only entries that are actionable and
-  whose `decision` is not `external`. `unknown` presses on the line just as `autofix` does; ruled
-  `external` and it drops out of the count.
+- **The weighted sum** is what `issue weight` computes: entries that are actionable and whose
+  `decision` is not `external`, each counted by its tier's weight. **The weights live in the plugin's
+  own declaration only (`SEVERITY_WEIGHTS` in `tools/storage.mjs`)** and are not restated anywhere
+  else — that constant is the one place to read a tier's number. `unknown` presses
+  on the line just as `autofix` does; ruled `external` and it drops out of the count.
 - Severity (judge by this when writing each entry): **P0** duplicated and carrying a bug risk, or
   standing on a business-critical path; **P1** a responsibility crossing its line and holding
   iteration back (business logic inside the UI, the logic layer touching the DOM, a dependency

@@ -25,7 +25,7 @@ export type {
   OverviewSnapshot,
   OverviewWindow,
 } from './overview.ts'
-export { readLine, readPool, readWeights } from './pool.ts'
+export { readLine, readPool } from './pool.ts'
 export { belongsTo, bucketOf, everySourceIs, lineStateOf, nodesOf, ownersOf, rankOf } from './reading.ts'
 export type { CycleState, DetailGroupKey, NodeBucket, NodeRank } from './reading.ts'
 export { clock, dayParts, elapsedParts } from './format.ts'

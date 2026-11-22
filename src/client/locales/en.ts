@@ -166,7 +166,7 @@ export const en: Readonly<Record<WordKey, string>> = {
   'config.row.issue_pool.name': 'Insert a repair node past the pool line',
   'config.row.issue_pool.caption': 'When a node closes and the pool’s weighted sum is past the limit, a repair node is inserted; off means it never is',
   'config.row.issue_pool_weight_limit.name': 'Pool weighted-sum limit',
-  'config.row.issue_pool_weight_limit.caption': 'The sum the record’s per-tier weight table adds up to; the next close must stay below it. Blank means no judgement.',
+  'config.row.issue_pool_weight_limit.caption': 'The sum the issue plugin’s own per-tier weights add up to; the next close must stay below it. Blank means no judgement.',
   'config.row.test_audit.name': 'Insert a lean test node past the time limit',
   'config.row.test_audit.caption': 'When a node closes and the suite took longer than the limit, a lean-test node is inserted; off means it never is',
   'config.row.test_seconds_limit.name': 'Test suite time limit (seconds)',

@@ -5,8 +5,13 @@
  * One page answers one question: what is still owed. So it opens on "unresolved", and "full" puts
  * the other three states back. The weight gauge is the drawing of these weights; entries below the
  * line take no slots — whether one presses the line is said by the reading itself, the same
- * standard as the weighted sum. When the record has no weight table or no policy line, the gauge is
- * not drawn at all rather than standing in with a 0.
+ * standard as the weighted sum. When the reading carries no weight table or no policy line, the
+ * gauge is not drawn at all rather than standing in with a 0.
+ *
+ * The table itself is not this side's: the host reads it off the issue plugin's own declaration and
+ * sends it with the reading (`src/host/pool-weights.ts`), because a browser cannot open a file and
+ * a second copy of the numbers here would drift. A case's own weight is `null` on the same terms
+ * and prints as nothing at all — the badge's hover line drops the weight rather than saying `0`.
  */
 import * as React from 'react'
 import type { IssueGroupReading, IssueReading, PoolReading, ProjectReading } from '../model/index.ts'
@@ -14,6 +19,7 @@ import { useT } from './locale.ts'
 import { issueWord, otherStatesWord } from './words.ts'
 import { NOT_ENABLED_WORD } from './constants.ts'
 import { Grip, Pill } from './widgets.tsx'
+import { gaugeOf } from './pool-gauge.ts'
 
 /** How many pixels one weight unit occupies, and the gap between two units. */
 const SLOT = 6
@@ -26,16 +32,23 @@ const CASE_MIN = 360
 const BAR_STEP = 16
 
 /**
- * The tier the record itself names, worn as a class. The list of tiers and the lightest one are the
- * model's (`pool.ts`'s weight table); this side only spells the word the record already wrote. A
- * case whose record names no tier draws no badge at all, so there is nothing here to stand in with
- * a default — inventing one would put a tier on the screen that the record never said.
+ * The tier the record itself names, worn as a class. The weight table is not this side's and not the
+ * model layer's either: it lives in the issue plugin's own declaration, and the host reads it off
+ * there into the reading (`src/host/pool-weights.ts`). This side only spells the word the record
+ * already wrote. A case whose record names no tier draws no badge at all, so there is nothing here
+ * to stand in with a default — inventing one would put a tier on the screen that the record never
+ * said.
  */
 function sevClass(severity: string | undefined): string {
   return severity === undefined ? '' : `is-${severity}`
 }
 
-/** The severity badge: one word, its weight on hover; absent when the record names no severity. */
+/**
+ * The severity badge: one word, its weight on hover; absent when the record names no severity.
+ *
+ * A weight the reading does not have is not `0` on the hover line either: the tip is left off
+ * entirely, because a tooltip that only repeated the badge's own word would be noise.
+ */
 function SevChip(props: { readonly issue: IssueReading }): React.ReactElement | null {
   const t = useT()
   const { issue } = props
@@ -43,7 +56,9 @@ function SevChip(props: { readonly issue: IssueReading }): React.ReactElement | 
   return (
     <span
       className={`superworker-sev ${sevClass(issue.severity)}`}
-      title={t('pool.severity.tip', { severity: issue.severity, weight: issue.weight })}
+      title={issue.weight === null
+        ? undefined
+        : t('pool.severity.tip', { severity: issue.severity, weight: issue.weight })}
     >
       {issue.severity}
     </span>
@@ -57,6 +72,9 @@ export function IssuePool(props: {
 }): React.ReactElement {
   const t = useT()
   const { pool } = props.project
+  /* What the gauge would draw, or `null` when it is not drawn at all: the judgment is a fact about the
+     reading, so it lives in `pool-gauge.ts` where it can be held to without a DOM. */
+  const gauge = gaugeOf(pool)
   const [picked, setPicked] = React.useState<string | null>(null)
   const [folds, setFolds] = React.useState<Readonly<Record<string, boolean>>>({})
   const splitRef = React.useRef<HTMLDivElement | null>(null)
@@ -174,7 +192,13 @@ export function IssuePool(props: {
             {t('pool.full')}
           </button>
         </div>
-        {pool.weights === null || pool.line === null ? null : <Gauge pool={pool} />}
+        {/* The gauge draws two numbers the reader has to trust: the table behind each case, and the
+            policy line. `gaugeOf` is that judgment — either one absent and there is nothing to frame,
+            because a scale built on a table nobody obtained would be `0` for the line and `0` for the
+            pool, a drawing of a fact the record never stated. The reading's own `weights` is the
+            table's presence: it is `null` exactly when no table was obtained
+            (`src/host/pool-weights.ts`), never a set of zeros. */}
+        {gauge === null ? null : <Gauge pool={pool} line={gauge.line} total={gauge.total} />}
         <div className="superworker-count">
           {pool.census.open > 0
             ? <Pill cls="is-open" n={pool.census.open} label={issueWord(t, 'open')} />
@@ -272,19 +296,24 @@ export function IssuePool(props: {
   )
 }
 
-/** The weight gauge: one unit per slot, filled up to what is still owed, framed by the policy line. */
-function Gauge(props: { readonly pool: PoolReading }): React.ReactElement {
+/**
+ * The weight gauge: one unit per slot, filled up to what is still owed, framed by the policy line.
+ *
+ * Both numbers are handed in already judged (`line`, `total`): the caller draws this only when the
+ * table and the line are both really there, so nothing here has to fall back to a 0 it did not read.
+ */
+function Gauge(props: { readonly pool: PoolReading; readonly line: number; readonly total: number }): React.ReactElement {
   const t = useT()
-  const { pool } = props
-  const line = pool.line ?? 0
-  const units = Math.max(line, pool.weight ?? 0)
+  const { pool, line } = props
+  const units = Math.max(line, props.total)
   const blocks: { readonly severity: string | undefined; readonly carried: boolean; readonly title: string }[] = []
   for (const issue of pool.standing) {
     /* Entries below the line take no slot on this bar: whether one presses the line is said by the
        reading itself, the same standard as the weighted sum — they remain on the ledger, they just
        do not press on this line. */
-    if (!issue.payable) continue
-    for (let at = 0; at < issue.weight && blocks.length < units; at += 1) {
+    if (!issue.payable || issue.weight === null) continue
+    const weight = issue.weight
+    for (let at = 0; at < weight && blocks.length < units; at += 1) {
       blocks.push({
         severity: issue.severity,
         carried: issue.status === 'acknowledged',
