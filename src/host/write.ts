@@ -44,10 +44,9 @@ export function answerHandleOf(root: string, opener?: { readonly executor: Execu
  * Run one word line and collect its answer.
  * @param workspaceRoot - The project root the words answer at.
  * @param args - The word line, as the words layer spells it.
- * @param said - The user's verbatim sentence, appended to the line as one last cell, as-is.
  */
-export async function runWords(workspaceRoot: string, args: readonly string[], said?: string): Promise<RecordOutcome> {
-  const settled = await answer(said === undefined ? args : [...args, said], answerHandleOf(workspaceRoot))
+export async function runWords(workspaceRoot: string, args: readonly string[]): Promise<RecordOutcome> {
+  const settled = await answer(args, answerHandleOf(workspaceRoot))
   if (settled.code === 0) return { ok: true, text: settled.stdout.trim() }
   /* A non-zero answer is not this plugin's sentence to write: the words layer said its own
    * reason on one of the two streams, and that reason travels as `detail`, verbatim. */

@@ -30,16 +30,15 @@
  * carries both.
  *
  * This module owns only that decision and its memory. The tool's face lives in `tool.ts`, the
- * record directory's one spelling comes from the contract (`RECORD_DIR`), the older layer's
- * recognition is the engine's (`isRecognizableLegacyRecord`), and the opener seam travels on the
- * host face it is handed (`SuperworkerToolHost`): the wake depends on the face it registers, the
- * seams it reads, and those two facts, and it never reaches the opener or the relay themselves.
+ * record-presence reading is the shared one this half spells (`recordPresentAt` in `records.ts`,
+ * asked with the legacy layer counted — this is the caller that must reach an unmigrated
+ * workspace), and the opener seam travels on the host face it is handed (`SuperworkerToolHost`):
+ * the wake depends on the face it registers, the seams it reads, and those facts, and it never
+ * reaches the opener or the relay themselves.
  */
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import { isRecognizableLegacyRecord, projectRootOf } from 'superworker-core'
-import { RECORD_DIR } from './contract.ts'
+import { projectRootOf } from 'superworker-core'
+import { recordPresentAt } from './records.ts'
 import { agentIdOf, busOf, liveWorkspaceRootOf, toolsOf } from './seams.ts'
 import {
   SKILL_NAME_PREFIX,
@@ -102,15 +101,17 @@ function userAskedForPipelineSkill(message: unknown): boolean {
  *
  * **The root is resolved before anything is looked for.** The pipeline runs a node's work sessions
  * in linked worktrees (`fork` mode), and such a checkout carries no `.superworker/` of its own: the
- * account stays in the main tree, and the checkout's `.git` is the pointer git writes. Both readings
- * below are therefore made at `projectRootOf(undefined, root)` — the same function the assembly
- * layer's record gate asks (`instruction-context.ts`). Asked of the raw session root they answered
- * "no" for every worktree session, so the tool never woke in exactly the sessions this line exists
- * for. In a plain project root the resolution answers the root itself, so nothing changes there.
+ * account stays in the main tree, and the checkout's `.git` is the pointer git writes. The reading
+ * below is therefore made at `projectRootOf(undefined, root)` — the same function the assembly
+ * layer's record gate resolves with (`instruction-context.ts`). Asked of the raw session root it
+ * answered "no" for every worktree session, so the tool never woke in exactly the sessions this
+ * line exists for. In a plain project root the resolution answers the root itself, so nothing
+ * changes there.
  *
- * A record under today's name answers first. A workspace holding only the older layer counts
- * too, when the engine recognizes it as one the pipeline laid down, so an unmigrated workspace
- * reaches `migrate` and `doctor` at all — the tool is how it reaches them. That recognition runs at
+ * **The legacy layer counts here, and that is this caller's call.** The shared reading
+ * (`recordPresentAt`) is asked with it: a workspace holding only the older layer counts too, when
+ * the engine recognizes it as one the pipeline laid down, so an unmigrated workspace reaches
+ * `migrate` and `doctor` at all — the tool is how it reaches them. That recognition runs at
  * whatever root `projectRootOf` answered, and `projectRootOf` leads back to a main tree only when
  * that tree holds today's `.superworker/`; a main tree carrying the older layer alone therefore
  * leaves the reading at the checkout itself, which is where it stood before this fix too. An old
@@ -120,9 +121,7 @@ function userAskedForPipelineSkill(message: unknown): boolean {
 export function hasPipelineRecord(root: string | undefined): boolean {
   if (root === undefined) return false
   try {
-    const accountRoot = projectRootOf(undefined, root)
-    if (existsSync(join(accountRoot, RECORD_DIR))) return true
-    return isRecognizableLegacyRecord(accountRoot)
+    return recordPresentAt(projectRootOf(undefined, root), true)
   } catch {
     /* An unreadable root is not a record: the session stays as it would be without us. */
     return false

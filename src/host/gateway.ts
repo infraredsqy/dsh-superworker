@@ -409,9 +409,9 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
   /**
    * The single write path shared by the five write endpoints; the true private `#superworker` is not on the prototype, so the endpoint table's missing-registration scan cannot see it.
    */
-  async #superworker(sessionId: SessionId, workspaceRoot: string, args: readonly string[], said?: string): Promise<RecordOutcome> {
+  async #superworker(sessionId: SessionId, workspaceRoot: string, args: readonly string[]): Promise<RecordOutcome> {
     const root = await rootFor(this.ctx, sessionId, workspaceRoot)
-    const outcome = await runWords(root, args, said)
+    const outcome = await runWords(root, args)
     /* The write landed on disk a moment ago: the panel's channel is told now rather than waiting for
        its own file change to come back around through the directory watch. */
     this.#pump.stir(root)

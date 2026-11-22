@@ -42,7 +42,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { open, type Executor } from 'superworker-core'
 import { canonicalWorkspaceRoot, executorOf, type SessionOpenOutcome } from './executor.ts'
 import type { RecordRefusalCode } from './failure.ts'
-import { busOf, logLineOf, messageOf } from './seams.ts'
+import { busOf, logLineOf, messageOf, panelSwitchOn } from './seams.ts'
 import { PANEL_PREF_FIELDS } from './settings-fields.ts'
 import { shippedPluginsDir } from './skill-paths.ts'
 
@@ -93,20 +93,13 @@ let lineConfig: unknown = undefined
 
 /**
  * Whether the switch says the relay may fire: absent surface or absent field
- * both read as on. The switch is a volatile settings field: on the real host
- * the resolved config hands it over as a stable reference whose `get()`
- * answers the current snapshot — read at the call, so a flip lands on the
- * next turn end without a reload. A plain boolean (stand-ins, older hosts)
- * reads as it is.
+ * both read as on. The switch is a volatile settings field, read at the call
+ * through the one reading this half spells (`panelSwitchOn` in `seams.ts`) —
+ * the same reading the injection switch asks, so a flip lands on the next turn
+ * end without a reload, on both switches alike.
  */
 function relayOn(): boolean {
-  const config = lineConfig
-  if (config === null || typeof config !== 'object') return true
-  const held = (config as Record<string, unknown>)[PANEL_PREF_FIELDS.autoRelay]
-  const value = held !== null && typeof held === 'object' && typeof (held as { get?: unknown }).get === 'function'
-    ? (held as { get: () => unknown }).get()
-    : held
-  return value !== false
+  return panelSwitchOn(lineConfig, PANEL_PREF_FIELDS.autoRelay)
 }
 
 /**

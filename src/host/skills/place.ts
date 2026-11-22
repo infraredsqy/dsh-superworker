@@ -37,12 +37,9 @@ import { PLUGIN_SKILL_FILE, loadPlugins, skillFolders, skillProblems } from 'sup
 import type { PluginFolder } from 'superworker-core'
 import type { SkillsOutcome } from '../failure.ts'
 import { effectOf, logLineOf, messageOf, type SkillHostContext } from '../seams.ts'
-import { MANIFEST_DIR, dshHomeOf, shippedPluginsDir, skillRootOf } from '../skill-paths.ts'
+import { DEFAULT_LANGUAGE, MANIFEST_DIR, dshHomeOf, shippedPluginsDir, skillRootOf } from '../skill-paths.ts'
 import { SKILL_NAME, readSkillFile, skillNameOfFile } from './frontmatter.ts'
 import { absent, placedSkills, refused, writeManifest, type PlacedSkill } from './manifest.ts'
-
-/** The language a method is placed in when this half cannot learn the reader's: the shipped tables' own. */
-export const DEFAULT_LANGUAGE = 'zh'
 
 /** What placing the shipped skills hands back: the outcome, and the undo for whatever landed. */
 export interface SkillsInstall {

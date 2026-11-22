@@ -8,6 +8,8 @@
  * "fetch page by page until `eof`", halving the line count and retrying
  * whenever a page is refused.
  */
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { isRecognizableLegacyRecord } from 'superworker-core'
 import { RECORD_DIR, RECORD_SOURCES } from './contract.ts'
 import type { PoolWeights } from '../model/records.ts'
@@ -97,6 +99,29 @@ const SHRINK_FROM_LINES = 256
 /** Whether this error counts as "this piece is absent from the workspace"; the criterion is exactly the {@link NOT_FOUND} code. */
 export function isAbsent(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === NOT_FOUND
+}
+
+/**
+ * Whether one resolved project root carries a pipeline record: today's record directory, and — when
+ * the caller says the older layer counts — a legacy record the engine recognizes as one the pipeline
+ * laid down. An unreadable root holds nothing.
+ *
+ * This is the one spelling of "is there a record here" in this half; the wake's tool condition and
+ * the injection's record gate both ask it. Whether the legacy layer counts is the caller's call, and
+ * the callers genuinely differ: the wake must reach an unmigrated workspace (`migrate` and `doctor`
+ * travel through the tool, and the tool is how), while the injection's word has nothing to read
+ * there, so its gate stays on today's layout alone.
+ *
+ * @param accountRoot - The root the record would sit in, already resolved (a worktree checkout led
+ *   back to its main tree before this is asked).
+ */
+export function recordPresentAt(accountRoot: string, withLegacy: boolean): boolean {
+  try {
+    if (existsSync(join(accountRoot, RECORD_DIR))) return true
+    return withLegacy && isRecognizableLegacyRecord(accountRoot)
+  } catch {
+    return false
+  }
 }
 
 /**

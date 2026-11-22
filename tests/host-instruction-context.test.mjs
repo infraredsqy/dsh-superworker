@@ -20,7 +20,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { answer, open } from 'superworker-core'
@@ -31,6 +31,7 @@ import {
   installInstructionContext,
   instructionContextTextOf,
   instructionListArgv,
+  instructionListMarkArgv,
   instructionTextViewOf,
   withInstructionText,
 } from '../src/host/instruction-context.ts'
@@ -53,6 +54,15 @@ async function readerView(root) {
 async function say(stage, text) {
   const said = await answer(['instruction', 'add', '--scope', 'global', '--text', text], ioAt(stage.root))
   assert.equal(said.code, 0, said.stderr)
+}
+
+/**
+ * The machine mark for one root, read twice: the structured exit the listing decision judges, read
+ * before and after the view. This helper is for the judgment cases below, where the account cannot
+ * move between the reads — the bracket around a live assembly is spelled in the source.
+ */
+async function markTwice(root, io = ioAt(root)) {
+  return [await answer(instructionListMarkArgv(root), io), await answer(instructionListMarkArgv(root), io)]
 }
 
 /** The ids on the account, through the word's machine read. */
@@ -165,11 +175,13 @@ test('no record at all: nothing is carried — not the reader view\'s own empty-
   const bare = mkdtempSync(join(tmpdir(), 'superworker-instruction-bare-'))
   try {
     assert.equal(await instructionContextTextOf(bare), '')
-    /* The word does answer, with a sentence about the absence: that sentence is not a constraint. */
+    /* The word does answer, with a sentence about the absence: that sentence is not a constraint.
+     * The mark that admits the view is the structured exit, and for an empty record it answers `[]`. */
     const said = await answer(instructionListArgv(bare), ioAt(bare))
     assert.equal(said.code, 0, said.stderr)
     assert.match(said.stdout, /no instruction record at all/u)
-    assert.equal(instructionTextViewOf(said), '')
+    const [mark, recheck] = await markTwice(bare)
+    assert.equal(instructionTextViewOf(said, mark, recheck), '', 'the empty-state answer is not carried')
   } finally {
     rmSync(bare, { recursive: true, force: true })
   }
@@ -186,7 +198,8 @@ test('a record whose entries are all archived, or none of which reach this step:
     const said = await answer(instructionListArgv(stage.root), ioAt(stage.root))
     assert.equal(said.code, 0, said.stderr)
     assert.match(said.stdout, /No instruction is visible from this step/u)
-    assert.equal(instructionTextViewOf(said), '', 'the empty-state answer is not carried')
+    const [mark, recheck] = await markTwice(stage.root)
+    assert.equal(instructionTextViewOf(said, mark, recheck), '', 'the empty-state answer is not carried')
   } finally {
     stage.done()
   }
@@ -200,7 +213,9 @@ test('the plugin moved away: the word refuses and not one byte is carried, with 
     const io = { root: stage.root, pluginsDir: emptyPlugins }
     const said = await answer(instructionListArgv(stage.root), io)
     assert.notEqual(said.code, 0, 'with no plugin installed the word is not answered')
-    assert.equal(instructionTextViewOf(said), '', 'a refusal carries nothing')
+    const [mark, recheck] = await markTwice(stage.root, io)
+    assert.notEqual(mark.code, 0, 'the mark refuses with the word')
+    assert.equal(instructionTextViewOf(said, mark, recheck), '', 'a refusal carries nothing')
   } finally {
     stage.done()
     rmSync(emptyPlugins, { recursive: true, force: true })
@@ -376,4 +391,106 @@ test('patching an assembly leaves an absent contribution absent: the host\'s own
 
 test('the injected line is the plugin\'s default read at that root — one word, one position rule', () => {
   assert.deepEqual(instructionListArgv('C:\\ws'), ['instruction', 'list', '--project', 'C:\\ws'])
+})
+
+test('the machine mark is the same read through the structured exit, at the same position', () => {
+  assert.deepEqual(instructionListMarkArgv('C:\\ws'), ['instruction', 'list', '--json', '--project', 'C:\\ws'])
+  assert.deepEqual(instructionListArgv('C:\\ws', 'n-1'), ['instruction', 'list', '--project', 'C:\\ws', '--node', 'n-1'])
+  assert.deepEqual(instructionListMarkArgv('C:\\ws', 'n-1'), ['instruction', 'list', '--json', '--project', 'C:\\ws', '--node', 'n-1'])
+})
+
+test('one line holding two nodes in parallel: each session carries its own node\'s listing, not the first node\'s for both', async () => {
+  const stage = await throwaway('superworker-instruction-context-')
+  try {
+    /* Two nodes on one active line — the shape a `parallel: 2` line really runs. */
+    writeFileSync(join(stage.root, '.superworker', 'ideas.json'), JSON.stringify({
+      nodes: {
+        'n-a': { status: 'todo', title: 'first', mode: 'auto', dependencies: [] },
+        'n-b': { status: 'todo', title: 'second', mode: 'auto', dependencies: [] },
+      },
+    }))
+    writeFileSync(join(stage.root, '.superworker', 'state.json'), JSON.stringify({
+      cycles: [{
+        id: 'c-1',
+        status: 'active',
+        tags: [],
+        holding: [{ id: 'n-a', since: '2026-10-18T00:00:00Z' }, { id: 'n-b', since: '2026-10-18T00:00:00Z' }],
+        path: [],
+      }],
+    }))
+
+    /* A node-scoped sentence per cell, written the way a person writes it. */
+    for (const [node, text] of [['n-a', 'only the first cell hears this'], ['n-b', 'only the second cell hears this']]) {
+      const said = await answer(['instruction', 'add', '--scope', 'node', '--node', node, '--text', text], ioAt(stage.root))
+      assert.equal(said.code, 0, said.stderr)
+    }
+
+    /* The record's own attribution: the opener notes each session under its node. */
+    await open(stage.root).sessions.note('n-a', 'run', 's1')
+    await open(stage.root).sessions.note('n-b', 'run', 's2')
+
+    const { ctx, registered, assemble } = contextWithPrompt(stage.root)
+    const off = installInstructionContext(ctx, {})
+    try {
+      const first = await assemble(freshAssembly(), { id: 's1' })
+      assert.ok(first.contexts[0].text.includes('only the first cell hears this'), 'the first node\'s session carries its own sentence')
+      assert.ok(!first.contexts[0].text.includes('only the second cell hears this'), 'and not its neighbour\'s')
+
+      const second = await assemble(freshAssembly(), { id: 's2' })
+      assert.ok(second.contexts[0].text.includes('only the second cell hears this'), 'the second node\'s session carries its own sentence')
+      assert.ok(!second.contexts[0].text.includes('only the first cell hears this'), 'the neighbour\'s constraint is not what it guards — the old read handed the first node\'s listing to both')
+
+      /* Admission re-reads the provider per session: the carried table is keyed by session and root,
+       * so each admission still reads its own text back, not the other session's. */
+      assert.ok(registered[0].text({ agent: { id: 's1' } }).includes('only the first cell hears this'))
+      assert.ok(registered[0].text({ agent: { id: 's2' } }).includes('only the second cell hears this'))
+
+      /* The stated fallback: a session no note claims (s3) is asked with no --node, so it answers the
+       * plugin's own default read — with one line active, that is the line's first held node. That is
+       * the plugin's position rule (pinned by the plugin's own suite); what this pins is that the
+       * host invented no position: it did not hand the unattributed session a listing it made up. */
+      const unnamed = await assemble(freshAssembly(), { id: 's3' })
+      assert.ok(unnamed.contexts[0].text.includes('only the first cell hears this'), 'the unattributed session carries the plugin\'s default read')
+      assert.ok(!unnamed.contexts[0].text.includes('only the second cell hears this'), 'which is the first held node by the plugin\'s own rule — the fallback is stated, not guessed here')
+    } finally {
+      off()
+    }
+  } finally {
+    stage.done()
+  }
+})
+
+test('the plugin rewords its listing: the injection still carries — judged by the structured exit, never by the prose', async () => {
+  const stage = await throwaway('superworker-instruction-context-')
+  const reworded = mkdtempSync(join(tmpdir(), 'superworker-reworded-plugins-'))
+  try {
+    await say(stage, 'a constraint whose listing head was reworded underneath it')
+    /* A copy of the shipped plugin with its listing head reworded — what a copy-edit or a
+     * localization does. The old judgment matched that English sentence verbatim, so this change
+     * zeroed the injection silently; the mark is the plugin's own `--json` view of the same read,
+     * so its words cannot decide the listing any more. */
+    cpSync(join(shippedPluginsDir(), 'instruction'), join(reworded, 'instruction'), { recursive: true })
+    const commands = join(reworded, 'instruction', 'tools', 'commands.mjs')
+    writeFileSync(
+      commands,
+      readFileSync(commands, 'utf8').replace(
+        'This project has ${visible.length} instruction(s) visible from this step:',
+        'From where you stand, ${visible.length} standing instruction(s) apply:',
+      ),
+      'utf8',
+    )
+
+    const io = { root: stage.root, pluginsDir: reworded }
+    const view = await answer(instructionListArgv(stage.root), io)
+    assert.doesNotMatch(view.stdout, /^This project has /mu, 'the rewording really landed')
+    assert.match(view.stdout, /^From where you stand, 1 standing instruction\(s\) apply:$/mu)
+    const [mark, recheck] = await markTwice(stage.root, io)
+
+    const carried = instructionTextViewOf(view, mark, recheck)
+    assert.equal(carried, view.stdout.replace(/\n+$/u, ''), 'the reworded listing is carried byte for byte')
+    assert.ok(carried.includes('a constraint whose listing head was reworded underneath it'), 'the sentence rides as it was written')
+  } finally {
+    stage.done()
+    rmSync(reworded, { recursive: true, force: true })
+  }
 })

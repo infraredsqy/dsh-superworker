@@ -20,6 +20,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
 import type { AgentOptions, AgentRegistry } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { PANEL_PREF_FIELDS } from './settings-fields.ts'
 
 /** The three levels this half writes at. */
 export type LogLevel = 'info' | 'warn' | 'error'
@@ -409,6 +410,28 @@ export function weightsFolderOf(ctx: unknown): string | null | undefined {
     return undefined
   }
   return typeof held === 'string' || held === null ? held : undefined
+}
+
+/**
+ * Whether one panel preference reads as on, off the line's resolved settings.
+ *
+ * The panel's switch fields are volatile: on the real host the resolved config hands them over as a
+ * stable reference whose `get()` answers the current snapshot (schemastery wraps a volatile field
+ * with cosmokit's `createVolatile`, and `apply(ctx, config)` receives that reference) — read at the
+ * call, so a flip lands on the next read without a reload. A plain boolean (stand-ins, older hosts
+ * that lack `.volatile()`) reads as it is, and an absent surface or an absent field reads as on —
+ * the factory default, which every switch in this section carries.
+ *
+ * This is the one spelling of that read: the relay trigger and the injection switch both ask it,
+ * so a change to the reading semantics cannot leave one switch behind.
+ */
+export function panelSwitchOn(config: unknown, field: keyof typeof PANEL_PREF_FIELDS): boolean {
+  if (config === null || typeof config !== 'object') return true
+  const held = (config as Record<string, unknown>)[PANEL_PREF_FIELDS[field]]
+  const value = held !== null && typeof held === 'object' && typeof (held as { get?: unknown }).get === 'function'
+    ? (held as { get: () => unknown }).get()
+    : held
+  return value !== false
 }
 
 /** The event surface, when this host carries one; a stand-in without `on` takes no listeners and the callers answer as if unsubscribed. */

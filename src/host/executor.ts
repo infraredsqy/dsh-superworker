@@ -49,9 +49,11 @@
  * the open.
  *
  * The consult sessions the panel opens are sibling opens in this file as well ({@link
- * openConsultSession}, {@link openRouteSession}, {@link openConductSession}): they share the sides
- * above — the session-side probe, the standing preset, the workspace attach, the tool arm — and
- * drop the record-facing halves (no launch prompt to read, no note to write), because a workspace
+ * openConsultSession}, {@link openRouteSession}, {@link openConductSession}): the sides they share
+ * with the node open are spelled once here — the session-side probe, the standing preset
+ * ({@link presetSideOf}), and the queued mint+attach+instruction stretch ({@link openSessionSides},
+ * with the caller's differences hung on two hooks) — and they drop the record-facing halves (no
+ * launch prompt to read, no note to write), because a workspace
  * with only the old record directory and one with nothing on its stage have neither to offer. The
  * migration consult's sentence is the engine's ({@link CONSULT_PROMPT}); the standing corner's two
  * doors open on bare skill invocations, spelled beside their openers.
@@ -61,7 +63,7 @@ import { realpath } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 /* The declaration merges for `agents` and the agent events live on the package entries; type-only, nothing enters the runtime. */
 import type {} from '@deepseek-ai/dsh-agent'
-import type { Agent, AgentRegistry, AgentSetup } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentOptions, AgentRegistry, AgentSetup } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createUserMessage } from '@deepseek-ai/dsh-llm/message'
 import { CONSULT_PROMPT, type Executor } from 'superworker-core'
@@ -227,6 +229,96 @@ export function executorOf(
 }
 
 /**
+ * The standing preset one open composes through: the roster's default, and the mount that gives the
+ * session its scoped world.
+ */
+interface PresetSide {
+  readonly standing?: { readonly id: string }
+  readonly mount?: AgentSetup
+}
+
+/**
+ * The standing preset this open composes through, the same resolution every open here runs: the
+ * mount is what gives the session its scoped world (tools, skills). A roster that cannot resolve
+ * its own default is an open refusal naming the reason, not a bare session that can do nothing.
+ */
+async function presetSideOf(ctx: Context): Promise<PresetSide | RecordFailure> {
+  const presets = presetPortOf(ctx)
+  if (presets === undefined) return {}
+  try {
+    const standing = await presets.resolve(undefined)
+    const id = standing.id
+    return { standing, mount: (agentCtx) => presets.mount(agentCtx, id) }
+  } catch (error) {
+    return openFailure(messageOf(error))
+  }
+}
+
+/**
+ * The session-minting stretch both opens queue on, spelled once: create the session under the root,
+ * join it to the workspace that root names, hand the first instruction over — with the caller's two
+ * differences hung around the instruction, and nothing else. A host with a workspace layer owns the
+ * grouping: the session is attached to the entity of the root, which is the call that puts it in
+ * that workspace. A composition without the layer keeps the cwd-only open, and a host that refuses
+ * the attach after the session is minted leaves the session open cwd-only with one log line instead
+ * of failing an open that already has a live session in it — the first instruction and the note
+ * still land, so the session has its record and the panel keeps its cell.
+ *
+ * @param subject - Who this session was opened for, as the un-attached log line names it.
+ * @param hooks.onOpened - The caller's earliest watch point, run after the mint and before the
+ *   first instruction goes in; a throwing hook does not fail the open.
+ * @param hooks.noted - The caller's note, written after the instruction (the node open's; a consult
+ *   has no node to hang one on).
+ */
+async function openSessionSides(
+  ctx: Context,
+  side: AgentRegistry,
+  root: string,
+  subject: string,
+  opened: SessionId,
+  prompt: string,
+  preset: PresetSide,
+  selection: AgentOptions | undefined,
+  hooks: { readonly onOpened?: (session: SessionId) => void; readonly noted?: () => Promise<void> } = {},
+): Promise<Agent> {
+  const handle = await side.create({
+    sessionId: opened,
+    meta: { cwd: root, ...(preset.standing === undefined ? {} : { agentPreset: preset.standing.id }) },
+    ...(selection === undefined ? {} : { agentOptions: selection }),
+    ...(preset.mount === undefined ? {} : { setup: preset.mount }),
+  })
+  const registry = workspaceRegistryOf(ctx)
+  try {
+    const workspace = registry === undefined ? undefined : await registry.create(root)
+    if (workspace === undefined) {
+      reportUnattached(ctx, subject, root, attachMissReason(registry))
+    } else {
+      await workspace.attachSession(opened)
+    }
+  } catch (error) {
+    /* The session is already minted: the host refused the grouping after the fact. The open goes on
+     * cwd-only — the first instruction and the note below still land — and one log line says which
+     * subject and which workspace missed the grouping, with the host's own reason. Failing here
+     * would leave a live session nobody wrote down. */
+    reportUnattached(ctx, subject, root, messageOf(error))
+  }
+  /* The caller's earliest watch point: the session exists and its first instruction has not gone in.
+   * The session's tool is not this open's business — the wake registers it once, for every agent,
+   * and the condition reads this session's workspace from the step. */
+  try {
+    hooks.onOpened?.(opened)
+  } catch {
+    /* A caller's registration problem is not this open's failure. */
+  }
+  handle.agent.followup(createUserMessage({
+    content: [{ type: 'text', text: prompt }],
+    source: { kind: 'user' },
+  }))
+  await hooks.noted?.()
+  return handle.agent
+}
+
+/**
  * Open the session that works one node: the session exists, its first
  * instruction is in, and its note names it — nothing after that.
  *
@@ -267,68 +359,21 @@ export async function openNodeSession(
   }
   if (prompt.trim().length === 0) return { ok: false, code: 'prompt-missing', detail: `${cycle}/${node}` }
 
+  const preset = await presetSideOf(ctx)
+  if ('code' in preset) return preset
+
   /* The session identity is this host's own mint, spelled the way the host spells its own: `session-` + a fresh uuid. The brand is a compile-time fact; the string is what crosses. */
   const opened = `session-${randomUUID()}` as SessionId
   const selection = modelSelectionOf(ctx, options?.model)
 
-  /* The standing preset this open composes through: the mount is what gives the session its
-   * scoped world (tools, skills). A roster that cannot resolve its own default is an open
-   * refusal naming the reason, not a bare session that can do nothing. */
-  const presets = presetPortOf(ctx)
-  let standing: { readonly id: string } | undefined
-  let mount: AgentSetup | undefined
-  if (presets !== undefined) {
-    try {
-      standing = await presets.resolve(undefined)
-    } catch (error) {
-      return openFailure(messageOf(error))
-    }
-    const id = standing.id
-    mount = (agentCtx) => presets.mount(agentCtx, id)
-  }
-
-  /* The workspace-touching stretch, queued: create the session under the root, join it to that one workspace, arm the tool, hand the prompt over, then note the session. */
+  /* The workspace-touching stretch, queued: create the session under the root, join it to that one
+   * workspace, arm the watch point, hand the prompt over, then note the session. */
   let agent: Agent
   try {
-    agent = await inLine(root, async () => {
-      const handle = await side.create({
-        sessionId: opened,
-        meta: { cwd: root, ...(standing === undefined ? {} : { agentPreset: standing.id }) },
-        ...(selection === undefined ? {} : { agentOptions: selection }),
-        ...(mount === undefined ? {} : { setup: mount }),
-      })
-      /* A host with a workspace layer owns the grouping: the session is attached to the entity of the root, which is the call that puts it in that workspace. A composition without the layer keeps the cwd-only open. */
-      const registry = workspaceRegistryOf(ctx)
-      try {
-        const workspace = registry === undefined ? undefined : await registry.create(root)
-        if (workspace === undefined) {
-          reportUnattached(ctx, `the session opened for ${cycle}/${node}`, root, attachMissReason(registry))
-        } else {
-          await workspace.attachSession(opened)
-        }
-      } catch (error) {
-        /* The session is already minted: the host refused the grouping after the fact. The open
-         * goes on cwd-only — the first instruction and the note below still land, so the session
-         * has its record and the panel keeps its cell — and one log line says which cell and which
-         * workspace missed the grouping, with the host's own reason. Failing here would leave a
-         * live session nobody wrote down. */
-        reportUnattached(ctx, `the session opened for ${cycle}/${node}`, root, messageOf(error))
-      }
-      /* The caller's earliest watch point: the session exists and its first instruction has
-       * not gone in. The session's tool is not this open's business — the wake registers it once,
-       * for every agent, and the condition reads this session's workspace from the step. */
-      try {
-        options?.onOpened?.(opened)
-      } catch {
-        /* A caller's registration problem is not this open's failure. */
-      }
-      handle.agent.followup(createUserMessage({
-        content: [{ type: 'text', text: prompt }],
-        source: { kind: 'user' },
-      }))
-      await noteOpenedSession(root, node, opened)
-      return handle.agent
-    })
+    agent = await inLine(root, () => openSessionSides(ctx, side, root, `the session opened for ${cycle}/${node}`, opened, prompt, preset, selection, {
+      onOpened: (session) => options?.onOpened?.(session),
+      noted: () => noteOpenedSession(root, node, opened),
+    }))
   } catch (error) {
     /* The session may be out already and the note missing: say so plainly instead of letting the next open run a second session on this cell. */
     return openFailure(messageOf(error))
@@ -387,61 +432,21 @@ async function openConsult(
   }
   const root = await canonicalWorkspaceRoot(named)
 
-  /* The standing preset this open composes through, the same resolution the node open runs:
-   * the mount is what gives the session its scoped world (tools, skills). A roster that cannot
-   * resolve its own default is an open refusal naming the reason, not a bare session that can
-   * do nothing. */
-  const presets = presetPortOf(ctx)
-  let standing: { readonly id: string } | undefined
-  let mount: AgentSetup | undefined
-  if (presets !== undefined) {
-    try {
-      standing = await presets.resolve(undefined)
-    } catch (error) {
-      return openFailure(messageOf(error))
-    }
-    const id = standing.id
-    mount = (agentCtx) => presets.mount(agentCtx, id)
-  }
+  const preset = await presetSideOf(ctx)
+  if ('code' in preset) return preset
 
   /* The session identity is this host's own mint, spelled the way the host spells its own: `session-` + a fresh uuid. The brand is a compile-time fact; the string is what crosses. */
   const opened = `session-${randomUUID()}` as SessionId
   const selection = modelSelectionOf(ctx)
 
-  /* The workspace-touching stretch, queued: create the session under the root, join it to that
-   * one workspace, arm the tool, hand the consult sentence over. No note follows — there is no
-   * node to name — and nothing waits for the round: it is the person's to watch. */
+  /* The workspace-touching stretch, queued — the same sides the node open runs, with neither hook:
+   * no watch point (nobody is driving this session) and no note (there is no node to name). This
+   * session has to reach the words its sentence names — `migrate` and `doctor` for an old record
+   * directory, `sw-route` for a workspace with no node — and that reach is the whole reason it
+   * exists; the wake's condition reads it out of the workspace the session is opened in. Nothing
+   * waits for the round: it is the person's to watch. */
   try {
-    await inLine(root, async () => {
-      const handle = await side.create({
-        sessionId: opened,
-        meta: { cwd: root, ...(standing === undefined ? {} : { agentPreset: standing.id }) },
-        ...(selection === undefined ? {} : { agentOptions: selection }),
-        ...(mount === undefined ? {} : { setup: mount }),
-      })
-      const registry = workspaceRegistryOf(ctx)
-      try {
-        const workspace = registry === undefined ? undefined : await registry.create(root)
-        if (workspace === undefined) {
-          reportUnattached(ctx, 'the consult session', root, attachMissReason(registry))
-        } else {
-          await workspace.attachSession(opened)
-        }
-      } catch (error) {
-        /* The session is already minted: the open goes on cwd-only, with one log line naming what
-         * missed the grouping — the same trade the node open makes, for the same reason: failing
-         * here would leave a live session nobody wrote down. */
-        reportUnattached(ctx, 'the consult session', root, messageOf(error))
-      }
-      /* This session has to reach the words its sentence names — `migrate` and `doctor` for an old
-       * record directory, `sw-route` for a workspace with no node — and that reach is the whole
-       * reason it exists; the wake's condition reads it out of the workspace the session is opened
-       * in. */
-      handle.agent.followup(createUserMessage({
-        content: [{ type: 'text', text: prompt }],
-        source: { kind: 'user' },
-      }))
-    })
+    await inLine(root, () => openSessionSides(ctx, side, root, 'the consult session', opened, prompt, preset, selection))
   } catch (error) {
     /* The session may be minted already with the sentence undelivered: say so plainly instead of
      * answering an ok a reader would trust. */
