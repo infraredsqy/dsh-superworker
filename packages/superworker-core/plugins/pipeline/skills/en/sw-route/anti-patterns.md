@@ -60,7 +60,7 @@ fine"
 
 ## `route-spec-has-implementation-detail-or-no-done-check` — detail in the spec, or no done check
 
-**Symptom**: the spec carries function names, file paths, line counts, call order; or it is all
+**Symptom**: the spec carries function names, line numbers, call order, or implementation steps (folders and file names as landing points are allowed); or it is all
 "do the design for X" / "tune Y", with no acceptance to be found that yields a pass / fail reading
 
 **Correction signal**: sw-conduct's prepare stops and says "the completion rule cannot be run" or

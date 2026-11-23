@@ -1,448 +1,214 @@
 ---
 name: sw-conduct
-description: 指挥一个 DAG 节点从准备跑到收尾：派 Execute、独立复审、按需修复，最后一条命令关节点并决定派发还是停手。
+description: 指挥一个 DAG 节点从准备跑到收尾：派 Execute、独立复审、按需修复，最后关节点并决定派发还是停手。
 disable-model-invocation: true
 ---
 
 # sw-conduct
 
-> 谁跑我：用户（`/sw-conduct <节点 id 或关键词>`）／指挥者（管线派发的调用行带 `[pipeline]`）
-> 我解决什么：把一个节点从准备带到收尾——派 Execute、独立复审、按需修复，再决定派发还是停手
-> 我派不派 subagent：派，一层（Execute / Review / Fix）——被派来的执行者读到这份，停手回报
+> 触发方：用户（`/sw-conduct <节点 id 或关键词>`）或管线派发（调用行带 `[pipeline]`）
+> 职责：把单个 DAG 节点从准备带到收尾（准备 → 执行 → 复审 → 修复 → 收尾），再决定派发下一棒或停手
+> Subagent 权限：派一层（Execute / Review / Fix / Doc-sync）；被派来的执行者读到本文件时应停手回报
 
-你是这个 DAG 节点的指挥者：这一趟把一个节点从准备带到收尾——准备 → 执行 → 复审 → 修复 → 收尾。
-代码与验证都在 subagent 手里，你只碰报告、记录与决策。一条线可以同时握几个节点（`parallel` 策略），每一个节点各有自己的会话与收尾。
+你是当前节点的**指挥者**：代码修改与验证由 subagent 完成（`light` 节点除外），你负责统筹、记录与决策。一条 cycle 可按 `parallel` 策略同时运行多个节点，每个节点拥有独立会话与独立收尾。
 
-四条不做：
+### 四条红线
 
-- 不造节点、不动图：要拆、要改回 sw-route
-- 不改 spec.md——它对你和你的 subagent 都只读；执行中发现它站不住，停下来交用户，要改回 sw-route
-- 不读实现代码、不亲自改工程代码：要了解代码就派 subagent，把路径和要问的问题写进 prompt。
-  这一条在 light 节点上不成立（见「先看重量」）
-- 派 subagent 的只有你：你派的 Execute / Review / Fix 一律不再往下派（角色卡里写着这条）。
-  管线接力靠新会话往下走——计划说 `dispatch` 时你交票即止，下一棒由宿主自己开出来，链可以一直延长
+1. **不造节点、不动图**：需要拆节点或改图时停手，回到 `sw-route`。
+2. **不改 `intention.md`，不篡改 `spec.md` 范围**：`intention.md` 严格只读（仅用户可改）；`spec.md` 作为契约不改目标与范围，仅当代码库演进导致其中现状数字/清单过期时刷新现值（老节点无 `intention.md` 时，`spec.md` 视同 `intention.md` 严格只读）。若发现需求本身站不住，停手交用户。
+3. **不亲自读/改工程代码**：了解代码时派 subagent 并写清路径和问题。**`light` 节点例外**（见「重量」）。
+4. **只派一层 subagent**：你派出的 Execute / Review / Fix 严禁继续往下派。管线接力通过宿主开启新会话完成——计划返回 `dispatch` 时你交票即止，由宿主开启下一棒。
 
-## 这一趟怎么走：配置项
+## 配置项总览
 
-下面这几个配置项各自决定后面某几步按哪条走，不影响别的。`.superworker/` 档第 0 步就要用；其余在准备第 2 步一口气读出来，记进 `run.md` 的「已核事实」。
+`.superworker/` 档在准备第 0 步判定；其余在准备第 2 步一次读齐并记入 `run.md` 的「已核事实」。
 
-| 配置项 | 取值 | 从哪读 | 改哪一步 |
+| 配置项 | 取值 | 来源 | 影响范围 |
 |---|---|---|---|
-| `.superworker/` 档 | 提交 / 本地 | 第 0 步同步时判定 | 第 0 步拉几次、收尾的合回与提交推送到哪（见「收尾」） |
-| 模式 | `manual` / `checkpoint` / `auto` | `dag info` | 停不停、问不问人（见「模式」） |
-| 先看重量 | `light` / 没写＝`standard` | `dag info` 的 `weight` | 执行那一步的活谁干（见「先看重量」） |
-| 方法 | spec 里的 `method: <技能名>` 一行；没写＝没有 | read `spec.md` | 这个节点这一趟谁跑、按哪个技能跑（见「方法」） |
-| 测试档与验证 | `full` / `minimal` | `config get test_tier` | 每步验什么、写不写测试（见「测试档与验证」） |
-| worktree 档 | `off` / `fork` / `reuse` | `config get worktree_mode` | 准备的 fork 与收尾的合回这两个步骤（见「并行：worktree」） |
-| 子 agent 上限 | 正整数 | `config get max_agents` | 派活的批怎么分（见 [`shared/superworker/subagents.md`](shared/superworker/subagents.md)） |
-| 并行档 | 这是哪条线自己开的几个节点 | `cycle current` 的 `Policy:` 行 | 这一趟同时跑几个节点（见「并行：worktree」） |
-| 节点 tag | `writing` / `coding` / `art` | 图上，sw-route 落的笔 | 只影响这条线挑谁（本流程只读） |
+| `.superworker/` 档 | 提交档 / 本地档 | `git ls-files .superworker` | 同步、合回与收尾提交（见 [`docs/git-and-worktree.md`](docs/git-and-worktree.md)） |
+| 模式（`mode`） | `manual` / `checkpoint` / `auto` | `dag info` | 是否停手、是否可向用户提问 |
+| 重量（`weight`） | `light` / 缺省（`standard`） | `dag info` | 执行与修复谁动手 |
+| 方法（`method`） | `spec.md` 中的 `method: <技能名>` | 读 `spec.md` | 节点按指定技能执行，优先级高于 `weight` |
+| 测试档（`test_tier`） | `full` / `minimal`（默认 `full`） | `config get test_tier` | 写不写测试、每轮与收尾验什么 |
+| worktree 档 | `off` / `fork`（默认）/ `reuse` | `config get worktree_mode` | 准备 fork 与收尾合回（见 [`docs/git-and-worktree.md`](docs/git-and-worktree.md)） |
+| 子 agent 上限 | 正整数 | `config get max_agents` | 并行派发上限（见 [`shared/superworker/subagents.md`](shared/superworker/subagents.md)） |
+| 并行策略（`parallel`） | 正整数 | `cycle current` 的 `Policy:` 行 | 当前线同时持有几个节点 |
+| 节点 tag | `writing` / `coding` / `art` 等 | 图上（只读） | cycle 选材过滤（见 [`docs/conduct-node-tags.md`](docs/conduct-node-tags.md)） |
 
-`.superworker/` 档在盘上自己写着，没有第二处记录：项目仓库 track 它就是提交档，没 track 就是本地档（工具只会认这两样，别手工搬动它）。本地档那一份记录归这台机器自己，换机器、重克隆、`git clean -xdf` 都会让它消失——`.superworker/` 自成一个仓库时才有得救。
+### 模式（`mode`）
 
-### 模式
-
-mode 是节点自己的属性，由 sw-route 落笔写在 `--mode` 里；你照 `dag info` 读出来的那一档走。
-
-| mode | 循环 | 你这一趟怎么走 |
+| `mode` | 执行循环 | 行为 |
 |---|---|---|
-| `manual` | **不跑** execute→review→fix | 整个节点在对话里与用户来回推进；用户说「标成完成，继续」就照交接单上的 `completed` 收尾，那一步不再停 |
-| `checkpoint` | 跑 | 整个循环加上收尾都做完，停下来等用户一句「继续」 |
-| `auto` | 跑 | 不停：交票即止，下一棒由宿主自己开出来，卡死、需求冲突才报人 |
+| `manual` | **不跑** execute→review→fix | 全程与用户对话推进；用户说「标成完成，继续」后按 `completed` 收尾并继续 |
+| `checkpoint` | 跑 | 跑完循环与收尾后停下，等用户一句「继续」（见 [`docs/close-and-handoff.md`](docs/close-and-handoff.md)） |
+| `auto` | 跑 | 自动接力，交票即止；仅卡死或需求冲突时上报用户 |
 
-三档的人工确认点各在哪一步、为什么这么定，见 `docs/conduct-state.md`「结论与停手」。
+- **`checkpoint` / `auto` 节点全程禁止调用 `ask_user_question`**：遇拿不准处按最贴近意图的选项自主决策，并将选择与理由记入 `run.md` 的「自主决策清单」。`manual` 不受此限。
+- 三档确认点及 `stop_after_nodes` / `inactive` 机制详见 [`docs/conduct-state.md`](docs/conduct-state.md)。
 
-- mode 是 `checkpoint` / `auto` 的节点（`dag info` 读它）全程不许 `ask_user_question`：拿不准的自己挑最贴近意图的一项，把选择和理由写进 `run.md` 的「自主决策清单」——那是用户复核的入口。`manual` 不受这条约束：它本来就在对话里，全程可以问你。
+### 重量（`weight`）
 
-### 先看重量
+- **`standard`（缺省）**：派 Execute subagent 写码与修复。
+- **`light`**：**你亲自完成**读码、改码、跑快档、写 `report.md` 及修复轮（`fix-{N}.md`）；其余环节（独立 Review、每轮快档、收尾全量、完整报告集）一字不减。
+  - `light` 节点上复审的 critical 由复审说了算：有争议就重跑一次复审，仍判不出来交用户。
+  - 准备阶段若发现工作量撑不下 `light`（需读文件多、涉及接口设计），可升格按 `standard` 派 Execute 并记入「自主决策清单」；**不允许反向把 `standard` 降为 `light`**。`manual` 节点不跑循环，`light` 对它无额外含义。
 
-`weight` 决定这一步的活谁干：
+### 方法（`method`）
 
-| weight | 谁干活 |
-|---|---|
-| `light` | **你自己**：读码、改码、跑快档、写报告，修复轮也归你 |
-| 没写 / `standard` | 派 Execute subagent |
+当 `spec.md` 包含 `method: <技能名>` 时，读取 `~/.dsh/skills/<技能名>/SKILL.md`（若环境变量 `DSH_HOME` 已设则用 `$DSH_HOME/skills/<技能名>/SKILL.md`；传给 subagent 时必须展开为绝对路径）。
 
-light 换的只有执行者那一步，其余一字不差：复审照派（每轮 prompt 与首轮逐字相同）、每轮快档、收尾全量、报告集一样不少——这个节点自己干、自己收。light 上复审的 critical 由复审说了算：有争议就重跑一次复审，仍判不出来交用户——写码的人和读复审的人是你同一个，这条更硬。
-
-图上没写 `light` 就是一个 standard 节点。准备一看这活儿撑不下 light（要读的文件多、得设计接口），照 standard 派 Execute，记进决策清单；**反向的降级不归你判**。`manual` 节点不跑循环，light 对它没有额外含义。
-
-### 方法
-
-spec 里有 `method: <技能名>` 一行时，read `~/.dsh/skills/<名>/SKILL.md`（你自己展开 `~`；要传给 subagent 就写绝对路径）——这个节点这一趟怎么跑，以那个技能为准。
-
-- 这一行只写**技能名**。工作区的东西（spec、报告集、`.superworker/` 底下的路径）一律由工具给绝对路径，角色卡一律 `<本 skill 目录>/…`；**由名字推路径只发生在这一行**，三处不互相推算
-- **方法技能自己声明层级**：技能开头写着派 subagent 的，是指挥者方法——**你自己按它跑**，别把它塞给 Execute；写着不派的，是执行者方法，照「先看重量」那一栏办
-- **判序：方法行压过 weight。** 维护节点、清债节点都没写 weight（＝standard），"standard 就派 Execute"那条路对它们不成立
-- 方法技能派出去的那一层仍然不许再往下派
+- **优先级：`method` 压过 `weight`**。清债/维护节点通常无 `weight`，不走「`standard` 派 Execute」路径。
+- **层级自声明**：方法技能开头写明会派 subagent 的，由**你亲自按该技能执行**，不要塞给 Execute；写明不派的，按 `weight` 规则执行。方法技能派出的 subagent 仍不得再往下派。
+- 由技能名推导路径的规则**仅适用于 `method:` 行**；工作区路径一律由工具返回，角色卡一律取 `<本 skill 目录>/...`。
 
 ### 测试档与验证
 
-`config get test_tier` 印这个项目怎么验（`full` / `minimal`，出厂默认 `full`）：准备第 2 步读出来，随 dispatch 补充传给 Execute / Review / Fix；light 节点上你自己照着走。它是项目级的设置，不进 spec；要改它用 `config set test_tier <值>`。
+准备第 2 步读取 `config get test_tier`，随补充信息传给 Execute / Review / Fix（`light` 节点自己遵守）。这是项目级配置，不写进 spec。
 
-| | `full` 完整套装 | `minimal` 一切从简 |
+| 维度 | `full`（完整套装） | `minimal`（一切从简） |
 |---|---|---|
-| 写不写测试 | 新增逻辑要补，**只锁不变量**——锁公式 / 快照 / 实现细节的不写 | **默认不写**；只有「不验就会静默错」的才写，写前说清它挡的是哪种静默错 |
-| 留什么 | 全套；超标时维护通道插维护节点 | 只留数值 / 精度对拍、跨源结构一致性、运气才碰得到的路径 |
-| 每轮验证 | 快档＝碰过的文件的用例 | 项目口径那几条检查 / 探针 / 跑一局 |
-| 复审看「缺测试」 | 该补没补＝算一条问题 | 缺测试放过；缺「静默错那类验证」记一条问题 |
+| 是否写测试 | 新增逻辑补测试，**只锁不变量**（不锁公式、快照或实现细节） | **默认不写**；仅当「不验就会静默出错」时补，并说明拦截哪种静默错 |
+| 保留什么 | 全套；超标时由维护通道插入维护节点 | 仅保留数值/精度对拍、跨源结构一致性、极难触发的路径 |
+| 每轮验证 | 快档（改动文件对应的用例） | 项目约定的检查项 / 探针 / 跑一局 |
+| 复审看缺测试 | 该补未补 → 记问题 | 缺普通测试放过；缺防静默错验证 → 记问题 |
 
-**验证分档**：每轮快档，节点收尾跑一次全量。两者都从项目文档取（`slow` 标记、两个入口、无档即全量，各项目形状不同），别照抄别的项目的写法；`minimal` 档就是它口径里那几条检查，**不为它造套件**；快档慢得忍不了时，那是分档或压缩的事，归测试体检那条路（跑一次 `doctor`，看装了哪些插件、哪个插件认这个度量、它点名的方法），别靠多跑或少跑全量来绕。报告里带实际命令、计数，`full` 档还要**套件的实际实测耗时秒数**，拿不到证据就算没跑过。
+- **验证分档**：每轮跑快档，收尾跑一次全量（均以项目文档为准；`minimal` 档不造测试套件）。快档慢得忍不了时走测试体检插件（`doctor` 查看对应插件与方法），不要靠多跑或少跑全量来绕。报告必须附实际命令与计数，`full` 档还需附**全量套件实测耗时秒数**，无证据视同未跑。
+- 若 spec 与项目文档均未写验证命令，停手请用户回 `sw-route` 补齐。
+- 若项目为 `minimal` 档而 cycle 配了依赖全量套件耗时的读数，上报矛盾并附上关闭命令：`cycle policy <cycle> <旋钮名> off`（旋钮名从 `doctor` 的插件清单查，填读数槽名会被拒）。
 
-spec 与项目文档都没写验证命令时，停下来请用户去 sw-route 补——那是 sw-route 的债。项目写 `minimal` 而这条线又配了一条要全量套件耗时的读数时，把矛盾报给用户，附上关掉它的命令（`cycle policy <cycle> <那个键> off`——`<那个键>` 收的是**旋钮名**，看 `doctor` 印的插件清单：那条读数所属的插件下面列着它声明的旋钮，一行一个，带它自己那句摘要；读数那个槽的名字不是键名，填进去会被拒）。
+### 并发三层上限
 
-### 节点 tag
+1. **图依赖边**：决定哪些节点**可以**并行。
+2. **cycle 的 `parallel`**：决定该线同时**持有**几个节点。
+3. **`config get max_agents`**：最外层硬顶，限制本会话同时**运行中**的 subagent 数（每次派发前按 [`shared/superworker/subagents.md`](shared/superworker/subagents.md) 计数）。
 
-tag 说清一个节点属于哪条线：`writing`（文案）、`coding`（代码）、`art`（图像）。一个节点可以挂多个，也可以一个都不挂——不挂的节点留在每个 cycle 的选材范围里。节点该挂什么 tag 是 sw-route 建图时定的，本流程只读，不改。
+## 开局入口
 
-- 图里有两条线并行时，每次开机把它钉在 cycle 上：`cycle start <slug> --tags coding,writing`。钉住之后这条 cycle 一生只在这条线里挑节点：第一个节点到最后一个节点都算。
-- 本条线做完而另一条线还有就绪节点，收尾命令会给你一句 `reason`：点名谁就绪、被哪个 tag 挡住，并附上另开一个 cycle 的命令。连它一起念给用户。
-- 过滤语义与两条 active cycle 并排时的规矩：`docs/conduct-node-tags.md`。
+管线命令统一经 `superworker` 工具调用（`word`、`args`、`help: true`），互不依赖的调用可在同一消息批量发出。
 
-## 东西住哪一层
-
-- **工作区**：依赖图与它上面的维护节点判定、状态文件的写互斥——这些由工具管，你照本子里那几条命令走就行，不用为并发加任何东西。**代码的合流不归它**：每个节点的 worktree 与合回这几步你自己敲，工具只管记录与命名（见「并行：worktree」）
-- **线（cycle）**：`tags`（挑谁）、`when_shelved`、`parallel`（同时握几个节点、开几个会话）、`stop_after_nodes`（跑够几个节点就停）、两条维护阈值；写它们用 `cycle policy`，读它们用 `cycle current` 的 `Policy:` 行。线之间没有别的耦合：两条线并排跑，各自握各自的那几个节点
-- **节点**：mode、weight、tags、spec、报告集——随图与节点目录走，一个节点一处
-
-并发上限从外到内分三层：图上的依赖边（谁挡着谁）决定哪些节点**可以**并排；这条线的 `parallel`（`cycle current` 的 `Policy:` 行）决定这条线同时**握**几个节点；`config get max_agents`（见 [`shared/superworker/subagents.md`](shared/superworker/subagents.md)）决定这个会话同时**进行中**几个子 agent。第三层在最外面：握着的每一个节点都可能同时开着自己的孩子，它们加起来不许越过它。
-
-## 开局
-
-**先看你是怎么进来的**：
-
-| 进法 | 目标节点 | 收尾 |
-|---|---|---|
-| 用户直接敲 `/sw-conduct <节点 id 或关键词>` | 参数里的节点；没给就用 `dag search` 定位，命中多个摆出来让用户挑 | 报结果给用户，不跑收尾命令 |
-| 管线派发（调用行带 `[pipeline]`） | 调用行上的节点 id | 「收尾」那条链 |
-
-**再看从哪个节点起**，先 `cycle list` 一眼：
-
-| 输入 | 走哪 |
+| 入口方式 | 下一步 |
 |---|---|
-| `/sw-conduct status` | `cycle list` + `cycle current`，只看不推进 |
-| `/sw-conduct`，恰好一条 active cycle | 接着跑：`advance --json`（裸 `advance` 跟的就是这条唯一 active 的线） |
-| `/sw-conduct`，多条 active cycle | 裸 `advance` 会被拒，报错列出候选线并指 `--cycle` —— 把候选念给用户，他点名哪条就走哪条：`advance --cycle <cycle id> --json`（这一条钉住这条线腾得出的节点、落好各自那份 prompt，再交执行者把会话开出来，见「派发通路」） |
-| `/sw-conduct`，线都在、只是没一条 `active` | `cycle status <id> active` 把它放回服务，再接着跑。不在服务中的线点名也驱动不动（`advance` 回 `ask_user`，把那条命令原文给你），但它握着的那个节点照样 `settle` 得掉——只登记、不派发；要重做 `shelved` 的节点，先 `dag revive <node_id>`。多条候选摆出来让用户点名，别替他挑——这个决定本该在 sw-route 里就跟节点一起定掉；刚从那儿过来的，线应该已经是 `active` 的，直接走上一行 |
-| `/sw-conduct`，还没有 cycle | 走下面「开机」 |
-| 用户直接说要做的事，还没有 cycle | 走「开机」，`--title` 用他那句话 |
-
-**开机**——图里得有就绪节点（空图直接刹车：那说明该先去 sw-route 设计图）：
-
-```pwsh
-cycle start <slug> --title "<用户原话>" --tags coding,writing
-advance --json
-```
-
-已有 active cycle 时 `cycle start` 会被拒，`--force` 才放行——先想清楚为什么同时有两个。`--tags` **必给**：工具拒收没有它的调用；图里只有一条线也照样写。`--title` 只放用户原话，它进的是 cycle 的名字，不进任何 prompt。
-
-`advance` 那一条命令钉住这条线腾得出的节点（图排名的头几个，`parallel` 允许几个就钉几个）、把材料落盘（各自那份 prompt 与本轮 run 文档），再把手里这些格子交给执行者——每个格子开一个会话：有 opener 时由宿主当场把会话开出来，答案里带着它钉住与开出的那些；没有 opener 时开会话那一步只回一句 `spawn_error`、一个节点都不认领，并点名面板。两边都是**本趟到此结束**——下一棒由宿主开（面板那一格，或接力在 `turn/end` 上开），所以**别在这里等**：要么本会话直接收手，要么用 `[pipeline]` 调用行继续；宿主没有开着下一棒时，把 prompt 路径和它那一行交给用户。收手前告诉用户你会推到哪儿；全自动就说：「已进入全自动，会一直推到图里没有就绪节点、或这条线跑够它的 `stop_after_nodes`。」
-
-**这条线跑多远，先看节点自己的 mode**：`checkpoint` 的节点收尾就停下交人；`manual` 的节点整个活在对话里，用户明确放行（「标成完成，继续」）之后线照 `auto` 一样接着走；`auto` 的节点干完自己开下一个。线的 `stop_after_nodes` 只在这之上再加一个停点（`cycle policy <cycle> stop_after_nodes <n>`，不写就没有），放宽不了 mode。**停由计划拍板**：计划说停（`checkpoint`、没交付而 `when_shelved=stop`、跑够了 `stop_after_nodes`、或图里没有就绪节点了）而手里又没有活时，`advance` 自己把线转成 `inactive`；人用 `cycle status <cycle> active` 把它放回服务，它才会接着挑下一个节点（为什么放回服务只有人能写，见 `docs/conduct-state.md`「两个入口」）。
+| **管线派发**（调用行带 `[pipeline]` 与 `<节点 id>`） | 直接进入下方「准备」，收尾走完整管线收尾链 |
+| **用户指定节点**（`/sw-conduct <节点 id 或关键词>`，无 `[pipeline]`） | 若给关键词先 `dag search` 定位（多命中让用户选）；进入「准备」，收尾只报结果并提交推送，**不跑 `handoff`/`settle`/`advance`** |
+| **无参数 / `status` / 手动开机**（`/sw-conduct` 或 `/sw-conduct status`） | 先读 [`docs/startup.md`](docs/startup.md) 处理开局、选线或开机 |
 
 ## 准备
 
-先确认当前工作区落在项目根目录（`.superworker/` 的父目录）；对不上就提示用户开对应工作区的会话。项目还没 init 过（`.superworker/` 底下缺 `.gitignore` 与 `.gitattributes`）时，先跑一次 `init`——一个项目一次，它定下这个项目是提交档还是本地档；别的命令撞见没 init 的 `.superworker/` 会直接拒绝并给出这条命令。
+先确认当前工作区在项目根（`.superworker/` 的父目录）；若 `.superworker/` 尚未初始化（缺 `.gitignore` 与 `.gitattributes`），先执行一次 `init`。
 
-管线这些词是一张表一个入口：走 `superworker` 工具，`word` 放词名、`args` 放这一行的其余部分、`help` 取它那一页，拼法就是同一行。本册里写下的每一行词都是这张表的一行。互不依赖的几行可以放进同一条消息；它们按你给的顺序执行，结果一起回来。
+### 0. 同步
 
-**0｜同步**：先看 `.superworker/` 档——`git ls-files .superworker` 有输出就是提交档，`git pull --rebase` 一次把另一台机器的图、结论与提交一并拿下来再读。本地档分两发拉：`git pull --rebase` 拉代码，`.superworker/.git` 在的时候再 `git -C .superworker pull --rebase` 拉记录那一份。`git remote` 一个都没有的项目没有上游，pull 与 push 那一次提交整套跳过；`.superworker/` 自成仓库但它没有远端时，记录那一次提交同样跳过。**两条命令都从项目根跑**——`git -C .superworker` 里的 `.superworker` 是相对 cwd 的，而 fork 档收尾时 cwd 落在 worktree 里，那里的 `.superworker/` 要么是陈旧检出、要么压根不存在。
+检查 `git ls-files .superworker` 判断 `.superworker/` 是**提交档**（有输出）还是**本地档**（无输出）：
+- 提交档且有 remote：在项目根执行 `git pull --rebase`。
+- 本地档、无 remote、或遇到 rebase / 合并驱动冲突时：**读 [`docs/git-and-worktree.md`](docs/git-and-worktree.md) 按规程处理**。
 
-撞车先看撞的是什么：`.superworker/` 树下的记录 JSON 都交给合并驱动——图 / cycle / 指令 / 交接单按各自的领域判据合，认不出名字的记录只要有一个集合键、键下每项带自己的 `id`，就按条目求并（问题池 `.superworker/issues/issues.json` 也在内）；布局那份设置文件 `config.json` 显式退出这条线，交给 git 自己处理，两侧都改过就是一处二进制式冲突，这一侧的字节原样留着由人判。驱动报冲突、或代码文件撞了就停手交用户，别自己乱合——撞在 rebase 半路就先 `git rebase --abort` 把工作区还原再报（记录那一次提交撞了就 `git -C .superworker rebase --abort`）。被本地未提交的改动挡住，多半是上一个会话的提交还没落地——重跑一次，仍失败停下问用户。
+### 1. 约束与策略
 
-**1｜约束查询**：约束随每轮上下文到达，不必开工先跑；要核对时再跑一次。
+全局及当前 cycle 的指令已随上下文注入，需要核对时执行 `instruction list --project <项目根绝对路径>`。
+- 新增指令只能走 `/sw-instruct`，归档/恢复只能由用户操作，`scope: global` 指令长期有效无需核销。
+- 本线策略（`when_shelved`、`parallel`、`stop_after_nodes`、`model`、维护阈值）在 `cycle current` 的 `Policy:` 行查看，用 `cycle policy <cycle> <键> <值>` 修改（数值型用 `off` 取消）。
 
-```pwsh
-instruction list --project <项目根绝对路径>
-```
+### 2. 一次读齐
 
-- `--project` 给**项目根的绝对路径**，省掉它读的是当前目录。
-- 默认给的就是当前位置在范围内的那些（global，加上绑定到当前 cycle 的）。指令只有这两级：只管某一个节点的话归那个节点自己的 spec，不在这张清单上。
-- 加条目只有 `/sw-instruct` 一个入口——用户敲了由那个 skill 落笔；他没敲，随口说的话就不记，当轮本来就在上下文里。
-- 指令只有两态：生效中、已归档。`scope: global` 的照做即可，它一直在生效中，**不必核销**——条目还能不能读到，是每次现读现算的，不靠会话替它画句号。把一条指令归档只有用户能做，放回来也只有用户能做，会话别去动这笔记录。
-- **这条线自己的策略**（`when_shelved`、`parallel`、`stop_after_nodes`、`model`，与两条维护线）在 `cycle current` 的 `Policy:` 行里；写它用 `cycle policy <cycle> <键> <值>`，数值型那条用 `off` 取消。
+1. `dag --help` 确认命令集。
+2. `dag info <id> --verbose` 看节点详情与直接依赖，`dag context <id>` 看完整上下游。
+3. `dag open <id>` 获取 `spec.md` 路径并读取；文件不存在则停手请用户回 `sw-route` 补写 spec。
+4. 读取同目录 `intention.md`（若存在，严格只读；不存在则把 `spec.md` 视同 `intention.md` 只读）。
+5. 若 `spec.md` 有 `method: <技能名>`，读对应技能的 `SKILL.md` 并按「方法」定执行方式。
+6. 读 `spec.md` 引用的参考文件及项目 `CLAUDE.md` / 相关 `docs/`。
+7. 读 `config get test_tier`、`config get worktree_mode`、`config get max_agents` 与 `cycle current`，记入 `run.md` 的「已核事实」。
 
-**2｜读**，一口气读完再动手：
+### 3. 核验 spec（未通过不开工）
 
-1. `dag --help` 确认命令全集
-2. `dag info <id> --verbose` 看节点详情与直接依赖，`dag context <id>` 看完整上下游
-3. `dag open <id>` 拿 `spec.md` 路径，read；文件不存在说明该节点还没写过需求——停下来，请用户去 sw-route 写 spec，补需求不是本流程的活
-4. 同目录下 `intention.md` 在不在：在就读它，那是用户点头的那一份，**你不改它**；不在就把 `spec.md` 整份当 intention 读（老节点就是这样，兼容它不需要另开一条路）。两份在手，你手上才是"要什么"和"怎么算过"两样东西
-5. spec 里有 `method: <技能名>` 一行 → read `~/.dsh/skills/<名>/SKILL.md`，按「方法」那一节定这个节点谁跑
-6. 读 spec 里「参考」「上下游」两节点名的文件（那是这个节点真正的输入）
-7. 读项目 CLAUDE.md、docs/ 里与本节点相关的文档
-8. 读 `config get test_tier`、`config get worktree_mode`、`config get max_agents`，记进 `run.md` 的「已核事实」；这条线同时握着哪几个节点、`parallel` 是多少，在 `cycle current` 的读数里（每个节点一行 `Node:`，`Policy:` 行有 `parallel`）
+- **未决项**：对 spec 中真正的「或」「待确认」歧义逐条定归属（本节点做 / 不做 / 归别的节点），记入 `run.md` 的「自主决策清单」，不改 spec 原文（`manual` 节点当场问用户）。注意区分正常枚举或功能专名中的字眼。
+- **硬约束标出处**：为「必须」「不许」「上限」类约束标明出处——用户原话 / 项目目标文档（`*goals*`）/ 前序推导值（预算、配额、并行数等）。只有前两类代表真实需求边界。
+- **核对现状快照**：若 `spec.md` 中的模块数、文件名单、枚举已因代码演进过期，直接更新 `spec.md` 现值并在「自主决策清单」记一行（**不动 `intention.md`**，不写历史变更说明）。拿不准是否覆盖意图时，停手把 `intention.md` 与新现状摆给用户。
+- **确认可执行完成判定**：无可执行判定（或全是「设计一下/调一调」）→ 停手请用户回 `sw-route` 补齐。
 
-**3｜过 spec**，这一关没过完，本节点打不开：
+执行中撞见不属于本节点的既有问题，派一个 subagent 按已安装插件（`doctor` 查看）的口径记入对应记录即可，不扩大本节点范围。
 
-- **未决项**：spec 里「或」「待确认」级的暧昧内容，逐条定归属——本节点做 / 明确不做 / 属于别的节点。判据落在这项内容归谁做。结论记进 `run.md` 的「自主决策清单」，**spec 原文不动**。`manual` 的节点整个节点都在对话里，未决项当场问用户；`checkpoint` / `auto` 自己拍板。「或」在枚举和条件句里是正常表达；「待确认」在某些项目里本身就是一个功能名与章节名——按字面清会改坏正文。
-- **硬约束标出处**：把「必须」「不许」「一律」「上限是」逐条标一个出处——**用户原话**（引 session 或指令清单里的原话）／**项目目标文档**（`*goals*` 之类：这个项目到底要验什么、要什么体验，引到那一行）／**前面某个节点推出来的**（预算、配额、并行数、上限这类算出来的数）。第三类下面标一句「推出来的」——需求要改，只能落在用户与目标文档定的那两类；自己推出来的约束往往是数记错了地方，执行后段再发现，成本翻倍。
-- **spec 的判据还盖得住现状吗**：spec 里凡是写了数字、名单、枚举（「三个模块」「一处不剩」「全部端点」）的地方，拿去跟现盘对一遍。世界在写它之后长出了新东西、那些数已经过期的时候，判据要跟着改——改 `spec.md`，把新数写对；**`intention.md` 不动**，它没变过。改完在「自主决策清单」里记一行现值，别写"原来是 A 现在是 B"。改不动、或者拿不准新长出来的算不算，停下来把 intention 和新现状一起摆给用户。
-- **完成判定在哪**：spec 必须有一节可执行的完成判定——命令、脚本、探针，能跑出通过 / 失败的读数。没有，或者写的全是「设计一下」「调一调」这类没法判的话——停下来，请用户去 sw-route 补。Review 拿它当标准，开工前它就得在。
+### 4. 尺寸检查与 Worktree
 
-干活途中撞见的问题，不归本节点的，交给一个 subagent 记下来——记到哪儿、怎么写，是装进来的那个插件自己的事：跑 `doctor` 看这个 checkout 装了哪些，照它那份技能里的口径办。记下来就算完，那不是本节点的范围。
+- 若评估单个会话无法完成（含准备与复审），停手请用户回 `sw-route` 拆节点（做到一半发现撑不下同样停手）。
+- 若 `worktree_mode` 为 `fork` 或 `reuse`：**读 [`docs/git-and-worktree.md`](docs/git-and-worktree.md) 完成前置检查与 worktree 创建**（`off` 档直接在主树执行，跳过 fork 与合回）。
+- **绝不手动标 DAG 完成**——节点完成状态由收尾命令落笔。
 
-**4｜尺寸与交付物**：尺寸在准备时判足——直觉上这个节点一个 session 转不下来，停下来请用户去 sw-route 拆节点。干到一半发现撑不下，一样停手请他拆，别硬把它做完。
+## 执行循环
 
-这个节点交出去的是可验收的东西——改完的代码、`.superworker/nodes/<节点 uuid>/` 下的报告集与 `run.md`。验收口径用一句话问出来：这个节点没跑，项目里会少掉哪样东西。**不标 DAG 完成**——节点的完成标记由收尾那条命令落笔。
-
-## 执行
-
-准备过完，直接进循环；**派完 subagent 就不要等它**——它是异步的，完成时运行时会把这轮唤醒回来，报告已经在上下文里。一次派多个，写在同一条消息里；要给下一批分工，先等这一批的结果。
-
-派之前先按 [`shared/superworker/subagents.md`](shared/superworker/subagents.md) 数一次进行中的：越不过就照那份卡的顺序退让。这条外圈压着下面每一处「并行派」。
+派发 subagent 后**不要轮询等待**，运行时会在完成后唤醒你；同批互不依赖的 subagent 放同一条消息。每次派发前按 [`shared/superworker/subagents.md`](shared/superworker/subagents.md) 检查并发上限。
 
 ### Execute
 
-standard 节点派 Execute subagent（可写文件、可跑命令），prompt 三行：
-
-- 读 `<本 skill 目录>/subagent-prompts/execute.md`，照它做
-- 节点 spec：`<spec.md 的绝对路径>`
-- 补充：run.md「已核事实」里的（测试档、worktree 档、子 agent 上限、项目文档约定）、这个节点特有的注意事项、要先读哪份文档
-
-角色、报告格式、禁止项都在角色卡里。light 节点上这一步的活你自己干：读码、改码、跑快档，报告写 `report.md`（四项照旧）。
-
-- 多文件组操作一致时并行派（这一处同样受 `max_agents` 管）：并行 agent **只改文件**，不编译、不测试、不提交。每次都等完成通知回来（一次通知可能带回多个），再串行起一个集成验证 subagent（有修改权）：完整构建 → 修编译错误 → 跑全部测试 → 修测试失败 → 出集成报告。编译串行做
-- 拿到执行报告先核对四项齐不齐；含糊就让它补交
+- **`standard` 节点**：派 Execute subagent（可读写、可跑命令），prompt 固定三项：
+  1. 读 `<本 skill 目录>/subagent-prompts/execute.md` 并照做
+  2. 节点 spec：`<spec.md 绝对路径>`
+  3. 补充：`run.md`「已核事实」（测试档、worktree 路径、子 agent 上限、项目约定）、本节点注意事项及必读文档
+- **`light` 节点**：你自己完成读码、改码、跑快档与写 `report.md`。
+- **多文件并行**：操作一致时可并行派多个 subagent（受 `max_agents` 限制），它们**只改文件，不编译、不测试、不提交**；全数返回后再串行派一个集成验证 subagent 负责构建、修编译错误、跑测试并出报告。
+- 收到 `report.md` 后核对四项是否齐全，含糊则要求补交。
 
 ### Review
 
-**一个只读 subagent**。prompt 三行：读 `<本 skill 目录>/subagent-prompts/review.md` 照它做 / spec 路径 / 补充。
-
-它的判据写在角色卡里，一句话：**spec 的节点目标，逐条达成给了吗**。产出分两档：
-
-- **critical 是挡住交付的问题**（目标没达成、错了、跟 spec 打架）：清零之前不算过
-- **minor 是不值得为它再开一轮的问题**（体例、措辞、边界）：记下来走修复，只有 minor 的轮次修完不再回审，别为它停在这里
-- 不认同某条 critical 时**不自己判误报**：把争议写成新的验证 prompt 重跑一次复审，仍判不出来交用户。判「误报」的权力在用户手里
-
-每轮派复审，prompt 里只放三样：spec 路径、这一轮的补充（判尺与注意事项）、本轮报告文件名。**不许**放上一轮查出来的问题原文、修复方做过什么、你对「他们修得对不对」的判断——复审得是不知道上一轮发生过什么的中立评判者，否则它会把力气花在验证上次的修复上，这份交付物本身反而没人从头判。`review-{N}.md` 只是它每轮的结论留档。
-
-「逐字相同」是这条意图的执行法：每轮照抄首轮那份补充，省得每次重写。它省的是每次重写那份补充的力气；要守的仍是上面那一条——复审不知道上一轮。**判尺跟着当前边界走是它该做的事**：边界改了（放宽冻结、收缩范围、换了一条用户判据），那一处换成新边界并写明它现在盖到哪一层，与泄漏无关。
-
-界线在「通用边界」与「针对某条发现的裁决」之间：把「某个目录只许动注释级改动」写清是判尺；写「上一轮那条注释别再报了」是泄漏。
+- 派**一个只读 subagent**，prompt 固定三项：读 `<本 skill 目录>/subagent-prompts/review.md` / `spec.md` 绝对路径 / 本轮补充（判尺、注意事项与本轮报告名 `review-{N}.md`）。
+- **两级结论**：
+  - `critical`：阻塞交付的问题（目标未达、错误、违背 spec）——清零前不算通过。
+  - `minor`：不值得再开一轮复审的细节问题——记录后修掉即可，**只有 minor 的轮次修完不再回审**。
+- **争议裁决**：不认同某条 `critical` 时**严禁自行判误报**，把争议写成验证 prompt 重跑一次复审；仍无定论交用户。
+- **中立原则（禁止泄漏上一轮）**：每轮复审 prompt 严禁包含上一轮问题原文、修复方做了什么或你的评价（直接沿用首轮补充即可）。仅当通用边界本身改变时（如用户调整范围），更新边界描述，不针对单条旧发现下禁令。
 
 ### Fix
 
-两条路都走到底：不设轮数上限。
+不设轮数上限：
 
-`critical > 0` → 派**新的** Execute 修（prompt 用 `subagent-prompts/fix.md`），修完回 Review。**派 fix 的 prompt 只给三样东西**：
+- **`critical > 0`**：派**新的** Fix subagent（角色卡 `<本 skill 目录>/subagent-prompts/fix.md`），修完回 Review。prompt 只给三项：
+  1. `review-{N}.md` 路径（不要把问题原文抄进 prompt）
+  2. 你已裁定的补充结论（每条一句话，仅写清单里没有的决策）
+  3. 本轮报告路径（`fix-{N}.md`）
+- **`critical = 0, minor > 0`**：派修复但不回 Review；由修复方跑快档并逐条核对自证。修不动的记入本轮报告与 `run.md` 的「已知未解决项」（在本节点收口，不传给下一节点）。
+  - **可与收尾第 1 步 Doc-sync 并行派发**（修复只碰代码，清单中涉及 `docs/` 的条目交给 Doc-sync）。若本轮会改公共名称或接口，则先修完再派 Doc-sync。
+- **`light` 节点**：由你亲自按 `subagent-prompts/fix.md` 的纪律修复并写 `fix-{N}.md`。
+- **卡死识别**：同一问题反复修不动，或连续两轮复审的同一性标记落在同一批位置时，停下核对 spec 与项目目标文档：
+  - 若冲突源于你自己推导出的约束（预算、配额、上限等）：直接修改或删掉该推导约束，记入「自主决策清单」后继续。
+  - 若对照 spec 与目标文档仍无法裁决：停手上报用户，标为「已知未解决」，附证据与已尝试方案。
 
-- **问题清单的路径**——你手上就这一份。复审已经把问题写在那里了，原文、行号、论据它自己去读，别抄进 prompt
-- **上面已经定下来的结论**——每条一句话：定成什么、写在哪一节。这是清单里没有的东西，只有你手上有
-- **这一轮的报告写到哪个文件**（通常 `fix-{N}.md`）
+### 报告规范
 
-你的裁定**不是**对清单的复述。把复审已经写过一遍的原文、论据再搬一次，等于让 fix agent 同一份材料读两遍；更糟的是两边写得不一样时，角色卡与你的 prompt 会互相打架。
+报告统一放在 `.superworker/nodes/<节点 uuid>/` 根下（不建阶段子目录）：首轮执行 `report.md`、第 N 轮复审 `review-{N}.md`、对应修复 `fix-{N}.md`、节点总回执 `run.md`。原始输出、长引用与探针数据放同目录 `temp/`，报告只写路径。
 
-`critical = 0, minor > 0` → 派专属修复，**不回 Review**：只有 minor 的轮次修完就算过，修复自证走它自己的快档与问题清单核对，minor 逐条在修复报告里写清；修不动的写进这一轮的报告与 `run.md` 的已知未解决项，**在本节点收口，不往下一个节点传**。做不完就做不完：报告里写清哪几条没做掉、为什么，交到用户手上。
-
-这一轮**和收尾第 1 步的文档同步同时派**：修复只碰代码，文档归 Doc-sync 那个 subagent（角色卡 `subagent-prompts/doc-sync.md`），两个写在同一条消息里。清单里落在 `docs/` 的条目转给它（改文档本来就是它的活），修复别去动。这轮要动公共名字或接口时不并行——先修完再派 Doc-sync，否则文档照着半成品写。
-
-light 节点上这一步的活也是你干：读 `review-{N}.md`，只修清单里列的问题，报告写 `fix-{N}.md`；`subagent-prompts/fix.md` 那份纪律照借，上面的判定照走。
-
-同一个问题反复修不动 → 停下回报，标「已知未解决」，附证据和试过什么。
-
-**认卡死**：复审的同一性标记连着两轮落在同一批位置，说明缺口在换位置、没在收口。这时先别接着派修复，回头核一遍 spec 与**目标文档**（这个项目到底在验什么、要什么体验）：
-
-- 冲突出在自己推出来的约束（预算、配额、并行数、上限）：**改掉自己那条，别来问用户**。目标文档在，它才是判据
-- 这么改不引起质疑：准备定的是 spec 未决项的归属，自己推出来的约束不在 spec 里；动它伤不到用户定下来的东西
-- 改完把「删了哪条、为什么」记进报告与 `run.md` 的自主决策清单
-- 翻遍 spec 与目标文档还是判不出来 → 停手报用户，附上两边各是什么、为什么推不出来
-
-**卡死是一条机械信号**：复审每轮从零看一遍（它不知道上一轮发生过什么），执行者只看当轮的问题清单，两边都不知道同一处已经改过几次——**这份经过只有你手上有**，所以由你判。
-
-### 报告叫什么、写多长
-
-报告的唯一用途是交给下一个会话接着干，它链路上每个角色都要读一遍——主会话、复审、修复、下一个会话、收尾；一份写胖了，后面每一环都替它付一次 token。
-
-| 谁写 | 名字 |
-|---|---|
-| Execute（首轮；light 节点上写它的是你自己） | `report.md` |
-| 第 N 轮复审 | `review-{N}.md` |
-| 第 N 轮修复 | `fix-{N}.md`（与 `review-{N}.md` 同号） |
-
-报告落点是节点目录 `.superworker/nodes/<节点 uuid>/`，一个节点一处，底下一层就是这些文件，没有阶段子目录。同段里 `review-4.md` 报的问题，下一轮修复就写 `fix-4.md`——追溯链靠这个号一路咬合；别的产物另有落点，别套这三个名字。
-
-- **篇幅由「下一个读它的人拿它做什么」定**：留决策、读数、指针。原始输出与长引用落 `.superworker/nodes/<节点 uuid>/temp/`，报告里给路径
-- **复审报告是判断的载体，该详细就详细**：问题一段一段写清，修复方要能照着直接动手。它的篇幅按「能不能让人直接开工」定，行数别当标准
-- 执行与修复的报告是回执：做了什么、改在哪、自证读数，一行一件——判断已经落在别处，重述一遍是让读者读两遍
-- 报告只写读者手上没有的东西。正稿的内容、spec 原文、被改的行，复审和修复都读得到；引半句指出打架的地方就够
-- 过期读数**改掉或删掉**；在后面挂一句指向旧读数的指针会让报告只增不减，读者得自己考古
-- **派活时就给每样产物一条落盘路径**：长引用、原始输出、样本数据各走各的文件；只有判断、没有独立物料的工序，写明「只进报告，一行一条」——回头再拆，等于让后面每一个环节先读一遍胖的
-- 一个节点一份 `report.md`。零件报告、增量报告并进那一份，各自单独落盘会让读者挨个翻
-
-常见量级：Execute 与修复报告几十行，`review-{N}.md` 视问题的多少从几十行到几百行。超出这个量级时，先看数据、长引用、旧读数是不是搬进了正文，**别忙着删判断**。节点 `run.md` 是节点级的回执：做了什么、改动清单、决策清单、已知未解决项；轮次的细节已经在报告集里，它给指针就够。
-
-**报给人的话**（不管在收尾、停手还是 checkpoint）照 [`shared/superworker/talking.md`](shared/superworker/talking.md)：报一处纠缠、四行齐、概念名按 `config get answer` 那一档出场。
+- `report.md` / `fix-{N}.md` 是回执（几十行）：做了什么、改了哪、验证读数，一行一条；一个节点只留一份 `report.md`。
+- `review-{N}.md` 是判断载体：写清到修复方可直接动手的程度，不以行数卡死。
+- 只写读者手上没有的信息；过期读数直接覆盖或删除，不留旧指针。
+- 面向用户的汇报（收尾、停手、checkpoint）遵守 [`shared/superworker/talking.md`](shared/superworker/talking.md)。
 
 ## 收尾
 
-收尾这几步按顺序走，只有第 1 步与第 2 步是同时起的：
+按顺序执行以下 9 步（仅第 1、2 步并行）：
 
-| 步骤 | 做什么 |
+| 步骤 | 动作 |
 |---|---|
-| 1 文档同步 | 派 Doc-sync subagent 照角色卡同步文档（`subagent-prompts/doc-sync.md`；prompt 带 spec 路径与「这个节点做了什么」的补充），只写已经实现的，**在干活的那棵树上跑**（fork 档＝worktree，off 档＝主树）——同步出来的文档是这个节点交付物的一部分，随这个节点一起提、一起合回 |
-| 2 run.md | 写 `.superworker/nodes/<节点 uuid>/run.md`，固定四节：「做了什么」一段叙事；「自主决策清单」「已知未解决项」各一列；「已核事实」准备那段搬过来。末尾带这个节点的改动清单与全部报告文件的路径。**落哪棵树随 `.superworker/` 档**：提交档落在干活的那棵（随这个节点合回），本地档落主树（worktree 里没有 `.superworker/`） |
-| 3 合回 | 走过并行 fork 的节点先合回，见「并行：worktree」——这一步把这个节点提成一次提交，带回主树。**这一次提交里有什么随 `.superworker/` 档**：提交档是代码＋文档＋run.md＋报告集；本地档只有代码＋文档，节点那几份文本归第 7 步 |
-| 4 全量 | 跑一次**全量**（`full` 档＝全套件、含慢档；`minimal` 档＝项目口径那几条检查），失败就在这里修；无关的既有失败仍只记一行。`full` 档**把这一趟的实测耗时秒数记下来**——收尾那条命令要读它；`minimal` 档没有套件实测耗时，交接单里那一项删掉 |
-| 5 自查 | 兜底核一遍指令清单：这一轮读到的约束都照做了，没有谁被误归档。物归原位：交付物在项目目录；报告集（`report.md` / `review-{N}.md` / `fix-{N}.md`）与 `run.md` 在 `.superworker/nodes/<节点 uuid>/`，这个节点的探针与原始输出在同一个节点目录的 `temp/` 里。**`temp/` 在两种档下都不进版本库**（`.superworker/.gitignore` 管着），要进版本库的机械检查别放那儿 |
-| 6 关节点 | 下面那三条命令 |
-| 7 提交 | 只剩关节点写下的图、cycle 与交接单要收，见「然后提交」 |
-| 8 push | 该推的每一次提交都推成功，才往下走 |
-| 9 推进 | `advance --cycle <cycle> --json`，宿主开着接力时由它自己跑；按计划给的 `action` 走 |
+| 1. 文档同步 | 派 Doc-sync subagent（`subagent-prompts/doc-sync.md`），只写已实现内容，**在工作树上跑**（`fork` 在 worktree，`off` 在主树） |
+| 2. 写 `run.md` | 趁 Doc-sync 运行期间写 `.superworker/nodes/<uuid>/run.md`（四节：做了什么、自主决策清单、已知未解决项、已核事实 + 改动清单与报告路径；Doc-sync 返回后补上同步出的文档）。提交档落工作树，本地档落主树 |
+| 3. 合回 | 若走 `worktree_mode=fork`，按 [`docs/git-and-worktree.md`](docs/git-and-worktree.md) 提交节点并 squash 合回主树（`off` 档直接提交本节点 `feat:`） |
+| 4. 全量验证 | 在主树跑一次全量（`full` 档含慢档并**记录实测耗时秒数**；`minimal` 档跑项目约定检查项），失败当场修；合回后若他线又合入新提交需重跑再报数。`fork` 档全量通过后清理 worktree 与分支（见 [`docs/git-and-worktree.md`](docs/git-and-worktree.md)） |
+| 5. 自查 | 核对指令清单无遗漏；交付物、报告集、`.superworker/nodes/<uuid>/temp/` 各归其位（`temp/` 永不进版本库） |
+| 6. 关节点 | 仅 `[pipeline]` 派发执行：`handoff --form` → `handoff` → `settle`（详规见 [`docs/close-and-handoff.md`](docs/close-and-handoff.md)） |
+| 7. 提交记录 | 提交关节点产生的图、cycle 与交接单（提交档 vs 本地档命令见 [`docs/git-and-worktree.md`](docs/git-and-worktree.md)） |
+| 8. Push | 推送所有应推的提交，遇拒先 `git pull --rebase` 再推，冲突交用户；**全部推成功后才进入第 9 步** |
+| 9. 推进 | 执行 `advance --cycle <cycle> --json` 并按返回的 `action` 收手或提示（详规见 [`docs/close-and-handoff.md`](docs/close-and-handoff.md)） |
 
-**第 1 步与第 2 步一起做**：Doc-sync 是 subagent，派完你就空了——`run.md` 的四节趁这段窗口写掉，它回来后在改动清单里补上同步出的那几份文档。第 3 步合回的前提不变：两样都落好才起。
+- **进入第 6 步前，读 [`docs/close-and-handoff.md`](docs/close-and-handoff.md)**，获取 `handoff -o` 读数口径、`checkpoint` / 维护节点 / `failed` & `stopped` 及 `advance` 动作处理。
+- **手动触发（无 `[pipeline]`）**：跳过第 6、9 步，完成提交推送并向用户汇报产物位置即可。
 
-**推进排在最后**：先关节点、再提交、再推，最后才让 `advance` 把这条线往前带（顺序为什么钉死，见 `docs/conduct-state.md`「会话是怎么被叫起来、怎么收尾的」）。
+## 参照与反模式
 
-管线派发进来的，接着按顺序跑这三条。`<cycle>` 是**握着这个节点的这条线**：在 `cycle current` 的读数里按节点 id 认（每个节点一行 `Node:`）；`<node>` 就是调用行上那个 id。
+所有相对路径均以本 skill 目录为基准（可用 `cd ~/.dsh/skills/sw-conduct/ && pwd` 获取绝对路径；若设了 `DSH_HOME` 则用 `$DSH_HOME/skills/sw-conduct/`；传给 subagent 必须用绝对路径）：
 
-```pwsh
-handoff --form <cycle>   # 这条线要什么、交接单长什么样，照它印的填
-handoff <cycle> <node> completed -s "<一行总结>" -o '<照上一条填>'
-settle <node> --json
-```
-
-`--form` 那条只印形状，不动状态；`handoff <cycle> <node> completed -o …` 那条**只写交接单**，不关节点、也不拉会话；`settle <node>` 那条**收掉这个节点**：判决从盘上那张交接单读出来，记进这条线的路径，认领落定，图上的节点落成 `completed` / `shelved`，收尾时机的插件接缝跑一遍（那里的一笔 offer 可以往图里插一个维护节点）。它**不钉任何节点、不开会话、不落 prompt，也不把线停下**。想先看一眼这一收把线带到哪儿，跑 `plan --after <node> --json` —— 只读的收尾演练，一个字节都不写。三条都不拉会话；交接单见「交接单与读数」。
-
-**然后提交**（两种档走的不是同一条路）：
-
-这个节点的内容——代码、文档，提交档还有 run.md 与报告集——已经在合回那一步收成主树上的一次提交 `feat:`。这里剩下的是关节点那三条命令写下的东西：图、cycle 与交接单。这几样是整盘一份、不按节点分，并行的另一个节点可能已经顺手交掉了。
-
-**提交档**——图和 cycle 就在项目仓库里：
-
-```pwsh
-git status                      # 只剩关节点写下的图、cycle 与交接单
-git diff
-git commit -m "chore: record node <节点id> close (slip, cycle state)"
-git push
-```
-
-**本地档**——项目仓库里没有 `.superworker/`，这几样连同这个节点的 run.md 与报告集一起提交到它自己那份仓库（`.superworker/.git` 在的时候）；那份仓库没有远端时，只提交不推：
-
-```pwsh
-git -C .superworker status              # 图、cycle、交接单，加上这个节点的 run.md 与报告集
-git -C .superworker add -A
-git -C .superworker commit -m "chore: record node <节点id> close (slip, cycle state)"
-git -C .superworker push                # 这份仓库有远端才推
-```
-
-`.superworker/` 没自成仓库的本地档没有这一步：记录就留在盘上，不提交也不推。
-
-`git push` 被拒（另一台机器、或同机另一条线先推了）就 `git pull --rebase` 再推；停在冲突上就交给用户。**该推的每一次提交都推成功**才走下一步。真卡住就停手报用户，把接着跑的那一条命令给他：修好推送后跑 `advance --cycle <cycle>` 即可，这个节点已经 `settle` 过了，不用重收。
-
-推送成功后，让 `advance --cycle <cycle> --json` 把这一棒接下去（宿主开着自动接力时它自己跑这一条，本会话就此收手）——它答回的 `action` 自己带着该跑的命令和该说的话：
-
-- `dispatch`：**交票即止**——交接单已落盘、节点已 `settle`，会话与下一棒由宿主开出来（面板设置里的自动接力，默认开），本会话到此收手，不要再跑任何派发命令；接力被关掉、或下一棒迟迟没有开出来时，才由人补那一条命令：`advance --cycle <cycle>` —— 这个进程没有 opener 时它只回一句 `spawn_error`、一个节点都不认领，并把面板与每一份 prompt 的路径念给你（见「派发通路」）
-- 插了维护节点：`settle` 的答案点名这一次插进来的那些节点（各自的 spec 落在哪儿）——它们挂在「这一收本该开的下一个节点」之前，下一次挑选按正常排序就第一个取它；收尾这一笔什么都没认领、也没开会话。照常提交、推送，然后跑 `advance --cycle <cycle> --json`：挑选按正常规则把它们挑出来、落好各自那份 prompt、交执行者把会话开出来（没有面板也没有接力时，把那几份 prompt 与它们那一行交给用户；越线时插的维护节点就是这么来的，见下面「维护节点」）
-- `stop_pipeline`：把 `reason` 照原话说给用户（`attention` 有内容就一起念），然后停手 —— 停由计划拍板，`advance` 已经把线转成 `inactive`；线里还有别的节点进行中时它不停这条线，`reason` 会说。要接着跑：`cycle status <cycle> active`，再 `advance --cycle <cycle>`
-- `wait`：读它的 `note` / `close_with`，照那条命令做（收这一格的那条就是 `settle <node>`），**绝不轮询**
-
-`attention` 里的 `node_shelved` = 这个节点没交付，出局等人（图上标 `shelved`，它的下游停着）：要重做就 `dag revive <node_id>` 放回 `todo`。
-
-**`handoff` 那条的输出不用读**（它只回执）；`settle` 的输出读它插进来的那些节点与自带的那句 `note`，`plan` / `advance` 的输出按 `action` 走，读它自带的 `note` / `close_with` / `reason` / `attention`——`advance` 钉住与开会话的那几份 prompt 由它自己印路径。除此之外不要再跑别的命令、不要手写状态文件。
-
-**手敲进来的**（没有 `[pipeline]`）把结果直接报给用户，报清产物落在哪；那三条命令不跑、也不派发，提交与 push 照跑。
-
-**`checkpoint` 的节点走到这里就停下等人**：计划对这一格的答案就是 `stop_pipeline`，`settle` 与推送之后 `advance` 把线转成 `inactive`，`note` 里写着「这一轮跑完了，等你说了继续才开下一个节点」，并附上接着走的那两条命令。把这一轮交了什么、记录落在哪讲给用户，然后等他的答复——他说继续，就按顺序跑：
-
-```pwsh
-cycle status <cycle> active
-advance --cycle <cycle> --json
-```
-
-停手把线转成 `inactive`，所以放回服务那一条不能省；`advance --cycle <cycle>` 钉住下一个节点、落好它的 prompt、交执行者把会话开出来，本会话到这里收手。提交与推送照旧排在派发之前，一个字节都不省。节点跑完到收到你的答复之间可能隔很久，那个节点和它的记录都已经落定——中途换过会话也没关系，记录在盘上。
-
-**维护节点**：收尾那一次越过了这条线的维护阈值时，`settle` 里的插件接缝把维护节点插进**图里**：它挂在「这一收本该开的下一个节点」之前，下一次挑选按正常排序就第一个取它——没有特殊分支，也没有随节点交回去的 prompt。`settle` 的答案点名这一次插进来的节点（各自那份 spec 落在哪儿）和一句 `note`，这一笔**什么都没认领、也没开会话**，线的持有没有动。**它可以带不止一个节点**（越线的债不只一条时，见 `docs/conduct-state.md` 的「维护通道」一节）。照常提交、推送，然后跑 `advance --cycle <cycle> --json`：挑选按正常规则把它们挑出来、落好各自那份 prompt、交执行者把会话开出来；宿主开出来的会话接手之后，每个都走普通节点那一套。它们干完就走，停下来等人回话不在它们的选项里。**每个节点的 spec 里都带着 `method: ` 一行**（点名的是哪个方法由装进来的插件声明写，`doctor` 印得出来）：准备那一步读到它就照那个技能自己跑——分批、派人、落定全在你手里，循环还是本流程的「执行」那一节；范围由插入它的 spec 定，别自己扩到全库。干完照常收尾，接着走下一个。
-
-需求做不到、或 spec 自相矛盾：`completed` 换成 `failed`；活是自己主动停手不做的，换 `stopped`。两种都在 `-s` 里写清原因，不挂起等待。这个判决会让收尾把节点标成 `shelved`（出局等人），不用你自己动手标。
-
-## 并行：worktree
-
-**worktree 按档位走，档位从 `config get worktree_mode` 读**（默认值与各档的设计口径见 `docs/conduct-state.md`「两个入口」；改它用 `config set worktree_mode <值>`）：
-
-| 档 | 行为 |
-|---|---|
-| `off` | 主树直做，没有 fork 也没有合回这两个步骤。没有隔离，多线并排或 `parallel` > 1 的项目别用这一档 |
-| `fork`（缺省） | 每个节点一个新 worktree，收尾合回后删干净——本节以下写的都是这一档 |
-| `reuse` | 工具未支持：读到这一档停下来交用户——改档，或先给工具补池子。不许自己 `git worktree add` 凑数：这一档等工具补出一个池子，手开一条工作树顶替不了它 |
-
-**开工前，准备的最后一步 fork**——两道检查你自己看一眼，过了自己敲 git 建工作树与分支；这活工具不代你干（它认 worktree 靠 `.git` 文件里那行 `gitdir:`，不靠哪份记录）：
-
-```pwsh
-# 1. 主树干净吗：只算已跟踪的改动，未跟踪的排场不算
-git status --porcelain --untracked-files=no
-# 2. 检出目录被占了没有
-Test-Path .superworker/worktrees/<节点短id>
-# 3. 出口分支被占了没有
-git rev-parse --verify --quiet refs/heads/sw/<节点短id>
-# 4. 前三道都过，才建工作树与分支
-git worktree add .superworker/worktrees/<节点短id> -b sw/<节点短id>
-```
-
-- **主树不干净**（第 1 条有输出）：别的线可能正在合回中段（文档同步与记录那次提交留下一段几分钟的脏窗口），也可能是上一个节点没收干净。停手，把这句话讲出来，等几分钟重看一眼 `git status` 再 fork：
-
-  > the main tree has uncommitted tracked changes -- another line may be mid-merge-back (the docs sync and the ledger commit leave a dirty window of minutes). Wait a few minutes and re-check `git status` before forking:
-
-- **短 id 已被占**（第 2 条 `Test-Path` 为真，或第 3 条 `rev-parse` 有输出）：占它的可能是这个节点自己，也可能是上一次 fork 没清干净。什么都不建、停手交人；占的是哪一处就说哪一句，一字不改：
-
-  > .superworker/worktrees/<节点短id> already exists -- the short id '<节点短id>' is taken (by node <节点id> itself, or the last fork was never cleaned up). Nothing was forked.
-  >
-  > branch sw/<节点短id> already exists -- the short id '<节点短id>' is taken. Nothing was forked.
-
-**这两道检查就是为手滑准备的，别凭「我知道主树是干净的」跳过去**；被拒就照上面停下，不许硬 fork。
-
-**出口分支 = fork 时主树所在的分支**（`git rev-parse --abbrev-ref HEAD` 那一下的读数），它照记进 `run.md` 的「已核事实」。这条分支和这棵工作树 git 自己都记着：worktree 的位置 `.superworker/worktrees/<节点短id>`、它的 `gitdir:` 指针进 `.git/worktrees/<节点短id>`，分支名为 `sw/<节点短id>`，`git worktree list` 一问就有。合回哪条，照 `run.md` 那一行走。
-
-干活：
-
-- Execute、Review、Fix 的循环、报告与复审规则一字不变；一切代码路径指 worktree——subagent 的绝对路径、light 节点自己动手时的 workdir 都是它；每轮快档照旧跑，跑在 worktree 里
-- **代码与文档在 worktree，节点那几份文本看 `.superworker/` 档**——代码与 Doc-sync 同步出的文档在 worktree 里做，随这个节点的那一次提交合回主树；`run.md` 与报告集：提交档下 `.superworker/` 跟代码一起在 worktree 里，照样在 worktree 里写、一起合回；本地档下 worktree 里根本没有 `.superworker/`（被忽略的文件检不出来），它们落主树，随记录那一次提交走。探针与原始输出永远落**主树**的 `.superworker/nodes/<节点 uuid>/temp/`，两种档都一样。收尾那几条命令在 worktree 的 cwd 里跑也不用挪窝：工具认得 worktree，结转与交接单自动落主树
-- 一个节点内部怎么分活（多个 subagent 并行）与 worktree 无关：它们都在同一个 worktree 里做，收尾只合回一次
-- 两份 spec 的文件范围重叠不拦：各做各的，先后由谁先 merge 决定，撞车在合回那一步解（改同一批文件的节点该由 sw-route 拉出先后边，那是它的债）
-- 多线在主树上的 git 写操作（合回、提交、push）撞出 `index.lock` 是瞬时撞锁：等几秒重跑同一条命令即可，两三次仍不解放就停手交用户；**锁文件是活进程的，不许删**
-
-**合回**（收尾的第 3 步：Doc-sync 已经落好、`run.md` 也写完了，这一步把整个节点提成一次提交、带回主树，排在全量之前）——**三步都在主树上跑**，`-C` 指到 worktree，其余不用挪窝：
-
-1. worktree 里把这个节点提成一次提交（代码、文档，提交档还有 run.md 与报告集）：`git -C .superworker/worktrees/<节点短id> add -A` 与 `git -C .superworker/worktrees/<节点短id> commit -m "feat: <这个节点做了什么>"`，再把主树的最新合进来：`git -C .superworker/worktrees/<节点短id> merge <出口分支>`——撞车在 worktree 里解，解完重跑快档
-2. 主树上 `git merge --squash sw/<节点短id>`，再 `git commit -m "feat: <同上那一行>"` 发这个节点的 `feat:` commit：一个节点在主树上就是一次提交，历史形状不变
-3. 全量在主树上跑（对的就是合并后的内容），过了就 `git worktree remove .superworker/worktrees/<节点短id>` 与 `git branch -D sw/<节点短id>`，再接着 handoff → `settle` → 提交记录 → push → `advance`。worktree 与分支就在这里清干净，别留给下一个节点——短 id 被占时下一趟 fork 会停手交人
-
-主树不在出口分支上、或 squash 仍撞（别的线在你刷新之后又合了一次提交）：停手交用户。
-
-**全量报数前重看一眼主树**：合回之后 `git log` 里若又进了他线的提交（他的合回、他的提交），你的全量验的就不是你要交的那棵树——重跑一遍全量，再报数。
-
-## 交接单与读数
-
-交接单就是 `handoff -o` 那串 JSON。**形状以 `handoff --form <cycle>` 现印的为准**——这条线不看的读数那一项它不印。键是 `deliverable` / `acceptance` / `touched`，配了读数的线多一个 `reading`。路径用正斜杠：那串 JSON 在 PowerShell 单引号里，反斜杠还得再转义一层。
-
-- 工具把它们**原样存下，一个键都不查**——多写的键不会挡住管线，少写的也没人拦你：交接单写全不全，靠你收尾时自己核对。
-- `acceptance` 写 1~3 条，写到「这个节点没跑会少掉什么」那个层次。
-- 读数那一项只在 `handoff --form` 印出它时才报，填的是那个槽子自己问的那个数（问套件耗时的那个槽，就是这一趟全量验证的实测秒数，按项目文档认定的那套命令实测）。**没测到的那个键整个删掉**——缺一个数读作「这一趟不知道」，填 0 读作「已经量到零了」，那会让一条真实的债看起来还清了。
-- 声明里画在别的来源上的读数由那个来源自己算，交接单上根本不印它，你也不用填报；装了哪些插件、每项读数怎么来，以 `doctor` 列出来的为准。
-
-## 派发通路
-
-派发这一步由**宿主**开新会话：面板的那一格与它的自动接力走同一条路（`src/host/relay.ts` 的 `dispatchCell`），原生 opener 把这个节点的 prompt 交给新会话（`src/host/executor.ts`）。引擎先把这一格的材料落盘（prompt 不在盘上时才落），会话真的开出来之后才写 `started` 认领——认领落了盘，这一格就不会再被派第二次。**宿主这一半现在负责落实**：它开出去的会话一结束这一轮，宿主自己跑一遍 `advance`。所以干活的那个会话的路子不变：`handoff` → `settle` → 提交推送 → 宿主开出下一个会话（没有宿主时，`advance` 自己来）。谁调它、断了看哪儿，见 `docs/conduct-dsh-dispatch.md`。
-
-**没有 opener 的进程里没有开会话的接缝**：`dispatch <cycle>` 读一眼盘上的 `started` 就够——不在就
-当场拒，退出码 2，一个字节都不写，句子里点名面板（超级工坊）、每一份 prompt 该落的位置，以及材料
-由面板派发那一步落盘这条路；`advance` 照印计划、照钉节点，材料不落（那是派发那一步
-的事），开会话那一步只回 `spawn_error`，一个节点都不认领。演练走 `DSH_CONDUCT_SPAWN_DRY_RUN=1`：调用
-照走完、答案照回，会话不开、`started` 认领也不落盘——所以演练过的那一格什么都不用撤，直接真派即可。
-补发之前工具会自己挡双派发，见到拒绝先查那个节点是不是已经有会话在跑，别硬闯。
-
-## 参照
-
-这里引到的 `docs/*.md` 跟着这份技能一起装：从你正在读的这个技能目录打开它们，`docs/conduct-state.md` 就在本 skill 目录的 `docs/` 下。
-
-- 契约与设计：`docs/conduct-state.md`——`plan` 的动作全集、收尾两个入口、不变量都在里面（`holding` 是一组节点、`parallel` 是这条线的上限）
-- 装了哪些插件、各自的工具与口径：`doctor` 列出装了什么，每份声明自带的技能里写着它自己的工具与口径
-- 方法技能：`~/.dsh/skills/<名>/SKILL.md`——spec 的 `method: ` 行点名；由名字推路径只有这一处（`DSH_HOME` 被钉住时，这个根在 `$DSH_HOME/skills` 下，读之前先看一眼环境变量）
-- 派发与鉴权：`docs/conduct-dsh-dispatch.md`
-- 节点 tag 的过滤语义：`docs/conduct-node-tags.md`
-- 角色卡：`<本 skill 目录>/subagent-prompts/`（execute / review / fix / doc-sync）
-- 路径写完整绝对路径：subagent 拿不到 `~` 展开，也没有你当前的 `./`。本 skill 目录取一次（`cd ~/.dsh/skills/sw-conduct/ && pwd`；`DSH_HOME` 被钉住时换成 `$DSH_HOME/skills/sw-conduct/`）
-
-## 反模式
-
-开工前读 [`./anti-patterns.md`](./anti-patterns.md) 对照自查。
+- 契约、状态机与不变量：[`docs/conduct-state.md`](docs/conduct-state.md)
+- 手动开局与选线：[`docs/startup.md`](docs/startup.md)
+- 同步、双档提交与 worktree 手册：[`docs/git-and-worktree.md`](docs/git-and-worktree.md)
+- 收尾命令、交接单读数与 `advance` 动作：[`docs/close-and-handoff.md`](docs/close-and-handoff.md)
+- 节点 tag 过滤语义：[`docs/conduct-node-tags.md`](docs/conduct-node-tags.md)
+- 派发通路与宿主接力机制：[`docs/conduct-dsh-dispatch.md`](docs/conduct-dsh-dispatch.md)
+- 角色卡：`subagent-prompts/`（`execute.md` / `review.md` / `fix.md` / `doc-sync.md`）
+- 插件清单与旋钮名：运行 `doctor`
+- **反模式**：开工前读 [`./anti-patterns.md`](./anti-patterns.md) 对照自查。

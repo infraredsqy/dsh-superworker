@@ -1,871 +1,214 @@
 ---
 name: sw-conduct
-description: Run one DAG node from prepare to close: dispatch Execute, review it independently, fix, close, decide dispatch or stop.
+description: Conduct a single DAG node from prepare to close: dispatch Execute, run independent Review, Fix as needed, then close the node and decide whether to dispatch or stop.
 disable-model-invocation: true
 ---
 
 # sw-conduct
 
-> Who runs me: the user (`/sw-conduct <node id or keyword>`) / the conductor (a pipeline dispatch's call line carries `[pipeline]`)
-> What I am for: take one node from prepare to close — dispatch Execute, review it independently, fix as needed, then decide whether to dispatch or stop
-> Do I dispatch subagents: yes, one layer (Execute / Review / Fix) — an executor dispatched here reads this and stops to report back
+> Triggered by: the user (`/sw-conduct <node id or keyword>`) or pipeline dispatch (call line carries `[pipeline]`)
+> Purpose: drive one DAG node from prepare to close (prepare → execute → review → fix → close), then dispatch the next node or stop
+> Subagents: yes, one layer (Execute / Review / Fix / Doc-sync); an executor reading this file stops and reports
 
-You are this DAG node's conductor: this run takes one node from prepare to close — prepare →
-execute → review → fix → close out. Code and verification sit in a subagent's hands; you touch
-only reports, records and decisions. One line can hold several nodes at once (the `parallel`
-policy), and each node has its own session and its own close.
+You are the **conductor** for this node: code edits and verification are handled by subagents (except on `light` nodes), while you own coordination, records, and decisions. A cycle may hold multiple nodes concurrently under its `parallel` policy; each node runs in its own session with its own close-out.
 
-Four things you do not do:
+### Four Hard Boundaries
 
-- Do not create nodes or touch the graph: to split a node or change one, go back to sw-route
-- Do not edit spec.md — it is read-only to you and to your subagents; when execution shows it does
-  not hold up, stop and hand it to the user, and to change it, go back to sw-route
-- Do not read implementation code, and do not change project code yourself: to learn the code,
-  dispatch a subagent, with the paths and the questions to ask written into its prompt. This one
-  does not hold on a light node (see "Look at the weight first")
-- Only you dispatch subagents: the Execute / Review / Fix you dispatch never dispatch further down
-  (the role cards say this). The pipeline's relay moves on through new sessions — when the plan says
-  `dispatch` you hand in the ticket and stop, and the host opens the next round itself, so the chain
-  can run on indefinitely
+1. **Do not create nodes or modify the graph**: if a node needs splitting or graph edits, stop and return to `sw-route`.
+2. **Never edit `intention.md`; never alter `spec.md` scope**: `intention.md` is strictly read-only (user-only). `spec.md` is the execution contract—never change its goals or scope; only refresh stale snapshot numbers/lists when the codebase has evolved (for legacy nodes without `intention.md`, treat `spec.md` as strictly read-only `intention.md`). If requirements themselves fail to hold up, stop and escalate to the user.
+3. **Do not read or edit project code directly**: dispatch a subagent with paths and questions when you need code context. **Exception: `light` nodes** (see "Weight").
+4. **One layer of subagents only**: Execute / Review / Fix subagents must never dispatch further subagents. Pipeline continuation happens via new sessions opened by the host—when the plan returns `dispatch`, hand off and stop.
 
-## How this run goes: the settings
+## Settings Overview
 
-Each of these settings decides which road some later step takes, and touches nothing else. The
-`.superworker/` flavour is needed at step 0 already; read the rest in one go at prepare step 2 and record
-them in `run.md`'s "Facts checked".
+The `.superworker/` ledger mode is determined at Prepare step 0; read all other settings at Prepare step 2 and record them under "Facts checked" in `run.md`.
 
-| Setting | Values | Read from | Which step it changes |
+| Setting | Values | Source | Affects |
 |---|---|---|---|
-| The `.superworker/` flavour | commit / local | judged at step 0's sync | how many pulls step 0 does, and where the close's merge-back and commit-push go (see "Close out") |
-| Mode | `manual` / `checkpoint` / `auto` | `dag info` | whether it stops, and whether it asks a human (see "Mode") |
-| Look at the weight first | `light` / absent = `standard` | `dag info`'s `weight` | who does the work at the execute step (see "Look at the weight first") |
-| Method | the `method: <skill name>` line in the spec; absent = none | read `spec.md` | who runs this node this run, and under which skill (see "Method") |
-| Test tier and verification | `full` / `minimal` | `config get test_tier` | what each step verifies, and whether tests get written (see "Test tier and verification") |
-| worktree mode | `off` / `fork` / `reuse` | `config get worktree_mode` | the two steps, prepare's fork and the close's merge-back (see "Parallel: worktree") |
-| The subagent cap | a positive integer | `config get max_agents` | how the dispatched work is batched (see [`shared/superworker/subagents.md`](shared/superworker/subagents.md)) |
-| Parallel setting | how many nodes this line itself opened | the `Policy:` line of `cycle current` | how many nodes this run runs at once (see "Parallel: worktree") |
-| Node tag | `writing` / `coding` / `art` | on the graph, written down by sw-route | it only affects who this line picks (this flow only reads it) |
+| `.superworker/` mode | commit / local | `git ls-files .superworker` | Sync, merge-back, and close commits (see [`docs/git-and-worktree.md`](docs/git-and-worktree.md)) |
+| Mode (`mode`) | `manual` / `checkpoint` / `auto` | `dag info` | Stopping points and whether user questions are allowed |
+| Weight (`weight`) | `light` / omitted (`standard`) | `dag info` | Who performs Execute and Fix |
+| Method (`method`) | `method: <skill name>` in `spec.md` | Read `spec.md` | Runs the node via a named skill; overrides `weight` |
+| Test tier (`test_tier`) | `full` / `minimal` (default `full`) | `config get test_tier` | Test authoring and per-round/close verification |
+| Worktree mode | `off` / `fork` (default) / `reuse` | `config get worktree_mode` | Prepare fork and close merge-back (see [`docs/git-and-worktree.md`](docs/git-and-worktree.md)) |
+| Subagent cap | Positive integer | `config get max_agents` | Concurrent subagent limit (see [`shared/superworker/subagents.md`](shared/superworker/subagents.md)) |
+| Parallelism (`parallel`) | Positive integer | `Policy:` line of `cycle current` | Max nodes held concurrently by this cycle |
+| Node tags | `writing` / `coding` / `art`, etc. | On graph (read-only) | Cycle selection filter (see [`docs/conduct-node-tags.md`](docs/conduct-node-tags.md)) |
 
-The `.superworker/` flavour is written on disk by itself, with no second record: if the project repo tracks
-it, it is the commit flavour; if not, the local one (the tool recognizes only these two, so do
-not move it by hand). A local ledger belongs to this machine alone: switching machines,
-re-cloning or `git clean -xdf` makes it vanish — it is only saved when `.superworker/` is a repository of
-its own.
+### Mode (`mode`)
 
-### Mode
-
-mode is the node's own property, written down by sw-route through `--mode`; you follow the one
-`dag info` reads out.
-
-| mode | The loop | How this run goes |
+| `mode` | Loop | Behavior |
 |---|---|---|
-| `manual` | **does not run** execute→review→fix | the whole node moves along in conversation with the user; when the user says "mark it complete, continue", close out on the note's `completed`, and that step does not stop again |
-| `checkpoint` | runs | the whole loop plus the close all finish, and it stops waiting for one "continue" from the user |
-| `auto` | runs | it does not stop: hand in the ticket and the host opens the next round itself; only a stuck loop or conflicting requirements go to a human |
+| `manual` | **Skips** execute→review→fix | Conducted interactively with the user; once the user says "mark complete, continue", close with `completed` and proceed |
+| `checkpoint` | Runs | Completes the loop and close-out, then stops for user's "continue" (see [`docs/close-and-handoff.md`](docs/close-and-handoff.md)) |
+| `auto` | Runs | Relays automatically; stop after settling and let the host open the next session. Escalate only on stuck loops or conflicting requirements |
 
-For which step each of the three has its human confirmation point on, and why it is fixed that
-way, see `docs/conduct-state.md` "conclusions and stopping".
+- **`checkpoint` and `auto` nodes must never call `ask_user_question`**: when uncertain, pick the option closest to intent and log the choice and rationale under "Autonomous decisions" in `run.md`. `manual` nodes have no such restriction.
+- See [`docs/conduct-state.md`](docs/conduct-state.md) for confirmation points, `stop_after_nodes`, and `inactive` transitions.
 
-- A node whose mode is `checkpoint` / `auto` (read it with `dag info`) may never call
-  `ask_user_question` at any point: when unsure, pick the one option closest to the intent
-  yourself, and write the choice and the reason into `run.md`'s "Autonomous decisions" — that is
-  the user's way in to double-check. `manual` is not bound by this: it is in the conversation all
-  along, so it can ask the user at any point.
+### Weight (`weight`)
 
-### Look at the weight first
+- **`standard` (default)**: dispatch Execute/Fix subagents for implementation and fixes.
+- **`light`**: **you directly** read code, edit code, run the fast lane, write `report.md`, and handle fix rounds (`fix-{N}.md`). Everything else—independent Review, per-round fast lane, close-out full run, and full report set—remains unchanged.
+  - On `light` nodes, Review owns critical rulings: on dispute, re-run Review once; if still unresolved, escalate to the user.
+  - If Prepare reveals the task is too large for `light` (many files, interface design), promote to `standard` (dispatch Execute) and log under "Autonomous decisions." **Never downgrade `standard` to `light`.** `light` has no extra effect on `manual` nodes.
 
-`weight` decides who does this step's work:
+### Method (`method`)
 
-| weight | Who does the work |
+When `spec.md` contains `method: <skill name>`, read `~/.dsh/skills/<skill name>/SKILL.md` (if `DSH_HOME` is set, use `$DSH_HOME/skills/<skill name>/SKILL.md`; expand to an absolute path before passing to any subagent).
+
+- **Precedence: `method` overrides `weight`.** Maintenance/debt-clearing nodes carry no `weight` and do not follow the `standard` → Execute path.
+- **Self-declared layer**: if the method skill states it dispatches subagents, **you run it directly** rather than delegating it to Execute; if it does not dispatch, follow `weight`. Subagents dispatched by a method skill still may not dispatch further.
+- Resolving a skill name to a path applies **only** to `method:`. Workspace paths come from tools; role cards come from `<this skill dir>/...`.
+
+### Test Tier and Verification
+
+Read `config get test_tier` at Prepare step 2 and pass it in dispatch supplements to Execute / Review / Fix (follow it yourself on `light` nodes). This is a project-level setting and does not belong in `spec.md`.
+
+| Aspect | `full` | `minimal` |
+|---|---|---|
+| Writing tests | Add tests for new logic, **locking invariants only** (never formulas, snapshots, or implementation details) | **None by default**; add only to block silent failures, stating which silent failure it guards |
+| What stays | Full suite; excess duration triggers maintenance nodes | Numeric/precision cross-checks, cross-source structural consistency, rare paths |
+| Per-round check | Fast lane (tests covering touched files) | Project-defined checks / probes / smoke run |
+| Review on missing tests | Missing required test → finding | Missing ordinary test ignored; missing silent-failure guard → finding |
+
+- **Two lanes**: fast lane every round, full run at close (defined by project docs; never build a test suite for `minimal`). If the fast lane becomes unbearably slow, address it via the test-hygiene plugin (`doctor` lists the plugin and method) rather than skipping or over-running the full suite. Reports must include exact commands and counts, and `full` tier must include **actual measured wall-clock seconds**—without evidence, treat as unrun.
+- If neither `spec.md` nor project docs specify verification commands, stop and ask the user to add them via `sw-route`.
+- If the project is `minimal` while the cycle configures a reading requiring full-suite timing, report the conflict with the disable command: `cycle policy <cycle> <knob_name> off` (get `<knob_name>` from `doctor`'s plugin list; slot names are rejected).
+
+### Three-Layer Concurrency Cap
+
+1. **Graph dependency edges**: determine which nodes **can** run in parallel.
+2. **Cycle `parallel`**: limits how many nodes the cycle **holds** concurrently.
+3. **`config get max_agents`**: outermost hard cap on **in-flight** subagents in this session (check [`shared/superworker/subagents.md`](shared/superworker/subagents.md) before every dispatch).
+
+## Entry Routing
+
+All pipeline commands go through the `superworker` tool (`word`, `args`, `help: true`). Independent calls can be batched in a single message.
+
+| Entry | Next Step |
 |---|---|
-| `light` | **you yourself**: read the code, change the code, run the fast lane, write the report, and the fix rounds are yours too |
-| absent / `standard` | dispatch an Execute subagent |
-
-light swaps out the executor step alone, and nothing else by a word: the review is still
-dispatched (each round's prompt identical to the first, word for word), the fast lane every
-round, the full run at the close, the report set all present — you do this node yourself and
-close it yourself. On light, a review's critical is the review's to decide: with a dispute,
-re-run the review once, and if it still cannot decide, hand it to the user — the one who writes
-the code and the one who reads the review are the same you, which makes this rule the harder one.
-
-A node with no `light` on the graph is a standard node. When prepare sees this work cannot fit in
-light (many files to read, interfaces to design), dispatch Execute as standard and record it
-under "Autonomous decisions"; **the downgrade in the other direction is not yours to judge**. A
-`manual` node runs no loop, so light means nothing extra for it.
-
-### Method
-
-When the spec carries a `method: <skill name>` line, read `~/.dsh/skills/<name>/SKILL.md` (you
-expand `~` yourself; when it is going to a subagent, write the absolute path) — how this node
-runs this run follows that skill.
-
-- That line carries the **skill name** and nothing else. Workspace things (the spec, the report
-  set and paths under `.superworker/`) always get absolute paths from the tool, and role cards are always
-  `<this skill's directory>/…`; **turning a name into a path happens on this line only** — the
-  three places never derive one from another
-- **The method skill declares its own layer**: when the skill's opening says it dispatches
-  subagents, it is a conductor method — **run it yourself**, do not push it onto Execute; when it
-  says it does not dispatch, it is an executor method, and the "Look at the weight first" column
-  decides
-- **The order: the method line outranks weight.** Debt nodes and debt-clearing nodes carry
-  no weight (= standard), and the "standard dispatches Execute" road does not hold for them
-- The layer a method skill dispatches still may not dispatch any further down
-
-### Test tier and verification
-
-`config get test_tier` prints how this project is verified (`full` / `minimal`, factory default
-`full`): read it at prepare step 2 and pass it on to Execute / Review / Fix in the dispatch
-supplement; on a light node you follow it yourself. It is a project-level setting and does not go
-into the spec; to change it, use `config set test_tier <value>`.
-
-| | `full`, the whole suite | `minimal`, everything pared down |
-|---|---|---|
-| Are tests written | new logic needs tests, and **only invariants get locked** — none that lock a formula, a snapshot or an implementation detail | **none by default**; only "it would fail silently without this" gets one, and say first which silent failure it blocks |
-| What stays | the whole set; when it runs over, the debt channel inserts a debt node | only numeric / precision cross-checks, cross-source structural agreement, and the paths only luck reaches |
-| Each round's verification | the fast lane = the cases of the files touched | the few checks the project itself names / probes / one run |
-| The review on "missing tests" | one that should be there and is not = a finding | missing tests pass; a missing "silent-failure kind of verification" is recorded as a finding |
-
-**Verification by tier**: the fast lane every round, and one full run at the node's close. Both
-are taken from the project docs (the `slow` marker, the two entries, and with no tier named, the
-full run — projects differ in shape), so do not copy another project's wording; the `minimal`
-tier is exactly the few checks that project names, and **no suite gets built for it**; when the
-fast lane gets too slow to bear, that is a matter of tiers or compression and belongs to the
-test-hygiene path (run `doctor`: the listing says which installed plugin watches this metric, and
-which method skill that plugin names) — do not dodge it by running the full run more often or less. Reports carry the
-actual commands and counts, and the `full` tier also carries **the suite's actual measured
-seconds**; without the evidence it counts as never run.
-
-When neither the spec nor the project docs names a verification command, stop and ask the user to
-fill it in through sw-route — that is sw-route's debt. When the project says `minimal` and this line
-carries a reading that asks for the full suite's wall clock, report the contradiction to the user,
-together with the command that turns it off (`cycle policy <cycle> <that key> off` — the key is a
-**knob name**, read off `doctor`'s plugin listing: under the plugin that owns the reading it
-prints the knobs that plugin declares, one per line, each with its own summary sentence — the
-reading's slot name is not a key and is rejected).
-
-### Node tags
-
-A tag says which line a node belongs to: `writing` (copy), `coding` (code), `art` (image). A node
-can carry several, or none at all — a node with none stays in every cycle's pick set. Which tags
-a node should carry is settled by sw-route when it draws the graph; this flow only reads them,
-never changes them.
-
-- When the graph has two lines running in parallel, pin it to a cycle at every start-up:
-  `cycle start <slug> --tags coding,writing`. Once pinned, that cycle picks nodes inside that
-  line for its whole life: from the first node to the last.
-- When this line is done and another line still has ready nodes, the close command gives you one
-  `reason`: it names who is ready and which tag is blocking them, and appends the command that
-  opens another cycle. Read it out to the user too.
-- The filter semantics, and the rules when two active cycles sit side by side:
-  `docs/conduct-node-tags.md`.
-
-## What lives on which layer
-
-- **The workspace**: the dependency graph and the judgement that inserts debt nodes on it, and write
-  exclusion on the state files — the tool owns both; you just follow the few commands in this book,
-  and add nothing for concurrency. **How code converges is not its business**: the steps that make
-  each node's worktree and merge it back are yours to type yourself, and the tool owns only the
-  record and the naming (see "Parallel: worktree")
-- **The line (cycle)**: `tags` (who it picks), `when_shelved`, `parallel` (how many nodes it
-  holds and how many sessions it opens), `stop_after_nodes` (how many nodes it runs before it
-  stops), and the two debt thresholds; write them with `cycle policy`, read them from the
-  `Policy:` line of `cycle current`. Lines are coupled in no other way: two lines run side by
-  side, each holding its own few nodes
-- **The node**: mode, weight, tags, spec, report set — they travel with the graph and
-  the node directory, one place per node
-
-The concurrency cap has three layers, outside in: the graph's dependency edges (who blocks whom)
-decide which nodes **may** sit side by side; this line's `parallel` (the `Policy:` line of
-`cycle current`) decides how many nodes the line **holds** at once; `config get max_agents`
-(see [`shared/superworker/subagents.md`](shared/superworker/subagents.md)) decides how many subagents this
-session has **in flight** at once. The third layer is the outermost: every node you hold may have
-its own children open at the same time, and together they may not cross it.
-
-## Opening
-
-**First, how you came in**:
-
-| How it came in | The target node | The close |
-|---|---|---|
-| The user typed `/sw-conduct <node id or keyword>` | the node in the argument; with none, locate it with `dag search`, and when several hit, lay them out for the user to pick | report the result to the user, run no close commands |
-| A pipeline dispatch (the call line carries `[pipeline]`) | the node id on the call line | the chain under "Close out" |
-
-**Then, which node to start from** — take one look with `cycle list`:
-
-| Input | Where it goes |
-|---|---|
-| `/sw-conduct status` | `cycle list` + `cycle current`, read only, no advance |
-| `/sw-conduct`, exactly one active cycle | carry on: `advance --json` (a bare `advance` follows this one active line) |
-| `/sw-conduct`, several active cycles | a bare `advance` gets refused, and the error lists the candidate lines and points at `--cycle` — read the candidates out to the user, and whichever one they name is the one: `advance --cycle <cycle id> --json` (it pins the nodes this line has free slots for, lands each prompt, and hands the cells to the executor, which opens one session per cell — see "The dispatch path") |
-| `/sw-conduct`, the lines are all there, just none `active` | `cycle status <id> active` puts it back in service, then carry on. A line not in service cannot be driven by naming it either (`advance` answers `ask_user` and gives you that command as it stands), but a node this line holds can still be settled — recorded, not dispatched; to redo a `shelved` node, first `dag revive <node_id>`. With several candidates, read them out and let the user name one — do not pick for him; that decision belongs in sw-route, settled together with the nodes, and coming straight from there the line should already be `active` — take the row above |
-| `/sw-conduct`, no cycle yet | take "Start-up" below |
-| The user just says what they want done, no cycle yet | take "Start-up", with `--title` set to that sentence |
-
-**Start-up** — the graph has to have a ready node (an empty graph is an immediate brake: it means
-the graph should be designed through sw-route first):
-
-```pwsh
-cycle start <slug> --title "<the user's own words>" --tags coding,writing
-advance --json
-```
-
-With an active cycle already there, `cycle start` gets refused, and only `--force` lets it through
-— think first about why there would be two at once. `--tags` is **required**: the tool refuses a
-call without it, and you write it even when the graph has just one line. `--title` takes only the
-user's own words; it goes into the cycle's name and into no prompt.
-
-`advance` pins the nodes this line has free slots for (the head of the graph ranking, as many as
-`parallel` allows) and lands the material (each prompt and this round's run doc), then hands the
-cells in hand to the executor, which opens one session per cell. With an opener the host opens the
-sessions then and there, and the answer carries what it pinned and opened; without one this process
-has no opener, and its opening step answers one `spawn_error` line naming the panel, claiming
-nothing.
-Either way **your run ends here — do not wait on it here**: the next round is the host's to open
-(the panel's cell, or the relay firing on `turn/end`); when the host opens nothing, hand the user
-the prompt path and the line in it. Before stopping, tell the user how far you will push; in full
-auto, say: "Full auto is on; I will keep pushing until the graph has no ready node left, or this
-line has run as many nodes as its `stop_after_nodes`."
-
-**How far this line runs is settled first by the node's own mode**: a `checkpoint` node stops at
-its close and hands over to a human; a `manual` node lives in the conversation throughout, and
-once the user explicitly lets it through ("mark it complete, continue") the line carries on like
-`auto`; an `auto` node opens the next one itself when it is done. The line's `stop_after_nodes`
-only adds a stop point on top (`cycle policy <cycle> stop_after_nodes <n>`; unwritten, there is
-none) and never loosens the mode. **A stop is the plan's answer**: when the plan says it stopped
-(`checkpoint`, a non-delivered node with `when_shelved=stop`, the line's `stop_after_nodes` count
-reached, or nothing ready left) and nothing is in hand, `advance` turns the line `inactive` itself;
-a human puts it back in service with `cycle status <cycle> active`, and only then does it pick the
-next node (why only a human writes that, see `docs/conduct-state.md` "the two ways in").
+| **Pipeline dispatch** (call line has `[pipeline]` and `<node id>`) | Go straight to **Prepare**; run the full pipeline close chain |
+| **User-specified node** (`/sw-conduct <node id or keyword>`, no `[pipeline]`) | If given a keyword, locate with `dag search` (ask user if multiple match); go to **Prepare**; at close, commit/push and report to user, **skipping `handoff`/`settle`/`advance`** |
+| **No args / `status` / manual start** (`/sw-conduct` or `/sw-conduct status`) | Read [`docs/startup.md`](docs/startup.md) to inspect status, pick a cycle, or start a new one |
 
 ## Prepare
 
-First confirm the current workspace sits at the project root (the parent of `.superworker/`); when it does
-not, tell the user to open a session in the right workspace. When the project has not been
-init-ed (`.superworker/` is missing `.gitignore` and `.gitattributes`), run `init` once first — once
-per project, and it settles whether this project is the commit or the local flavour; any other
-command meeting an uninit-ed `.superworker/` refuses outright and hands you this command.
+Confirm the workspace is at the project root (parent of `.superworker/`). If `.superworker/` is uninitialized (missing `.gitignore` and `.gitattributes`), run `init` once first.
 
-The pipeline's words are one table with one door: call the `superworker` tool — a `word`, its
-`args`, and `help` for that word's page. Every word line in this sheet is a row of that table.
-Lines that do not depend on each other can go in one message; they run in the order you gave and
-their answers come back together.
+### 0. Sync
 
-**0 | Sync**: first look at the `.superworker/` flavour — if `git ls-files .superworker` has output it is the commit
-flavour, and one `git pull --rebase` brings the other machine's graph, conclusions and commits
-down together before you read. A local ledger pulls in two shots: `git pull --rebase` for the
-code, and `git -C .superworker pull --rebase` for the ledger one when `.superworker/.git` is there. A project with
-no `git remote` at all has no upstream, so that pull-and-push commit is skipped whole; when
-`.superworker/` is its own repository with no remote, the ledger commit is skipped the same way. **Both
-commands run from the project root** — the `.superworker` inside `git -C .superworker` is relative to cwd, and at a
-fork-mode close the cwd sits in the worktree, where that `.superworker/` is either a stale checkout or not
-there at all.
+Check `git ls-files .superworker` to determine **commit mode** (output present) vs **local mode** (no output):
+- Commit mode with a remote: run `git pull --rebase` from the project root.
+- Local mode, no remote, or any rebase / merge-driver conflict: **read [`docs/git-and-worktree.md`](docs/git-and-worktree.md)**.
 
-What collided decides who handles it: every record JSON under `.superworker/` goes to the merge
-driver — the graph / cycle / instructions / the note merge under their own domain rules, and a
-record nobody named merges entry by entry when it is one collection key whose entries each carry
-their own `id` (the issue pool, `.superworker/issues/issues.json`, is one of those records); the
-layout's own settings file, `config.json`, steps out of that line and stays with git, so a setting
-both sides changed is a binary-style conflict that keeps this side's bytes for a person to judge.
-When the driver reports a conflict, or a code file collides, stop and hand it to the user — do not
-merge by hand. When the collision is halfway through a rebase, first `git rebase --abort` to put
-the workspace back and then report (for the ledger commit's collision, `git -C .superworker rebase
---abort`). Being blocked by uncommitted local changes usually means the previous session's commit
-has not landed — re-run once, and when it still fails, stop and ask the user.
+### 1. Instructions and Policies
 
-**1 | Instruction lookup**: the constraints in force arrive with every turn's context, so there is
-nothing to run first; run it once more when you need to check.
+Active global and cycle instructions are injected into context; verify with `instruction list --project <abs project root>` if needed.
+- Instructions are added only via `/sw-instruct` and archived/restored only by the user; `scope: global` instructions remain active and need no sign-off.
+- Cycle policies (`when_shelved`, `parallel`, `stop_after_nodes`, `model`, maintenance thresholds) appear on the `Policy:` line of `cycle current` and are set via `cycle policy <cycle> <key> <value>` (`off` clears numeric policies).
 
-```pwsh
-instruction list --project <absolute path to the project root>
-```
+### 2. Read Everything Up Front
 
-- `--project` takes **the absolute path to the project root**; leaving it out reads the current
-  directory.
-- By default it gives the ones in scope where you are (global, plus those bound to the current
-  cycle). Those are the two levels an instruction has: a sentence that governs one node only goes
-  in that node's own spec, never on this list.
-- Adding an entry has exactly one way in, `/sw-instruct` — when the user typed it, that skill
-  writes it down; when they did not, something said in passing is not recorded, since it is
-  already in this round's context.
-- An instruction has two states only: in force, and archived. Follow a `scope: global` one; it is
-  always in force and **needs no writing off** — whether an entry can still be read is computed
-  fresh each time, rather than a session settling it on the entry's behalf. Only the user can
-  archive an instruction, and only the user can put it back; a session does not touch that
-  record.
-- **This line's own policies** (`when_shelved`, `parallel`, `stop_after_nodes`, `model`, plus
-  the two debt lines) are on the `Policy:` line of `cycle current`; write them with
-  `cycle policy <cycle> <key> <value>`, and cancel a numeric one with `off`.
+1. `dag --help` to confirm commands.
+2. `dag info <id> --verbose` for details/direct dependencies; `dag context <id>` for full up/downstream.
+3. `dag open <id>` for `spec.md` path and read it; if missing, stop and ask the user to write it via `sw-route`.
+4. Read sibling `intention.md` if present (strictly read-only); if absent, treat `spec.md` as read-only `intention.md`.
+5. If `spec.md` contains `method: <skill name>`, read that skill's `SKILL.md` and follow "Method."
+6. Read reference files cited in `spec.md`, plus project `CLAUDE.md` and relevant `docs/`.
+7. Read `config get test_tier`, `config get worktree_mode`, `config get max_agents`, and `cycle current`; record them in `run.md` under "Facts checked."
 
-**2 | Read**, in one go before touching anything:
+### 3. Validate the Spec (Gate Before Work)
 
-1. `dag --help` to confirm the full set of commands
-2. `dag info <id> --verbose` for the node's detail and its direct dependencies, `dag context <id>` for the
-   full up- and downstream
-3. `dag open <id>` for the `spec.md` path, and read it; a missing file means this node has no
-   requirements written yet — stop and ask the user to write the spec through sw-route, since
-   filling in requirements is not this flow's job
-4. read `intention.md` in the same directory when it is there: that is the copy the user nodded at,
-   and **you leave it alone**. When it is not, read `spec.md` whole as the intention — that is how
-   the older nodes are, and reading them costs no second road. With both in hand you hold what is
-   wanted and what counts as done, which are two different things
-5. a `method: <skill name>` line in the spec → read `~/.dsh/skills/<name>/SKILL.md`, and the
-   "Method" section settles who runs this node
-6. read the files named under the spec's "References" and "Up- and downstream" sections (those are
-   this node's real inputs)
-7. read the project's CLAUDE.md and the docs under docs/ that bear on this node
-8. read `config get test_tier`, `config get worktree_mode` and `config get max_agents`, and record
-   them in `run.md`'s "Facts checked"; which nodes this line holds at once, and what `parallel`
-   is, are in the readings of `cycle current` (one `Node:` line per node, `parallel` on the
-   `Policy:` line)
+- **Open items**: resolve genuine "or" / "TBD" ambiguities (in scope / out of scope / another node) and log under "Autonomous decisions" without editing `spec.md` (`manual` nodes ask the user immediately). Ignore normal enumerations or literal feature names.
+- **Source hard constraints**: tag every "must" / "must not" / cap with its source—user's words, project goal docs (`*goals*`), or derived earlier (budgets, quotas, caps). Only the first two represent true requirement boundaries.
+- **Check snapshot freshness**: if module counts, file lists, or enumerations in `spec.md` are stale due to codebase evolution, update the current values directly in `spec.md` and log one line in "Autonomous decisions" (**never touch `intention.md`**; write no history notes). If unsure whether the intent is still covered, stop and present `intention.md` alongside the new state to the user.
+- **Verify executable acceptance**: if there is no executable completion check (or only vague goals like "design/tune it"), stop and ask the user to complete it via `sw-route`.
 
-**3 | Clear the spec** — until this gate is fully cleared, this node does not open:
+Unrelated pre-existing issues encountered during work: dispatch one subagent to record them according to the installed plugin's skill (`doctor` lists plugins); do not expand this node's scope.
 
-- **Open items**: for each ambiguous piece in the spec at the "or" / "to be confirmed" level,
-  settle who it belongs to — this node does it / explicitly does not / it belongs to another
-  node. The criterion lands on who does that piece. Record the outcome under `run.md`'s
-  "Autonomous decisions", and **leave the spec's own text alone**. A `manual` node lives in the
-  conversation throughout, so its open items go to the user on the spot; a `checkpoint` / `auto`
-  node makes the call itself. "or" in an enumeration or a conditional is normal wording; in some
-  projects "to be confirmed" is itself a feature name and a section name — clearing it out by the
-  letter would break the body.
-- **Mark the source of every hard constraint**: give each "must" / "must not" / "always" / "the
-  cap is" its own source — **the user's own words** (quoted from the session or the instruction
-  list) / **the project's goal docs** (something like `*goals*`: what this project is actually
-  verifying and what experience it wants, quoted down to the line) / **derived by some earlier
-  node** (computed numbers like a budget, a quota, a parallel count, a cap). Under the third
-  kind, mark it "derived" — a requirement can be changed only where the user and the goal docs
-  put it, in the first two kinds; a constraint you derived yourself usually has a number recorded
-  in the wrong place, and finding that out late in execution doubles the cost.
-- **Does the spec's criterion still cover the state on disk**: wherever the spec writes a number, a
-  list or an enumeration ("three modules", "not one left", "every endpoint"), hold it against the
-  tree as it is now. Once the world has grown something new since it was written and those numbers
-  have gone stale, the criterion follows — change `spec.md` and put the current numbers right;
-  **`intention.md` stays put**, it has not moved. Record the current value on one line under
-  "Autonomous decisions", and leave out how it used to read. When the criterion cannot be moved, or
-  when it is unclear whether the thing that grew counts, stop and lay the intention and the new
-  state in front of the user together.
-- **Where the completion rule is**: the spec must carry a section with an executable completion
-  rule — a command, a script, a probe that yields a pass / fail reading. When there is none, or
-  it is all "design it a bit" / "tune it" — things that cannot be judged — stop and ask the user
-  to fill it in through sw-route. The review uses it as its standard, so it has to be there
-  before work starts.
+### 4. Size Check and Worktree
 
-A problem run into along the way that is not this node's to fix goes to a subagent to record. Where
-it is recorded, and how it is written, is the installed plugin's own business: run `doctor` to
-see which plugins this checkout has, and follow the skill that plugin's folder carries. Recording
-it is the whole of it; that is not this node's scope.
+- If the node cannot fit in one session (including prepare and review), stop and ask the user to split it via `sw-route` (same if discovered mid-run).
+- If `worktree_mode` is `fork` or `reuse`: **read [`docs/git-and-worktree.md`](docs/git-and-worktree.md) for pre-flight checks and worktree creation** (`off` works directly in the main tree).
+- **Never mark the DAG node complete manually**—completion is recorded by the close command.
 
-**4 | Size and deliverables**: the size is judged fully at prepare time — when by feel this node
-will not fit in one session, stop and ask the user to split it through sw-route. Finding halfway
-through that it does not fit: stop the same way and ask for a split, do not force it to the end.
+## Execution Loop
 
-What this node hands over is something acceptable — the changed code, and the report set and
-`run.md` under `.superworker/nodes/<node uuid>/`. Ask the acceptance in one sentence: had this node not
-run, what would the project be missing. **Do not mark the DAG complete** — the node's completion
-mark is written down by the close command.
-
-## Execute
-
-Once prepare is through, go straight into the loop; **once a subagent is dispatched, do not wait
-on it** — it is asynchronous, the runtime wakes this round back up when it is done, and by then
-the report is already in context. Dispatch several at once by writing them into the same message;
-to hand out the next batch's work, wait for this batch's results first.
-
-Before dispatching, count what is in flight against
-[`shared/superworker/subagents.md`](shared/superworker/subagents.md): when it cannot be crossed, yield in
-the order that card gives. This outer ring presses on every "dispatch in parallel" below.
+After dispatching subagents, **do not poll**—the runtime wakes you when they finish. Batch independent dispatches in one message, checking [`shared/superworker/subagents.md`](shared/superworker/subagents.md) before every dispatch.
 
 ### Execute
 
-A standard node dispatches an Execute subagent (it may write files and run commands), and the
-prompt has three lines:
-
-- read `<this skill's directory>/subagent-prompts/execute.md` and do what it says
-- the node's spec: `<absolute path to spec.md>`
-- the supplement: what run.md's "Facts checked" holds (test tier, worktree mode, the subagent cap,
-  the project docs' conventions), this node's own cautions, and which document to read first
-
-The role, the report format and the prohibitions are all in the role card. On a light node you do
-this step's work yourself: read the code, change the code, run the fast lane, and write the
-report as `report.md` (the four items as always).
-
-- When a group of files takes the same operation, dispatch in parallel (this spot is under
-  `max_agents` too): the parallel agents **only change files** — they do not compile, test or
-  commit. Each time, wait for the completion notice to come back (one notice may bring several),
-  then start one integration-verification subagent serially (it has write access): full build →
-  fix compile errors → run all tests → fix test failures → produce the integration report.
-  Compiling is done serially
-- On getting the execution report, first check the four items are all there; when it is vague,
-  have it hand in the missing part
+- **`standard` nodes**: dispatch an Execute subagent (read/write + commands) with three prompt items:
+  1. Read `<this skill dir>/subagent-prompts/execute.md` and follow it
+  2. Node spec: `<abs path to spec.md>`
+  3. Supplement: `run.md` "Facts checked" (test tier, worktree path, subagent cap, project conventions), node-specific cautions, and required docs
+- **`light` nodes**: read code, edit code, run fast lane, and write `report.md` yourself.
+- **Parallel file groups**: when applying uniform edits across multiple file groups, you may dispatch parallel subagents (within `max_agents`) that **only edit files** (no compile, test, or commit). Once all finish, run a single serial integration subagent to build, fix compile errors, run tests, and report.
+- Verify all four required sections are present in `report.md`; request completion if vague.
 
 ### Review
 
-**One read-only subagent**. The prompt has three lines: read
-`<this skill's directory>/subagent-prompts/review.md` and do what it says / the spec's path / the
-supplement.
-
-Its criterion is in the role card, in one sentence: **the spec's node goals — was each one met**.
-Its product comes in two grades:
-
-- **critical is a problem that blocks delivery** (a goal not met, a mistake, a fight with the
-  spec): not clear until it is zero
-- **minor is a problem not worth another round for** (style, wording, an edge): record it and go
-  to the fix; a round with only minor findings does not come back to review once fixed — do not
-  stop here for it
-- When you disagree with a critical, **do not rule it a false alarm yourself**: write the dispute
-  into a fresh verification prompt and re-run the review once, and when it still cannot decide,
-  hand it to the user. The power to rule a "false alarm" is the user's.
-
-Every round's review prompt carries exactly three things: the spec path, this round's supplement
-(criteria and cautions), and this round's report file name. What it must **never** carry: the
-previous round's findings, what the fixing agent did, or your judgment on how well they did it — the
-review has to be a neutral judge that does not know what happened last round, otherwise it will spend
-its effort verifying the last fix and nobody will have judged this delivery from scratch.
-`review-{N}.md` is only its conclusion on file, round by round.
-
-"Word for word" is how you execute that intent: copy the first round's supplement each time, so you
-never rewrite it. It saves you the rewriting; what it protects is the line above — the review does not
-know what happened last round. **Criteria following the current boundary is what criteria are for**:
-when the boundary moved (a freeze loosened, the scope narrowed, a user criterion swapped in), that
-spot becomes the new boundary with the layer it now covers written out — that has nothing to do with
-leaking.
-
-The line runs between "a general boundary" and "a ruling on one finding": writing "this directory
-takes comment-level changes only" is a criterion; writing "stop reporting last round's comment" is a
-leak.
+- Dispatch **one read-only subagent** with three items: `<this skill dir>/subagent-prompts/review.md` / abs `spec.md` path / supplement (criteria, cautions, and output filename `review-{N}.md`).
+- **Two severities**:
+  - `critical`: blocks delivery (unmet goal, bug, spec violation)—must reach zero.
+  - `minor`: polish/edge/wording not worth another review round—fix and close without re-review.
+- **Disputes**: **never dismiss a `critical` as a false positive yourself**; re-run Review once with a fresh verification prompt framing the dispute, and escalate to the user if still unresolved.
+- **Neutrality (no leakage)**: never include prior findings, what Fix changed, or your evaluation in the Review prompt (reuse the Round 1 supplement verbatim). Only update the supplement if a general project boundary itself changed—never add rules targeting a specific prior finding.
 
 ### Fix
 
-Both roads are walked to the end: there is no round cap.
+No round cap:
 
-`critical > 0` → dispatch a **new** Execute to fix it (the prompt uses
-`subagent-prompts/fix.md`), and back to Review once it is fixed. **The fix dispatch's prompt carries
-three things only**:
+- **`critical > 0`**: dispatch a **new** Fix subagent (`<this skill dir>/subagent-prompts/fix.md`), then return to Review. Give only three items:
+  1. Path to `review-{N}.md` (never copy findings text into the prompt)
+  2. Decisions already settled by you (one sentence each—only what is not in the review file)
+  3. Output report path (`fix-{N}.md`)
+- **`critical = 0, minor > 0`**: dispatch Fix **without returning to Review**; Fix verifies via fast lane and checklist. Unfixable items go into the report and `run.md`'s "Known unresolved" (closed within this node, never carried to the next).
+  - **May run in parallel with Close Step 1 (Doc-sync)**: Fix edits code only; route `docs/` findings to Doc-sync. If Fix changes public names or interfaces, finish Fix before dispatching Doc-sync.
+- **`light` nodes**: fix directly following `subagent-prompts/fix.md` discipline and write `fix-{N}.md`.
+- **Stuck-loop detection**: if the same issue resists repeated fixes, or two consecutive reviews flag the same locations, pause and check `spec.md` against project goal docs:
+  - If the conflict comes from a constraint you derived yourself (budget, quota, cap): modify or drop it, log under "Autonomous decisions," and proceed.
+  - If still unresolved against spec and goal docs: stop, mark "Known unresolved" with evidence and attempts, and escalate to the user.
 
-- **the path to the findings list** — that is the one copy you hold. The review has already written
-  the problem there; it reads the text, the line numbers and the arguments for itself, so do not
-  copy them into the prompt
-- **the conclusions already settled above** — one sentence each: what was settled, and which
-  section it went into. This is what the list does not have, and only you hold it
-- **which file this round's report goes into** (usually `fix-{N}.md`)
+### Report Conventions
 
-Your verdict is **not** a restatement of the list. Carrying the review's text and arguments over
-again makes the fix agent read the same material twice; worse, when the two are written
-differently the role card and your prompt fight each other.
+Store reports directly in `.superworker/nodes/<node uuid>/` (no stage subdirectories): `report.md` (Round 1), `review-{N}.md`, matching `fix-{N}.md`, and `run.md`. Put raw logs, long quotes, and probes in `temp/` under the same node directory and link by path.
 
-`critical = 0, minor > 0` → dispatch a dedicated fix and **do not go back to Review**: a round
-with only minor findings passes once fixed, and the fix proves it itself through its own fast lane
-and a findings-list check, with each minor written out in the fix report; anything it cannot fix
-goes into this round's report and `run.md`'s "Known unresolved", **closed out inside this node
-and not passed on to the next one**. When it cannot all be done, so be it: the report says which
-ones were not done and why, and it goes into the user's hands.
+- `report.md` / `fix-{N}.md` are concise receipts (~dozens of lines): what changed, where, verification readings; one `report.md` per node.
+- `review-{N}.md` carries actionable judgments: be as detailed as needed for Fix to act immediately.
+- Omit what the reader already has; overwrite or delete stale readings rather than appending pointers.
+- User-facing updates (close, stop, checkpoint) follow [`shared/superworker/talking.md`](shared/superworker/talking.md).
 
-This round is **dispatched at the same time as the close's step 1, the docs sync**: the fix
-touches code only, the docs are Doc-sync's (role card `subagent-prompts/doc-sync.md`), and the
-two subagents go into one message. An entry on the list that lands in `docs/` is handed to
-Doc-sync (changing docs is its job) and the fix leaves it alone. When this round touches a public
-name or an interface, do not run them in parallel — fix first and dispatch Doc-sync after, or the
-docs get written against half-finished work.
+## Close Out
 
-On a light node you do this step's work too: read `review-{N}.md`, fix only the problems the list
-names, and write the report as `fix-{N}.md`; borrow the discipline of `subagent-prompts/fix.md`
-and follow the judgements above.
+Execute these 9 steps in order (only Steps 1 and 2 run in parallel):
 
-The same problem refusing to move after repeated fixes → stop and report, mark it "known
-unresolved", and attach the evidence and what was tried.
-
-**Recognize a stuck loop**: when the review's identity marker lands on the same set of spots two
-rounds running, the gap is moving around instead of closing. At that point do not keep
-dispatching fixes; go back over the spec and the **goal docs** (what this project is really
-verifying and what experience it wants):
-
-- When the conflict is in a constraint you derived yourself (a budget, a quota, a parallel count,
-  a cap): **change that one of yours, do not come and ask the user**. The goal docs are there,
-  and they are the criterion
-- Changing it that way raises no question: prepare settles where the spec's open items belong, and
-  a constraint you derived is not in the spec; touching it cannot hurt what the user settled
-- Once it is changed, record "which one was deleted, and why" in the report and in `run.md`'s
-  "Autonomous decisions"
-- When the spec and the goal docs have been combed through and it still cannot be decided → stop
-  and report to the user, attaching what each side says and why it cannot be derived
-
-**A stuck loop is a mechanical signal**: the review looks from zero every round (it does not know
-what happened last round) and the executor sees only this round's findings list, so neither knows how
-many times the same spot has been changed — **that history is in your hands alone**, which is why
-you judge it.
-
-### What a report is called, and how long it runs
-
-A report's only use is to hand on to the next session to carry on with, and every role on its
-chain reads it once — the main session, the review, the fix, the next session, the close; write
-one fat and every link after it pays its tokens again.
-
-| Who writes it | The name |
+| Step | Action |
 |---|---|
-| Execute (the first round; on a light node you write it yourself) | `report.md` |
-| The Nth round's review | `review-{N}.md` |
-| The Nth round's fix | `fix-{N}.md` (the same number as `review-{N}.md`) |
+| 1. Doc-sync | Dispatch Doc-sync (`subagent-prompts/doc-sync.md`), documenting only implemented ground truth, **in the working tree** (worktree for `fork`, main tree for `off`) |
+| 2. Write `run.md` | While Doc-sync runs, write `.superworker/nodes/<uuid>/run.md` (four sections: What I did, Autonomous decisions, Known unresolved, Facts checked + change list and report paths; append synced docs once Doc-sync returns). Commit mode → working tree; local mode → main tree |
+| 3. Merge back | For `worktree_mode=fork`, commit and squash-merge back to main tree per [`docs/git-and-worktree.md`](docs/git-and-worktree.md) (`off` mode commits `feat:` directly) |
+| 4. Full run | Run full verification on the main tree (`full` tier including slow lane + **record measured seconds**; `minimal` tier runs project checks); fix failures here. Re-run if another cycle merged commits after your merge-back. In `fork` mode, remove the worktree and branch once passing (see [`docs/git-and-worktree.md`](docs/git-and-worktree.md)) |
+| 5. Self-check | Verify all active instructions were followed; confirm deliverables, reports, and `temp/` are in place (`temp/` is never versioned) |
+| 6. Close node | Pipeline (`[pipeline]`) only: `handoff --form` → `handoff` → `settle` (see [`docs/close-and-handoff.md`](docs/close-and-handoff.md)) |
+| 7. Commit records | Commit close-generated graph, cycle, and handoff records (commit vs local commands in [`docs/git-and-worktree.md`](docs/git-and-worktree.md)) |
+| 8. Push | Push all pending commits (on rejection, `git pull --rebase` and retry; escalate conflicts); **all pushes must succeed before Step 9** |
+| 9. Advance | Run `advance --cycle <cycle> --json` and follow its `action` (see [`docs/close-and-handoff.md`](docs/close-and-handoff.md)) |
 
-Reports land in the node directory `.superworker/nodes/<node uuid>/`, one place per node, and these files
-sit directly in it, with no per-stage subdirectories. A problem `review-4.md` reports in one
-stretch is written up by the next round's fix in `fix-4.md` — the trail links up through that
-number; other products land elsewhere, so do not put these three names on them.
+- **Before Step 6, read [`docs/close-and-handoff.md`](docs/close-and-handoff.md)** for `handoff -o` readings, `checkpoint`, maintenance nodes, `failed`/`stopped`, and `advance` handling.
+- **Manual invocation (no `[pipeline]`)**: skip Steps 6 and 9; commit/push and report deliverable locations to the user.
 
-- **The length is decided by what the next reader does with it**: keep decisions, readings and
-  pointers. Raw output and long quotes land in `.superworker/nodes/<node uuid>/temp/`, and the report
-  gives their paths
-- **A review report carries judgements, so be as detailed as it takes**: write each finding out
-  paragraph by paragraph, so the fixing side can start work straight from it. Its length follows
-  "can someone start work from this", and line count is not the measure
-- The execution and fix reports are receipts: what was done, where it changed, the readings that
-  prove it, one line per item — the judgements have landed elsewhere, and repeating them makes
-  the reader read twice
-- A report writes only what the reader does not already hold. The manuscript's content, the spec's
-  own text, the lines changed — the review and the fix can read all of it; half a sentence quoted
-  to point at the fight is enough
-- A stale reading is **changed or deleted**; hanging a pointer to an old reading behind it makes a
-  report grow and never shrink, and the reader has to do the archaeology
-- **Give every product a landing path when the work is dispatched**: long quotes, raw output and
-  sample data each go to their own file; for a step that has judgements and no separate material,
-  write "the report only, one line per item" — splitting it out later means every link behind it
-  reads the fat version first
-- One `report.md` per node. Part reports and incremental reports merge into that one; landing each
-  separately makes the reader leaf through them one by one
+## References & Anti-patterns
 
-The usual size: the Execute and fix reports run to tens of lines, and `review-{N}.md` runs from
-tens to hundreds depending on how many findings there are. Over that size, first see whether data,
-long quotes or old readings were moved into the body — **do not rush to delete judgements**. The
-node's `run.md` is the node-level receipt: what was done, the change list, the decision list, the
-known unresolved items; the round's detail is already in the report set, so pointers are enough.
+All relative paths below are rooted at this skill's directory (`cd ~/.dsh/skills/sw-conduct/ && pwd` for absolute paths, or `$DSH_HOME/skills/sw-conduct/` if `DSH_HOME` is set; always pass absolute paths to subagents):
 
-**Words for a human** (whether at a close, a stop or a checkpoint) follow
-[`shared/superworker/talking.md`](shared/superworker/talking.md): report one tangle, all four lines,
-the concept name at the setting `config get answer` reads.
-
-## Close out
-
-The close walks these steps in order, and only steps 1 and 2 start at the same time:
-
-| Step | What it does |
-|---|---|
-| 1 docs sync | dispatch a Doc-sync subagent on its role card (`subagent-prompts/doc-sync.md`; the prompt carries the spec path and a supplement saying what this node did) and sync the docs (writing only what is already implemented), **on the tree the work is happening in** (fork mode = the worktree, off mode = the main tree) — the docs it syncs are part of this node's deliverable, committed and merged back together with this node |
-| 2 run.md | write `.superworker/nodes/<node uuid>/run.md`, with four fixed sections: "What I did" in prose; one column each for "Autonomous decisions" and "Known unresolved"; "Facts checked" carried over from prepare. It ends with this node's change list and the paths of every report file. **Which tree it lands in follows the `.superworker/` flavour**: the commit flavour lands in the working tree (merging back with this node), the local one in the main tree (there is no `.superworker/` in a worktree) |
-| 3 merge back | a node that went through a parallel fork merges back first, see "Parallel: worktree" — this step commits this node once and brings it back to the main tree. **What is in that commit follows the `.superworker/` flavour**: for the commit flavour it is code + docs + run.md + the report set; for the local one only code + docs, and the node's few text files belong to step 7 |
-| 4 full run | run one **full run** (`full` tier = the whole suite, slow lane included; `minimal` tier = the few checks the project names), and fix failures here; an unrelated pre-existing failure is still one line only. The `full` tier **records this run's measured seconds** — the close command reads it; the `minimal` tier has no suite timing, so delete that item from the note |
-| 5 self-check | a backstop pass over the instruction list: every constraint read this round was followed, and none was archived by mistake. Everything back where it belongs: the deliverables in the project directory; the report set (`report.md` / `review-{N}.md` / `fix-{N}.md`) and `run.md` under `.superworker/nodes/<node uuid>/`, and this node's probes and raw output in `temp/` in the same node directory. **`temp/` goes into no repository under either flavour** (`.superworker/.gitignore` owns that), so do not put a mechanical check that has to be versioned there |
-| 6 close the node | the three commands below |
-| 7 commit | only the graph, cycle and note written down by closing the node are left to collect, see "Then commit" |
-| 8 push | every commit that should be pushed is pushed successfully before going on |
-| 9 advance | `advance --cycle <cycle> --json`, or the host runs that one itself: go by the `action` the plan gives |
-
-**Steps 1 and 2 are done together**: Doc-sync is a subagent, so you are free the moment it is
-dispatched — write `run.md`'s four sections in that window, and add the docs it synced to the
-change list when it comes back. Step 3's merge-back precondition does not change: it starts only
-once both have landed.
-
-**The advance comes last**: close the node first, then commit, then push, and let `advance` carry
-the line on only at the end (why the order is nailed down, see `docs/conduct-state.md` "how a
-session is woken and closed out").
-
-Coming in through a pipeline dispatch, run these three in order. `<cycle>` is **the line that
-holds this node**: recognize it in the readings of `cycle current` by node id (one `Node:`
-line per node); `<node>` is the id on the call line.
-
-```pwsh
-handoff --form <cycle>   # what this line wants, and what the note looks like: fill it in as printed
-handoff <cycle> <node> completed -s "<one-line summary>" -o '<fill in from the line above>'
-settle <node> --json
-```
-
-The `--form` one only prints the shape and moves no state; the
-`handoff <cycle> <node> completed -o …` one **writes the note only** — it closes no node and
-spawns no session; the `settle <node>` one **closes this node**: the verdict it reads off the
-ticket already on disk goes into the line's path, the claim is laid down, the graph node lands
-`completed` / `shelved`, and the close-time plugin seam runs — an offer there may insert a
-maintenance node into the graph. It pins nothing, opens no session, lands no prompt, and does not
-park the line. To see first where the line would go, `plan --after <node> --json` is the closing
-rehearsal: read-only, not one byte written. None of the three spawns a session; for the note, see
-"The note and its readings".
-
-**Then commit** (the two flavours do not take the same road):
-
-This node's content — code, docs, and for the commit flavour run.md and the report set — was
-already gathered at the merge-back step into one `feat:` commit on the main tree. What is left
-here is what closing the node's three commands wrote down: the graph, the cycle and the note.
-These are one copy for the whole ledger and are not split by node, so another node running in
-parallel may have committed them in passing.
-
-**The commit flavour** — the graph and cycle are in the project repo:
-
-```pwsh
-git status                      # only the graph, cycle and note written down by closing the node
-git diff
-git commit -m "chore: record node <node id> close (slip, cycle state)"
-git push
-```
-
-**The local flavour** — the project repo has no `.superworker/`, so these, together with this node's
-run.md and report set, are committed into its own repository (when `.superworker/.git` is there); when
-that repository has no remote, commit only, no push:
-
-```pwsh
-git -C .superworker status              # the graph, cycle, note, plus this node's run.md and report set
-git -C .superworker add -A
-git -C .superworker commit -m "chore: record node <node id> close (slip, cycle state)"
-git -C .superworker push                # push only when this repository has a remote
-```
-
-A local ledger whose `.superworker/` is not a repository of its own has no such step: the record stays on
-disk, committed and pushed nowhere.
-
-When `git push` is refused (another machine, or another line on this machine pushed first),
-`git pull --rebase` and push again; when it stops on a conflict, hand it to the user. **Every
-commit that should be pushed** goes through successfully before the next step. If it is truly
-stuck, stop and report to the user with the one command that carries on: once the push is fixed,
-`advance --cycle <cycle>` picks the line up from there — the node has already been settled, and
-does not need settling again.
-
-Once the push succeeds, let `advance --cycle <cycle> --json` carry the line on (with the automatic
-relay on, the host runs that one itself and this session stops here) — the `action` it answers
-carries the commands to run and the words to say:
-
-- `dispatch`: **hand in the ticket and stop** — the handoff is on disk and the node is settled, and
-  the host opens the next sessions itself (the panel's auto-relay, on by default); this session
-  ends here, and no dispatch command is run. Only when the relay is switched off, or the next round
-  fails to appear, does a person run that one command: `advance --cycle <cycle>` — with no opener
-  behind it, its opening step answers `spawn_error` and claims nothing, reading out the panel and
-  every prompt path (see "The dispatch path")
-- the nodes the close inserted: the `settle` answer names them, each with where its own spec
-  landed — they hang in front of the node this close would have opened next, so the next pick
-  takes one first; the close claims nothing and opens nothing. Commit and push as usual, then run
-  `advance --cycle <cycle> --json`: the picking rules pick them out, land each prompt and hand them
-  to the executor, which opens the sessions (with no panel and no relay, hand the user those prompt
-  paths and their lines; this is where a debt node comes from, see "Debt nodes" below)
-- `stop_pipeline`: say `reason` to the user as it stands (read `attention` out too when it has
-  content), then stop — a stop is the plan's answer, and `advance` has already turned the line
-  `inactive`; it does not stop this line while other nodes are still in flight, and `reason` will
-  say so. To carry on: `cycle status <cycle> active`, then `advance --cycle <cycle>`
-- `wait`: read its `note` / `close_with`, do what that command says (the one closing this cell is
-  `settle <node>`), and **never poll**
-
-`node_shelved` inside `attention` = this node did not deliver, is out of play waiting for a human
-(it is marked `shelved` on the graph and its downstream is parked): to redo it,
-`dag revive <node_id>` puts it back to `todo`.
-
-**The `handoff` output needs no reading** (it is only a receipt); the `settle` output is read for
-the nodes its seam inserted and the one `note` it carries, and the `plan` / `advance` output is
-walked by its `action`, reading the `note` / `close_with` / `reason` / `attention` it carries —
-`advance` prints the paths of the prompts it pinned and opened itself. Beyond that, run no other
-command and hand-write no state file.
-
-**Typed in by hand** (no `[pipeline]`): report the result straight to the user, saying clearly
-where the products landed; the three commands do not run and nothing is dispatched, but commit
-and push run as usual.
-
-**A `checkpoint` node that gets here stops and waits for a human**: the plan's answer for this
-cell is `stop_pipeline`, and after the settle and the push `advance` turns the line `inactive`, its
-`note` saying "this round is done; the next node opens only once you say continue", appending the
-two commands that carry on. Tell the user what this round handed over and where the record landed,
-then wait for their answer — when they say continue, run in order:
-
-```pwsh
-cycle status <cycle> active
-advance --cycle <cycle> --json
-```
-
-Stopping turns the line `inactive`, so putting it back in service cannot be skipped; `advance`
-pins the next node, lands its prompt and hands it to the executor, which opens the session, and
-this session stops here.
-Commit and push still come before that next session opens, not a byte skipped. The time between
-the node finishing and your answer coming back may be long, and by then that node and its record
-have settled — a session change along the way does not matter, the record is on disk.
-
-**Debt nodes**: when the close went over this line's debt threshold, the close-time seam inside
-`settle` puts the debt node **into the graph**, hung in front of the node this close would have
-opened next, so the ordinary ranking takes it first. The `settle` answer names the nodes it put in,
-each with where its own spec landed, plus `note` — **the close claims nothing and opens nothing**,
-so the line's holding does not move. **It can carry more than one node** (when more than one debt
-is over its line; see "the maintenance channel" in `docs/conduct-state.md`). Commit and push as
-usual, then run `advance --cycle <cycle> --json`: the picking rules pick them out, land each prompt
-and hand them to the executor, and once the sessions the host opens take over, each walks like any
-other node. They go when they are done, and stopping to wait for someone's answer is not among
-their options. **Every node's spec carries a `method: ` line** (which method it names is the
-declaration's to write, and `doctor` prints it): when prepare reads it, run that skill
-yourself — batching, dispatching and settling are all in your hands, and the loop is still this
-flow's "Execute" section; the scope is set by the spec that inserted it, so do not widen it to
-everything yourself. Close out as usual when it is done, then go on to the next.
-
-When the requirement cannot be met, or the spec contradicts itself: `completed` becomes `failed`;
-when the work is one you chose to stop doing, it becomes `stopped`. Either way the reason goes
-into `-s` in full, and nothing hangs waiting. That status makes the close mark the node `shelved`
-(out of play, waiting for a human); you do not do that marking yourself.
-
-## Parallel: worktree
-
-**worktree follows the mode, read from `config get worktree_mode`** (for the default and each
-mode's design, see `docs/conduct-state.md` "the two ways in"; to change it,
-`config set worktree_mode <value>`):
-
-| mode | Behaviour |
-|---|---|
-| `off` | work straight in the main tree, with no fork and no merge-back steps. There is no isolation, so a project with several lines side by side, or `parallel` > 1, does not use this mode |
-| `fork` (the default) | a fresh worktree per node, deleted clean once the close's merge-back is done — everything below this line is this mode |
-| `reuse` | not supported by the tool: on reading this mode, stop and hand it to the user — change the mode, or have the tool grow a standing set of worktrees first. Do not patch it up with your own `git worktree add`: this mode waits for the tool's pool, and one hand-made worktree stands in for none of it |
-
-**Before work starts, prepare's last step is the fork** — you read the two checks yourself, and once
-they pass you type the git that makes the worktree and the branch; this is work the tool does not
-do for you (it knows a worktree by the `gitdir:` line in `.git`, and by no record):
-
-```pwsh
-# 1. is the main tree clean: tracked changes only, untracked plumbing does not count
-git status --porcelain --untracked-files=no
-# 2. is the checkout directory taken
-Test-Path .superworker/worktrees/<node short id>
-# 3. is the exit branch taken
-git rev-parse --verify --quiet refs/heads/sw/<node short id>
-# 4. only when the first three pass, build the worktree and the branch
-git worktree add .superworker/worktrees/<node short id> -b sw/<node short id>
-```
-
-- **The main tree is not clean** (the first one prints something): another line may be mid-merge-back
-  (the docs sync and the ledger commit leave a dirty window of minutes), or the previous node was not
-  closed cleanly. Stop, say this sentence out, and wait a few minutes before looking at `git status`
-  again and forking:
-
-  > the main tree has uncommitted tracked changes -- another line may be mid-merge-back (the docs sync and the ledger commit leave a dirty window of minutes). Wait a few minutes and re-check `git status` before forking:
-
-- **The short id is already taken** (check 2's `Test-Path` is true, or check 3's `rev-parse`
-  prints something): the taker may be this node itself, or the last fork was never cleaned up. Build
-  nothing; stop and hand it to the user, saying whichever of the two holds, word for word:
-
-  > .superworker/worktrees/<node short id> already exists -- the short id '<node short id>' is taken (by node <node id> itself, or the last fork was never cleaned up). Nothing was forked.
-  >
-  > branch sw/<node short id> already exists -- the short id '<node short id>' is taken. Nothing was forked.
-
-**Those two checks exist for the fat-fingered case — do not skip them on "I know the main tree is
-clean"**; when refused, stop as above and never fork anyway.
-
-**The exit branch = the branch the main tree was on at fork time** (what `git rev-parse
---abbrev-ref HEAD` said then), and that goes into `run.md`'s "Facts checked" as before. Git keeps
-this branch and this worktree itself: the checkout at `.superworker/worktrees/<node short id>`, its
-`gitdir:` pointer into `.git/worktrees/<node short id>`, and the branch as `sw/<node short id>` —
-`git worktree list` answers all of it. Which branch to merge back into follows the `run.md` line.
-
-The work:
-
-- The Execute / Review / Fix loop, the reports and the review rules are word for word unchanged;
-  every code path points at the worktree — a subagent's absolute paths, and your own workdir on a
-  light node, are both it; each round's fast lane runs as always, inside the worktree
-- **Code and docs live in the worktree, and the node's few text files follow the `.superworker/` flavour**
-  — the code and the docs Doc-sync hands back are done in the worktree and merge back to the main
-  tree with this node's one commit; `run.md` and the report set: under the commit flavour `.superworker/`
-  sits in the worktree along with the code, so they are written there and merged back together;
-  under the local flavour there is no `.superworker/` in the worktree at all (ignored files cannot be
-  checked out), so they land in the main tree and travel with the ledger commit. Probes and raw
-  output always land in the **main tree**'s `.superworker/nodes/<node uuid>/temp/`, the same under either
-  flavour. Those close commands run in the worktree's cwd without moving anywhere either: the
-  tool knows worktrees, and the write-back and the note land in the main tree by themselves
-- How the work is split inside one node (several subagents in parallel) has nothing to do with
-  worktrees: they all work in the same worktree, and the close merges back once
-- Overlapping file scope between two specs is not blocked: each does its own, the order falls out
-  of who merges first, and a collision is resolved at the merge-back step (nodes changing the
-  same batch of files should have been given a precedence edge by sw-route, and that is its debt)
-- Several lines' git writes on the main tree (merge-back, commit, push) hitting `index.lock` is a
-  momentary lock collision: wait a few seconds and re-run the same command, and when it still
-  will not free up after two or three tries, stop and hand it to the user; **the lock file
-  belongs to a live process and must not be deleted**
-
-**Merge back** (the close's step 3: Doc-sync has landed and `run.md` is written, and this step
-commits the whole node once and brings it back to the main tree, before the full run) — **all three
-steps run on the main tree**, `-C` points at the worktree, and nothing needs moving:
-
-1. commit this node once inside the worktree (code, docs, and for the commit flavour run.md and
-   the report set) with `git -C .superworker/worktrees/<node short id> add -A` and
-   `git -C .superworker/worktrees/<node short id> commit -m "feat: <what this node did>"`, then merge the
-   main tree's latest in: `git -C .superworker/worktrees/<node short id> merge <exit branch>` — a collision
-   is resolved inside the worktree, and the fast lane re-runs once it is resolved
-2. on the main tree, `git merge --squash sw/<node short id>`, then
-   `git commit -m "feat: <that same line>"` makes this node's `feat:` commit: one node is one commit
-   on the main tree, and the shape of history does not change
-3. the full run runs on the main tree (so it is the merged content that gets verified), and once
-   it passes, `git worktree remove .superworker/worktrees/<node short id>` and
-   `git branch -D sw/<node short id>`, then on to handoff → settle → commit the record → push →
-   advance.
-   Clear the worktree and the branch away right here rather than leaving them for the next node —
-   a taken short id stops the next fork and hands it to the user
-
-When the main tree is not on the exit branch, or the squash still collides (another line merged
-one more commit after you refreshed): stop and hand it to the user.
-
-**Take one more look at the main tree before reporting the full run's numbers**: when `git log`
-shows another line's commits landing after the merge-back (its merge-back, its commit), your full
-run verified a tree that is not the one you are handing over — re-run the full run, and then
-report the numbers.
-
-## The note and its readings
-
-The note is that JSON string passed to `handoff -o`. **Its shape is whatever
-`handoff --form <cycle>` prints right now** — a reading this line does not look at is not
-printed. The keys are `deliverable` / `acceptance` / `touched`, and a line with a reading set
-has one more, `reading`. Paths use forward slashes: that JSON string sits in PowerShell single
-quotes, so a backslash needs one more layer of escaping.
-
-- The tool **stores them as they are and checks no key at all** — an extra key does not block the
-  pipeline, and a missing one stops nobody: whether the note is complete is yours to check at the
-  close.
-- `acceptance` carries 1~3 items, written at the level of "what would be missing had this node not
-  run".
-- A reading is reported only when `handoff --form` prints its slot, and it carries what that
-  slot's own question asks for (the suite's wall clock: this run's measured seconds, taken with the
-  set of commands the project docs name). **A reading you did not measure has its key deleted whole**
-  — a missing number reads as "not known this run", and a 0 reads as "already measured at zero",
-  which makes a real debt look paid off.
-- A reading whose declaration draws on a source other than the ticket is computed by whatever owns
-  that source, so it never appears on the form and you never fill it in; which plugins are
-  installed, and what each one reads, is what `doctor` lists.
-
-## The dispatch path
-
-This dispatch step is opened by **the host**: the panel's cell and its automatic relay walk the same
-road (`dispatchCell` in `src/host/relay.ts`), and the native opener hands this node's prompt to the
-new session (`src/host/executor.ts`). The engine lands this cell's material first (only when the
-prompt is not on disk yet) and writes the `started` claim only once a session is really out — with
-that claim on disk, this cell is never dispatched a second time. **The host half is the applier
-now**: after a session it opened ends its turn, the host runs `advance` itself — so the worker's
-road stays `handoff` → `settle` → commit and push → the host opens the next session (with no host,
-run `advance` yourself). For who calls it, and where to look when it breaks, see
-`docs/conduct-dsh-dispatch.md`.
-
-**A process with no opener has no seam for opening a session**: `dispatch <cycle>` reads
-the `started` claim alone, and without one it refuses outright — exit code 2, not one byte
-written, naming the panel (超级工坊), where each prompt would land, and the panel landing the
-material when it dispatches that cell; `advance` prints the plan, pins the nodes and lands no
-material (that is the dispatch's step), and its opening step answers `spawn_error` only,
-claiming nothing. A rehearsal runs under `DSH_CONDUCT_SPAWN_DRY_RUN=1`: the call is made and
-answered, no session opens, and the `started` claim does not land either — so nothing has to be
-undone before a real dispatch. The tool blocks a double dispatch itself, so on seeing a refusal
-first check whether that node already has a session running — do not force your way in.
-
-## References
-
-The `docs/*.md` referenced here travel inside this skill: open them from the skill directory you are
-reading (`docs/conduct-state.md` sits under this skill's `docs/`).
-
-- The contract and the design: `docs/conduct-state.md` — the full set of `plan`'s actions, the
-  close's two ways in and the invariants are all in it (`holding` is a set of nodes, `parallel`
-  is this line's cap)
-- Which plugins are installed, and each one's tools and conventions: `doctor` lists what is
-  installed, and the skills each declaration ships state their own tools and conventions
-- Method skills: `~/.dsh/skills/<name>/SKILL.md` — named by the spec's `method: ` line; this is
-  the only place a name turns into a path (a deployment that pins `DSH_HOME` keeps that root under
-  `$DSH_HOME/skills` instead, so read the variable before reaching for the path)
-- Dispatch and authentication: `docs/conduct-dsh-dispatch.md`
-- The filter semantics for node tags: `docs/conduct-node-tags.md`
-- Role cards: `<this skill's directory>/subagent-prompts/` (execute / review / fix / doc-sync)
-- Write paths out as full absolute paths: a subagent gets no `~` expansion and has none of your
-  current `./`. Get this skill's directory once (`cd ~/.dsh/skills/sw-conduct/ && pwd`; with a
-  pinned `DSH_HOME`, `$DSH_HOME/skills/sw-conduct/`)
-
-## Anti-patterns
-
-Before starting, read [`./anti-patterns.md`](./anti-patterns.md) and check yourself against it.
+- State machine contract & invariants: [`docs/conduct-state.md`](docs/conduct-state.md)
+- Manual startup & cycle selection: [`docs/startup.md`](docs/startup.md)
+- Git sync, ledger commits & worktree runbook: [`docs/git-and-worktree.md`](docs/git-and-worktree.md)
+- Node close, handoff readings & `advance` actions: [`docs/close-and-handoff.md`](docs/close-and-handoff.md)
+- Node tag filter semantics: [`docs/conduct-node-tags.md`](docs/conduct-node-tags.md)
+- Host dispatch & relay internals: [`docs/conduct-dsh-dispatch.md`](docs/conduct-dsh-dispatch.md)
+- Role cards: `subagent-prompts/` (`execute.md` / `review.md` / `fix.md` / `doc-sync.md`)
+- Installed plugins & policy knobs: run `doctor`
+- **Anti-patterns**: read [`./anti-patterns.md`](./anti-patterns.md) before starting.

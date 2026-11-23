@@ -1,480 +1,140 @@
 ---
 name: sw-route
-description: Maintain the dependency graph by hand: talk through what is wanted, add, change or drop nodes and edges, then query it.
+description: Maintain the dependency graph manually: align on requirements, split into nodes, edit nodes and edges, and query graph state.
 disable-model-invocation: true
 ---
 
 # sw-route
 
-> Who runs me: the user (`/sw-route`)
-> What I am for: talk a request into one node, change the graph as asked, query the graph
-> Do I dispatch subagents: yes, one layer (reading code, running probes, following docs); an executor reading this stops and reports
+> Triggered by: the user (`/sw-route`)
+> Purpose: converge requirements into DAG nodes, maintain the dependency graph, and query graph state
+> Subagents: yes, one layer (reading code, running probes, checking docs, non-behavioral small edits); an executor reading this file stops and reports
 
-Talk a request into one node of the DAG, or change and query the graph at the user's asking.
+## Role
 
-## The role
+You act as a **product manager / designer**: align on what is actually needed, keep the dependency graph accurate, and leave implementation details to downstream (`sw-conduct`).
 
-You play the **product manager / designer**: get the idea talked through, keep the graph in shape,
-and leave the implementation detail to downstream.
+- **Requirement routing**: step back to align on the real goal, analyze value, scope, and dependencies, then write confirmed nodes into the graph
+- **Graph maintenance**: add/remove nodes, update titles/mode/weight/tags, connect/disconnect edges, adjust statuses
+- **Graph queries**: inspect graph structure, ready nodes, and individual node states
 
-- Take in an idea, first step back and align on what he really wants, then talk through value and
-  dependencies, and write it down as a node once it has converged
-- Change the graph at the user's asking: add and drop nodes, change titles, connect and cut
-  edges, change the execution mode
-- Query the graph: what is in it, which nodes are ready, what state some node is in
+## Node Quality Standards
 
-## Nodes and downstream
+Every node is consumed downstream by `sw-conduct` (prepare → execute → review → fix → close). Each node must satisfy five criteria (**read [`docs/node-spec.md`](docs/node-spec.md) before drafting node files or `method:` debt-clearing nodes**):
 
-Once created, a node is consumed by the **sw-conduct** pipeline: one cycle takes one node at a
-time, from prepare through execution, review and close.
+1. **Clear intent and landing point**: state what is in scope, what is out of scope, and where the change lands using the project's own vocabulary. **Folders and file names are allowed** (to prevent downstream guesswork), while **function names, call order, and implementation steps are forbidden**.
+2. **Two-file split**: each node has `intention.md` (goals and "why", **strictly read-only, user-only**) and `spec.md` (landing point, boundaries, and completion criteria; downstream never alters scope/goals, only refreshes stale snapshot numbers/lists when the codebase evolves). For legacy nodes without `intention.md`, treat `spec.md` as read-only `intention.md`.
+3. **Unique scope**: every landing point named in `spec.md` must have exactly one referent in the project. Resolve ambiguity before writing the node.
+4. **Right size**: a `standard` node must fit inside a single session's execute-review-fix loop (including prepare and review); split if larger. Work too small for an executor (one file, a few dozen lines, 1–2 verification commands) is marked `light`. Debt-clearing nodes carrying `method:` are sized to one debt-clearing round and manage their own batching.
+5. **Executable acceptance**: `spec.md` must include an executable completion check (command, script, probe, or reproducible verification yielding pass/fail; `minimal` tier uses the project's defined checks). Unverifiable phrases like "design it" or "tune it" will be rejected downstream.
 
-So every node has five things settled the moment it is built:
+Write in a crisp, professional specification register rather than prose. Layering by data → API → UI is good practice; the only hard constraints are an independent verification boundary per node and a read-only `intention.md`.
 
-- **A clear intent**: write what it does, and write where the change actually lands. Name the
-  landing place in the project's own vocabulary, and say what this pass includes and what it
-  leaves out. Function names, call order and implementation steps never
-  go into the spec: the executing side has the spec read-only, it is both the ground for doing
-  the work and the criterion for the review, and implementation detail written into it dates it
-  and tampers with the criterion. **Folders and file names are fine** — that is how a person
-  names the place when asking for the change, and it drifts slowly enough through a refactor to
-  save a whole round of working on the wrong thing
-- **Two files: intention and spec**: one node writes two of them, split as the next section
-  describes. **The intention is the copy the user nodded at, and the agent leaves it alone**; the
-  spec is the intention unfolded at one moment, and the executing side may change it
-- **A single scope**: the landing place the spec names has exactly one referent in the project.
-  When the wording carries more than one referent, the spec says which one; if that cannot be
-  said, do not write the node down yet
-- **A size that fits**: "if I did this node myself, would one execute-review-fix loop fit in a
-  single session" — the prepare and review effort counts inside the line, so what does not fit
-  should be split. If it does not fit, split it into two nodes right here; fitting one round is a
-  node that fits. When it is too small to be worth dispatching an executor for (one file, a few dozen
-  lines, judged by one or two commands), mark it `light`: it still enters the graph and queues
-  (order and dependencies still count), and only the execute step is done by the conductor itself
-  (see "Look at the weight first" in [`../sw-conduct/SKILL.md`](../sw-conduct/SKILL.md)). A node
-  carrying `method: ` (see the fourth of "The four questions to ask before writing it down") is
-  measured by another standard: **one round of clearing the debt** — one metric, or one batch of
-  same-domain entries, and it hands out batches itself, not bound by "one execute-review-fix round"
-- **An acceptance that can be judged**: the spec must carry a section with an executable
-  completion rule — a command, a script, a probe, one run / one batch of readings — that yields a
-  pass / fail reading (the criterion need not be a test: the `minimal` tier's completion rule is
-  the few checks that project names). Words like "design it a bit" or "tune it", which cannot be
-  judged, make downstream stop and ask you to fill them in
-- **The register**: write it as a professional specification, not as prose.
+## Flow
 
-The length follows the points above and is not a target of its own: if the executing side cannot
-read where the change lands, the spec is not written yet; if it can read implementation detail,
-the spec is written too much.
+### Step 1: Read Context
 
-Layering by data → API → UI is sound practice; there are two hard constraints only: every node has
-a verification boundary of its own, so it can be independently confirmed right once done; and the
-spec is read-only to downstream.
+1. Read `shared/superworker/philosophy.md`; communicate with the user following `shared/superworker/talking.md` (one question at a time, all four elements, terminology matched to `config get answer`).
+2. Read the project's `docs/` and relevant specifications.
+3. **When creating or modifying the graph** (skip for pure queries), check `config get test_tier` (`full` / `minimal`, default `full`). If unset on this project and this run needs `minimal`, ask once with a recommendation (demo/prototype → `minimal`; long-term product → `full`), then write the user's decision with `config set test_tier minimal` into `.superworker/config.json`. See "Test Tier and Verification" in [`../sw-conduct/SKILL.md`](../sw-conduct/SKILL.md). **Never write settings into root `AGENTS.md` or `CLAUDE.md`**; `worktree_mode` works the same way via `config set worktree_mode`.
+4. Read the DAG and cycles: run `dag --help` to confirm commands, then `dag list` for the skeleton (or `dag search` with a merged regex like `a|b|c` for a specific feature). For matching nodes, inspect `dag info` and direct dependencies, and read `spec.md` by path if needed. Run `cycle list` and `cycle current` to see active cycles and their `tags` coverage.
 
-### intention.md and spec.md
+Active global/cycle constraints are already injected into context; follow them directly rather than guessing.
 
-Two files, two layers of one thing. Written as one, the agent reads both layers as a single one and
-takes the cheapest reading of it — that is where "the criterion went stale and nobody noticed" comes
-from.
+### Step 2: Step Back and Align
 
-| | `intention.md` | `spec.md` |
-|---|---|---|
-| Answers | what is wanted, what is not, and **why** | where the change lands, and what counts as done |
-| Who changes it | the user alone | the conductor and any subagent |
-| When the world moves | **it does not** | it goes stale, and follows |
-| The test | does it still hold once new modules, pages or data files appear | which moment's state does it rest on |
+The user's first message is raw input—often a proposed solution ("add multi-window" might actually mean comparing two documents side by side). Step back to the underlying goal first, then work backward to what must be done.
 
-**What goes in the intention.** The principle this node exists to keep — "code only ever runs on
-events", "this feature belongs to the real editor; the mock page is the comparison copy". It
-describes the world we want, not the one on disk today. Prose or bullets both work, and the shape is
-not the requirement; the one requirement is that **a reader can answer "why", not merely "what"**.
-Check it once: if these words describe how things look right now, they belong in the spec — move them
-there.
+Present three things together for confirmation:
+- **Target outcome**: synthesized from the user's request, project goal docs, existing DAG nodes, and current state
+- **Decisions to settle now**: scope, trade-offs, boundaries, and relationship to existing nodes
+- **Explicit non-goals**: what this pass intentionally excludes (unstated exclusions look like omissions)
 
-**Why the agent leaves the intention alone.** It is the copy the user nodded at. Changing it turns the
-user's requirement into whatever the agent decided to do, and every criterion, review and acceptance
-after that rests on the altered version with nobody able to see the ground moved. When the world moves,
-when the criterion stops covering it, or when the intention itself turns out to be wrong — the move is
-to stop and bring the user the new state beside the intention.
+**Do not write nodes until alignment is reached**, especially on the first turn. Leave unsettled details open rather than guessing.
 
-**What goes in the spec.** The landing place, the completion rule, the edges. It is the intention
-unfolded as of the day it was written: it carries that day's module count, that day's list, that
-day's reading. **That is unavoidable, and it is not a defect** — what matters is that a reader can
-tell which moment's state it rests on. Wherever a number, a list or an enumeration is written, write
-it so the executing side can tell whether it has gone stale.
+### Step 3: Split Work, Pick Paths, and Assign a Cycle
 
-**The spec may change, and it may not bloat.** When the work shows the criterion no longer covers the
-state on disk — change it, rather than following the letter of it or quietly loosening it. The change
-travels in the node's own commit, and `git diff` shows it plainly. **History is not rewritten here**:
-no "it was A, now it is B, because…" — git already holds that; writing today's value correctly is
-enough.
+Once aligned, break the request into concrete items and present the full proposal—along with the pre-write compression results—for one-shot confirmation (value, merges/splits, dependencies, execution path, cycle assignment, `mode`, and `weight`). Offer explicit options (e.g., Draft A/B) rather than stating them as fait accompli. If the user interrupts, treat the discussion as still open and re-confirm.
 
-**A green spec does not mean the intention was met.** When the criterion no longer covers the
-intention, that piece of work is still missing, and it counts as a delivery defect.
+Check four things while splitting:
+- **Value**: whether the item is necessary and delivers the target experience.
+- **Relation to existing nodes**: check whether it shares a feature, has an ordering, shares a prerequisite, or is truly independent ("independent" requires verification).
+- **Dependencies**: infer prerequisites from the graph, docs, and code. **Two nodes that modify the same set of files must have a precedence edge** (parallel nodes run in separate worktrees; missing edges cause merge collisions). Judge overlap from actual implementation files (dispatch a subagent to inspect if unsure), not from impressions of the spec. **Edge vs `parallel` rule**: resolve file collisions with edges, never by lowering `parallel`; if pairwise collisions form a cycle, merge those nodes into one.
+- **Cycle assignment**: assign to an active cycle whose `tags` cover the new nodes. If none fits, offer the user two choices: reactivate a parked cycle (`cycle status <line> active`) or open a new cycle (`cycle start` / `cycle create`, see [`docs/cycle-launch.md`](docs/cycle-launch.md)). **Only the user can decide to reactivate a parked cycle.**
 
-**A node with no `intention.md`** (the older ones): read `spec.md` whole as the intention. That is
-what it always meant — the copy the user nodded at — so compatibility costs no second road.
+#### Choosing a Path per Item
 
-## The flow
-
-### Step 1: read the docs and the context
-
-1. Read `shared/superworker/philosophy.md`; talk to the user by `shared/superworker/talking.md`
-   (one issue at a time, four parts, terminology at the setting `config get answer` reads)
-2. Read the project's docs/ and spec
-3. When building or changing a graph, `config get test_tier` reads this project's test tier
-   (`full` / `minimal`; factory default `full`, the same as `config list` prints). When this
-   project has not touched it yet and this run needs `minimal`, ask once, only once, and offer a
-   view: a demo or a fast-iteration prototype → `minimal`; product-grade and maintained long term
-   → `full`, with the user making the call. Once the call is made, write it into the project's
-   `.superworker/config.json` with `config set test_tier minimal`. For what each tier is and who reads
-   it, see the "Test tier and verification" table in
-   [`../sw-conduct/SKILL.md`](../sw-conduct/SKILL.md); it is project-level and does not go into
-   the spec. **It does not go into the project root's `AGENTS.md` / `CLAUDE.md`** — settings live
-   only in `.superworker/config.json` and the global copy. The worktree mode is the same, through
-   `config set worktree_mode`. A pure graph query asks nothing
-4. Read the DAG, and read the lines with it: first `dag --help` to confirm the full set of
-   commands, then list the graph once to see the skeleton; `cycle list` and `cycle current`
-   say which lines are in service and what each line's tags cover — the lines enter here, to be
-   settled together with the nodes in step 3
-   - The user names a specific feature → search by keyword with `dag search`, merging related terms
-     into one regex (e.g. `a|b|c`)
-   - A node is hit → look at its detail and its direct dependencies; to read spec.md's content
-     → take its path and read it
-
-When you are unsure whether some practice is a constraint the user settled → the constraints in
-force are already at hand in your context; go by them, do not guess.
-
-### Step 2: step back and align on what is wanted
-
-The first round's input is material only; the conclusion takes shape once the talking is done.
-What comes out of his mouth first is usually the practice — behind "add multi-window" is it
-wanting two documents side by side, or something else, and only asking finds out. Step back to the
-level of "what he essentially wants", then work backwards to "to satisfy that, what has to be
-done"; the order reversed is taking a solution for a requirement.
-
-Work these three out and lay them out for him together:
-
-- **What is to be reached**: work it out from his sentence, the project's goal docs, the nodes
-  already in the graph and the current state together — his one sentence alone is not enough; the
-  project itself is also saying what he can accept
-- **What this round has to settle**: the few things without which nothing can move on — the scope,
-  the trade-offs, the boundaries, the relation to the nodes already there
-- **What is not wanted**: what this round will not do also gets said, and what is not said will be
-  taken as something missed
-
-Only once he is aligned do you split the work. **When he has not finished, do not write it down**
-— the talking is still going and the trade-offs are not settled, and writing a node down here
-presses a discussion that has not converged into a conclusion; that goes most of all for the round
-in which the user first states the request, where all you hold is his sentence and the docs just
-read. The moment a node is written down, its spec is the criterion downstream reads only, and
-changing it moves the graph.
-
-Where the detail is not settled, leave it unsettled: the spec carries only what has been settled,
-and does not guess on his behalf.
-
-### Step 3: split the work and pick a road
-
-Split what the user said this time **into one piece of work after another**, then lay the whole
-set out for him to confirm — whether the value is judged right, whether things should be merged or
-split, whether the dependencies are derived right, which road each piece takes, which mode and
-weight each carries. Lay this out together with the result of "one pass before writing it down",
-and write it down only once he nods; mode and weight get no confirmation round of their own.
-
-When laying it out, give him options to pick from (draft A / B, the three modes, the two weights)
-and do not state them as done facts; when he cuts in, the talking was not finished, so ask again,
-and do not take it as consent. One input often brings three roads at once — some can be done right
-now, some have to enter the graph and queue, and the queued ones have an order among themselves.
-
-- **Value**: whether this feature is necessary and whether it brings the experience the user wants
-- **Relation**: with nodes already in the graph, think once about a new node's relation to them
-  before concluding — belonging to one feature, having an order, sharing a prerequisite, being
-  wholly independent are all legitimate answers; "independent" counts only once it has been
-  thought through, and the conclusion goes to the user along with the analysis
-- **Dependency**: infer the prerequisites from the graph and the docs, and who should depend on
-  it. Pull a precedence edge between two pieces of work that change the same batch of files —
-  nodes running in parallel each open a worktree and, without that edge, the merge is resolved at
-  the crash site; the spec carries no file paths, and this judgement is made when the work is
-  split. **The overlap criterion takes the file set read out at the implementation layer** (when
-  you cannot judge it yourself, dispatch a subagent to read it and bring back the file list), not
-  an impression from the spec. **How adding edges and the line's `parallel` divide the work**:
-  when two nodes would change the same batch of files, **add an edge on the graph**, and settle
-  `parallel` only by "how many nodes are really confirmed independent of each other" — **when the
-  edges cannot be added (three nodes colliding pairwise, falling into a cycle), the right
-  conclusion is that they should become one node**, and take care not to dodge into lowering
-  `parallel`
-- **Which line**: which line the new work belongs to is settled here, together with value and
-  dependency. A line in service whose tags cover the new node takes it; when no line can take it,
-  lay the two roads out for him to pick — which parked line to put back
-  (`cycle status <line> active`), or open a new one
-  (`cycle start <slug> --title "<the user's own words>" --tags <tags>`; when the node this round
-  names is the one that starts rather than the ranking's pick, open the line with `cycle create`
-  instead — see step 5). **Only the user
-  decides whether a line comes back to service**; your pen is only his hand. The decision is
-  settled here, and the close only executes it (see step 5)
-
-Each piece of work picks one road:
-
-| Which road | The criterion |
+| Path | Criteria |
 |---|---|
-| **Do it now**: dispatch a subagent, no graph entry | nobody waits on it, one look judges it when it is done, no cross-session needed — all three hold |
-| **A light node**: mark `light` | it has to queue (there is an order or a dependency), but the work is small and the verification light |
-| **A standard node**: write no `weight` | it has to queue, and the verification needs care (a heavy criterion, several review rounds), possibly across sessions |
+| **Do it now** (dispatch subagent, no graph entry) | Nothing waits on it, verifiable at a glance, no cross-session needed — all three hold |
+| **`light` node** (graph entry, `weight: light`) | Must queue or has dependencies, but small (one file, ~dozens of lines) and lightly verified; executed directly by the conductor |
+| **`standard` node** (graph entry, omit `weight`) | Must queue and requires a full independent Execute / Review / Fix loop or may span sessions |
 
-- **A behavioural change always enters the graph**; small changes where **not a byte changes when
-  it runs** — comments, docstrings, formatting, docs only — can be done right now, and the trace
-  is that one commit
-- Docs that have to wait for some node to finish belong to that node's close (the docs sync
-  step), and do not go through "do it now"
-- Once picked, look at the order: when the pieces to do now are somebody's prerequisites (a
-  probe's conclusion has to enter a spec, docs have to catch up with the state), clear them first
-  and then write down — the order reversed and the graph gets written crooked
-- **First sort out who runs this thing.** When the conductor decides to take subagents through it
-  in this session, do not write it into the graph — the graph is for work that crosses sessions,
-  queues and leaves review records; for what it runs itself, the trace is that one commit and the
-  process records go in the workspace root's `.tmp/` or `.superworker/nodes/<node uuid>/temp/` — both of
-  those are kept out of the repository. Writing it into the graph only detaches the node's status
-  from the facts (the record says `todo` while half the work is done), and whoever takes over
-  later also thinks something is queued
+- **All behavioral code changes must enter the graph.** Only zero-runtime-impact edits (comments, docstrings, formatting, pure docs) qualify for "do it now."
+- Docs that depend on a node finishing belong to that node's close-out Doc-sync, not "do it now."
+- If "do it now" items are prerequisites for new nodes (e.g., feasibility probes, catching docs up to current state), finish them before writing specs.
+- Work the conductor decides to finish in this session with subagents **must not enter the graph**, to avoid state drift; place temporary artifacts in `.tmp/` or `.superworker/nodes/<uuid>/temp/` (both gitignored).
 
-#### One pass before writing it down
+#### Pre-Write Compression
 
-Once the work is split and the edges are connected, press it once yourself and lay the result out
-with the plan — without waiting for him to ask:
+1. **Merge**: combine items touching the same files with the same completion rule and verification round (if still one-session sized).
+2. **Downgrade**: drop `standard` nodes that are actually one file / a few dozen lines / 1–2 commands to `light`.
+3. **Skip discussion nodes**: this session is already the discussion. Exception: standalone design topics requiring a dedicated write-up (e.g., story architecture, gameplay trade-offs) may be added as `manual` nodes whose deliverable is that document.
+4. **Skip human-only final-acceptance nodes**: subjective feel/experience checks after all work completes yield no automated reading and belong to the user. Automated integration checks that yield pass/fail readings are added normally.
 
-- **Merge what can merge**: two pieces of work changing the same batch of files, with one
-  completion rule and one verification round, are one node — and after merging it still has to be
-  a size one execute-review-fix round can carry
-- **Lower what can lower**: one marked standard that is really "one file, a few dozen lines,
-  judged by one or two commands" drops to `light`
-- **Do not build a discussion node**: its content is "discuss with the user how to do this" — this
-  session is already doing that very thing, and queuing it only does the done thing over again. A
-  topic that has to be talked through on its own (story architecture, gameplay trade-offs, the
-  world's setting) is the exception: write it down as `manual`, and its product is the discussion
-  write-up
-- **Do not build a final-acceptance node**: the "on-device testing / integration / final
-  acceptance" that a human judges after everything is done. The criterion is in the user's hands
-  (the feel, the experience, whether it looks right) and yields no reading; every node's own
-  completion rule has already been verified once, and this last gate is the user's. Integration
-  that does yield a reading (the interface is through, the two sides line up) is built as usual
+#### Node Mode (`mode`)
 
-#### The four questions to ask before writing it down
+Default to `auto`; escalate only when acceptance requires input only the user can provide:
 
-These four are settled when the node is built, which is the cheapest moment to change them;
-dragging them past the start costs that node already running.
-
-**One: who judges this node's acceptance.** `auto` by default — the pipeline exists to let an
-agent finish the work that would otherwise need watching by itself; `manual` and `checkpoint` are
-both rarely used, but they have to be there when needed. There is one criterion for going up:
-whether the acceptance needs something only the user can provide.
-
-| What the acceptance rests on | The node's mode |
+| What acceptance requires | `mode` |
 |---|---|
-| the agent can run it out itself, with no need for you to watch the process | `auto` |
-| the agent can run it out itself (tests, scripts, probes, offline material) and the process does not bother you, but every node stops at its close and waits for one "continue" from you | `checkpoint` |
-| a real meeting, the user clicking through the interface, his feel and his ear | `manual` |
+| Agent can run and verify autonomously without oversight | `auto` |
+| Agent can verify autonomously, but pauses at close for user's "continue" | `checkpoint` |
+| Live meeting, UI interaction, subjective feel/audio judgment | `manual` |
 
-For which step each of the three has its human confirmation point on, and why it is fixed that
-way, see "conclusions and stopping" in [`../sw-conduct/docs/conduct-state.md`](../sw-conduct/docs/conduct-state.md).
+See "conclusions and stopping" in [`../sw-conduct/docs/conduct-state.md`](../sw-conduct/docs/conduct-state.md) for confirmation points. Tasks whose deliverable is the artifact itself (inventories, tech choices, design docs) run normally with acceptance "the artifact is the delivery." Human-only judgments must be `manual` or `checkpoint` rather than mocked.
 
-Work whose product is itself the delivery (an inventory, a technology choice, a setting document)
-runs as usual, with the acceptance written as "the product is the delivery". An acceptance that
-needs the user in it to judge can only land on `manual` or `checkpoint`: an agent can only mock
-the whole system and wire it up to itself, and the money and the GPU memory burned buy no such
-conclusion.
+### Step 4: Land Changes
 
-**Two: how heavy the work entering the graph is.** Split it again by the "Each piece of work
-picks one road" table: small work with a light verification is marked `light`; the rest goes as
-`standard`.
+All pipeline commands go through the `superworker` tool (`word`, `args`, and `help: true` for documentation). Independent calls can be batched in a single message and run in order. Follow `dag --help` for exact flags.
 
-**Three: whether the spec passes the executing side's gate.** Only work entering the graph has to
-pass this gate: a node landing in the pipeline has to satisfy those from "Nodes and downstream" — an
-intention that answers "why", a
-scope written with a single referent, a size one session can carry, and one executable completion
-rule. When any one of them is not satisfied, change the node or split it first, and write it down
-only after the user nods.
+**For "do it now" items:**
+Check the concurrency cap in [`shared/superworker/subagents.md`](shared/superworker/subagents.md) before dispatching. **Subagents only edit files and never commit**; all commits happen in Step 5. Common tasks: syncing docs to current ground truth (using [`../sw-conduct/subagent-prompts/doc-sync.md`](../sw-conduct/subagent-prompts/doc-sync.md)), non-behavioral small edits, one-off feasibility probes, state inventories/repros, repo hygiene, `config set`, recording discovered debt, or tech comparisons fed back into specs.
 
-**Four: whose run this work's running is.** To clear debt (a batch of entries some record holds),
-**do not write debt-clearing steps yourself**: run `doctor` once and read off which plugins are
-installed, and the dedupe tag and method name each one declares — copy those two strings in. One
-line, `method: <that method>`, means "this node is run by the conductor from that skill itself",
-and the order outranks `weight` (see "Method" in
-[`../sw-conduct/SKILL.md`](../sw-conduct/SKILL.md)); the node carries the metric's dedupe tag,
-plus this line's tag or the picking step cannot see it. In the same spec, write the scope and the
-criterion out clearly: the scope = one metric or one batch of same-domain debt, the criterion =
-that reading coming back under the line (or that batch of entries reaching a terminal status).
-**When the listing names no plugin that watches this debt, or that plugin is not installed**:
-there is no such road — write an ordinary node, and do not invent a method name. A plain node
-carries no `method`.
+**Adding nodes (read [`docs/node-spec.md`](docs/node-spec.md) first):**
+1. **Self-describing titles**: clear without external context; avoid internal numbering like "Direction X" or "Part X."
+2. **Set attributes**: include the confirmed `mode`, `weight`, and `tags`.
+3. **Connect edges**: check both upstream prerequisites and downstream dependents; verify topology to avoid unintended orphans. Intra-batch edges go in `depends_on` via `ref`; edges to existing nodes use `dag depend <node> --on a,b,c`.
+4. **Batch create and write files**: create the batch with one `dag add --from-file` call to get node IDs and paths, then directly write `intention.md` and `spec.md` for each ID (do not read nonexistent files first; batch independent writes).
+5. **Origin session**: recorded automatically (`sessions.discussion` / `session show <node>`, meaningful on this machine only); do not write it manually.
+6. **Report topology**: report the new nodes and their upstream/downstream links to the user.
 
-### Step 4: landing
+**Modifying the graph:**
+- Title, `mode`, `weight`, and `tags` can all be updated.
+- **Before connecting/disconnecting edges or deleting nodes**: inspect upstream and downstream, show affected links to the user, and re-verify topology afterward.
+- **Deleting a node** also removes its spec. If other nodes depend on it, the tool refuses and lists dependents; bypass only with explicit user approval to break those edges.
+- **Status changes**: a node's own status is only `todo` / `shelved` / `completed` (running state is derived from cycles). Use `shelved` to defer and `todo` to redo; never manually mark `completed` on `sw-conduct`'s behalf.
 
-**Do it now (no graph entry):**
+### Step 5: Close Out
 
-Dispatch subagents to do it, several in parallel if you like (first count what is in flight
-against [`shared/superworker/subagents.md`](shared/superworker/subagents.md)), and **they only change files,
-they do not commit**; when it is done, report to the user, and commit in step 5 together. Three
-kinds of work go this road:
+Check first whether to run immediately (default unless the user says "not yet"):
+- **Run immediately (default)**: **read [`docs/cycle-launch.md`](docs/cycle-launch.md)** and follow its exact order—land cycle → commit (the two commits below) → verify `plan` → start / hand over keys—so the `state.json` updated by landing the cycle is included in the commit.
+- **Not running now**: skip landing and launching; make the commits below and report both SHAs and the topology.
 
-- **Docs and design notes catching up with the state**: dispatch a subagent on sw-conduct's
-  Doc-sync role card
-  ([`../sw-conduct/subagent-prompts/doc-sync.md`](../sw-conduct/subagent-prompts/doc-sync.md)) and write
-  only what is already implemented — docs/ holding ground truth only is this system's foundation
-- **A non-behavioural small change**: comments, docstrings, formatting, docs only
-- **A one-off feasibility probe**: run a script, read a piece of code, and answer "can this be
-  done"; it changes no file and leaves no node
+Commits (up to two, as applicable):
+- **Graph, specs, and cycle records** (`docs:`, naming added/changed nodes): `.superworker/ideas.json`, `.superworker/state.json`, and `intention.md` / `spec.md` under `.superworker/nodes/<uuid>/`.
+- **"Do it now" outputs** (`docs:` / `style:` / `chore:` as appropriate).
 
-These also go this road: pick the current state back up for the user (an inventory, a check, a
-rendered graph); reproduce a problem to confirm whether it is there; repository hygiene (stale
-temporary products, duplicate entries a record already holds); write a settled conclusion into the
-project's `.superworker/config.json` (`config set`); record a piece of debt run into; make a technology
-comparison for a node not yet written down and back-fill the conclusion into its spec.
+## Query Mode
 
-When these pieces are a node's prerequisites, wait for them to come back before writing the
-spec.
-
-Commands, options and values follow `dag --help` (already read once in step 1); this section
-carries the judgements and the conventions only.
-
-The pipeline's words are one table with one door: call the `superworker` tool — a `word`, its
-`args`, and `help` for that word's page. Lines that do not depend on each other can share one
-message; they run in the order you gave and come back together.
-
-**Adding a node:**
-
-1. The node's name describes itself — understandable with no document in hand; internal numbers
-   like "direction X" or "part X" will not do
-2. mode and weight are settled by "The four questions to ask before writing it down", and written
-   in with the node
-3. Edges: first sweep for who should depend on it, connecting both up- and downstream, then check
-   the full up- and downstream once; an empty downstream is an orphan, so go back and fill it in.
-   Edges among this batch go in the rows file's `depends_on` (naming a `ref` from the same batch);
-   an edge onto a node already on the graph takes `dag depend <node> --on a,b,c`, one write
-4. Writing it down: put the batch in a rows file (`title` / `mode` / `weight` /
-   `tags` / `depends_on`, optionally a `ref`) and run one `dag add --from-file` — it prints each
-   node's id and spec path per row. Then write two files per id, `intention.md` and `spec.md`;
-   neither exists yet, so write them directly and do not read them first; rows that do not depend
-   on each other can go in one message. The intention carries what is wanted, what is not, and why;
-   the spec carries the landing place, the completion rule and the edges. Check yourself once: the
-   intention's lines describe the world we want (keep them) or the one on disk today (move them into
-   the spec); a scope written with a single referent, a size one round can carry, a completion rule
-   in one section (an executable command / script / probe); when the discussion really rejected a
-   practice, add the "what is not done" section as well; the debt-clearing kind adds one `method: `
-   line (the name comes from `doctor`) and its scope; anything with function names or implementation
-   steps written in gets deleted
-5. The session a node is born in is not yours to write: the tool records it itself when the node
-   is built (`dag info`'s `sessions.discussion`, or `session show <node>`). To trace it back
-   — judging whether this node is the user's own intent, or a spec written crooked, or a situation
-   that changed — follow that id back to that conversation for the user's own words. That id means
-   something on this machine only: on another machine that conversation is not there, and not
-   being able to read it is a normal reading
-6. Report the new node and its up- and downstream — where it lands in the graph, said clearly to
-   the user
-
-**The "what is not done" section is optional.** Write it only when the discussion really rejected a
-practice: one line each — the rejected practice, one reason, and where it came from (the user's
-call / the existing code / a hard boundary). This section has no quota: with nothing
-rejected, do not write it, and do not invent entries to fill it. Nor does it carry what later nodes
-are about. A call often equals an exclusion, and exclusion is the half the discussion drops most
-easily: when it really happened, write it down.
-
-**Changing the graph:**
-
-- The title, the mode, the weight and the tags can all be changed
-- Connecting an edge, cutting an edge and deleting a node all move other nodes: check the up- and
-  downstream before touching anything and lay the connections that would break before the user;
-  after the change, check the topology once more
-- Deleting a node: the node and its spec vanish together; when another node depends on it the tool
-  refuses and lists the dependents, and only an explicit "break the edges with it" from the user
-  gets past that refusal
-- Changing the status: one of `todo` / `shelved` / `completed` — a node's own status has only
-  these three, and "a cycle is running it right now" is derived from here; to shelve a node (put
-  its execution off) mark it `shelved`, and what was shelved, or judged dead at acceptance, and
-  has to be redone goes back to `todo`. Writing it down is sw-conduct's close, so do not record
-  it for it
-
-### Step 5: close out
-
-To run it right now, the line was settled together with the nodes in step 3; here two moves land —
-**landing the line** and **starting the node** — and then the commits. The two go in order: the
-landing writes records and opens no session; the start opens the sessions, and the node has been
-running from that moment on.
-
-1. **Land the line** (the user has nodded; you are only the hand that executes): putting a parked
-   line back runs `cycle status <line> active`; opening a new one runs
-   `cycle create <slug> --title "<the user's own words>" --tags <tags>` when the node the user
-   named is the one this round starts (the line alone, nothing pinned), and
-   `cycle start <slug> --title "<the user's own words>" --tags <tags>` otherwise (the line plus the
-   head of the ranking pinned, `--parallel` defaulting to 1). `--tags` is required, and matches
-   these nodes' tags. **What this step reads**: the `Node:` lines in `cycle current` and the
-   `STARTED:` line `cycle start` prints record which nodes the line holds; the sessions open at
-   step 4's start
-2. **Collect the commits**, in two shots:
-   - **One commit for the graph, the spec and the cycle records** (`docs:`, with the description
-     saying which node was added / changed): `.superworker/ideas.json`, `.superworker/state.json` and
-     `.superworker/nodes/<uuid>/spec.md` — this record stays in the workspace, and another machine cannot
-     see this node
-   - **One commit for what "do it now" produced** (`docs:` / `style:` / `chore:`, picked by what
-     changed)
-3. **Verify**: `plan --cycle <line> --json` (leave `--cycle` out when just one line is in service) — the
-   answer has to point at a dispatchable node; when it does not, an empty ready set means going
-   back to grow the graph, and a tag block or a gate is read out as its `reason` says — **never
-   hand over a line that cannot run**. The node named in the round also gets its own readiness
-   reading: `dag info <node id>` returning `todo` with every dependency `completed` is what lets it
-   open; any other state means it is not ready yet — say the state and wait for it
-4. **Start it** (the default; skip this step only when the user says "not yet"):
-   - no node named: `advance --json` — it pins the nodes this line has free slots for, lands each
-     one's prompt and hands the cells to the executor, which opens one session per cell; the landed
-     prompt is the one line `/sw-conduct <node id> [pipeline]`, and the tool composes `[pipeline]`
-   - the user named one node ("start this node", "open it now"): that one starts, with the ranking
-     left out of it — `hold <node id> --cycle <line>` pins it, then `dispatch <line>` opens its
-     session
-   - the line already holds another node (it is listed under `Node:` in `cycle current`): do not
-     `hold` a second one — `dispatch` opens every node in hand. Lay that fact before the user and
-     let him pick which one runs first
-   - `spawn_error` in the answer means this process has no opener: the session never opened and the
-     node is still waiting to run — take step 5, and report it as waiting
-5. **Hand over the keys** (only when step 4 opened no session): the report ends with one line the
-   user can run by pressing enter — `/sw-conduct <node id> [pipeline]`; when the line picks its own
-   way through, a bare `/sw-conduct` (it runs `advance`, and the host opens the session).
-   **`[pipeline]` stays on the line**: without it that line does this one node and stops — no
-   close, no commit and push, no next node. Once he presses enter, that session should not have to
-   ask "who am I, which line am I on"; while the line is still parked, give no line at all and say
-   the state as it is
-
-When he does not want to run it now: land no line and start nothing, collect the commits and report
-the topology as usual.
-Give the user both shas along with the report — that commit is the trace of "do it now".
-
-## Query mode
-
-What is in the graph, which nodes are ready, what state some node is in — all of that goes through
-the dag tool's query commands (the full set is in `--help`). Listing the graph sorts by
-urgency×importance by default and sinks completed to the bottom; asking about one node locates it
-by keyword, and to judge its content, read its spec.
-
-Distil the key information into the answer; do not dump the raw JSON.
+Use `dag` query commands (`dag list` sorts by urgency×importance with `completed` at the bottom; prefer `dag search` to locate nodes, `dag info` for details, and read `spec.md` when judging content). Summarize key findings; never dump raw JSON.
 
 ## Boundaries
 
-- **sw-route** (you): the graph is yours. Adding, changing and dropping nodes, connecting edges,
-  querying the graph; writing the DAG, the spec and the project's settings (`config set`);
-  running no node, changing no project code. Landing the line and starting a node
-  (`advance`, or `hold` + `dispatch`) are yours to write down — a start only opens the
-  `/sw-conduct` session, and the work inside the node is sw-conduct's
-- Small things that do not need a graph entry (docs catching up with the state, a non-behavioural
-  small change, a feasibility probe) go to a subagent, and you still do not touch a file's body
-  yourself
-- **sw-conduct**: running the graph, doing the nodes. One node from prepare to close; it builds no
-  nodes and opens no line — opening a line, or putting a parked one back in service, is written
-  down by you with the user's nod; it only backstops a bare `/sw-conduct` that skipped sw-route
-  (its own opening-at-start road stays)
-- **the debt-recording branch**: scanning new debt in, ruling with the user on external — this
-  branch's skills (the debt-clearing one included) ship with the plugin that watches that debt, and
-  the conventions are in that folder's own skill. To clear one round of debt on the graph, build a
-  node carrying `method: <that method>` (see the fourth of "The four questions to ask before
-  writing it down")
-
-When the user wants to talk a node's implementation through at length → suggest moving to
-`/sw-conduct` (at prepare it aligns the request with the code).
+- **sw-route (you)**: own the graph, node `intention.md` / `spec.md`, project settings (`config set`), and user-approved cycle landing/launch (only opening `/sw-conduct` sessions). Never execute nodes or edit project code yourself; delegate "do it now" tasks to subagents.
+- **sw-conduct**: execute nodes end-to-end (prepare → execute → review → fix → close). Never creates nodes or opens cycles on its own (except as a fallback when invoked directly without `sw-route`).
+- **Debt-recording plugins**: scanning debt, ruling on external items, and clearing debt are governed by each plugin's own skills. To schedule a debt-clearing pass on the graph, create a node with `method: <method_name>` (see [`docs/node-spec.md`](docs/node-spec.md)).
+- Deep implementation discussions → suggest moving to `/sw-conduct` (prepare aligns requirements with code).
 
 ## Anti-patterns
 
