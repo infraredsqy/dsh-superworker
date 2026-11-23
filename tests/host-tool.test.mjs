@@ -253,6 +253,34 @@ test('The condition is total: an unreadable session and a missing agent answer n
   assert.equal(offersTool(ctx, { id: 'agent-unknown' }), false, 'no cwd, no record: the sandbox root answers nothing')
 })
 
+test('A step with nothing to place gets no root: the sandbox policy root does not stand in for a missing identity', async () => {
+  /* The two facts this door reads before it asks anything are the step's own cwd and its identity. A
+   * step carrying neither is not a step this line can place, so the answer is "no" — even when the
+   * sandbox policy's root *would* have a record and the other doors (the injection's provider, the
+   * gateway) would happily answer it. That difference is the seam's `sessionless: 'none'` field.
+   *
+   * It is a reading of its own because the branch is otherwise invisible: a fixture whose sandbox root
+   * holds no record cannot tell "did not fall through" from "fell through and found nothing". Here the
+   * sandbox root carries one, so a door that fell through would say yes. */
+  const root = mkdtempSync(join(tmpdir(), 'superworker-workspace-'))
+  mkdirSync(join(root, '.superworker'), { recursive: true })
+  try {
+    /* One root for both faces, so the sandbox policy really does name the record tree. */
+    const { ctx } = fakeContext({ sandboxRoot: root, bus: true, tools: true, provide: true, effect: true })
+    apply(ctx)
+    assert.equal(hasPipelineRecord(root), true, 'the sandbox root really carries a record')
+    /* An agent with an identity: the live store knows no such session, so the order goes on to the
+     * sandbox root and finds it. That is the answer the pure-fallback doors always gave. */
+    assert.equal(offersTool(ctx, { id: 'agent-1' }), true, 'an identified step reaches the sandbox root')
+    /* No identity and no cwd: not placeable, whatever the sandbox root holds. */
+    assert.equal(offersTool(ctx, { id: undefined }), false, 'a step with no identity must not borrow the sandbox root')
+    assert.equal(offersTool(ctx, {}), false, 'a step carrying neither fact must not borrow the sandbox root')
+    assert.equal(offersTool(ctx, { session: { header: { cwd: '' } } }), false, 'an empty cwd names nothing here either')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('A registry that cannot gate is left alone: without `resolve` a tool would be handed to every agent, so none is registered', () => {
   const { ctx } = context()
   let called = false

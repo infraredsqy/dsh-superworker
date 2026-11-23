@@ -59,7 +59,6 @@
  * doors open on bare skill invocations, spelled beside their openers.
  */
 import { randomUUID } from 'node:crypto'
-import { realpath } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 /* The declaration merges for `agents` and the agent events live on the package entries; type-only, nothing enters the runtime. */
 import type {} from '@deepseek-ai/dsh-agent'
@@ -158,26 +157,6 @@ function inLine<T>(root: string, step: () => Promise<T>): Promise<T> {
   const mine = ahead.then(step, step)
   queues.set(root, mine.then(() => undefined, () => undefined))
   return mine
-}
-
-/**
- * One workspace root in its canonical spelling: the `realpath` of what the caller named, or the
- * name itself when that cannot be resolved (the path does not exist yet, or the platform refuses
- * the call) — a spelling is not worth refusing an open over.
- *
- * The installed workspace layer compares the session header's `cwd` against the record it holds
- * after resolving both: macOS's `/tmp` → `/private/tmp`, a symlinked home, a Windows short (8.3)
- * name or another case are all the same workspace in different letters. Taking this once, at the
- * entry, is what keeps the queue key, the `create()` call and `meta.cwd` one spelling: a second
- * spelling of one root would otherwise queue a second line and fail its attach only after the
- * session was already minted.
- */
-export async function canonicalWorkspaceRoot(root: string): Promise<string> {
-  try {
-    return await realpath(root)
-  } catch {
-    return root
-  }
 }
 
 /** Why an open stopped after (or without) a session: the reason rides verbatim as the refusal's detail. */
@@ -341,10 +320,14 @@ export async function openNodeSession(
   const named = segmentFailure(cycle) ?? segmentFailure(node)
   if (named !== undefined) return named
 
-  /* One canonical spelling, taken once here: the record reads/writes below, the queue this open
-   * joins, the `create()` call and the workspace it is attached to all name the same directory —
-   * whatever letters the caller used. */
-  const root = await canonicalWorkspaceRoot(workspaceRoot)
+  /* The one canonical spelling this open runs under, asked of the one root seam: the record reads
+   * and writes below, the queue this open joins, the `create()` call and the workspace it is
+   * attached to all name the same directory — whatever letters the caller used. The caller's root
+   * rides as the seam's `named` field, read there as the root it is rather than as "not named"
+   * (`emptyNamed: 'root'`): an empty string is the empty root, and the prompt read below refuses it
+   * exactly as it did before this seam existed. The spelling is the seam's `canonicalRoot`, taken
+   * here once and then reused, so nothing below this line spells the root again. */
+  const root = await (await workspaceRootOf(ctx, { sessionId, named: workspaceRoot, emptyNamed: 'root' })).canonicalRoot()
 
   /* The prompt read takes a signal, and nothing here is cancellable: an open is a handful of local
    * steps, and the answer is the session, so there is no stretch worth aborting. */
@@ -420,17 +403,31 @@ async function openConsult(
   const side = sessionSideOf(ctx)
   if ('code' in side) return side
 
-  /* One canonical spelling, taken once here: the queue this open joins, the `create()` call and
-   * the workspace it is attached to all name the same directory — whatever letters the caller
-   * used, or none. An empty name falls back to the calling session's own root, and a root that
-   * cannot be resolved at all is an open refusal, not a thrown error. */
-  let named: string
+  /* The one canonical spelling this open runs under, asked of the one root seam: the queue this
+   * open joins, the `create()` call and the workspace it is attached to all name the same directory
+   * — whatever letters the caller used, or none. An empty name is not named at all, so the seam
+   * settles the calling session's own root — that is this door's own reading of `''`, spelled here
+   * rather than at the seam (the node open beside it takes the other one), and it is the convention
+   * the paragraph above states.
+   *
+   * A value that is not there at all — `undefined` or `null` — is the other case, and it is this
+   * door's own too: the open refuses (`absentNamed: 'refuse'`) rather than falling back to the
+   * calling session's workspace, because that fallback is a session opened on a tree nobody named.
+   * That is the answer this door gave before the seam existed (it read `.length` off the value and
+   * the throw became this refusal).
+   *
+   * Everything else keeps the reading this door always made of its argument, `namedOf: 'length'`:
+   * HEAD asked `workspaceRoot.length > 0`, a property read, so an array, a boxed string, a
+   * `{ length: 1 }` and a `Uint8Array` were names there and rode into the resolver, which refused
+   * them — not names of a directory, but names all the same, and the open failed on them rather than
+   * falling back to the session. An empty string is the one value with `length === 0`, so this is
+   * also what keeps the convention above: `''` is not named, and the session's own root answers. */
+  let root: string
   try {
-    named = workspaceRoot.length > 0 ? workspaceRoot : await workspaceRootOf(ctx, sessionId)
+    root = await (await workspaceRootOf(ctx, { sessionId, named: workspaceRoot, absentNamed: 'refuse', namedOf: 'length' })).canonicalRoot()
   } catch (error) {
     return openFailure(messageOf(error))
   }
-  const root = await canonicalWorkspaceRoot(named)
 
   const preset = await presetSideOf(ctx)
   if ('code' in preset) return preset

@@ -14,7 +14,13 @@
  * Two shapes are deliberately narrow. {@link LogFace} is one verb with a fallback order, because the
  * hosts in front of us carry any subset of the three levels. {@link EffectFace} is the lifecycle seam
  * an unload's undo hangs on, taken as a callback rather than read off the context by each caller.
+ *
+ * The workspace root — "which tree does this session work in" — is the one fact every module here
+ * asks, so it is answered here too: one resolution ({@link workspaceRootOf}) over one enumerated
+ * fallback order, and one canonical spelling ({@link canonicalRootOf}). A module states which door it
+ * is through the question it asks, never by carrying a fallback order of its own.
  */
+import { realpath } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 /* The declaration merges for these services live on the package entries; type-only, nothing enters the runtime. */
 import type {} from '@deepseek-ai/dsh-agent'
@@ -90,25 +96,6 @@ export function toolsOf<Definition>(ctx: unknown): ToolRegistryPort<Definition> 
   if (typeof (tools as { register?: unknown }).register !== 'function') return undefined
   if (typeof (tools as { resolve?: unknown }).resolve !== 'function') return undefined
   return tools as ToolRegistryPort<Definition>
-}
-
-/**
- * The workspace root one agent sits in right now, as the wake reads it: the live session's own cwd,
- * else the root the sandbox policy records.
- *
- * The same order {@link workspaceRootOf} reads, minus the persisted header — a live agent always has
- * one — and synchronous on purpose: this runs inside a step proposal, before the request is
- * assembled, not in a tool body that may await.
- */
-export function liveWorkspaceRootOf(ctx: Context, agentId: string): string | undefined {
-  const sessions = (ctx as unknown as { sessions?: { get?: (id: string) => unknown } }).sessions
-  const live = typeof sessions?.get === 'function'
-    ? (sessions.get(agentId) as { header?: { cwd?: unknown } } | undefined)
-    : undefined
-  const cwd = live?.header?.cwd
-  if (typeof cwd === 'string' && cwd.length > 0) return cwd
-  const fallback = (ctx as unknown as { sandboxPolicy?: { workspaceRoot?: unknown } }).sandboxPolicy?.workspaceRoot
-  return typeof fallback === 'string' && fallback.length > 0 ? fallback : undefined
 }
 
 /** The effect seam (cordis's own): run once, with the result collected as an effect of the calling plugin. */
@@ -346,19 +333,375 @@ export function aliveAgentIds(ctx: Context): readonly string[] | null {
   }
 }
 
+/** A string that really names a place; anything else (an empty string, a number, nothing) names none. */
+function nonEmpty(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
 /**
- * Resolve the workspace root from the session identity: ask the live session first, and only if there
- * is no live session header consult the persisted one; when neither has a cwd (including a session
- * nobody recognizes), fall back to the root recorded by the sandbox policy. The workspace file
- * gateway's own resolution follows the same order, so the root resolved here is the same one it reads
- * files from.
+ * The other reading this half has of "this value names a place": whatever `.length` reads `> 0` off,
+ * which is the property read HEAD's consult open made of its argument (`workspaceRoot.length > 0`).
+ *
+ * A name by this reading is not a path — an array, a boxed string, a `{ length: 1 }`, a `Uint8Array`
+ * — and the resolver refuses it below exactly as it refuses any other name that is not a directory.
+ * That refusal is the answer; what must not happen is the value being read as "nobody named a root",
+ * which would drop the order onto the calling session's own workspace.
+ *
+ * The comparison is spelled the way that door spelled it, as a property read compared with `>`, so a
+ * length that is not a number but compares greater than zero answers here as it answered there.
  */
-export async function workspaceRootOf(ctx: Context, sessionId: SessionId): Promise<string> {
-  const live = ctx.sessions.get(sessionId)?.header
-  const stored = live === undefined ? await ctx.get('sessionPersistence')?.stat(sessionId) : undefined
-  const cwd = (live ?? stored?.header)?.cwd
-  if (typeof cwd === 'string' && cwd.length > 0) return cwd
-  return ctx.sandboxPolicy.workspaceRoot
+function namedIfLonger(value: unknown): unknown {
+  const length = (value as { readonly length?: unknown }).length
+  return (length as number) > 0 ? value : undefined
+}
+
+/**
+ * What one question's `named` settled to.
+ *
+ * `handed` is the half a value cannot carry: a root a door was handed is kept verbatim and nothing
+ * below it is consulted, and a handed `undefined` is *that* — a root no resolver can use — rather
+ * than "nobody named one". Stating the two apart is what keeps the order from falling through to the
+ * session side on an argument somebody did hand over.
+ */
+interface NamedRoot {
+  readonly handed: boolean
+  readonly value: string | undefined
+}
+
+/**
+ * The reading of `named`, taken once, under the fields that say which one a door means.
+ *
+ * `emptyNamed: 'root'` — the dispatch relay and the node opener — means "the thing I was handed is the
+ * root", so **the field being present** is the whole criterion: never the value's type, and never its
+ * usability. `''`, `null`, a number and an explicit `undefined` all ride verbatim into
+ * {@link canonicalRootOf}, whose `realpath` refuses them, and that refusal is exactly what these doors
+ * answered before this seam existed. Filtering on `typeof value === 'string'` is the one thing this
+ * must never do: a value that is not a string would read as "nobody named a root", the order would fall
+ * through to this session's own workspace, and a call that named no usable root would open a session
+ * in — and land a claim on — a tree it never named.
+ *
+ * The default `'unnamed'` reading — the panel's endpoints — is the other way round: a name is a
+ * non-empty string, so anything else is not one and the order moves on to `cwd` and the session side
+ * (`namedOf: 'non-empty'`).
+ *
+ * `namedOf` is the criterion itself, and it is the third axis rather than part of `emptyNamed`: what
+ * a door reads an **empty** name as and what it reads a **non-string** as are two different
+ * questions, and the consult open answers them differently from the panel's endpoints. Its
+ * `'length'` setting is HEAD's own read (`workspaceRoot.length > 0`), which counts an array, a boxed
+ * string and a `{ length: 1 }` as names and hands them on — see
+ * {@link WorkspaceRootQuestion.namedOf} for which door states which one.
+ *
+ * `absentNamed` then splits the one value neither reading can treat alike: a `named` that is `null` or
+ * `undefined` is a value that is not there at all, as opposed to a value that is there and is not a
+ * path (`42`, `''`). See {@link WorkspaceRootQuestion.absentNamed} for the two answers — and note it
+ * is asked **before** either criterion, because both of them read a property off the value and that
+ * read is what a door refusing one must never perform.
+ *
+ * The value is cast to the doors' own `string` here, once: the wire delivers whatever a caller sent,
+ * and this is the single place the two part, so no door has to spell the cast or the lie.
+ */
+function namedRootOf(question: WorkspaceRootQuestion): NamedRoot {
+  if (question.emptyNamed === 'root') {
+    return { handed: 'named' in question, value: question.named as string | undefined }
+  }
+  if (question.named === null || question.named === undefined) {
+    /* A root that is not there at all, at a door that refuses one: the throw is caught by that door
+     * (the consult open) and answered as its `open-failed`, which is the answer it gave before this
+     * seam existed — it read `.length` off the value, and that read threw. */
+    if (question.absentNamed === 'refuse') {
+      throw new Error(`the workspace root handed to this open is ${question.named === null ? 'null' : 'undefined'}: there is no directory in it to open at`)
+    }
+    return { handed: false, value: undefined }
+  }
+  const value = question.namedOf === 'length' ? namedIfLonger(question.named) : nonEmpty(question.named)
+  return { handed: value !== undefined, value: value as string | undefined }
+}
+
+/** One session header, as far as this file reads one. */
+type HeaderLike = { readonly cwd?: unknown }
+
+/** The tree one session works in, as the one seam answers it. */
+export interface WorkspaceRoot {
+  /**
+   * The root the question's order lands on, in the spelling the question carried: the root a caller
+   * named, the cwd a session header holds, or the sandbox policy's root. A door that answered this
+   * spelling before still takes this half, so its answer is the same string it was.
+   */
+  readonly root: string
+  /**
+   * The same root in the one canonical spelling, taken on demand.
+   *
+   * A member answering a promise rather than a second string, because the doors that only read (the
+   * gateway's endpoints, the agent-facing tool) must not start paying a filesystem call for a half
+   * they discard, and because one of the two readers the host asks synchronously cannot await one at
+   * all.
+   */
+  canonicalRoot(): Promise<string>
+}
+
+/**
+ * One workspace root in its canonical spelling: the `realpath` of what the caller named, or the name
+ * itself when that cannot be resolved (the path does not exist yet, or the platform refuses the call)
+ * — a spelling is not worth refusing an open over.
+ *
+ * The installed workspace layer compares the session header's `cwd` against the record it holds after
+ * resolving both: macOS's `/tmp` → `/private/tmp`, a symlinked home, a Windows short (8.3) name or
+ * another case are all the same workspace in different letters. Taking this once, at the entry, is
+ * what keeps the queue key, the `create()` call and `meta.cwd` one spelling: a second spelling of one
+ * root would otherwise queue a second line and fail its attach only after the session was minted.
+ */
+export async function canonicalRootOf(root: string): Promise<string> {
+  try {
+    return await realpath(root)
+  } catch {
+    return root
+  }
+}
+
+/**
+ * The one question this half asks about a workspace root, and the one place its answer is settled.
+ *
+ * Every door asks it — the wake's step condition, the instruction injection, the gateway's endpoints,
+ * the dispatch relay, the session opener and the agent-facing tool — and what used to be a fallback
+ * order per door is now the fields below:
+ *
+ * - a door that was handed a root names it in `named`, and a named root wins over everything read off
+ *   the session: which workspace a reader is looking at has nothing to do with which one the session
+ *   sits in, and that is the whole point of the panel's selector;
+ * - what an **empty** string in `named` is, is the door's own answer — not the seam's. The panel's
+ *   endpoints read `''` as *not named* (the selector hands it back to mean "this session's own
+ *   workspace"), while the dispatch relay and the node opener take the root they were handed as it
+ *   came, empty included, and refuse an empty one exactly as they did before this seam existed. That
+ *   difference is `emptyNamed` below; it is not a fallback order of its own and no door may spell it
+ *   at its call site;
+ * - what counts as a **name** in the first place is the door's own answer too, and the doors did not
+ *   agree before this seam: the panel's endpoints asked "is this a non-empty string", while the
+ *   consult open asked "does `.length` read greater than zero" — a property read, so a non-string
+ *   carrying a length was a name there. Levelling the two out is what three rounds of this change got
+ *   wrong in three different shapes (an empty string, then `undefined`/`null`/a number, then a
+ *   `{ length: 1 }`). That criterion is `namedOf` below; a door that was handed its root
+ *   unconditionally states neither, because the field's presence is the whole of it;
+ * - a door that already holds a cwd off the object in its hand passes it as `cwd`, read before any
+ *   service is asked (the wake reads it off the step's own agent);
+ * - a door that cannot await says `synchronous: true`, and its answer stops at the live session
+ *   store: the persisted header is a disk read, and those two readers run inside a step proposal and
+ *   inside a synchronous context provider;
+ * - a door holding **no identity at all** — no root named, no cwd, no session to ask under — either
+ *   falls through to the sandbox policy's root or answers "nothing at all", stated as `sessionless`
+ *   (see {@link SynchronousWorkspaceRootQuestion}: the step condition is the one door that answers
+ *   "nothing").
+ *
+ * The order itself, spelled once here: `named` → `cwd` → the live session's header → the persisted
+ * session's header → the sandbox policy's root. The persisted header is consulted only when the live
+ * store knows no such session at all: a live session whose header carries no cwd has already
+ * answered, and asking the disk after it would let a stale record contradict the running session. The
+ * last step is the one `sessionless` governs.
+ */
+export interface WorkspaceRootQuestion {
+  /** The session whose root is asked for. */
+  readonly sessionId?: string | undefined
+  /** A root the caller was handed; see `emptyNamed` and `namedOf` for what this door makes of it. */
+  readonly named?: string | undefined
+  /**
+   * What an empty `named` is at this door:
+   *
+   * - `'unnamed'` (the default, and what the panel's endpoints answer): not a name at all, so the
+   *   order moves on to `cwd` and the session side;
+   * - `'root'` (the dispatch relay and the node opener): a root like any other, used as it came. An
+   *   empty string is then the empty root — what those doors were handed, and refused, before this
+   *   seam existed.
+   */
+  readonly emptyNamed?: 'unnamed' | 'root'
+  /**
+   * What counts as a name at a door reading the default `'unnamed'` way — the criterion itself, which
+   * HEAD spelled differently at different doors and which no one reading may level out:
+   *
+   * - `'non-empty'` (the default, and what the panel's six endpoints answer): a name is a non-empty
+   *   string, so a value of any other type is not one and the order moves on to `cwd` and the session
+   *   side. This is what `rootFor` read (`typeof workspaceRoot === 'string' && workspaceRoot.length > 0`);
+   * - `'length'` (the consult open): a name is whatever `.length` reads greater than zero off — which
+   *   is HEAD's `workspaceRoot.length > 0`, a **property read**, so an array, a boxed string, a
+   *   `{ length: 1 }` and a `Uint8Array` are all names there and are handed on to the resolver, which
+   *   refuses them exactly as it refused them before this seam. Reading that value as "not named"
+   *   would drop the order onto the calling session's own workspace: a session opened on a tree
+   *   nobody named, which is the one thing this door's refusal exists to prevent.
+   *
+   * Both readings are asked only of a value that is **there**: `null` and `undefined` are settled by
+   * `absentNamed` first, since reading a property off either is the throw that door answers.
+   *
+   * A door that was handed its root unconditionally — the relay's three entries and the node opener —
+   * states `emptyNamed: 'root'` and needs no criterion at all: the field's presence is the whole of it.
+   */
+  readonly namedOf?: 'non-empty' | 'length'
+  /**
+   * What a `named` that is not there at all — `null` or `undefined`, as opposed to a value that is
+   * there and is not a path (`''`, `42`) — is worth at a door reading the default `'unnamed'` way:
+   *
+   * - `'fall-through'` (the default, and what the panel's endpoints answer): not a name, so the order
+   *   moves on to `cwd` and the session side, exactly as those doors read it before this seam;
+   * - `'refuse'` (the consult open): the open refuses, which is what that door answered before this
+   *   seam existed — it read `.length` off the value, and that read threw into the refusal it returns.
+   *   An open handed a root it cannot even read must not quietly open a session at the calling
+   *   session's workspace instead: that is a record written on a tree nobody named.
+   *
+   * This is an axis of its own, never a third `emptyNamed`: `'unnamed'` still treats `''` and `42` as
+   * "not a name" and moves on, which is what the consult open answered for both before this seam.
+   */
+  readonly absentNamed?: 'fall-through' | 'refuse'
+  /** A cwd the caller already holds off the object in its hand; anything but a non-empty string names nothing. */
+  readonly cwd?: unknown
+}
+
+/**
+ * The question in the form the two readers the host asks without awaiting a turn can take: a step's
+ * tool condition and a runtime-context provider. Its answer is the plain root, and `undefined` means
+ * this host cannot name a workspace at all.
+ */
+export interface SynchronousWorkspaceRootQuestion extends WorkspaceRootQuestion {
+  readonly synchronous: true
+  /**
+   * What a question that names **no session at all** is worth at this door — no `sessionId`, and
+   * nothing named or held (`named`/`cwd` both empty or absent). A question that does name a session
+   * the store knows nothing about is not this case: it still falls through to the sandbox root.
+   *
+   * - `'sandbox'` (the default, and what the injection's provider answers): the order goes on to the
+   *   sandbox policy's root, as that door always read it;
+   * - `'none'` (the wake's step condition): no root at all, because a step whose workspace nobody
+   *   named is not a step this line can place. That has been this door's answer since it read the
+   *   two facts itself; it is a field here rather than a guard at the call site, which would be one
+   *   door carrying a fallback order of its own.
+   */
+  readonly sessionless?: 'sandbox' | 'none'
+}
+
+/** What the session side of the order answered: the root it could name, and the live header it read. */
+interface SessionSideRoot {
+  /**
+   * Whether this stretch answered at all — and the answer may be a root no resolver can use. A door
+   * handed `undefined` is answered `undefined`, and `root` alone cannot say that apart from "nothing
+   * here answered, go on to the persisted header and the sandbox root".
+   */
+  readonly handed: boolean
+  readonly root: string | undefined
+  /** The live header, when the store knew this session — what tells "no live session" from "a live session with no cwd". */
+  readonly live: HeaderLike | undefined
+}
+
+export function workspaceRootOf(ctx: Context, question: SynchronousWorkspaceRootQuestion): string | undefined
+export function workspaceRootOf(ctx: Context, question: WorkspaceRootQuestion): Promise<WorkspaceRoot>
+export function workspaceRootOf(
+  ctx: Context,
+  question: WorkspaceRootQuestion & { readonly synchronous?: true; readonly sessionless?: 'sandbox' | 'none' },
+): string | undefined | Promise<WorkspaceRoot> {
+  /* The two forms read the live session store differently, because they always have: the
+   * asynchronous doors ask the service this context provides (a host that carries none has its open
+   * refuse, which is an answer those doors already gave), while the synchronous ones read it
+   * structurally (a stand-in with no session service at all is a host that knows no session, not a
+   * broken one — and neither reader may throw into a step proposal or an assembly). Both forms were
+   * written that way before this seam existed, and neither is this change's to alter. */
+  const synchronous = question.synchronous === true
+  const side = sessionSideRootOf(ctx, question, synchronous)
+  if (synchronous) {
+    /* A handed root ends the order here, even when it is `undefined`: the door was handed that and
+     * nothing below it is consulted. Nothing is asked of the sandbox root or `sessionless` on its
+     * behalf — those answer for a question that named and held nothing. */
+    if (side.handed) return side.root
+    /* Nothing from the cwd or the live header. `sessionless` speaks only for a question that named
+     * no session at all; one that named a session the store cannot place keeps falling through to
+     * the sandbox root, which is where both synchronous readers have always ended. */
+    if (question.sessionless === 'none' && question.sessionId === undefined) return undefined
+    return sandboxRootIfAny(ctx)
+  }
+  return settledRootOf(ctx, question, side)
+}
+
+/**
+ * The session-side stretch of the order, shared by both forms: what the caller named, what it already
+ * holds, and what the live store says. Neither of the first two costs a service call, so a door that
+ * was handed a root never touches the session store at all.
+ *
+ * `named` is read by {@link namedRootOf}, once: a door that was handed a root skips the rest of this
+ * stretch altogether — whatever the value was, since a root nobody can resolve is still the root that
+ * door was handed — and a door that was not moves on to `cwd` and the session side.
+ * @param structural - Whether the live store is read structurally (see {@link workspaceRootOf}).
+ */
+function sessionSideRootOf(ctx: Context, question: WorkspaceRootQuestion, structural: boolean): SessionSideRoot {
+  const named = namedRootOf(question)
+  /* The cast is the one place the doors' `string` and the wire's any-value part: a handed root is
+   * kept verbatim, and the resolver refuses it downstream exactly as that door's own root was got
+   * before this seam. Naming it here keeps every door from spelling the same lie. */
+  if (named.handed) return { handed: true, root: named.value as string, live: undefined }
+  const spoken = nonEmpty(question.cwd)
+  if (spoken !== undefined) return { handed: true, root: spoken, live: undefined }
+  if (question.sessionId === undefined) return { handed: false, root: undefined, live: undefined }
+  const live = structural
+    ? liveHeaderIfAny(ctx, question.sessionId)
+    : ctx.sessions.get(question.sessionId as SessionId)?.header
+  const held = nonEmpty(live?.cwd)
+  return { handed: held !== undefined, root: held, live }
+}
+
+/**
+ * The asynchronous finish: the persisted header — only for a session the live store does not know —
+ * and then the sandbox policy's root, read as the inject requirement it is, so a host that lost it
+ * has its open refuse with that reason rather than open at an empty path.
+ */
+async function settledRootOf(
+  ctx: Context,
+  question: WorkspaceRootQuestion,
+  side: SessionSideRoot,
+): Promise<WorkspaceRoot> {
+  /* A handed root ends the order here, `undefined` included: the door was handed that, and the
+   * persisted header or the sandbox root would be answers to a question nobody asked. */
+  if (side.handed) return answered(side.root as string)
+  const stored = side.live === undefined ? await persistedHeaderOf(ctx, question.sessionId) : undefined
+  return answered(nonEmpty(stored?.cwd) ?? ctx.sandboxPolicy.workspaceRoot)
+}
+
+/** One answer, with its canonical spelling taken on demand (see {@link WorkspaceRoot.canonicalRoot}). */
+function answered(root: string): WorkspaceRoot {
+  return { root, canonicalRoot: () => canonicalRootOf(root) }
+}
+
+/**
+ * The header of one live session, read structurally for the two synchronous readers: the way this
+ * file reads every optional service, so a host answering nothing here knows no session rather than
+ * being a broken one. A session the store knows but whose header carries no cwd comes back as that
+ * header — that is what keeps the persisted one from being consulted afterwards.
+ */
+function liveHeaderIfAny(ctx: Context, sessionId: string | undefined): HeaderLike | undefined {
+  if (sessionId === undefined) return undefined
+  const sessions = (ctx as unknown as { sessions?: { get?: (id: string) => unknown } }).sessions
+  if (typeof sessions?.get !== 'function') return undefined
+  return (sessions.get(sessionId) as { header?: HeaderLike } | undefined)?.header
+}
+
+/**
+ * The persisted session's header, when this host keeps one and knows the session; nothing when it
+ * keeps none. The store answers a record whose header is the same shape the live store's carries, so
+ * the two read the same field — that is what makes the two sources interchangeable in the order.
+ */
+async function persistedHeaderOf(ctx: Context, sessionId: string | undefined): Promise<HeaderLike | undefined> {
+  if (sessionId === undefined) return undefined
+  const stored = (await ctx.get('sessionPersistence')?.stat(sessionId as SessionId)) as
+    | { readonly header?: HeaderLike }
+    | undefined
+  return stored?.header
+}
+
+/**
+ * The sandbox policy's root, when this host names one, for the synchronous form: `undefined` when the
+ * host carries no policy at all or names an empty root, which is "this host cannot say" rather than a
+ * root. The asynchronous form reads the same field as the inject requirement it is.
+ */
+function sandboxRootIfAny(ctx: Context): string | undefined {
+  try {
+    return nonEmpty(ctx.sandboxPolicy.workspaceRoot)
+  } catch {
+    /* A host carrying no policy cannot name a root: the two synchronous readers answer "nothing"
+     * rather than failing somebody else's step or assembly. */
+    return undefined
+  }
 }
 
 /** The logger a real host carries, fetched structurally; its levels fall back in the order the hosts differ: asked, warn, error, info. */

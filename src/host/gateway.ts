@@ -159,7 +159,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    */
   async read(sessionId: SessionId, workspaceRoot: string, options?: SuperworkerReadOptions): Promise<SuperworkerReading> {
     const signal = options?.signal ?? NEVER_ABORT
-    const root = await rootFor(this.ctx, sessionId, workspaceRoot)
+    const root = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
     return readReading(this.ctx.workspaceFiles, { sessionId, workspaceRoot: root }, signal, await readPoolWeights(this.#weightsFolder))
   }
 
@@ -180,7 +180,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * @param signal - The stream's cancellation; ending the iteration releases the workspace.
    */
   async *watch(sessionId: SessionId, workspaceRoot: string, signal: AbortSignal): AsyncIterable<SuperworkerFrame> {
-    const root = await rootFor(this.ctx, sessionId, workspaceRoot)
+    const root = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
     yield* this.#pump.follow(root, (mine) => this.#frameOf(sessionId, root, mine), signal)
   }
 
@@ -189,7 +189,10 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    *
    * A true private, like the write path's `#superworker`: the endpoint table's missing-registration
    * scan reads the prototype, and this is no endpoint of its own.
-   * @param workspaceRoot - The workspace root, absolute and already canonical.
+   * @param workspaceRoot - The workspace root to read, in **the spelling the caller used**: this door
+   * hands out that spelling and deliberately does not canonicalise it. Canonicalising here would change
+   * the answer every gateway endpoint has given since before the one root seam, and that answer is the
+   * selector's ("which root did the caller name"), not an engine write's.
    * @param signal - The read's cancellation.
    */
   async #frameOf(sessionId: SessionId, workspaceRoot: string, signal: AbortSignal): Promise<SuperworkerFrame> {
@@ -277,7 +280,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * @param workspaceRoot - The workspace root to read; an empty string means this session's own root.
    */
   async readConfig(sessionId: SessionId, workspaceRoot: string): Promise<SuperworkerConfigReading> {
-    const project = await rootFor(this.ctx, sessionId, workspaceRoot)
+    const project = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
     const outcome = await runWords(project, ['config', 'list'])
     if (!outcome.ok) {
       return {
@@ -335,7 +338,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * @param workspaceRoot - The workspace root to read; an empty string means this session's own root.
    */
   async readSessions(sessionId: SessionId, workspaceRoot: string, options?: SuperworkerReadOptions): Promise<SuperworkerSessionsReading> {
-    const root = await rootFor(this.ctx, sessionId, workspaceRoot)
+    const root = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
     const scope = { sessionId, workspaceRoot: root }
     const signal = options?.signal ?? NEVER_ABORT
     const [reading, claims, tickets] = await Promise.all([
@@ -368,7 +371,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * @param node - Which node to open the session for, by node id.
    */
   async openNodeSession(sessionId: SessionId, workspaceRoot: string, cycle: string, node: string): Promise<SessionOpenOutcome> {
-    const root = await rootFor(this.ctx, sessionId, workspaceRoot)
+    const root = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
     const outcome = await dispatchCell(this.ctx, sessionId, root, cycle, node)
     /* A dispatch lands the claim and the session note: the panel that pressed the button sees its own
        dispatch on the next frame instead of on the next page flip. */
@@ -415,25 +418,11 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * The single write path shared by the five write endpoints; the true private `#superworker` is not on the prototype, so the endpoint table's missing-registration scan cannot see it.
    */
   async #superworker(sessionId: SessionId, workspaceRoot: string, args: readonly string[]): Promise<RecordOutcome> {
-    const root = await rootFor(this.ctx, sessionId, workspaceRoot)
+    const root = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
     const outcome = await runWords(root, args)
     /* The write landed on disk a moment ago: the panel's channel is told now rather than waiting for
        its own file change to come back around through the directory watch. */
     this.#pump.stir(root)
     return outcome
   }
-}
-
-/**
- * Which workspace root this operation touches: use the caller-named one when
- * given; only when not named (empty string, or the parameter absent entirely)
- * resolve it from the session identity.
- *
- * Named-first is the whole point of this layer: which workspace the session
- * currently sits in has nothing to do with which one the reader wants to see.
- * @param workspaceRoot - The named workspace root, absolute; an empty string means not named.
- */
-export async function rootFor(ctx: Context, sessionId: SessionId, workspaceRoot: string): Promise<string> {
-  if (typeof workspaceRoot === 'string' && workspaceRoot.length > 0) return workspaceRoot
-  return workspaceRootOf(ctx, sessionId)
 }

@@ -16,14 +16,17 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, promises as fsp, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { dispatchCell, installRelay } from '../src/host/relay.ts'
+import { open } from 'superworker-core'
+import { dispatchCell, installRelay, trackedExecutorOf } from '../src/host/relay.ts'
 import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
 import { PANEL_PREF_FIELDS } from '../src/host/settings-fields.ts'
+import { shippedPluginsDir } from '../src/host/skill-paths.ts'
 import { fakeAgents } from './helpers/agents-registry.mjs'
 import { pinHome } from './helpers/env.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
@@ -37,7 +40,7 @@ import { absentError, readPage } from './helpers/workspace-files-port.mjs'
 const pinned = pinHome(['SUPERWORKER_HOME_DIR', 'DSH_HOME'], 'superworker-relay-home-')
 test.after(pinned.restore)
 
-/** A real workspace root with a real `.superworker` in it: the four layout files, the graph, and one active line holding `holding`. */
+/** A real workspace root with a real `.superworker` in it: the four layout files, the graph, and one active line holding `holding`. Every id in `holding` is a node on the graph, so a case may hold as many cells as it means to run through. */
 function rigRecordRoot(holding) {
   const root = mkdtempSync(join(tmpdir(), 'superworker-relay-ws-'))
   mkdirSync(join(root, '.superworker'), { recursive: true })
@@ -45,9 +48,9 @@ function rigRecordRoot(holding) {
   writeFileSync(join(root, '.superworker', '.gitattributes'), '* text=auto\n')
   writeFileSync(join(root, '.superworker', 'AGENTS.md'), '# records\n')
   writeFileSync(join(root, '.superworker', 'config.json'), '{}\n')
-  const nodes = {
-    'n-1': { status: 'todo', title: 'first', mode: 'auto', dependencies: [] },
-    'n-2': { status: 'todo', title: 'second', mode: 'auto', dependencies: [] },
+  const nodes = {}
+  for (const id of [...new Set(['n-1', 'n-2', ...holding])]) {
+    nodes[id] = { status: 'todo', title: `cell ${id}`, mode: 'auto', dependencies: [] }
   }
   writeFileSync(join(root, '.superworker', 'ideas.json'), JSON.stringify({ nodes }))
   writeFileSync(join(root, '.superworker', 'state.json'), JSON.stringify({
@@ -111,12 +114,12 @@ function fsPort(root, seen) {
   }
 }
 
-/** The host context stand-in: the real record directory behind the port, the live session header naming it, an event bus, a logger the relay's refusals land on, and the settings surface the switch is read from (the object is shared, so a flip is seen live). `seen` collects every workspace root the port was read through. `skills` is the catalog the opener reads back, when a case needs to hold an open past its mint. */
-function context({ root, agents, config, seen, skills } = {}) {
+/** The host context stand-in: the real record directory behind the port, the live session header naming it, an event bus, a logger the relay's refusals land on, and the settings surface the switch is read from (the object is shared, so a flip is seen live). `seen` collects every workspace root the port was read through. `skills` is the catalog the opener reads back, when a case needs to hold an open past its mint. `cwd` is the spelling the live session header carries, when a case needs it to differ from the record's own path. */
+function context({ root, agents, config, seen, skills, cwd = root } = {}) {
   return fakeContext({
     port: fsPort(root, seen),
-    sessionCwd: root,
-    sandboxRoot: root,
+    sessionCwd: cwd,
+    sandboxRoot: cwd,
     config,
     bus: true,
     logger: true,
@@ -388,6 +391,229 @@ test('Switch off: a turn/end opens no next leg; switched on, the same event open
     )
   } finally {
     installOff()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+/* The relay's trigger settles the root it was handed before it hands it to the engine, and this is the
+ * one reading that pins that line on its own.
+ *
+ * The table can hold a non-canonical spelling: a session the agent-facing tool opened is remembered
+ * under the spelling its caller used (`trackedExecutorOf` is handed that one), while a dispatch
+ * writes the canonical one in. `judge` is where that spelling is settled, and its answer is what the
+ * next leg of the line is remembered under.
+ *
+ * The alias junction is **removed between the two rounds** on purpose. After round one the only thing
+ * that says which spelling the trigger carried the line at is the table: `real` if it canonicalised,
+ * the alias if it did not. Deleting the alias makes those two cases tell apart — the canonical entry
+ * still resolves, the caller's spelling is a path that no longer exists, so a trigger that did not
+ * canonicalise has nowhere to carry the line and opens nothing. That is what makes this red on a
+ * missing third leg rather than on a string this test cannot see. */
+test('The trigger settles the root it was handed: the leg it carries is remembered at the real path', async () => {
+  const root = rigRecordRoot(['n-1', 'n-2', 'n-3'])
+  const alias = join(tmpdir(), `superworker-relay-judge-${randomUUID()}`)
+  symlinkSync(root, alias, 'junction')
+  const real = realpathSync(root)
+  const agents = fakeAgents()
+  const { ctx, events, warnings } = context({ root, agents })
+  const installOff = installRelay(ctx)
+  try {
+    /* Round one, opened the way the agent-facing tool opens one: through `trackedExecutorOf`, at the
+     * caller's spelling. That is the only road that puts a non-canonical spelling in the table. */
+    const executor = trackedExecutorOf(ctx, 'caller', alias)
+    const first = await open(alias, { executor, pluginsDir: shippedPluginsDir() }).conductor.dispatch({ cycle: 'c-1', node: 'n-1' })
+    assert.equal(first.action, 'opened', JSON.stringify(first))
+    const sid = first.session.sessionId
+    assert.equal(agents.created.length, 1)
+
+    /* The trigger carries the line, and the leg it opens is remembered under whatever root it
+     * resolved. Its own `turn/end` is the second round's entry. */
+    await settleClose(root, 'n-1', 'n-2')
+    events.emit('session/event', { id: sid }, { type: 'turn/end' })
+    await until(
+      () => agents.created.length >= 2 && existsSync(claimPath(real, 'c-1', 'n-2')),
+      'the second leg\'s session and its claim',
+      warnings,
+    )
+    const second = agents.created[1].options.sessionId
+
+    /* The alias goes away: from here on, the caller's spelling names nothing. */
+    rmSync(alias, { recursive: true, force: true })
+
+    await settleClose(root, 'n-2', 'n-3')
+    events.emit('session/event', { id: second }, { type: 'turn/end' })
+    await until(
+      () => agents.created.length >= 3 && existsSync(claimPath(real, 'c-1', 'n-3')),
+      'the third leg\'s session and its claim, carried at the root\'s real path',
+      warnings,
+    )
+  } finally {
+    installOff()
+    rmSync(alias, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+/**
+ * The same trigger, with the alias **still there**: the normal working state, and the reading the case
+ * above cannot take.
+ *
+ * The case above pins `judge`'s canonicalisation through a side door — it deletes the junction after
+ * the second round, so a trigger that did not canonicalise has nowhere to carry the line. That works,
+ * but all of its pinning force comes from an abnormal setup: if the case were ever simplified (the
+ * deletion dropped because it looks like cleanup), it would stay green while pinning nothing. Hauling
+ * the reading onto the normal path is this case's whole point.
+ *
+ * The reading is the run doc the trigger's own open lands. `conductor.advance` writes
+ * `nodes/<node>/run.md` with an absolute `spec:` path built from the root it was handed, so the third
+ * leg's run doc spells whatever spelling `judge` passed down: the alias if it did not canonicalise,
+ * the real path if it did. Nothing else about the trigger — no cwd, no claim, no port read — differs
+ * between those two runs, which is why the earlier cases could not tell them apart while the alias
+ * lived. The `spec:` line is asserted rather than a whole document, because the rest of the file
+ * carries times and titles this case has no business pinning.
+ */
+test('The trigger settles the root while the alias is still there: the third leg\'s run doc spells the real path', async () => {
+  const root = rigRecordRoot(['n-1', 'n-2', 'n-3'])
+  const alias = join(tmpdir(), `superworker-relay-judge-live-${randomUUID()}`)
+  symlinkSync(root, alias, 'junction')
+  const real = realpathSync(root)
+  const agents = fakeAgents()
+  const { ctx, events, warnings } = context({ root, agents })
+  const installOff = installRelay(ctx)
+  try {
+    /* Round one at the caller's spelling, which is the only road that puts a non-canonical root in the
+     * relay's table: the agent-facing tool opens through `trackedExecutorOf` at the spelling it was
+     * handed. */
+    const executor = trackedExecutorOf(ctx, 'caller', alias)
+    const first = await open(alias, { executor, pluginsDir: shippedPluginsDir() }).conductor.dispatch({ cycle: 'c-1', node: 'n-1' })
+    assert.equal(first.action, 'opened', JSON.stringify(first))
+
+    /* The trigger carries the line. The alias is **not** touched anywhere in this case. */
+    await settleClose(root, 'n-1', 'n-2')
+    events.emit('session/event', { id: first.session.sessionId }, { type: 'turn/end' })
+    await until(
+      () => agents.created.length >= 2 && existsSync(claimPath(real, 'c-1', 'n-2')),
+      'the second leg\'s session and its claim',
+      warnings,
+    )
+    assert.ok(existsSync(alias), 'this case requires the alias to be alive for the whole run')
+
+    /* The run doc the trigger's advance landed for the cell it opened, read off the real tree. The
+     * engine spells the path with forward slashes whatever the platform, so both sides are compared
+     * that way — the question is which directory the line names, not how this platform punctuates it. */
+    const asSlashes = (path) => path.replace(/\\/gu, '/')
+    const specLine = (await readFile(join(root, '.superworker', 'nodes', 'n-2', 'run.md'), 'utf8'))
+      .split(/\r?\n/u)
+      .find((line) => line.startsWith('- spec:'))
+    assert.ok(specLine !== undefined, 'the trigger landed no run doc for the leg it opened')
+    assert.ok(
+      !asSlashes(specLine).includes(asSlashes(alias)),
+      `the trigger carried the line at the caller's spelling: ${specLine}`,
+    )
+    assert.ok(
+      asSlashes(specLine).includes(asSlashes(real)),
+      `the trigger's run doc does not spell the root's real path: ${specLine}`,
+    )
+  } finally {
+    installOff()
+    assert.ok(existsSync(alias), 'the alias is torn down by this case, not by the code under test')
+    assert.ok(existsSync(root), 'removing the alias does not take the root it points at')
+    rmSync(alias, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+/**
+ * The (d) reading, as a case: one turn-end trigger canonicalises the root **twice**, and each of the
+ * two is a different door's — the trigger's own entry, then the opener's — with the relay's `judge`
+ * taking the second spelling once for the plan read instead of re-spelling it a second time.
+ *
+ * That count is what the seam's (d) half is: `dispatchCell` and `advanceLine` each take the canonical
+ * spelling once on the way in, and `judge` re-enters below that step rather than re-deriving it. It has
+ * no behavioural reading of its own — with an alias present, `.root` and `.canonicalRoot()` hand out
+ * the same string in that one place, so no assertion about a path can tell the two apart. What can is
+ * the number of times the one spelling function runs, so that is what this case counts.
+ *
+ * The counter is a spy on `fs/promises.realpath`, which is the only call `canonicalRootOf` makes, and
+ * it is installed by patching the CJS surface and calling `syncBuiltinESMExports`: a module's named
+ * import of `realpath` is a live binding, so the seam's own import reviews the patched function without
+ * the source being edited. Only frames inside this checkout's `src/host` are counted, so nothing the
+ * test runner does is mistaken for a seam call.
+ *
+ * The count is taken over the stretch that starts at the notice and ends at the second leg's own mint:
+ * both canonicalisations happen before the opener reaches `create`, so the mint is the end of the
+ * window, and a mint is an event rather than a wait.
+ */
+test('One turn-end trigger canonicalises the root twice: the trigger\'s entry and the opener\'s, and judge re-spells nothing', async () => {
+  const root = rigRecordRoot(['n-1', 'n-2'])
+  const alias = join(tmpdir(), `superworker-relay-canon-${randomUUID()}`)
+  symlinkSync(root, alias, 'junction')
+  const agents = fakeAgents()
+  const { ctx, events, warnings } = context({ root, agents })
+  const installOff = installRelay(ctx)
+  const original = fsp.realpath
+  let frames = []
+  try {
+    /* Round one at the caller's spelling: the only road that puts a non-canonical root in the relay's
+     * table, so the trigger below really has a spelling to settle. */
+    const executor = trackedExecutorOf(ctx, 'caller', alias)
+    const first = await open(alias, { executor, pluginsDir: shippedPluginsDir() }).conductor.dispatch({ cycle: 'c-1', node: 'n-1' })
+    assert.equal(first.action, 'opened', JSON.stringify(first))
+    await settleClose(root, 'n-1', 'n-2')
+
+    /* The window closes at the second leg's own mint: hooked onto the registry before the notice goes
+     * out, so nothing has to be waited for. */
+    let minted
+    const carried = new Promise((resolve) => { minted = resolve })
+    const registry = agents.registry
+    const realCreate = registry.create.bind(registry)
+    registry.create = (options) => {
+      const held = realCreate(options)
+      if (agents.created.length >= 2) minted()
+      return held
+    }
+
+    fsp.realpath = async (...args) => {
+      frames.push(new Error().stack ?? '')
+      return original(...args)
+    }
+    syncBuiltinESMExports()
+    events.emit('session/event', { id: first.session.sessionId }, { type: 'turn/end' })
+    await carried
+    /* The window closes at the mint: the spy comes off before anything after the open runs, so the
+     * count is the open's own two spellings and nothing the case does beside it. */
+    fsp.realpath = original
+    syncBuiltinESMExports()
+    await until(() => existsSync(claimPath(root, 'c-1', 'n-2')), 'the second leg\'s claim', warnings)
+
+    const hostFrames = frames.filter((stack) => /src[\\/]host[\\/]/u.test(stack))
+    /* The caller of the spelling function: the first `src/host` frame below `canonicalRootOf` and the
+     * seam's own `canonicalRoot` closure, which is a fixed pair of frames in this file's seam. Named
+     * rather than assumed, so a third place taking a spelling would show up here as its own frame. */
+    const callers = hostFrames.map((stack) => {
+      const lines = String(stack)
+        .split('\n')
+        .filter((line) => /src[\\/]host[\\/].*\.ts:\d+/u.test(line))
+        .map((line) => line.trim())
+      return lines.find((line) => !line.includes('canonicalRootOf') && !line.includes('canonicalRoot')) ?? '?'
+    })
+    assert.equal(
+      hostFrames.length,
+      2,
+      `one trigger must canonicalise the root twice (the trigger's entry and the opener), not ${hostFrames.length}: ${JSON.stringify(callers)}`,
+    )
+    /* The two are the two doors, named: no third place re-derives the spelling, and neither is taken
+     * twice at one door — that pair is the whole count. */
+    assert.ok(callers.some((line) => line.includes('judge')), `the trigger's own entry did not canonicalise: ${JSON.stringify(callers)}`)
+    assert.ok(
+      callers.some((line) => line.includes('openNodeSession')),
+      `the opener did not canonicalise off the seam's answer: ${JSON.stringify(callers)}`,
+    )
+  } finally {
+    fsp.realpath = original
+    syncBuiltinESMExports()
+    installOff()
+    rmSync(alias, { recursive: true, force: true })
     rmSync(root, { recursive: true, force: true })
   }
 })

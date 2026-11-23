@@ -22,7 +22,8 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { canonicalWorkspaceRoot, executorOf, openConductSession, openNodeSession, openRouteSession } from '../src/host/executor.ts'
+import { executorOf, openConductSession, openNodeSession, openRouteSession } from '../src/host/executor.ts'
+import { canonicalRootOf } from '../src/host/seams.ts'
 import { fakeAgents } from './helpers/agents-registry.mjs'
 import { pinHome } from './helpers/env.mjs'
 import { clearPlacement, placeOneSkill } from './helpers/skill-placement.mjs'
@@ -359,7 +360,7 @@ test('Canonical spelling: two spellings of one root queue on one line, and the s
  * spelling comes back `ok` with the real path in hand. */
 test('Canonical spelling: a root with no real path comes back as it went in', async () => {
   const missing = join(tmpdir(), `superworker-executor-missing-${randomUUID()}`)
-  assert.equal(await canonicalWorkspaceRoot(missing), missing)
+  assert.equal(await canonicalRootOf(missing), missing)
 })
 
 test('The note is written by the opener: one more run entry, the other entries left as they were', async () => {

@@ -59,7 +59,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { answerHandleOf } from './write.ts'
 import { recordPresentAt } from './records.ts'
 import { PANEL_PREF_FIELDS } from './settings-fields.ts'
-import { agentIdOf, busOf, liveWorkspaceRootOf, panelSwitchOn, promptContextPortOf } from './seams.ts'
+import { agentIdOf, busOf, panelSwitchOn, promptContextPortOf, workspaceRootOf } from './seams.ts'
 
 /** The contribution's name: unique among the runtime contexts this host assembles. */
 export const INSTRUCTION_CONTEXT_NAME = 'superworker:instructions'
@@ -207,7 +207,11 @@ function holderOf(ctx: Context, context: unknown): { readonly id: string; readon
   if (typeof proposed !== 'object' || proposed === null) return undefined
   const id = agentIdOf(proposed)
   if (id === undefined) return undefined
-  const root = liveWorkspaceRootOf(ctx, id)
+  /* Both sides of the assembly ask synchronously, so this is the seam's synchronous form: the live
+   * session store, then the sandbox policy. The persisted header is never read for this door — a
+   * disk read inside a context provider would be a stall per step, and a live agent always has a
+   * header of its own. */
+  const root = workspaceRootOf(ctx, { sessionId: id, synchronous: true })
   if (root === undefined) return undefined
   return { id, root }
 }

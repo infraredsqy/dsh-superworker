@@ -42,8 +42,8 @@ test('The export surface is the five things the plugin contract wants: internals
   assert.ok('Config' in entry, 'Config must be on the export surface: DSH builds that section\'s settings namespace from it')
 
   for (const internal of [
-    'rootFor',
     'workspaceRootOf',
+    'canonicalRootOf',
     'runPf',
     'readReading',
     'readWholeFile',

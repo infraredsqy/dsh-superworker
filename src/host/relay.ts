@@ -40,9 +40,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { open, type Executor } from 'superworker-core'
-import { canonicalWorkspaceRoot, executorOf, type SessionOpenOutcome } from './executor.ts'
+import { executorOf, type SessionOpenOutcome } from './executor.ts'
 import type { RecordRefusalCode } from './failure.ts'
-import { busOf, logLineOf, messageOf, panelSwitchOn } from './seams.ts'
+import { busOf, logLineOf, messageOf, panelSwitchOn, workspaceRootOf } from './seams.ts'
 import { PANEL_PREF_FIELDS } from './settings-fields.ts'
 import { shippedPluginsDir } from './skill-paths.ts'
 
@@ -147,22 +147,14 @@ function rememberReceipt(receipt: OpenedReceipt, workspaceRoot: string): void {
   remember(receipt.session?.sessionId, workspaceRoot)
 }
 
-/** The dispatch itself, run strictly one at a time. */
+/** The dispatch itself, at the one canonical spelling the entry took off the seam. */
 async function runDispatch(
   ctx: Context,
   sessionId: SessionId,
-  workspaceRoot: string,
+  root: string,
   cycle: string,
   node: string,
 ): Promise<DispatchOutcome> {
-  /* The dispatch entry takes the canonical spelling once: the engine's handle, the opener's queue
-   * key and `cwd`, and the workspace this dispatch remembers are one string.
-   *
-   * Known untested on its own: the alias case's green does not ride on this line — the opener
-   * canonicalises a second time inside `openNodeSession`, so removing this call alone keeps every
-   * case green; the relay's and the opener's calls have to go together for the alias case to turn
-   * red. No reading pins this line by itself. */
-  const root = await canonicalWorkspaceRoot(workspaceRoot)
   try {
     const receipt = await dispatchHandleOf(ctx, sessionId, root).conductor.dispatch({ cycle, node })
     rememberReceipt(receipt, root)
@@ -181,6 +173,19 @@ async function runDispatch(
  * already in flight finishes (session opened, claim written) before this one
  * reaches the engine — and for the same cell, the engine's own claim check
  * answers `already_open` instead of opening a second session.
+ *
+ * Each door takes the canonical spelling once, at its own entry, off the one seam function
+ * (`canonicalRootOf`), and it is the string the engine's handle, the opener's queue key and `cwd`,
+ * and the relay's own memory all carry. Over one dispatch trigger chain it is taken exactly twice,
+ * each time at its own door and both times off that same function: the trigger's entry (`judge`)
+ * and the opener's (`openNodeSession`). Below the entries this layer spells nothing — `runDispatch`
+ * and `carryLine` carry the root they were handed — and the relay suite pins the count: a realpath
+ * spy in `tests/host-relay.test.mjs` holds it at two, with the two caller frames named.
+ *
+ * The root this door was handed is the root it uses, empty included: `emptyNamed: 'root'` is what
+ * says so at the seam, and an empty root stays empty here — the engine refuses it on the spot,
+ * which is the answer this path gave before the seam existed. Spelling the check at this call site
+ * instead would be one door carrying a fallback order of its own.
  */
 export function dispatchCell(
   ctx: Context,
@@ -189,12 +194,10 @@ export function dispatchCell(
   cycle: string,
   node: string,
 ): Promise<DispatchOutcome> {
-  const mine = inFlight.then(
-    () => runDispatch(ctx, sessionId, workspaceRoot, cycle, node),
-    () => runDispatch(ctx, sessionId, workspaceRoot, cycle, node),
-  )
-  inFlight = mine.then(() => undefined, () => undefined)
-  return mine
+  return chained(async () => {
+    const root = await (await workspaceRootOf(ctx, { sessionId, named: workspaceRoot, emptyNamed: 'root' })).canonicalRoot()
+    return runDispatch(ctx, sessionId, root, cycle, node)
+  })
 }
 
 /**
@@ -202,6 +205,13 @@ export function dispatchCell(
  * slots → land the material → open a session per cell → park a stopped line) is the engine's
  * `advance`, and this is the host's one caller of it. Calls join the process-wide chain for the same
  * reason `dispatchCell` does: two triggers never interleave their engine calls.
+ *
+ * The root handed in is the spelling the engine handle, the opener and the relay's memory all carry;
+ * the seam's canonical spelling is taken once on the way in, and `judge` — which already holds a
+ * canonical root off the dispatch that tracked it — enters below that step instead of re-spelling it.
+ *
+ * Like `dispatchCell`, this door uses the root it was handed, empty included (`emptyNamed: 'root'`):
+ * an empty root is refused by the engine, not widened into the calling session's own workspace here.
  */
 export function advanceLine(
   ctx: Context,
@@ -209,23 +219,40 @@ export function advanceLine(
   workspaceRoot: string,
   cycle: string,
 ): Promise<DispatchOutcome> {
-  const step = async (): Promise<DispatchOutcome> => {
-    /* Same entry discipline as `dispatchCell`: one canonical spelling for the handle, the opener and
-     * the workspace the relay remembers. Known untested on its own, like the dispatch entry's call —
-     * see the note there. */
-    const root = await canonicalWorkspaceRoot(workspaceRoot)
-    try {
-      const receipt = await dispatchHandleOf(ctx, sessionId, root).conductor.advance({ cycle })
-      for (const cell of receipt.dispatches) rememberReceipt(cell.receipt, root)
-      const first = receipt.dispatches[0]?.receipt
-      return { ok: true, session: first?.session?.sessionId ?? '' }
-    } catch (error) {
-      return { ok: false, code: 'dispatch-refused', detail: messageOf(error) }
-    }
-  }
+  return chained(async () => {
+    const root = await (await workspaceRootOf(ctx, { sessionId, named: workspaceRoot, emptyNamed: 'root' })).canonicalRoot()
+    return carryLine(ctx, sessionId, root, cycle)
+  })
+}
+
+/**
+ * One engine-touching step, appended to the process-wide chain: a refusal in front does not poison
+ * the line, and two entries never interleave their engine calls.
+ */
+function chained(step: () => Promise<DispatchOutcome>): Promise<DispatchOutcome> {
   const mine = inFlight.then(step, step)
   inFlight = mine.then(() => undefined, () => undefined)
   return mine
+}
+
+/**
+ * One advance at an already-canonical root: no spelling is taken here, and none is taken below —
+ * this is the shape both the entered advance and the trigger's own judgement call.
+ */
+async function carryLine(
+  ctx: Context,
+  sessionId: SessionId,
+  root: string,
+  cycle: string,
+): Promise<DispatchOutcome> {
+  try {
+    const receipt = await dispatchHandleOf(ctx, sessionId, root).conductor.advance({ cycle })
+    for (const cell of receipt.dispatches) rememberReceipt(cell.receipt, root)
+    const first = receipt.dispatches[0]?.receipt
+    return { ok: true, session: first?.session?.sessionId ?? '' }
+  } catch (error) {
+    return { ok: false, code: 'dispatch-refused', detail: messageOf(error) }
+  }
 }
 
 /**
@@ -237,18 +264,25 @@ export function advanceLine(
  * is read on the spot — turning it off stops the next round, not a step already in flight. A refusal
  * is a log line, never a throw into the event bus: the plan's own note (or the panel's button) is
  * where a person acts.
+ *
+ * The root arrives from the relay's own table, whose spelling depends on whoever opened the session:
+ * a dispatch wrote the canonical spelling in, while a session the agent-facing tool opened was
+ * remembered under the spelling its caller used. So the trigger settles it once, off the one seam,
+ * before the plan read — and the advance below enters at that same spelling, with nothing
+ * re-deriving it. That is one derivation per notice, where this file used to take it twice.
+ *
+ * The table never holds an empty root (`remember` drops those), so `emptyNamed: 'root'` changes no
+ * answer here; it states the same door as the two entries above, and keeps this trigger from being
+ * the one place in this file where an empty name would be read as "not named".
  */
 async function judge(ctx: Context, sessionId: SessionId, workspaceRoot: string): Promise<void> {
   if (!relayOn()) return
-  /* The root already arrives canonical from the dispatch that tracked it, and the entry takes it
-   * once more so a plan read can never disagree with the root a dispatch would use. Known untested
-   * on its own, like the dispatch entry's call — see the note there. */
-  const root = await canonicalWorkspaceRoot(workspaceRoot)
+  const root = await (await workspaceRootOf(ctx, { sessionId, named: workspaceRoot, emptyNamed: 'root' })).canonicalRoot()
   const plan = await dispatchHandleOf(ctx, sessionId, root).conductor.next({})
   if (plan.action !== 'dispatch' && plan.action !== 'open_node' && plan.action !== 'stop_pipeline') return
   const cycle = typeof plan.cycle === 'string' ? plan.cycle : ''
   if (cycle === '') return
-  const outcome = await advanceLine(ctx, sessionId, root, cycle)
+  const outcome = await chained(() => carryLine(ctx, sessionId, root, cycle))
   if (!outcome.ok) {
     logLineOf(ctx, 'warn', `dispatch relay could not advance ${cycle}: ${outcome.detail ?? outcome.code}`)
   }

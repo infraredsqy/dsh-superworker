@@ -145,7 +145,7 @@ export function defineSuperworkerTool(host: SuperworkerToolHost): SuperworkerToo
     },
     async execute(args, exec) {
       const raw = typeof exec.agent?.id === 'string' ? exec.agent.id : ''
-      /* An empty identity is not "no workspace named": `workspaceRootOf` answers the sandbox policy's
+      /* An empty identity is not "no workspace named": the one root seam answers the sandbox policy's
        * root for a session it cannot place, and every word would then run against whatever directory
        * this process was started in -- a record the caller never asked about, written to as if it had.
        * Refusing here keeps that from being silent. */
@@ -153,7 +153,7 @@ export function defineSuperworkerTool(host: SuperworkerToolHost): SuperworkerToo
         return { code: 2, stdout: '', stderr: 'this tool call carries no session identity, so it has no workspace to answer from' }
       }
       const sessionId = raw as SessionId
-      const root = await workspaceRootOf(host.ctx, sessionId)
+      const root = (await workspaceRootOf(host.ctx, { sessionId })).root
       const argv = argvOf(args)
       const outcome = await answer(argv, {
         ...answerHandleOf(root, { executor: host.executorOf(sessionId, root) }),

@@ -39,7 +39,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { projectRootOf } from 'superworker-core'
 import { recordPresentAt } from './records.ts'
-import { agentIdOf, busOf, liveWorkspaceRootOf, toolsOf } from './seams.ts'
+import { agentIdOf, busOf, toolsOf, workspaceRootOf } from './seams.ts'
 import {
   SKILL_NAME_PREFIX,
   SKILL_TOOL_NAME,
@@ -129,21 +129,6 @@ export function hasPipelineRecord(root: string | undefined): boolean {
 }
 
 /**
- * The workspace root one agent's step is asked about: the live session's own cwd, read off the
- * agent when the host keeps it there, else the same reading `liveWorkspaceRootOf` makes through the
- * session service (and, behind both, the sandbox policy's root).
- *
- * Symmetric on purpose: asking the agent first costs nothing and needs no service, and a session
- * service that has let go of this id still answers from the root the workspace stands in.
- */
-function stepRootOf(ctx: Context, agent: object): string | undefined {
-  const cwd = (agent as { session?: { header?: { cwd?: unknown } } }).session?.header?.cwd
-  if (typeof cwd === 'string' && cwd.length > 0) return cwd
-  const id = agentIdOf(agent)
-  return id === undefined ? undefined : liveWorkspaceRootOf(ctx, id)
-}
-
-/**
  * The one condition a registration carries: does this step's agent have a reason to see the tool.
  *
  * **Total by contract.** The registry fails the whole step preparation on a condition that throws
@@ -159,7 +144,19 @@ export function offersTool(ctx: Context, agent: object | undefined): boolean {
   try {
     if (agent === undefined || agent === null) return false
     if (armed.has(agent)) return true
-    return hasPipelineRecord(stepRootOf(ctx, agent))
+    /* The root question is the one seam's, and the two facts this door reads before any service is
+     * asked are its own: the cwd the step's agent carries, and the identity the session store is
+     * asked under. Asked synchronously — this runs inside a step proposal, before the request is
+     * assembled — so the seam answers from the live store and the sandbox policy only.
+     *
+     * A step carrying neither a cwd nor an identity is not a step this line can place, and
+     * `sessionless: 'none'` is that answer at the seam: no root rather than the sandbox policy's,
+     * which would offer the tool to a step whose workspace nobody named. That has been this door's
+     * answer since it read the two facts itself; it is a field of the question now, because cutting
+     * the order here would be this door carrying a fallback order of its own. */
+    const cwd = (agent as { session?: { header?: { cwd?: unknown } } }).session?.header?.cwd
+    const root = workspaceRootOf(ctx, { cwd, sessionId: agentIdOf(agent), synchronous: true, sessionless: 'none' })
+    return hasPipelineRecord(root)
   } catch {
     /* A condition that throws would fail the step: an unanswerable question answers "no". */
     return false
