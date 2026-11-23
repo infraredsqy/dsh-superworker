@@ -1,79 +1,78 @@
 # Superworker's design philosophy
 
-> This file describes Superworker's background and design principles; sw-route cites it and does
-> not retell it.
+> This file describes Superworker's core design intent and underlying principles; `sw-route` cites
+> it and does not retell operational rules here.
 
 ## The core problem
 
-While developing, the mind jumps on its own: you are working on feature A and ideas B / C / D pop
-up. Those ideas cannot be held, and writing them into docs/ pollutes the source of truth — an
-agent cannot tell "already implemented" from "a future plan". Trying to keep the ideas in your
-head costs the current work its focus.
+Real engineering work rarely finishes in a single turn or a single session. Once a task stretches
+into a multi-step chain with dependencies (4, 8, 10, or more steps), standard workflows run into a
+dilemma:
 
-## The system's goal
+- **Manual session splitting**: Every completed step requires the user to return, inspect the
+  output, and prompt the next step, turning the user into a full-time supervisor.
+- **Single-session orchestration**: Even with subagents, as a chain grows longer, the main context
+  drifts, accumulates redundant history, and loses coherence. Incidental findings—such as
+  pre-existing codebase issues uncovered mid-run—have nowhere to go and are either dropped or
+  derail the active task.
 
-**An external brain.** Unload ideas from the human brain into structured storage. Once the user
-has emptied his mind he can focus on the current work, and the ideas are neither lost nor
-forgotten.
+## The core design: a persistent, shared orchestration surface
 
-## The key designs
+Superworker centers on one idea: turning orchestration logic that would otherwise live in throwaway
+workflow scripts or ephemeral chat history into a **persistent, project-native interface that
+agents call directly, paired with a live visual panel for the user**.
 
-### A DAG, not a list
+Human and agent share the exact same structured state on disk (`.superworker/`):
 
-Ideas have natural dependencies among them (B can only be done once A is finished). A linear list
-loses that structure, and a hand-kept priority goes stale.
+- **Planning decoupled from execution**: Goals, boundaries, and acceptance criteria are settled
+  into discrete nodes before execution starts. Human effort focuses on upfront alignment, explicit
+  checkpoints, and final acceptance.
+- **Cross-session continuity**: Each node runs in a fresh session with clean context. Because state
+  is persisted on disk, progress remains observable, interruptible, and resumable from any node.
 
-The graph's topology derives two core metrics on its own:
+## Why a DAG
 
-| Metric | Meaning | The graph algorithm |
-|------|------|--------|
-| **urgency** | can it be started now | a node nearer the front of the topology = its dependencies are met = the most urgent |
-| **importance** | how many things depend on it | a node with a large reverse-reachable set = many things depend on it = the most important |
+Work items carry natural dependency relationships (B requires A; parallel branches converge at C).
+A linear list loses that structure, and hand-maintained priorities quickly go stale.
 
-The two metrics are computed for **unfinished** nodes only. Once a node is done, the nodes
-depending on it become more urgent on their own, and urgency / importance update dynamically, with
-no hand adjustment.
+Graph topology automatically derives two core metrics for **unfinished** nodes and updates them
+dynamically as upstream nodes complete, with no manual re-ranking:
 
-The two together make the **four-quadrant decision frame** (the Eisenhower Matrix's counterpart on
-a DAG), and it is the ground on which an agent helps the user judge which nodes to keep or drop:
+| Metric | Meaning | Graph algorithm |
+|--------|---------|-----------------|
+| **urgency** | Can it start now | Closer to the front of the topology = prerequisites met = higher urgency |
+| **importance** | How much depends on it | Larger reverse-reachable set = more downstream dependents = higher importance |
 
-- **Urgent and important** (small in-degree + large out-degree): few dependencies, so it can be
-  done at any time, and many things depend on it. A cornerstone feature, MUST DO NOW. The highest
-  priority.
-- **Important but not urgent** (large in-degree + large out-degree): a large effect, but its
-  prerequisites are not done. It cannot be done now, so clear its prerequisite nodes first.
-- **Urgent but not important** (small in-degree + small out-degree): few dependencies, so it can
-  be done at any time, but nothing depends on it. Doing it affects nobody else, so consider
-  whether it is worth the time.
-- **Neither urgent nor important** (large in-degree + small out-degree): neither urgent nor
-  depended on. The icebox, and the lowest priority.
+Together they determine default ordering (`urgency × importance`): ready foundational nodes with
+broad downstream impact surface first, while blocked high-impact nodes pull attention to their
+prerequisites. Dependency edges also define explicit ordering boundaries so independent nodes can
+advance in parallel safely.
 
-### A finished node is not deleted
+Two record-keeping principles follow from this structure:
 
-A node that is done is marked `completed` and its node directory stays where it is — no
-unmaintained, orphaned MD file is left lying in the filesystem. Only when the idea itself is
-scrapped and the user wants it out of the graph does `dag rm` really delete it.
+- **Preserve history rather than deleting**: Finished (`completed`) and paused (`shelved`) nodes
+  stay in place to preserve execution history and dependency references. Nodes are deleted only
+  when the idea itself is scrapped.
+- **Keep ground truth clean**: Future plans and execution records live in `.superworker/`, leaving
+  project documentation (`docs/`) strictly for implemented state so agents never confuse plans with
+  current reality.
 
-In practice `dag list` shows everything by default but sorts by urgency×importance, with the
-completed nodes at the end (and no score shown). When a UUID you have never seen shows up in
-another node's `deps`, it most likely points at a completed node — confirm with
-`dag list --status completed`, and do not rule it a dangling ref straight away.
+## Two complementary mechanisms
 
-### Ground truth stays clean
+### Independent review as a long-chain fail-safe
 
-Once every future plan has moved into Superworker, the project's docs/ holds implemented content
-only. An agent reading docs/ can trust that what it reads is the present state, and no longer
-mixes up "is this a plan or is it implemented".
+Over multi-step engineering execution, any executor can introduce local blind spots. Without an
+independent check, small defects compound as downstream nodes build on top of them.
 
-Not everything enters the graph: bringing docs up to the state, running one probe to answer a
-feasibility question, a non-behavioural small change — those are done on the spot (the criterion
-is sw-route's "do it now"). The graph holds "what we are going to do"; those pieces of work write
-down "what is there now".
+The pipeline therefore places an independent review-and-fix loop at node close-out as a
+**fail-safe** for unattended long-chain runs. It is a reliability layer rather than a rigid
+prerequisite—fast-paced workflows can lighten or skip review when speed matters more, with a
+corresponding trade-off in stability.
 
-## Its relation to the skills already there
+### Externalized backlog ("external brain")
 
-The **sw-conduct** pipeline (one sw-conduct node finishing: prepare, execute, an independent
-review, fix, close out) answers "how do we implement it".
-
-Superworker answers "what are we going to do" — it is the sw-conduct pipeline's upstream input.
-An idea enters the DAG from sw-route, and sw-conduct refines it and executes it.
+Because plans and discoveries share a persistent structured home, the graph also serves as an
+**external brain**: ideas B / C / D that surface while working on A, or pre-existing codebase
+defects uncovered mid-execution, can be captured as linked nodes or logged in the issue pool
+without breaking current focus or getting lost across session boundaries. This is especially
+valuable for engineers juggling parallel threads on complex projects.

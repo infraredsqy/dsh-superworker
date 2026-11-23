@@ -48,6 +48,8 @@ dag search '合并|集成|迁移|整合|主项目'
 
 只有需要全图排序（如推荐下一步）时才用 `dag list`，且加 `--limit N` 控制条数。**不要用 `dag list | grep` 做定向搜索——那是 `dag search` 的事。**
 
+`dag list` 默认把 `completed` 节点排在末尾（不显示 score）。如果其他节点的 `deps` 里出现没见过的 UUID，多半指向已完成节点——先用 `dag list --status completed` 确认，不要直接判定为 dangling ref。
+
 ### pattern 引号
 
 所有 pattern 参数（`dag search` 的 regex、`dag add` 的 title）用双引号包起来，防止 shell 解析特殊字符。

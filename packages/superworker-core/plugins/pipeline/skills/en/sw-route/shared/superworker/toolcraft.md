@@ -64,6 +64,10 @@ Use `dag list` only when the whole graph has to be ordered (like recommending th
 `--limit N` to control how many come back. **Do not do a targeted search with `dag list | grep` — that
 is `dag search`'s job.**
 
+By default `dag list` puts `completed` nodes at the end (with no score shown). When an unfamiliar
+UUID appears in another node's `deps`, it likely points to a completed node—check with
+`dag list --status completed` before treating it as a dangling ref.
+
 ### Quoting a pattern
 
 Every pattern argument (`dag search`'s regex, `dag add`'s title) goes in double quotes, to stop
