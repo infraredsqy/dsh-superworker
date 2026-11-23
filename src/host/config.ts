@@ -8,6 +8,7 @@
 import type { Schema, Schemastery } from '@deepseek-ai/schemastery'
 import {
   NODE_MODES,
+  OVERVIEW_MODES,
   PANEL_PREF_DEFAULTS,
   PANEL_PREF_FIELDS,
   VIEW_IDS,
@@ -44,6 +45,9 @@ export function buildConfig(z: Schemastery): Schema<Record<string, unknown>> {
     ),
     [PANEL_PREF_FIELDS.nodeMode]: live(
       z.union(NODE_MODES).default(PANEL_PREF_DEFAULTS.nodeMode),
+    ),
+    [PANEL_PREF_FIELDS.overviewMode]: live(
+      z.union(OVERVIEW_MODES).default(PANEL_PREF_DEFAULTS.overviewMode),
     ),
     [PANEL_PREF_FIELDS.showArchived]: live(
       z.boolean().default(PANEL_PREF_DEFAULTS.showArchived),

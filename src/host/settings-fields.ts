@@ -24,6 +24,19 @@ export type NodeMode = 'map' | 'detail'
 export const NODE_MODES: readonly NodeMode[] = ['map', 'detail']
 
 /**
+ * The two ways the overview's stage can be drawn: the feed whole, or one line per step.
+ *
+ * One reading, two drawings — the same arrangement the node page already has, and for the same
+ * reason: how far a reader wants to be from the detail is where they were, not a choice to offer.
+ * `full` draws every row the conversation wrote; `brief` folds each run of work into one line that
+ * says what it was (see `src/model/brief.ts`). The words are DSH's own two for its transcript.
+ */
+export type OverviewMode = 'full' | 'brief'
+
+/** The two drawings of the overview's stage, ordered as the segmented control. */
+export const OVERVIEW_MODES: readonly OverviewMode[] = ['full', 'brief']
+
+/**
  * The names of the fields in this section: the host schema's keys, the paths
  * of the write-back `set` calls, and the keys the browser half reads back are
  * all the same string, so it is written only here.
@@ -31,6 +44,7 @@ export const NODE_MODES: readonly NodeMode[] = ['map', 'detail']
 export const PANEL_PREF_FIELDS = {
   lastTab: 'lastTab',
   nodeMode: 'nodeMode',
+  overviewMode: 'overviewMode',
   showArchived: 'showArchived',
   showOtherStates: 'showOtherStates',
   autoRelay: 'autoRelay',
@@ -61,6 +75,9 @@ export const PANEL_PREF_DEFAULTS = {
   /* The map: it is the page's signature drawing, and the one that answers "where does this line
    * stand" without being read row by row. */
   nodeMode: 'map',
+  /* The feed whole: the stage opens on what actually happened, and the concise drawing is the one a
+   * reader asks for after finding the full one too much — never the drawing they are given first. */
+  overviewMode: 'full',
   showArchived: false,
   showOtherStates: false,
   autoRelay: true,

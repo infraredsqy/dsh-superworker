@@ -75,10 +75,20 @@
  * window may be pressed at all is the panel's admission (`WindowGo`): a conversation this machine
  * cannot open keeps the drawing and nothing else, so no press can ever go nowhere.
  *
+ * One reading, two drawings. The feed above is the conversation as it happened: a line per event,
+ * carrying the file it touched and the command it ran. The concise drawing folds those same rows into
+ * one line per step and one line per answer — `model/brief.ts` says which line is which, `brief.ts`
+ * says it — and the switch between the two stands on the pane's own corner. That is the node page's
+ * arrangement, for the same reason: which drawing is in front is where the reader was, so the pane
+ * holds it and the settings document remembers it, and the model is not told at all. Nothing of the
+ * concise drawing is new geometry either: its lines are counted in the same rows the boxes are
+ * measured over, so a window whose work fits in one line is a window one line tall.
+ *
  * A window's id is wiring, not words: it rides a `data-window` attribute and never prints.
  */
 import * as React from 'react'
-import type { OverviewEnding, OverviewReading, OverviewRowKind, OverviewWindow } from '../model/index.ts'
+import type { BriefRow, OverviewEnding, OverviewReading, OverviewRowKind, OverviewWindow } from '../model/index.ts'
+import { briefRowsOf } from '../model/index.ts'
 import {
   BORN_BASE_W,
   BORN_SCALE,
@@ -116,6 +126,9 @@ import { useT, type Translate } from './locale.ts'
 import { CheckGlyph, FaultGlyph, PauseGlyph } from './marks.tsx'
 import { elapsedOf } from './words.ts'
 import type { WordKey } from './locales/index.ts'
+import { briefLineOf } from './brief.ts'
+import { OverviewModeControl } from './overview-mode.tsx'
+import type { OverviewMode } from './prefs.ts'
 
 /** How long the leave's fold runs, and a breath past it before the page loses the pane. The fold
  * itself lives in the sheet. */
@@ -160,6 +173,10 @@ const PAST_MARK = 'past'
  *  has. State and guard start on the same object, so the first measurement of a hidden pane is the
  *  no-change the guard is there to recognise. */
 const NO_STAGE: StageSize = { width: 0, height: 0 }
+
+/** No concise lines at all: what the pane holds while the full drawing is in front. One frozen map,
+ *  so the switch between the two drawings is one comparison and the memos below keep their identity. */
+const NO_BRIEF: ReadonlyMap<string, readonly BriefRow[]> = new Map()
 
 /**
  * What one press on a window may do: the map's own two hands (`CardGo`), asked of a session instead
@@ -309,12 +326,26 @@ function KindMark(props: { readonly kind: OverviewRowKind }): React.ReactElement
  * word instead. The pen each place takes is its own: the seal's sizes and stroke are this stage's
  * geometry's (`MARK_CHECK`, `MARK_CHECK_STROKE`), the small marks' are their own. */
 
+/** The one mark a concise step wears: a hollow ring, saying "this line is a step" and nothing more.
+ *  The full drawing gives every row a mark of its kind, because there are nine kinds and which one a
+ *  row is says what happened; this drawing has two, so the mark's whole job is telling them apart,
+ *  and a shape that names no tool keeps the line quiet. */
+function StepMark(): React.ReactElement {
+  return (
+    <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+      <circle cx="6" cy="6" r="3.6" fill="none" stroke="currentColor" strokeWidth="1" />
+    </svg>
+  )
+}
+
 /** One window's feed: the rows it holds, newest at the bottom, the top fading when the room ran out.
- * A live row is the streaming step's own tail: it redraws at the animation frame, and its clip is
- * the sheet's head-crop — the newest words stay on the line's end, while the row's word stays whole
- * outside that clip: which buffer is speaking is not a thing the crop is allowed to eat. */
+ *  Which list it draws is the reader's pick: the window's own rows, or the lines the concise drawing
+ *  folds them into. The frame, the fade and the veil are the same either way — one window, two
+ *  distances from it. */
 function Feed(props: {
   readonly window: OverviewWindow
+  /** The concise drawing's lines, or null when this window is drawn whole. */
+  readonly brief: readonly BriefRow[] | null
   /** How many rows the box has room for; past it the top row fades out. */
   readonly room: number
   /** Whether this window's newest row arrived on this beat. */
@@ -323,6 +354,28 @@ function Feed(props: {
   readonly veiled: boolean
   readonly head: number
   readonly foot: number
+}): React.ReactElement {
+  const brief = props.brief
+  const count = brief === null ? props.window.rows.length : brief.length
+  return (
+    <div
+      className={`superworker-ofeed${count > props.room ? ' is-fade' : ''}${props.veiled ? ' is-veiled' : ''}`}
+      style={{ left: FEED_LEFT, right: FEED_RIGHT, top: props.head, bottom: props.foot }}
+    >
+      {brief === null
+        ? <FullRows window={props.window} fresh={props.fresh} />
+        : <BriefRows rows={brief} fresh={props.fresh} />}
+    </div>
+  )
+}
+
+/** The feed whole: one line per event, and the streaming step's tail redrawn at the animation frame.
+ *  A live row is the step's own tail, and its clip is the sheet's head-crop — the newest words stay on
+ *  the line's end, while the row's word stays whole outside that clip: which buffer is speaking is not
+ *  a thing the crop is allowed to eat. */
+function FullRows(props: {
+  readonly window: OverviewWindow
+  readonly fresh: boolean
 }): React.ReactElement {
   const t = useT()
   const rows = props.window.rows
@@ -345,10 +398,7 @@ function Feed(props: {
     return { row, key, last: index === rows.length - 1 }
   })
   return (
-    <div
-      className={`superworker-ofeed${rows.length > props.room ? ' is-fade' : ''}${props.veiled ? ' is-veiled' : ''}`}
-      style={{ left: FEED_LEFT, right: FEED_RIGHT, top: props.head, bottom: props.foot }}
-    >
+    <>
       {keyed.map(({ row, key, last }) => (
         /* No hover title on a row: the row is a reading and a press away from the conversation itself,
            and a tooltip full of build paths over a long thought is noise over a page read at a glance
@@ -372,7 +422,33 @@ function Feed(props: {
           </span>
         </div>
       ))}
-    </div>
+    </>
+  )
+}
+
+/** The feed at a distance: one line per step, one line per answer, and nothing else.
+ *
+ *  The step's line carries the one mark and the words `brief.ts` builds; the answer's line carries
+ *  neither — it is the conversation's own text, and the reading ink alone says so. There is no
+ *  head-crop here and no jumping tail: an answer being written is read from its beginning, so the
+ *  line stands still while the words arrive. */
+function BriefRows(props: {
+  readonly rows: readonly BriefRow[]
+  readonly fresh: boolean
+}): React.ReactElement {
+  const t = useT()
+  return (
+    <>
+      {props.rows.map((row, index) => (
+        <div
+          key={row.key}
+          className={`superworker-orow is-${row.kind}${index === props.rows.length - 1 && props.fresh ? ' is-fresh' : ''}`}
+        >
+          {row.kind === 'step' ? <StepMark /> : null}
+          <span className="superworker-orow-t">{briefLineOf(t, row)}</span>
+        </div>
+      ))}
+    </>
   )
 }
 
@@ -389,6 +465,8 @@ function WindowPane(props: {
   /** Whether this window is still reaching its real box: its first box is measured over no rows, so
    *  the growth out of it is spent on the way rather than snapped. */
   readonly grow: boolean
+  /** The lines the concise drawing draws this window with, or null when it is drawn whole. */
+  readonly brief: readonly BriefRow[] | null
   /** Whether this window states the record's verdict (the check, the break, the gate). A page the
    *  line handed on from is drawn plainly: its last reading is one beat old, and the verdict that
    *  ended it belongs to the page the stage now stands on. */
@@ -551,6 +629,7 @@ function WindowPane(props: {
       )}
       <Feed
         window={pane}
+        brief={props.brief}
         room={box.rowsRoom}
         fresh={props.fresh}
         veiled={veiled}
@@ -664,6 +743,10 @@ function sameCast(
 export function OverviewPane(props: {
   readonly reading: OverviewReading
   readonly at: Date
+  /** Which of the two drawings stands in front: the feed whole, or one line per step. */
+  readonly mode: OverviewMode
+  /** Where a pick on the corner's switch goes: the panel owns it and remembers it. */
+  readonly onMode: (mode: OverviewMode) => void
   /** Where a press on a window goes: the panel's admission and DSH's own navigation gateway. */
   readonly go: WindowGo | null
   /**
@@ -755,7 +838,42 @@ export function OverviewPane(props: {
     return undefined
   }, [arrivalNow, measured, stageArrived])
 
-  const mainRows = reading.main?.rows.length ?? 0
+  /* The concise drawing's lines, per window, off the very rows the full drawing draws: folded once
+   * per beat, and the switch picks which list is counted. `running` is the window's own liveness — a
+   * conversation that stopped has no open step, so its last line says what it did rather than what it
+   * is on. The fold is the model's (`briefRowsOf`), so both drawings read one reading and this pane
+   * only decides which one it stands in front. */
+  const brief = React.useMemo((): ReadonlyMap<string, readonly BriefRow[]> => {
+    if (props.mode !== 'brief') return NO_BRIEF
+    const out = new Map<string, readonly BriefRow[]>()
+    for (const one of [reading.main, ...reading.children]) {
+      if (one === null) continue
+      out.set(one.id, briefRowsOf({ rows: one.rows, running: one.settled !== true }))
+    }
+    return out
+  }, [reading, props.mode])
+
+  /* How many lines each window the reading holds is drawn with — the number every box is measured
+   * over. The geometry reads row counts and nothing else, so the concise drawing needs no new layout:
+   * a step that fits in one line is a window one line tall. */
+  const drawn = React.useMemo((): ReadonlyMap<string, number> => {
+    const out = new Map<string, number>()
+    for (const one of [reading.main, ...reading.children]) {
+      if (one === null) continue
+      out.set(one.id, props.mode === 'brief' ? (brief.get(one.id)?.length ?? one.rows.length) : one.rows.length)
+    }
+    return out
+  }, [reading, brief, props.mode])
+
+  /** The lines one window is drawn with, or null when it is drawn whole. A window the reading has
+   *  dropped is folded here: it is still on the stage for its fold's span, and a pane that changed
+   *  drawing halfway out is the one thing the leave animation may never show. */
+  const linesOf = React.useCallback((window: OverviewWindow): readonly BriefRow[] | null => {
+    if (props.mode !== 'brief') return null
+    return brief.get(window.id) ?? briefRowsOf({ rows: window.rows, running: window.settled !== true })
+  }, [props.mode, brief])
+
+  const mainRows = reading.main === null ? 0 : (drawn.get(reading.main.id) ?? reading.main.rows.length)
 
   const currentIds = React.useMemo(
     () => new Set([reading.main?.id, ...reading.children.map((one) => one.id)].filter((one): one is string => one !== undefined)),
@@ -952,7 +1070,7 @@ export function OverviewPane(props: {
    * drops the window re-measured every survivor on the fold's own first frame: the pane shrank in a
    * room that had already moved around it, which is the tear a reader saw. */
   const cast = React.useMemo((): readonly { readonly id: string; readonly rows: number }[] => {
-    const live = reading.children.map((one) => ({ id: one.id, rows: one.rows.length }))
+    const live = reading.children.map((one) => ({ id: one.id, rows: drawn.get(one.id) ?? one.rows.length }))
     const held = leavingIds.filter((id) => !live.some((one) => one.id === id))
     if (held.length === 0) return live
     const out: { id: string; rows: number }[] = []
@@ -980,7 +1098,7 @@ export function OverviewPane(props: {
       if (rows !== undefined) out.push({ id, rows })
     }
     return out
-  }, [reading, leavingIds, castBefore, heldRows])
+  }, [reading, leavingIds, castBefore, heldRows, drawn])
 
   /* The row counts of the windows that have just left, read off their frozen readings while the refs
    * still name the beat they left on: the cast's last loop draws a held slot the previous cast never
@@ -991,7 +1109,14 @@ export function OverviewPane(props: {
     for (const id of heldIds) {
       if (currentIds.has(id)) continue
       const window = windowsRef.current.get(id)
-      if (window !== undefined) landed.set(id, window.rows.length)
+      if (window !== undefined) {
+        /* The count the slot is measured in is the one this pane draws with: a window folding out of
+         * a concise stage takes a concise slot, or the survivors would re-measure around a window one
+         * line taller than the one being drawn. */
+        landed.set(id, props.mode === 'brief'
+          ? briefRowsOf({ rows: window.rows, running: window.settled !== true }).length
+          : window.rows.length)
+      }
     }
     if (landed.size === 0) return
     setHeldRows((stood) => {
@@ -1004,7 +1129,7 @@ export function OverviewPane(props: {
       }
       return changed ? next : stood
     })
-  }, [currentIds, heldIds])
+  }, [currentIds, heldIds, props.mode])
 
   /* The order the column last drew with no fold in flight: what a held window's slot is read from.
    * Written after the commit — the render above read the previous cast, and this cast becomes the
@@ -1218,17 +1343,27 @@ export function OverviewPane(props: {
     const main = reading.main
     if (main === null) return []
     const out: { readonly id: string; readonly link: OverviewLink }[] = []
+    /* The lines the main window is drawn with: the concise drawing folds the dispatch row into the
+     * step it belongs to, so a tie leaves from that step's line. The row's place among the rows is
+     * still what finds it — the line is then the one covering that place — and a row no line covers
+     * (there is none) leaves the child unlinked rather than pointed at a neighbour. */
+    const lines = props.mode === 'brief' ? (brief.get(main.id) ?? []) : null
+    const lineOf = (rowIndex: number): number => lines === null
+      ? rowIndex
+      : lines.findIndex((one) => rowIndex >= one.from && rowIndex <= one.to)
     const tie = (id: string, window: OverviewWindow | undefined, box: OverviewBox | undefined): void => {
       if (window === undefined || box === undefined) return
       const callId = window.dispatchCallId
       if (callId === undefined) return
       const rowIndex = main.rows.findIndex((row) => row.callId === callId)
       if (rowIndex < 0) return
+      const line = lineOf(rowIndex)
+      if (line < 0) return
       const link = layoutLink({
         main: placement.main,
         child: box,
-        rowIndex,
-        rowCount: main.rows.length,
+        rowIndex: line,
+        rowCount: lines === null ? main.rows.length : lines.length,
         gap: box.left - (placement.main.left + placement.main.width),
       })
       if (link !== undefined) out.push({ id, link })
@@ -1242,7 +1377,7 @@ export function OverviewPane(props: {
       tie(id, windowsRef.current.get(id), boxOf(id) ?? boxesRef.current.get(id))
     }
     return out
-  }, [reading, placement, boxOf, leavingIds, currentIds])
+  }, [reading, placement, boxOf, leavingIds, currentIds, brief, props.mode])
 
   /* The rail's lit bar: the leg the stage is drawing, which is the main window's own step. A leg is
    * a step of the line, so the lit bar is a step and never the child column's first seat. */
@@ -1294,7 +1429,7 @@ export function OverviewPane(props: {
   }, [reading, arrivedNow, flying, joined.held, births, boxOf])
 
   return (
-    <div className="superworker-overview" ref={bodyRef}>
+    <div className={`superworker-overview${props.mode === 'brief' ? ' is-brief' : ''}`} ref={bodyRef}>
       {placement.railVisible ? (
         /* The rail is the line's switch: one bar per step still on the table, the one the stage is
          * drawing lit. A bar carries no word — the nameplate on the stage is what names the step being
@@ -1360,6 +1495,7 @@ export function OverviewPane(props: {
              * already here. Its own appearance scales up where it stands; it never travels. */
             born={undefined}
             grow={opening.has(reading.main.id)}
+            brief={linesOf(reading.main)}
             go={props.go}
           />
         ) : null}
@@ -1383,6 +1519,7 @@ export function OverviewPane(props: {
                * appearance, so the two never put two transforms on one box. */
               born={flying.get(one.id)}
               grow={opening.has(one.id)}
+              brief={linesOf(one)}
               go={props.go}
             />
           )
@@ -1417,6 +1554,7 @@ export function OverviewPane(props: {
               fresh={false}
               born={undefined}
               grow={false}
+              brief={linesOf(window)}
               go={props.go}
             />
           )
@@ -1436,10 +1574,16 @@ export function OverviewPane(props: {
             fresh={false}
             born={undefined}
             grow={false}
+            brief={linesOf(pane.window)}
             go={null}
           />
         ))}
       </div>
+      {/* The drawing's own switch, on the pane's corner: it stands over the field and never in it —
+          the field is the windows' painting layer and takes no pointer, so a control inside it would
+          be a picture of a switch. It is the reader's pick and nothing else; which drawing is in
+          front says nothing about the reading, and the reading knows nothing about it. */}
+      <OverviewModeControl mode={props.mode} onMode={props.onMode} />
     </div>
   )
 }

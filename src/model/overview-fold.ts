@@ -47,6 +47,13 @@ export interface OverviewRow {
   /** Which tool call this row folds: DSH's own `callId` carried out verbatim; a row that folds no call carries none. */
   readonly callId?: string
   /**
+   * The tool the call named, verbatim — the name a call's row is a call of. It rides the row for the
+   * concise drawing alone: that drawing says a step in one line, and which line that is depends on
+   * which tools the step reached for (`brief.ts`). A row that folds no call carries none, and a
+   * result's row carries none either: the call above it already answered for the name.
+   */
+  readonly name?: string
+  /**
    * The moment of the event this row folds, in epoch milliseconds: the row's
    * identity across redraws, read the same way every beat, so a drawing that
    * keys on it updates a row in place instead of remounting it. Absent on a
@@ -175,6 +182,12 @@ function tailOf(buffer: string, limit: number): string {
  * buffer that says nothing (whitespace, tool arguments, a chunk the fold does
  * not read) draws no row; a retry's chunks arrive under a new attempt id, and
  * the tails follow the newest attempt rather than mixing the two.
+ *
+ * `text` is the tail and `full` is the whole buffer it was cut from — the two
+ * fields' own meanings, kept here as everywhere else. The full feed draws only
+ * the tail; the concise one reads the head off `full`, because a line that
+ * covers a whole step may not show the newest words of a reply sliding under
+ * its own beginning (see `brief.ts`).
  */
 export function liveRowsOf(events: readonly OverviewEvent[] | undefined): readonly OverviewRow[] {
   let think = ''
@@ -198,9 +211,9 @@ export function liveRowsOf(events: readonly OverviewEvent[] | undefined): readon
   }
   const rows: OverviewRow[] = []
   const thinkTail = tailOf(think, LIVE_TAIL_LIMIT)
-  if (thinkTail.length > 0) rows.push({ kind: 'think', text: thinkTail, full: thinkTail, live: true })
+  if (thinkTail.length > 0) rows.push({ kind: 'think', text: thinkTail, full: think, live: true })
   const spokenTail = tailOf(spoken, LIVE_TAIL_LIMIT)
-  if (spokenTail.length > 0) rows.push({ kind: 'output', text: spokenTail, full: spokenTail, live: true })
+  if (spokenTail.length > 0) rows.push({ kind: 'output', text: spokenTail, full: spoken, live: true })
   return rows
 }
 
@@ -301,6 +314,7 @@ function foldCall(
     kind,
     text: cut,
     full: subject,
+    name,
     ...(callId === undefined ? {} : { callId }),
     ...(at === undefined ? {} : { at }),
   })

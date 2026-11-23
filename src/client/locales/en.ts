@@ -243,6 +243,55 @@ export const en: Readonly<Record<WordKey, string>> = {
   'overview.fault.other': 'no word',
   /* The name a window whose title the record does not name is announced by: what pressing it does. */
   'overview.window.aria': 'Open this conversation',
+  /* The stage's two drawings, on the pane's own corner control: every row the feed holds, or one line
+   * per step. `draw` rather than `mode`, because `overview.mode.*` above is the node's own mode, and
+   * one word must not come to mean two things. */
+  'overview.draw.aria': 'How this step is drawn',
+  'overview.draw.full': 'Full',
+  'overview.draw.brief': 'Brief',
+  /* A step said in one line. Every word below is DSH's own — `message.stepProcess.*` in `ui-chat`'s
+   * locale table — quoted as it stands, so a collapsed step in the harness's conversation and a step
+   * on this stage say the same thing. `done` is what a finished step did; `run` is what the step being
+   * worked is on. The one deviation is `done.subagents`: this panel calls a dispatch 派出, and its
+   * full feed has said so since the row existed, so the step says it too.
+   *
+   * The four pieces under them are DSH's join and not words of this panel's: `joinTwo` binds two
+   * categories, `shared` is the prefix two labels elide when both open with it — English has none, so
+   * both labels stand whole — `comma` joins three, and `more` closes a title that had more than
+   * three. Every label but the first is continued in lower case, which is what lets the join read as
+   * one sentence. */
+  'brief.done.thinking': 'Analysis completed',
+  'brief.done.read': 'Read files',
+  'brief.done.readImage': 'Read images',
+  'brief.done.search': 'Searched code',
+  'brief.done.write': 'Wrote files',
+  'brief.done.edit': 'Edited files',
+  'brief.done.commands': 'Ran commands',
+  'brief.done.code': 'Ran code',
+  'brief.done.webSearch': 'Searched the web',
+  'brief.done.webFetch': 'Visited web pages',
+  'brief.done.subagents': 'Dispatched subagents',
+  'brief.done.plan': 'Updated the plan',
+  'brief.done.questions': 'Asked questions',
+  'brief.done.tools': 'Called tools',
+  'brief.run.thinking': 'Analyzing the request',
+  'brief.run.read': 'Reading files',
+  'brief.run.readImage': 'Reading images',
+  'brief.run.search': 'Searching code',
+  'brief.run.write': 'Writing files',
+  'brief.run.edit': 'Editing files',
+  'brief.run.commands': 'Running commands',
+  'brief.run.code': 'Running code',
+  'brief.run.webSearch': 'Searching the web',
+  'brief.run.webFetch': 'Visiting web pages',
+  'brief.run.subagents': 'Dispatching subagents',
+  'brief.run.plan': 'Updating the plan',
+  'brief.run.questions': 'Waiting for your action',
+  'brief.run.tools': 'Calling tools',
+  'brief.step.joinTwo': '{first} and {second}',
+  'brief.step.shared': '',
+  'brief.step.comma': ', ',
+  'brief.step.more': '{title}, etc.',
 
   /* ── When an operation is refused ─────────────────────────────────────────────────────────── */
   /* The tool's own reason and the transport's own message are carried out verbatim: no lookup table

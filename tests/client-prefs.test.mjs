@@ -62,12 +62,13 @@ test('a fully written settings document reads as those panel values', () => {
   const prefs = prefsFromSection({
     lastTab: 'nodes',
     nodeMode: 'detail',
+    overviewMode: 'brief',
     showArchived: true,
     showOtherStates: true,
     autoRelay: false,
     injectInstructions: false,
   })
-  assert.deepEqual(prefs, { tab: 'nodes', nodeMode: 'detail', archived: true, otherStates: true, autoRelay: false, injectInstructions: false })
+  assert.deepEqual(prefs, { tab: 'nodes', nodeMode: 'detail', overviewMode: 'brief', archived: true, otherStates: true, autoRelay: false, injectInstructions: false })
 })
 
 test('sections that cannot be read fall back to the factory ones, the rest read through', () => {
@@ -95,7 +96,7 @@ test('sections that cannot be read fall back to the factory ones, the rest read 
   assert.deepEqual(prefsFromSection({ defaultTab: 'map' }), DEFAULT_PREFS)
   assert.deepEqual(
     prefsFromSection({ lastTab: 'issue', showArchived: 1, showOtherStates: 0 }),
-    { tab: 'issue', nodeMode: DEFAULT_PREFS.nodeMode, archived: false, otherStates: false, autoRelay: true, injectInstructions: true },
+    { tab: 'issue', nodeMode: DEFAULT_PREFS.nodeMode, overviewMode: DEFAULT_PREFS.overviewMode, archived: false, otherStates: false, autoRelay: true, injectInstructions: true },
   )
   /* The relay switch reads `false` when the document says false; a value that is not a boolean
      (an older document, a hand edit) falls back to the factory default, which is on. */
@@ -124,6 +125,14 @@ test('the two views that became one page: an old document still lands where the 
   /* No such word anywhere: the page's own default, and the overview's. */
   assert.equal(prefsFromSection({}).nodeMode, 'map')
   assert.equal(prefsFromSection({ nodeMode: 'grid' }).nodeMode, 'map')
+})
+
+test('the overview\'s own drawing reads through, and a word no drawing answers to falls back to the full one', () => {
+  assert.equal(prefsFromSection({ overviewMode: 'brief' }).overviewMode, 'brief')
+  assert.equal(prefsFromSection({ overviewMode: 'full' }).overviewMode, 'full')
+  /* A document written by a version that spelled it otherwise — or by hand — is no drawing at all. */
+  assert.equal(prefsFromSection({ overviewMode: 'compact' }).overviewMode, 'full')
+  assert.equal(prefsFromSection({}).overviewMode, 'full')
 })
 
 test('the write is one top-level set, its path the field table\'s own word', () => {
@@ -158,7 +167,7 @@ test('once the form is attached the reading is that section, revision and all', 
   const source = createPrefsSource()
   source.attach(form)
   const snapshot = source.getSnapshot()
-  assert.deepEqual(snapshot.prefs, { tab: 'issue', nodeMode: 'detail', archived: true, otherStates: false, autoRelay: true, injectInstructions: true })
+  assert.deepEqual(snapshot.prefs, { tab: 'issue', nodeMode: 'detail', overviewMode: 'full', archived: true, otherStates: false, autoRelay: true, injectInstructions: true })
   assert.equal(snapshot.status, 'ready')
   assert.equal(snapshot.revision, 1)
   assert.equal(snapshot.writable, true)

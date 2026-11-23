@@ -11,14 +11,15 @@ import type { WordKey } from './locales/index.ts'
 import { createStore, upstreamBinding } from './store.ts'
 import {
   NODE_MODES,
+  OVERVIEW_MODES,
   PANEL_PREF_DEFAULTS,
   PANEL_PREF_FIELDS,
   VIEW_IDS,
 } from '../host/settings-fields.ts'
-import type { NodeMode, ViewId } from '../host/settings-fields.ts'
+import type { NodeMode, OverviewMode, ViewId } from '../host/settings-fields.ts'
 
-export type { NodeMode, ViewId }
-export { NODE_MODES, PANEL_PREF_DEFAULTS, PANEL_PREF_FIELDS, VIEW_IDS }
+export type { NodeMode, OverviewMode, ViewId }
+export { NODE_MODES, OVERVIEW_MODES, PANEL_PREF_DEFAULTS, PANEL_PREF_FIELDS, VIEW_IDS }
 
 /** Which settings-document field the panel writes back to; the names are the document's keys. */
 export type PrefField = (typeof PANEL_PREF_FIELDS)[keyof typeof PANEL_PREF_FIELDS]
@@ -51,6 +52,8 @@ export interface PanelPrefs {
   readonly tab: ViewId
   /** How the node page is drawn: the map, or the list. */
   readonly nodeMode: NodeMode
+  /** How the overview's stage is drawn: the feed whole, or one line per step. */
+  readonly overviewMode: OverviewMode
   /** Whether the instructions view folds archived entries back into their sections. */
   readonly archived: boolean
   /** Whether the issues view also puts the three handled states back on the page. */
@@ -64,6 +67,7 @@ export interface PanelPrefs {
 export const DEFAULT_PREFS: PanelPrefs = {
   tab: PANEL_PREF_DEFAULTS.lastTab,
   nodeMode: PANEL_PREF_DEFAULTS.nodeMode,
+  overviewMode: PANEL_PREF_DEFAULTS.overviewMode,
   archived: PANEL_PREF_DEFAULTS.showArchived,
   otherStates: PANEL_PREF_DEFAULTS.showOtherStates,
   autoRelay: PANEL_PREF_DEFAULTS.autoRelay,
@@ -83,11 +87,13 @@ export function prefsFromSection(section: unknown): PanelPrefs {
   const rawTab = held[PANEL_PREF_FIELDS.lastTab]
   const legacy = typeof rawTab === 'string' ? LEGACY_TABS[rawTab] : undefined
   const mode = held[PANEL_PREF_FIELDS.nodeMode]
+  const draw = held[PANEL_PREF_FIELDS.overviewMode]
   const relay = held[PANEL_PREF_FIELDS.autoRelay]
   const inject = held[PANEL_PREF_FIELDS.injectInstructions]
   return {
     tab: VIEW_IDS.includes(rawTab as ViewId) ? (rawTab as ViewId) : (legacy?.tab ?? DEFAULT_PREFS.tab),
     nodeMode: NODE_MODES.includes(mode as NodeMode) ? (mode as NodeMode) : (legacy?.mode ?? DEFAULT_PREFS.nodeMode),
+    overviewMode: OVERVIEW_MODES.includes(draw as OverviewMode) ? (draw as OverviewMode) : DEFAULT_PREFS.overviewMode,
     archived: held[PANEL_PREF_FIELDS.showArchived] === true,
     otherStates: held[PANEL_PREF_FIELDS.showOtherStates] === true,
     autoRelay: typeof relay === 'boolean' ? relay : DEFAULT_PREFS.autoRelay,

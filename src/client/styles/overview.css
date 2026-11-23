@@ -154,6 +154,19 @@
   display: block;
 }
 
+/* ---- The drawing's own switch --------------------------------------------- */
+/* 完整 / 简洁, on the pane's top-right corner: the symmetric sibling of the standing corner below, in
+ * the segmented control the node page's band and the issue page's levels already wear. It answers one
+ * question — how much of a step the feed draws — and nothing about the reading, so it hangs on the
+ * pane and over the field, never inside it: the field is the windows' painting layer and takes no
+ * pointer at all, and a control inside it would be a picture of a switch. It stands later in the
+ * drawing than the field, so it is read over the windows without needing a layer of its own. */
+.superworker-page .superworker-omode {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+}
+
 /* ---- The lines between windows -------------------------------------------- */
 /* One child, one line: out of the main window's right edge on the dispatch row that opened it,
  * across the ground between the two windows, and into the child's left edge. The layer covers the
@@ -706,6 +719,37 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- The concise drawing -------------------------------------------------- */
+/* One line per step, one line per answer, and nothing else. The two are told apart by three things at
+ * once, none of them a new vocabulary: a step takes one tier more (14, DSH's own head size, one tier
+ * above the feed's 13), a step's weight, and a step's one mark — while an answer is the reading
+ * itself: reading ink, no mark, and no word in front of it. There are two kinds here, so the mark
+ * says only "this line is a step"; the full drawing names a kind per row because it has nine.
+ *
+ * The row's height is the geometry's (`--superworker-orow-h`), which the box was measured with: a
+ * larger glyph may not spend it, so the line height is stated back to the row's own. */
+.superworker-page .superworker-orow.is-step {
+  color: var(--superworker-ink-2);
+  font: var(--dsw-font-s-14);
+  font-weight: 500;
+  line-height: var(--superworker-orow-h, 24px);
+}
+.superworker-page .superworker-orow.is-step svg {
+  color: var(--superworker-ink-3);
+}
+.superworker-page .superworker-orow.is-reply {
+  color: var(--superworker-ink-1);
+}
+/* A window's own name keeps its rank over its content. With the feed's steps at 14, a title at 12
+ * (the child's) or 13 (the nameplate's) would be read after the line beneath it — the one inversion a
+ * drawing this calm cannot afford. Both take the same tier here, and neither box changes height: the
+ * plate's line keeps its 20px line height and its weight, and the child's title line keeps its 18px
+ * one, which is room enough for the glyph. */
+.superworker-page .superworker-overview.is-brief .superworker-oplate-t,
+.superworker-page .superworker-overview.is-brief .superworker-ohead-t {
+  font-size: 14px;
 }
 
 /* ---- The live step's tail rows -------------------------------------------- */

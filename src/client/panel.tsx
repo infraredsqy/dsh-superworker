@@ -20,7 +20,7 @@ import * as React from 'react'
 import type { SuperworkerReading } from '../host/contract.ts'
 import type { InstructionReading, OverviewReading, OverviewSnapshot } from '../model/index.ts'
 import { everySourceIs, owedSessions, readBirthplaces, readJudgement, readOverview, readProject, readSessions, strandedCycleOf } from '../model/index.ts'
-import type { NodeMode, PrefField, PrefsSource, ViewId } from './prefs.ts'
+import type { NodeMode, OverviewMode, PrefField, PrefsSource, ViewId } from './prefs.ts'
 import { DEFAULT_SOURCE, PANEL_PREF_FIELDS, VIEW_IDS, VIEW_WORDS } from './prefs.ts'
 import { useT } from './locale.ts'
 import { failureWord, legacyNoticeWords, overviewEmptySaid, type OverviewEmpty } from './words.ts'
@@ -195,6 +195,9 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
   /* The node page's two drawings: the settings document leads, like the two switches below, because
    * nothing but the pane's own control writes it and that control writes it back at once. */
   const [nodeMode, setNodeMode] = usePreference<NodeMode>(stored.nodeMode)
+  /* The overview's two drawings, on the same road as the node page's: the document leads, and the
+   * pane's own corner control writes it back at once. */
+  const [overviewMode, setOverviewMode] = usePreference<OverviewMode>(stored.overviewMode)
   const [otherStates, setOtherStates] = usePreference<boolean>(stored.otherStates)
   /* This screen only reads the archived flag — the settings page is where it is flipped — but it
    * takes the same road as the three above: one hook is what every preference this pane reads goes
@@ -606,6 +609,13 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     keep(PANEL_PREF_FIELDS.nodeMode, mode)
   }, [keep, setNodeMode])
 
+  /* The overview's drawing: the same two hands as the node page's pick, for the same reason — the
+   * screen leads and the document remembers, because it is where the reader was. */
+  const pickOverviewMode = React.useCallback((mode: OverviewMode) => {
+    setOverviewMode(mode)
+    keep(PANEL_PREF_FIELDS.overviewMode, mode)
+  }, [keep, setOverviewMode])
+
   /* Whether this screen has anything to say. Picking "ungrouped" while this session has a home
    * means that pane has no record under it; none of the four sources listed means this workspace
    * has no such record; listed but none parseable means unreadable. In all three cases all five
@@ -686,7 +696,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
             {overview === null
               ? null
               : emptySaid === null
-                ? <OverviewPane key={pageSpace} reading={overview} at={at} go={windowGo} pick={setPickedLeg} />
+                ? <OverviewPane key={pageSpace} reading={overview} at={at} go={windowGo} pick={setPickedLeg} mode={overviewMode} onMode={pickOverviewMode} />
                 : <OverviewEmptyStage said={emptySaid} />}
             <OverviewLaunch runnable={runnable} busy={consulting} onRoute={consultRoute} onConduct={consultConduct} />
           </PaneFrame>

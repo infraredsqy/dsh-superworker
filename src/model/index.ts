@@ -26,6 +26,8 @@ export type {
   OverviewWindow,
 } from './overview.ts'
 export type { OverviewEvent, OverviewRow, OverviewRowKind } from './overview-fold.ts'
+export { briefRowsOf } from './brief.ts'
+export type { BriefCategory, BriefReply, BriefRow, BriefStep } from './brief.ts'
 export type { OverviewMainFrom } from './overview-main.ts'
 export { readLine, readPool } from './pool.ts'
 export { belongsTo, bucketOf, dispatchCycleOf, everySourceIs, lineStateOf, nodesOf, ownersOf, rankOf } from './reading.ts'

@@ -278,6 +278,53 @@ export const zh = {
   'overview.fault.other': '没有交代',
   /* The name a window whose title the record does not name is announced by: what pressing it does. */
   'overview.window.aria': '打开这个会话',
+  /* The stage's two drawings, on the pane's own corner control: every row the feed holds, or one line
+   * per step. `draw` rather than `mode`, because `overview.mode.*` above is the node's own mode, and
+   * one word must not come to mean two things. */
+  'overview.draw.aria': '这一步怎么画',
+  'overview.draw.full': '完整',
+  'overview.draw.brief': '简洁',
+  /* A step said in one line. Every word below is DSH's own — `message.stepProcess.*` in `ui-chat`'s
+   * locale table — quoted as it stands, so a collapsed step in the harness's conversation and a step
+   * on this stage say the same thing. `done` is what a finished step did; `run` is what the step being
+   * worked is on. The one deviation is `done.subagents`: this panel calls a dispatch 派出, and its
+   * full feed has said so since the row existed.
+   *
+   * The four pieces under them are DSH's join and not words of this panel's: `joinTwo` binds two
+   * categories, `shared` is the prefix two labels elide when both open with it, `comma` joins three,
+   * and `more` closes a title that had more than three. */
+  'brief.done.thinking': '已完成分析',
+  'brief.done.read': '已读取文件',
+  'brief.done.readImage': '已读取图片',
+  'brief.done.search': '已搜索代码',
+  'brief.done.write': '已写入文件',
+  'brief.done.edit': '修改了文件',
+  'brief.done.commands': '执行了命令',
+  'brief.done.code': '运行了代码',
+  'brief.done.webSearch': '已搜索网页',
+  'brief.done.webFetch': '已访问网页',
+  'brief.done.subagents': '已派出',
+  'brief.done.plan': '更新了计划',
+  'brief.done.questions': '向用户提出了问题',
+  'brief.done.tools': '已调用工具',
+  'brief.run.thinking': '正在分析请求',
+  'brief.run.read': '正在读取文件',
+  'brief.run.readImage': '正在读取图片',
+  'brief.run.search': '正在搜索代码',
+  'brief.run.write': '正在写入文件',
+  'brief.run.edit': '正在编辑文件',
+  'brief.run.commands': '正在运行命令',
+  'brief.run.code': '正在运行代码',
+  'brief.run.webSearch': '正在搜索网页',
+  'brief.run.webFetch': '正在访问网页',
+  'brief.run.subagents': '正在派出',
+  'brief.run.plan': '正在更新计划',
+  'brief.run.questions': '等待你的操作',
+  'brief.run.tools': '正在调用工具',
+  'brief.step.joinTwo': '{first}并{second}',
+  'brief.step.shared': '已',
+  'brief.step.comma': '，',
+  'brief.step.more': '{title}等',
 
   /* ── When an operation is refused ─────────────────────────────────────────────────────────── */
   /* Each code from `src/host/failure.ts` and `src/client/failure.ts` reads as one of these.
