@@ -37,10 +37,13 @@
  * state to one of those two modes) it wears the amber breathing border and nothing else: no veil, no
  * mark. Otherwise the frame follows the record's own verdict, never the quiet: the check belongs to
  * `delivered`, and `alert` — work owed, nobody doing it, and the conversation not ended by itself —
- * is the frame itself, in the break's ink. A border is read before any glyph, so the frame is the
- * state's own drawing on a child as much as on the window this panel lives in: the debt is the same
- * debt whoever left it, and the one red frame says it. A conversation that merely went quiet, with
- * no verdict on the record, changes nothing about its frame.
+ * is the frame itself, in the break's ink. The frame also states the ordinary flow: a window in
+ * hand wears the link ink and one whose work was handed in the success ink, at the quieter mix the
+ * stage gives what is not an exception — so the map's card and the stage's window say the same word
+ * in the same hue. A border is read before any glyph, so the frame is the state's own drawing on a
+ * child as much as on the window this panel lives in: the debt is the same debt whoever left it,
+ * and the one red frame says it. A conversation that merely went quiet, with no verdict on the
+ * record, changes nothing about its frame.
  *
  * What the frame leaves out is *why*, and that is one line's work: a glyph and a short word, centred
  * on the band's middle, saying how the conversation's last turn ended in a few syllables — the same
@@ -486,6 +489,8 @@ function WindowPane(props: {
     props.grow ? 'is-grow' : '',
     atGate ? 'is-wait' : '',
     broken ? 'is-broken' : '',
+    handed ? 'is-done' : '',
+    moving ? 'is-run' : '',
     target === null ? '' : 'is-go',
   ]
     .filter((one) => one.length > 0)

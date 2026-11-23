@@ -139,18 +139,24 @@
 
 /* Delivered: a green frame. */
 .superworker-page .superworker-mnode.is-done {
-  --edge: var(--dsw-alias-state-success-primary);
+  --edge: var(--superworker-state-done);
 }
 
 /* In hand: the link colour, the one colour on this page that means "moving". */
 .superworker-page .superworker-mnode.is-run {
-  --edge: var(--dsw-alias-link);
+  --edge: var(--superworker-state-run);
 }
 
 /* Waiting for a person (a checkpoint, a parked cell, a manual step): an amber frame, and the card a
    reader meets first on the page. */
 .superworker-page .superworker-mnode.is-gate {
-  --edge: var(--dsw-alias-state-warn-primary);
+  --edge: var(--superworker-state-gate);
+}
+
+/* A claim that outlived its session: the one failure a cell can wear, in the same red the stage's
+   broken window wears. It outranks the card's own state because nothing is moving the cell. */
+.superworker-page .superworker-mnode.is-dead {
+  --edge: var(--superworker-state-fail);
 }
 
 /* Everything outside the focus: the frame keeps a third of its colour and the ground falls back to
@@ -169,7 +175,7 @@
 }
 
 .superworker-page .superworker-mnode.is-gate.is-lit {
-  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, var(--dsw-alias-bg-layer-1));
+  background: color-mix(in srgb, var(--superworker-state-gate) 8%, var(--dsw-alias-bg-layer-1));
 }
 
 /* Hover is said on the ground, not on the frame: the frame is already carrying this card's state,

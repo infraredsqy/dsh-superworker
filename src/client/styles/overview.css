@@ -273,10 +273,10 @@
   background: var(--superworker-ink-1);
 }
 .superworker-page .superworker-orail button.is-need b {
-  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 70%, transparent);
+  background: color-mix(in srgb, var(--superworker-state-gate) 70%, transparent);
 }
 .superworker-page .superworker-orail button.is-broken b {
-  background: var(--dsw-alias-state-error-primary);
+  background: var(--superworker-state-fail);
 }
 
 /* ---- A window ------------------------------------------------------------- */
@@ -293,22 +293,33 @@
   pointer-events: auto;
 }
 .superworker-page .superworker-opane.is-wait {
-  border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 34%, transparent);
+  border-color: var(--superworker-state-gate);
   /* The warm ground the demo draws for a waiting pane: the theme's warn hue mixed into the layer the
    * window already stands on, so no literal colour is invented and a palette switch moves it with
    * the rest. It is the row's own ground, so a waiting window reads amber without shouting. */
-  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, var(--dsw-alias-bg-layer-1));
+  background: color-mix(in srgb, var(--superworker-state-gate) 8%, var(--dsw-alias-bg-layer-1));
+}
+/* In hand, and delivered: the frame says the same word the map's card says, at the strength the
+ * stage gives the normal flow. The gate and the break keep their full ink and their extra weight
+ * (the amber ground and breath, the 1px stroke), so the exception is still read first — it is the
+ * loudest thing on the page, not the only thing painted. */
+.superworker-page .superworker-opane.is-run {
+  border-color: color-mix(in srgb, var(--superworker-state-run) 45%, transparent);
+}
+.superworker-page .superworker-opane.is-done {
+  border-color: color-mix(in srgb, var(--superworker-state-done) 45%, transparent);
 }
 /* Broken — work is owed and nobody is working it. The frame itself says so, in the one ink this page
  * keeps for a break: a border is read before any glyph, so the window needs no mark and no word
- * inside it, and the two verdicts a frame can carry are told apart by ink alone — amber for the gate
- * that waits on a person, red for the leg that stopped owing the line its work. It stands a step
- * wider than the hairline and at full strength, because this is the one reading on the stage that
- * has to be seen before anything is read. It does not breathe: the gate breathes because it is a
- * question still open, and a break is an answer nobody gave. */
+ * inside it, and the verdicts a frame can carry are told apart by ink alone — amber for the gate
+ * that waits on a person, red for the leg that stopped owing the line its work, the link and
+ * success hues for the ordinary flow. It stands a step wider than the hairline and at full strength,
+ * because this is the one reading on the stage that has to be seen before anything is read. It does
+ * not breathe: the gate breathes because it is a question still open, and a break is an answer
+ * nobody gave. */
 .superworker-page .superworker-opane.is-broken {
   border-width: 1px;
-  border-color: var(--dsw-alias-state-error-primary);
+  border-color: var(--superworker-state-fail);
 }
 /* The window this machine can open answers a press: the cursor says so on a desk, and
  * `touch-action: manipulation` is the touch half — without it WebKit holds a tap on a plain box back
@@ -542,10 +553,10 @@
 @keyframes superworker-opane-breathe {
   0%,
   100% {
-    border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 26%, transparent);
+    border-color: color-mix(in srgb, var(--superworker-state-gate) 55%, transparent);
   }
   50% {
-    border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 50%, transparent);
+    border-color: var(--superworker-state-gate);
   }
 }
 .superworker-page .superworker-opane.is-wait {
@@ -687,7 +698,7 @@
  * one ink for a break, wherever it is read. The amber is kept for the gate — a person being owed —
  * so neither colour has to be read twice. */
 .superworker-page .superworker-orow.is-fail {
-  color: var(--dsw-alias-state-error-primary);
+  color: var(--superworker-state-fail);
 }
 .superworker-page .superworker-orow-t {
   flex: 1 1 auto;
@@ -773,7 +784,7 @@
   }
 }
 .superworker-page .superworker-omark.is-gate {
-  color: var(--dsw-alias-state-warn-primary);
+  color: var(--superworker-state-gate);
 }
 .superworker-page .superworker-omark::before {
   content: '';
@@ -827,7 +838,7 @@
   background: var(--dsw-alias-bg-layer-1);
   font: var(--dsw-font-xs-13);
   font-weight: 500;
-  color: var(--dsw-alias-state-error-primary);
+  color: var(--superworker-state-fail);
   white-space: nowrap;
 }
 .superworker-page .superworker-ofault svg {
@@ -844,8 +855,8 @@
   position: absolute;
   display: block;
   border: 1.5px solid var(--dsw-alias-border-l3);
-  border-top-color: var(--dsw-alias-link);
-  border-right-color: var(--dsw-alias-link);
+  border-top-color: var(--superworker-state-run);
+  border-right-color: var(--superworker-state-run);
   border-radius: 50%;
   corner-shape: round;
   animation: superworker-oring-spin 1.3s linear infinite;

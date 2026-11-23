@@ -625,7 +625,27 @@ test('with no navigation gateway every window is a drawing: no control, no press
   })
   assert.equal(main.getAttribute('role'), null, 'a press gave the window a role it never had')
   assert.ok(main.className.includes('is-main'), 'the window stopped being the drawing it was')
+  assert.ok(main.className.includes('is-run'), 'the running window does not wear the running frame the map gives its card')
 
+  await mounted.unmount()
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})
+
+/* The frame is the state's own drawing on both pages: a window at rest whose work the record
+ * delivered wears the same done frame the map's card wears, and not the running one. */
+test('a delivered window at rest wears the done frame, not the running one', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('done.', 1000)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([], false)),
+  })
+  await stageAt(mounted, 1024, 720)
+  const main = container(mounted).querySelector('[data-window="m1"]')
+  assert.notEqual(main, null, 'the delivered window is not drawn')
+  assert.ok(main.className.includes('is-done'), 'the delivered window does not wear the done frame')
+  assert.ok(!main.className.includes('is-run'), 'the delivered window still wears the running frame')
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })

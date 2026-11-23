@@ -562,16 +562,16 @@ const MARKS = [
   { what: 'weight bar cell · empty slot', where: '.superworker-block', property: 'box-shadow', ink: 'var(--superworker-ink-4)', ground: '--dsw-alias-bg-base', tier: 'B' },
   /* The amber ring is an inset shadow on the card's own face, so the card's fill is
    * its ground — not the layer the card itself sits on. */
-  { what: 'card gate · amber ring', where: '.superworker-card.is-gate', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
-  { what: 'card state mark · delivered', where: '.superworker-card .superworker-state.is-done', decl: '.superworker-state.is-done', property: 'color', ink: 'var(--dsw-alias-state-success-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
-  { what: 'detail row mark · delivered', where: '.superworker-row .superworker-state.is-done', decl: '.superworker-state.is-done', property: 'color', ink: 'var(--dsw-alias-state-success-primary)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'card gate · amber ring', where: '.superworker-card.is-gate', property: 'box-shadow', ink: 'var(--superworker-state-gate)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'card state mark · delivered', where: '.superworker-card .superworker-state.is-done', decl: '.superworker-state.is-done', property: 'color', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-layer-1', tier: 'A' },
+  { what: 'detail row mark · delivered', where: '.superworker-row .superworker-state.is-done', decl: '.superworker-state.is-done', property: 'color', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-base', tier: 'A' },
   /* The same rule paints this ring on three grounds: a board card, a detail row, and the map's own
    * face, where it leads the foot row of the card in hand. The first of the three has no instance on
    * the page right now, so its row is read where it would stand. */
-  { what: 'card state mark · running', where: '.superworker-card .superworker-state.is-run', decl: '.superworker-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-1', tier: null },
-  { what: 'detail row mark · running', where: '.superworker-row .superworker-state.is-run', decl: '.superworker-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-base', tier: null },
-  { what: 'map card · running', where: '.superworker-mnode .superworker-state.is-run', decl: '.superworker-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-2', tier: null },
-  { what: 'issue pool mark · open', where: '.superworker-cell.is-open', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'card state mark · running', where: '.superworker-card .superworker-state.is-run', decl: '.superworker-state.is-run', property: 'color', ink: 'var(--superworker-state-run)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'detail row mark · running', where: '.superworker-row .superworker-state.is-run', decl: '.superworker-state.is-run', property: 'color', ink: 'var(--superworker-state-run)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'map card · running', where: '.superworker-mnode .superworker-state.is-run', decl: '.superworker-state.is-run', property: 'color', ink: 'var(--superworker-state-run)', ground: '--dsw-alias-bg-layer-2', tier: null },
+  { what: 'issue pool mark · open', where: '.superworker-cell.is-open', property: 'box-shadow', ink: 'var(--superworker-state-gate)', ground: '--dsw-alias-bg-base', tier: null },
   /* The delete dialog's alert zone: the bar is the mark, and the layer the dialog
    * itself stands on is its ground — the amber tint under the sentence is 8%, so the
    * bar reads against that layer and the check can keep saying so. */
@@ -584,9 +584,9 @@ const MARKS = [
    * the convention above: the theme's own hue, read for the record. */
   { what: 'overview rail bar · an idle step', where: '.superworker-orail b', property: 'background', ink: 'color-mix(in srgb, var(--superworker-ink-1) 26%, transparent)', ground: '--dsw-alias-bg-base', tier: 'B' },
   { what: 'overview rail bar · the step the stage draws', where: '.superworker-orail button.is-on b', property: 'background', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-base', tier: 'B' },
-  { what: 'overview rail bar · a step at a person\'s gate', where: '.superworker-orail button.is-need b', property: 'background', ink: 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 70%, transparent)', ground: '--dsw-alias-bg-base', tier: null },
-  { what: 'overview rail bar · a step with nobody on it', where: '.superworker-orail button.is-broken b', property: 'background', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-base', tier: null },
-  { what: 'overview feed row · failed', where: '.superworker-orow.is-fail', property: 'color', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'overview rail bar · a step at a person\'s gate', where: '.superworker-orail button.is-need b', property: 'background', ink: 'color-mix(in srgb, var(--superworker-state-gate) 70%, transparent)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'overview rail bar · a step with nobody on it', where: '.superworker-orail button.is-broken b', property: 'background', ink: 'var(--superworker-state-fail)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'overview feed row · failed', where: '.superworker-orow.is-fail', property: 'color', ink: 'var(--superworker-state-fail)', ground: '--dsw-alias-bg-layer-1', tier: null },
   /* The completed window's check is a mark the reader resolves on its own, and it is reading ink
    * on purpose: the success hue does not clear the A floor on the light palette. The pause a window
    * at a person's gate wears stands in that same square and takes the theme's warn hue — the colour
@@ -595,10 +595,10 @@ const MARKS = [
    * break — and the running ring's head is the link ink, the same colour the panel's other ring
    * leads with. */
   { what: 'overview completed window · the check', where: '.superworker-omark', property: 'color', ink: 'var(--superworker-ink-1)', ground: '--dsw-alias-bg-layer-1', tier: 'A' },
-  { what: 'overview gated window · the pause', where: '.superworker-omark.is-gate', property: 'color', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
-  { what: 'overview broken window · the frame', where: '.superworker-opane.is-broken', property: 'border-color', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-base', tier: null },
-  { what: 'overview broken window · the fault line', where: '.superworker-ofault-n', property: 'color', ink: 'var(--dsw-alias-state-error-primary)', ground: '--dsw-alias-bg-layer-1', tier: null },
-  { what: 'overview running window · the ring head', where: '.superworker-oring', property: 'border-top-color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'overview gated window · the pause', where: '.superworker-omark.is-gate', property: 'color', ink: 'var(--superworker-state-gate)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'overview broken window · the frame', where: '.superworker-opane.is-broken', property: 'border-color', ink: 'var(--superworker-state-fail)', ground: '--dsw-alias-bg-base', tier: null },
+  { what: 'overview broken window · the fault line', where: '.superworker-ofault-n', property: 'color', ink: 'var(--superworker-state-fail)', ground: '--dsw-alias-bg-layer-1', tier: null },
+  { what: 'overview running window · the ring head', where: '.superworker-oring', property: 'border-top-color', ink: 'var(--superworker-state-run)', ground: '--dsw-alias-bg-layer-1', tier: null },
   { what: 'the theme\'s own idle point (the basis of the 1.5 floor)', where: null, property: null, ink: 'var(--dsw-alias-state-idle-primary)', ground: '--dsw-alias-bg-base', tier: null },
 ]
 

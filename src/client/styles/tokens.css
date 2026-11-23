@@ -98,6 +98,18 @@
   --superworker-ink-4: color-mix(in srgb, var(--dsw-alias-label-tertiary) 50%, transparent);
 }
 
+/* The five marks' four values, stated once: a frame and a mark on either page say the same word
+ * with the same ink, so a reader who learned the map's green reads the window's without a lesson.
+ * A mark still takes the ink ladder where a state hue would fall under its floor (the delivered
+ * check), so what is stated here is the frame's ink; the mark's own ink is stated where it is
+ * drawn. */
+.superworker-page {
+  --superworker-state-done: var(--dsw-alias-state-success-primary);
+  --superworker-state-run: var(--dsw-alias-link);
+  --superworker-state-gate: var(--dsw-alias-state-warn-primary);
+  --superworker-state-fail: var(--dsw-alias-state-error-primary);
+}
+
 /* One cell = one issue. The register's rows and the issue band's pills read the
  * same values, so a reader who has learned one has learned the other:
  *
@@ -123,7 +135,7 @@
 /* Awaiting handling: the one mark that says a person has to move. */
 .superworker-page .superworker-cell.is-open {
   background: transparent;
-  box-shadow: inset 0 0 0 1px var(--dsw-alias-state-warn-primary);
+  box-shadow: inset 0 0 0 1px var(--superworker-state-gate);
 }
 
 /* On the books and still counted, but nobody owes it yet. */
@@ -156,7 +168,7 @@
 }
 
 .superworker-page .superworker-state.is-run {
-  color: var(--dsw-alias-link);
+  color: var(--superworker-state-run);
   border: 1.5px solid var(--dsw-alias-border-l3);
   border-top-color: currentColor;
   border-radius: 50%;
@@ -164,23 +176,26 @@
   animation: superworker-spin 0.9s linear infinite;
 }
 
+/* The check is a mark the reader resolves on its own, and the success hue does not clear this
+ * panel's 3:1 floor on the light palette — so the delivered check is reading ink, and green stands
+ * on the frame. The same rule paints the list's row and the board's count. */
 .superworker-page .superworker-state.is-done {
-  color: var(--dsw-alias-state-success-primary);
+  color: var(--superworker-ink-1);
 }
 
 /* Human gate: amber, the color this layout reserves for "this cell wants a person". The
    mark itself is a pause: it is not running and delivered nothing, it is waiting for a
    person; which gate it is, the word right of the mark says. */
 .superworker-page .superworker-state.is-gate {
-  color: var(--dsw-alias-state-warn-primary);
+  color: var(--superworker-state-gate);
 }
 
-/* The stranded dispatch: a round is out, its claim is on disk, and nothing is moving it —
-   it wears the failed mark's ring, the shape the panel already keeps for turned-down
-   work; the amber ink says "a person has to move" and the hover carries the remedy, so
-   ink and words make the distinction and the panel gains no shape. */
+/* The stranded dispatch: a round is out, its claim is on disk, and nothing is moving it — it wears
+   the failed mark's ring in the failed ink, so the one break a cell can carry reads as a break on
+   the board as it does on the stage. The hover carries the remedy, so ink and words make the
+   distinction and the panel gains no shape. */
 .superworker-page .superworker-state.is-dead {
-  color: var(--dsw-alias-state-warn-primary);
+  color: var(--superworker-state-fail);
   border: 1px solid currentColor;
   border-radius: 50%;
   corner-shape: round;
@@ -220,9 +235,14 @@
  * what says "look here" on this panel, and spending it on a node the reader can
  * do nothing about yet is how the one that can be acted on gets missed. */
 .superworker-page .superworker-card.is-shelved,
-.superworker-page .superworker-card.is-gate,
+.superworker-page .superworker-card.is-gate {
+  box-shadow: inset 0 0 0 1px var(--superworker-state-gate);
+}
+
+/* A stranded claim is a break, not a wait: it wears the failed ink the stage's broken window wears,
+   so the one failure a cell can carry is the same red wherever the reader meets it. */
 .superworker-page .superworker-card.is-dead {
-  box-shadow: inset 0 0 0 1px var(--dsw-alias-state-warn-primary);
+  box-shadow: inset 0 0 0 1px var(--superworker-state-fail);
 }
 
 /* ---- marks and readouts that ride along a name ---------------------------- */
@@ -252,7 +272,7 @@
  * quiet where the node is still on its way in. */
 .superworker-page .superworker-gate {
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-state-warn-primary);
+  color: var(--superworker-state-gate);
   white-space: nowrap;
 }
 
