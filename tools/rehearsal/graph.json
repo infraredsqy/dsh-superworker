@@ -1,0 +1,46 @@
+[
+  {
+    "ref": "r1",
+    "title": "排练场记：开场记录",
+    "description": "在本节点自己的 temp 目录里写 rehearsal-notes.md（5 行以内）：记下你做了什么、读到的一句话材料。只写这个文件，不碰其他任何目录。",
+    "mode": "auto",
+    "weight": "standard",
+    "tags": ["writing"]
+  },
+  {
+    "ref": "r2",
+    "title": "快工：一张小抄",
+    "description": "写 cheat-sheet.md（10 行以内）：「总览面板排练」的要点小结。内容短、一次交付，本节点以快著称。",
+    "mode": "auto",
+    "weight": "standard",
+    "tags": ["writing"],
+    "depends_on": ["r1"]
+  },
+  {
+    "ref": "r3",
+    "title": "慢工：三段小传",
+    "description": "写三个文件（actors/alice.md、actors/bob.md、actors/carol.md），每位一段 3-4 句的小传；三位人物自拟。分三笔交付、逐个落盘，本节点刻意比「快工：一张小抄」慢。",
+    "mode": "auto",
+    "weight": "standard",
+    "tags": ["writing"],
+    "depends_on": ["r1"]
+  },
+  {
+    "ref": "r4",
+    "title": "闸口：等一声批准",
+    "description": "汇总前两个节点（快工、慢工）的交付清单，写 gate-summary.md：各交付了什么文件、各多少行。写完即交，本节点 mode=checkpoint，会停在人闸等批准。",
+    "mode": "checkpoint",
+    "weight": "standard",
+    "tags": ["writing"],
+    "depends_on": ["r2", "r3"]
+  },
+  {
+    "ref": "r5",
+    "title": "收尾：一张总单",
+    "description": "把整条排练线的产物合成 finale.md 总单（一页以内）：场记、小抄、三段小传、闸口清单各一行概括。写完即收线。",
+    "mode": "auto",
+    "weight": "standard",
+    "tags": ["writing"],
+    "depends_on": ["r4"]
+  }
+]
