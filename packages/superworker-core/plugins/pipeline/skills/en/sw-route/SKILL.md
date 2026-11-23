@@ -117,9 +117,8 @@ what it always meant — the copy the user nodded at — so compatibility costs 
 
 ### Step 1: read the docs and the context
 
-1. Read `shared/superworker/toolcraft.md` and `shared/superworker/philosophy.md`; talk to the user
-   by `shared/superworker/talking.md` (one tangle at a time, four lines, the concept name at the
-   setting `config get answer` reads)
+1. Read `shared/superworker/philosophy.md`; talk to the user by `shared/superworker/talking.md`
+   (one issue at a time, four parts, terminology at the setting `config get answer` reads)
 2. Read the project's docs/ and spec
 3. When building or changing a graph, `config get test_tier` reads this project's test tier
    (`full` / `minimal`; factory default `full`, the same as `config list` prints). When this
@@ -136,8 +135,8 @@ what it always meant — the copy the user nodded at — so compatibility costs 
    commands, then list the graph once to see the skeleton; `cycle list` and `cycle current`
    say which lines are in service and what each line's tags cover — the lines enter here, to be
    settled together with the nodes in step 3
-   - The user names a specific feature → search by keyword, merging like words into one query
-     (for the technique, see toolcraft.md)
+   - The user names a specific feature → search by keyword with `dag search`, merging related terms
+     into one regex (e.g. `a|b|c`)
    - A node is hit → look at its detail and its direct dependencies; to read spec.md's content
      → take its path and read it
 

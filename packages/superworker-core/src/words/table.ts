@@ -920,7 +920,7 @@ export const GROUPS = {
     "word": "dag",
     "prog": "dag",
     "summary": "the graph",
-    "description": "Manage a dependency graph (DAG) of project ideas/plugins.",
+    "description": "Manage a dependency graph (DAG) of project ideas/plugins. Prefer targeted queries (`dag search <regex>`, `dag info <id>`, `dag context <id>`) over full `dag list` when the graph is large.",
     "dest": "dag_command",
     "commands": [
       {
@@ -985,7 +985,7 @@ export const GROUPS = {
               "--from-file"
             ],
             "metavar": "FILE",
-            "help": "Register a batch from a JSON file instead of a title: one node per row. A row may carry a `ref` that this batch's own `depends_on` can name; the whole batch is one graph write, and any bad row, unknown dependency or cycle refuses all of it",
+            "help": "Register a batch from a JSON file instead of a title: one node per row. A row may carry a `ref` that this batch's own `depends_on` can name; the whole batch is one graph write, and any bad row, unknown dependency or cycle refuses all of it. Store temporary batch files under `.superworker/meta/batch/` and delete them after running",
           }
         ],
         "group": "dag",
@@ -1251,7 +1251,7 @@ export const GROUPS = {
       {
         "word": "list",
         "prog": "dag list",
-        "description": null,
+        "description": "List nodes sorted by urgency × importance. Includes `completed` nodes at the end by default (without score); use `--status todo --limit N` when inspecting active work, or `--status completed` to verify unfamiliar UUIDs in `deps` before treating them as dangling refs.",
         "positionals": [],
         "options": [
           {

@@ -147,7 +147,7 @@ test('Installing once: skills land in the root DSH reads skills from, the manife
       'the shared sheet sw-conduct points at was not installed',
     )
     assert.ok(
-      existsSync(join(root, 'sw-route', 'shared', 'superworker', 'toolcraft.md')),
+      existsSync(join(root, 'sw-route', 'shared', 'superworker', 'philosophy.md')),
       'the shared sheet sw-route points at was not installed',
     )
     for (const name of ['sw-conduct', 'sw-route']) {

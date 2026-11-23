@@ -1,31 +1,18 @@
-# Subagents: how many to dispatch at a time
+# Subagent concurrency control
 
-> The value is not here. Before dispatching work, run `config get max_agents` to read it: the
-> global copy is in `~/.superworker/config.json`, the project copy in `<project>/.superworker/config.json`, and the
-> factory default is written in the tool. `config list` prints that number together with the
-> layer it came from. This file writes only how to use it.
+> The limit itself is not stored here. Before dispatching work, run `config get max_agents` to read the active value (resolved from built-in default → global `~/.superworker/config.json` → project `<project>/.superworker/config.json`; `config list` prints each value alongside its source layer). This document covers only how to apply the cap.
 
-**It is a number the pipeline estimates itself**: it consults no host and recognizes no particular
-substrate software. The pipeline has no resident window, so it does not check in between sessions
-either — open one subagent and write the file once, close it and write once more, and that shape
-does not work. Every session estimates with this number by itself.
+**This cap is a per-session estimate**: it does not query the host runtime, nor does it synchronize live counts across separate sessions via shared lock files. Each session budgets its own dispatches against this limit independently.
 
-## How to use it
+## How to apply it
 
-Before dispatching work, count what is in flight once: in flight + what this dispatch is adding ≤
-the cap. When it cannot be crossed, yield in this order:
+Before dispatching, count currently active subagents and keep `in_flight + new_dispatches ≤ cap`. If a batch would exceed the cap, fall back in this order:
 
-1. **Merge**: one subagent carries several things. The surfaces are cut into copies as usual (each
-   copy one finding, each with its own three layers), and on dispatch several copies go into the
-   same prompt.
-2. **Batch**: when merging still cannot cross it, wait for this batch's notice to come back before
-   dispatching the next.
+1. **Merge**: combine multiple related or lightweight subtasks into a single subagent prompt.
+2. **Batch**: if merging still exceeds the cap, wait for the current batch to return before dispatching the next.
 
-When merging, every copy still has to stand as its own piece: one piece per report, not mashed
-into one paragraph, or there is nothing to dedup on when they are written into the record.
+When merging tasks into one subagent, keep each subtask's output in its own distinct section of the report rather than blending them together, so downstream aggregation and deduplication stay clean.
 
 ## Why leave headroom
 
-When the cap is hit, that batch comes down together and the whole batch is lost. Another session
-open at the same time is holding a slot too, so estimate on the conservative side rather than
-running right at the ceiling.
+Hitting the runtime concurrency ceiling can cause an entire batch to fail together. Other active sessions may also be consuming slots at the same time, so budget conservatively rather than running right at the cap.
