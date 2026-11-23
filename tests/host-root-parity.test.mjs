@@ -5,7 +5,9 @@
  *
  * - the wake's per-step condition (`offersTool`) reads a record at the root;
  * - the instruction injection (`holderOf`) reads one at the root as well;
- * - the gateway's endpoints hand the root to the panel, in the spelling the caller used;
+ * - the gateway's endpoints narrow the root at their boundary (a non-string, non-absent argument
+ *   is refused there, before any door) and hand the root to the panel, in the spelling the caller
+ *   used — the panel's record reads land on the record-bearing tree, the injection's own;
  * - the dispatch relay and the session opener hand it to the engine and to `create()` in the one
  *   canonical spelling;
  * - the agent-facing tool runs its word at the root.
@@ -22,10 +24,10 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { answer, open } from 'superworker-core'
+import { answer, open, projectRootOf } from 'superworker-core'
 import { canonicalRootOf, workspaceRootOf } from '../src/host/seams.ts'
 import { executorOf, openConsultSession, openNodeSession } from '../src/host/executor.ts'
 import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
@@ -270,10 +272,11 @@ test('One session, every door: the same root, and one canonical spelling of it',
  * the one production meets — and the checkout carries no record of its own, the account stays in the
  * main tree.
  *
- * This case pins the split rather than papering over it: the three doors that read a record are led
- * back to the main tree (that leading is the engine's `projectRootOf`, untouched by this change), and
- * the doors that hand a root to the engine or to `create()` hand out the checkout itself. What the
- * seam settles for all of them is the root before that leading.
+ * This case pins the split rather than papering over it: the doors that read a record are led
+ * back to the main tree (that leading is the engine's `projectRootOf`, untouched by this change) —
+ * and the panel's read door is one of them now, its unnamed read landing on the tree the injection
+ * reads — while the doors that hand a root to the engine or to `create()` hand out the checkout
+ * itself. What the seam settles for all of them is the root before that leading.
  *
  * What this case does not pin either is the canonical spelling through the worktree path alone: on this
  * machine `git worktree add` writes a checkout whose path is already its own `realpath`, so those two
@@ -327,25 +330,22 @@ test('A linked worktree checkout: the record-reading doors land on the main tree
       },
     })
     try {
-      /* The record-reading doors: one main tree, all three. */
+      /* The record-reading doors: one main tree, all four — the panel's unnamed read is one of
+       * them now, landing on the tree the injection resolves. */
       assert.equal(offersTool(fake.ctx, { id: SESSION }), true, 'the wake door did not reach the main tree')
       assert.equal(await injectedText(fake), listing, 'the injection door read something other than the main tree')
       assert.equal(await toolRoot(fake), realpathSync(main), 'the tool door answered a root other than the main tree')
 
-      /* The handing doors: the checkout, in the one canonical spelling. */
+      /* The panel's read door: the record-bearing tree, the engine's own leading. */
       const gateway = new SuperworkerRecordsGateway(fake.ctx)
       const reading = await gateway.read(SESSION, '')
-      assert.equal(reading.workspaceRoot, worktree, 'the gateway door did not name the session\'s own checkout')
+      assert.equal(reading.workspaceRoot, projectRootOf(undefined, worktree), 'the panel read door did not land on the record-bearing tree')
+      assert.equal(await canonicalRootOf(reading.workspaceRoot), realpathSync(main), 'the panel read door landed on a tree other than the main one')
 
       const opened = await openNodeSession(fake.ctx, SESSION, worktree, 'c-1', 'n-1')
       assert.equal(opened.ok, true, JSON.stringify(opened))
       assert.equal(agents.created.length, 1, 'the opener minted one session')
       assert.equal(agents.created[0].options.meta.cwd, realpathSync(worktree), 'the opener created the session somewhere other than the checkout')
-      assert.equal(
-        await canonicalRootOf(reading.workspaceRoot),
-        realpathSync(worktree),
-        'the two handing doors do not canonicalise to one tree',
-      )
 
       /* The spelling layer, read through the checkout's own second spelling: the opener is handed the
        * junction and must still create the session at the checkout behind it. This is the reading the
@@ -385,6 +385,157 @@ test('A linked worktree checkout: the record-reading doors land on the main tree
     }
   } finally {
     rmSync(checkoutAlias, { recursive: true, force: true })
+    rmSync(holder, { recursive: true, force: true })
+    rmSync(main, { recursive: true, force: true })
+  }
+})
+
+/**
+ * The panel and the injection read one record: a linked worktree session, both doors, one root.
+ *
+ * The case the panel-alignment node exists for. The session sits in a real worktree checkout (git
+ * wrote the pointer), the account lives in the main tree alone, and the two doors are asked with
+ * nothing named: the panel's read answers the record-bearing root — byte for byte the root the
+ * injection resolves with `projectRootOf(undefined, root)` — and carries that tree's instruction
+ * account, the reading the panel's column draws. A write from the same door lands in the same
+ * account, and the worktree holds no copy of its own, so "one record" is read off the files
+ * rather than asserted of the roots alone.
+ */
+test('The panel reads the record the injection reads: one linked worktree session, two doors, one root', async () => {
+  const main = mkdtempSync(join(tmpdir(), 'superworker-parity-panel-main-'))
+  const holder = mkdtempSync(join(tmpdir(), 'superworker-parity-panel-holder-'))
+  const worktree = join(holder, 'tree')
+  try {
+    await gitIn(main, 'init', '-b', 'main')
+    await gitIn(main, 'config', 'core.autocrlf', 'false')
+    writeFileSync(join(main, 'seed.md'), '# seed\n', 'utf8')
+    await gitIn(main, 'add', '-A')
+    await gitIn(main, 'commit', '-m', 'seed', '--no-gpg-sign')
+    await gitIn(main, 'worktree', 'add', worktree, '-b', 'side')
+    await open(main).ledger.init()
+    const said = await answer(['instruction', 'add', '--scope', 'global', '--text', 'a constraint only the main tree holds'], {
+      root: main,
+      pluginsDir: shippedPluginsDir(),
+    })
+    assert.equal(said.code, 0, said.stderr)
+
+    const fake = context({ sessionCwd: worktree, sandboxRoot: worktree })
+    const gateway = new SuperworkerRecordsGateway(fake.ctx)
+
+    /* The read parity: the panel's unnamed read answers the injection's root, and the reading
+     * carries the main tree's instruction account — the worktree has none of its own. */
+    const reading = await gateway.read(SESSION, '')
+    assert.equal(reading.workspaceRoot, projectRootOf(undefined, worktree), 'the panel read root is not the root the context injection resolves')
+    assert.equal(reading.sources.instructions, 'read', 'the panel reading carried no instruction account')
+
+    /* The write parity: a panel add from the worktree session lands in the main tree's account. */
+    const written = await gateway.addInstruction(SESSION, '', 'a panel sentence at the worktree session', 'global', '')
+    assert.equal(written.ok, true, `the panel add was refused: ${String(written.detail)}`)
+    const account = JSON.parse(readFileSync(join(main, '.superworker', 'instructions.json'), 'utf8'))
+    assert.ok(
+      (account.instructions ?? []).some((entry) => entry.text === 'a panel sentence at the worktree session'),
+      'the panel add did not land in the main tree\'s account',
+    )
+    assert.ok(!existsSync(join(worktree, '.superworker')), 'the worktree grew a record of its own, so the parity above proves nothing')
+  } finally {
+    rmSync(holder, { recursive: true, force: true })
+    rmSync(main, { recursive: true, force: true })
+  }
+})
+
+/**
+ * The session side of the frame stays at the checkout: one linked worktree, both halves, two trees.
+ *
+ * The cell the C1 round asked for. The panel's records half reads the main tree (the case above
+ * pins it), but the session side — the notes, the dispatch claims, the handoff tickets — is
+ * written at the root the dispatch was handed, which for a worktree session is the checkout. A
+ * frame whose session side read anywhere else would show a dispatched cell as re-dispatchable and
+ * a working session as gone. So the frame here is judged three ways at once: the cell state off
+ * the files (claim, run note, ticket planted in the checkout, all three read back), the records
+ * off the main tree, and — straight off the port's own log — the roots each half really asked:
+ * the session side's walks at the checkout, the records' reads at the main tree, and neither half
+ * on the other's tree.
+ */
+test('The frame\'s session side reads the checkout, its records the main tree: one linked worktree, two trees', async () => {
+  const main = mkdtempSync(join(tmpdir(), 'superworker-parity-sess-main-'))
+  const holder = mkdtempSync(join(tmpdir(), 'superworker-parity-sess-holder-'))
+  const worktree = join(holder, 'tree')
+  try {
+    await gitIn(main, 'init', '-b', 'main')
+    await gitIn(main, 'config', 'core.autocrlf', 'false')
+    writeFileSync(join(main, 'seed.md'), '# seed\n', 'utf8')
+    await gitIn(main, 'add', '-A')
+    await gitIn(main, 'commit', '-m', 'seed', '--no-gpg-sign')
+    await gitIn(main, 'worktree', 'add', worktree, '-b', 'side')
+    await open(main).ledger.init()
+    /* An instruction account on the main tree: the records half's cell needs a source that is
+       really there (ledger.init alone does not lay one down), and its one entry is what the frame
+       must name when it claims to have read this tree. */
+    writeFileSync(join(main, '.superworker', 'instructions.json'), JSON.stringify({
+      instructions: [{ id: 'i-1', text: 'the main tree holds this sentence', scope: 'global', state: 'live', at: '2026-10-01T00:00:00Z' }],
+    }))
+
+    /* The session's own marks, where a dispatch at the checkout writes them: the started claim,
+     * the run note, and a handed-in ticket. The record tree holds none of them. */
+    mkdirSync(join(worktree, '.superworker', 'meta', 'launch', 'c-1', 'n-1'), { recursive: true })
+    writeFileSync(join(worktree, '.superworker', 'meta', 'launch', 'c-1', 'n-1', 'started'), 'c-1\n')
+    mkdirSync(join(worktree, '.superworker', 'meta', 'sessions'), { recursive: true })
+    writeFileSync(join(worktree, '.superworker', 'meta', 'sessions', 'n-1.json'), JSON.stringify({
+      node: 'n-1',
+      v: 1,
+      run: [{ session: 'session-run', at: '2026-10-02T00:00:00Z' }],
+    }))
+    mkdirSync(join(worktree, '.superworker', 'signals', 'c-1'), { recursive: true })
+    writeFileSync(join(worktree, '.superworker', 'signals', 'c-1', 'n-1.json'), JSON.stringify({ status: 'passed' }))
+
+    /* The port logs which root asked for which path — the reading that a same-tree rig cannot
+     * take, since there the two halves' roots are one string. */
+    const seen = []
+    const disk = fsPort()
+    const fake = context({
+      sessionCwd: worktree,
+      sandboxRoot: worktree,
+      port: {
+        async list(scope, dir, signal) { seen.push(`${scope.workspaceRoot} :: ${dir}`); return disk.list(scope, dir, signal) },
+        async read(scope, path, range, signal) { seen.push(`${scope.workspaceRoot} :: ${path}`); return disk.read(scope, path, range, signal) },
+      },
+    })
+    const recordRoot = projectRootOf(undefined, worktree)
+    const gateway = new SuperworkerRecordsGateway(fake.ctx)
+    const cancel = new AbortController()
+    const frames = []
+    try {
+      for await (const frame of gateway.watch(SESSION, '', cancel.signal)) { frames.push(frame); break }
+    } finally {
+      /* A red assertion above this line must not leave the channel open: a follower that holds
+         the pump's roots keeps the run alive after the file is over. */
+      cancel.abort()
+    }
+
+    assert.equal(frames.length, 1, 'the stream sent no first frame')
+    const frame = frames[0]
+
+    /* The cell state: claim, run note and ticket read off the checkout; the records off the main
+     * tree — and the one entry the account was seeded with is the reading itself. */
+    assert.deepEqual(frame.sessions.claims, { 'n-1': 'c-1' }, 'the frame did not carry the checkout\'s dispatch claim')
+    assert.deepEqual(frame.sessions.tickets, { 'n-1': 'passed' }, 'the frame did not carry the checkout\'s handoff ticket')
+    assert.ok(frame.sessions.notes['n-1.json'] !== undefined, 'the frame did not carry the checkout\'s run note')
+    assert.equal(frame.reading.sources.instructions, 'read', 'the frame did not carry the main tree\'s instruction account')
+    assert.deepEqual(
+      frame.reading.instructions.map((entry) => entry.text),
+      ['the main tree holds this sentence'],
+      'the frame\'s instruction column was read off some other tree than the main one',
+    )
+
+    /* The roots behind those readings, off the port's own log: each half on its own tree, and
+     * neither half on the other's. */
+    assert.ok(seen.some((line) => line.startsWith(`${worktree} :: .superworker/meta/launch`)), 'the session side did not list the checkout\'s launch cells')
+    assert.ok(seen.some((line) => line.startsWith(`${worktree} :: .superworker/signals`)), 'the session side did not list the checkout\'s handoff tickets')
+    assert.ok(seen.some((line) => line.startsWith(`${recordRoot} :: .superworker/instructions.json`)), 'the records half did not read the main tree\'s instruction account')
+    assert.ok(!seen.some((line) => line.startsWith(`${recordRoot} :: .superworker/meta/`)), 'the session side was read off the main tree')
+    assert.ok(!seen.some((line) => line.startsWith(`${recordRoot} :: .superworker/signals`)), 'the session side\'s tickets were read off the main tree')
+    assert.ok(!seen.some((line) => line.startsWith(`${worktree} :: .superworker/instructions.json`)), 'the records half was read off the checkout')
+  } finally {
     rmSync(holder, { recursive: true, force: true })
     rmSync(main, { recursive: true, force: true })
   }
@@ -979,34 +1130,26 @@ test('The relay uses the root the caller named: a real directory with no record 
 })
 
 /**
- * The panel's endpoints read a name the other way round from the consult open, and this is the case
- * that keeps the two apart.
+ * The panel endpoints narrow their root argument once, at the boundary: a string passes, a value
+ * that is not there at all keeps the unnamed fallback, and everything else is refused with the
+ * boundary's one code before any read is performed.
  *
- * The parity table above asks four doors, and every one of them either refuses a non-string outright
- * or — the consult open — hands it to `create()`. That leaves the **six panel endpoints** unpinned in
- * exactly the place this round's root cause lives: they read "is this a non-empty string"
- * (`rootFor`'s `typeof workspaceRoot === 'string' && workspaceRoot.length > 0`), so a non-string is
- * *not named* and the order moves on to the session's own root. A mutation that gave the whole seam
- * the consult open's `length` reading was green across all 107 cases before this one existed: no case
- * asked an endpoint what it does with `['x']`.
- *
- * So the same shape list is asked at the four endpoints that answer a root, and each one must answer
- * the **session's own tree** — the value is not a name at this door, and the fallback is what it does
- * instead. The two controls are the halves that make the table readable: a real named root must still
- * win (otherwise "answers the session's root" would be true of a door that ignores its argument
- * entirely), and `'   '` must still be handed on **verbatim** (it is a non-empty string, so it is a
- * name here, and the endpoint hands out the spelling it was given — the shape that tells "not a name"
- * apart from "not a directory", which only the resolver decides).
- *
- * Every cell is the endpoint's own answer: `read`/`watch`/`readConfig`/`readSessions` each report the
- * `workspaceRoot` they resolved, never a literal.
+ * This is the case that used to pin the other reading — a non-string was *not a name* here, and
+ * the session's own root answered it — which is exactly the silent fallback the boundary node was
+ * ruled to close: a `['x']` payload read the calling session's workspace without a peep. So the
+ * table now asks each non-string shape at the four endpoints and each must answer the one code
+ * (`root-not-string`), each by its own channel: the reads throw, and the code rides on the error —
+ * the same channel a real read failure rides. The controls make the table a reading of the
+ * criterion and not of a door that refuses everything: a real named root still wins, a junction
+ * spelling of it is handed out in the spelling it arrived in, `'   '` is still a non-empty string
+ * and a name like any other, and `''`, `null` and `undefined` — the values that are empty or not
+ * there at all — keep the unnamed fallback they have always answered.
  */
-test('The panel endpoints read a non-string as no name at all: the session\'s own root, not the value handed on', async () => {
+test('The panel endpoints narrow their root argument: a non-string is refused with the boundary\'s code, an absent one still follows the session', async () => {
   const session = await rigRecord()
   const namedRoot = await rigRecord()
-  /** The shapes that must not name anything at this door: every non-string with a `.length` above zero,
-   * and the three that have no `.length` at all. `[]` and `''` are here as the length-zero controls. */
-  const NOT_A_NAME = {
+  /** The shapes that are neither a string nor absent: every non-string the wire can carry. */
+  const NOT_A_STRING = {
     'array-1': () => ['x'],
     'array-2': () => ['x', 'y'],
     'array-0': () => [],
@@ -1014,9 +1157,40 @@ test('The panel endpoints read a non-string as no name at all: the session\'s ow
     'length-1': () => ({ length: 1 }),
     uint8: () => new Uint8Array([120]),
     number: () => 42,
-    empty: () => '',
+    false: () => false,
+    true: () => true,
   }
-  const ask = async (handed) => {
+  /** The shapes that are empty or not there at all: the unnamed fallback keeps them. */
+  const NOT_THERE = {
+    empty: () => '',
+    null: () => null,
+    undefined: () => undefined,
+  }
+  /** The code one endpoint call answers with: the refusal's own, or a mark that it answered instead of refusing. */
+  const answeredCode = async (asking) => {
+    try {
+      await asking()
+    } catch (error) {
+      return error.code
+    }
+    return '<the endpoint answered instead of refusing>'
+  }
+  /** The four endpoints' refusal codes for one root argument, each by its own channel. */
+  const askCodes = async (handed) => {
+    const fake = context({ sessionCwd: session, sandboxRoot: session })
+    const gateway = new SuperworkerRecordsGateway(fake.ctx)
+    return {
+      read: await answeredCode(() => gateway.read(SESSION, handed)),
+      watch: await answeredCode(async () => {
+        for await (const frame of gateway.watch(SESSION, handed, new AbortController().signal)) return frame.workspaceRoot
+        return '<the stream ended without a frame>'
+      }),
+      readConfig: await answeredCode(() => gateway.readConfig(SESSION, handed)),
+      readSessions: await answeredCode(() => gateway.readSessions(SESSION, handed)),
+    }
+  }
+  /** The four endpoints' resolved roots for one root argument — the cells that must answer, not refuse. */
+  const askRoots = async (handed) => {
     const fake = context({ sessionCwd: session, sandboxRoot: session })
     const gateway = new SuperworkerRecordsGateway(fake.ctx)
     const watched = await (async () => {
@@ -1031,33 +1205,42 @@ test('The panel endpoints read a non-string as no name at all: the session\'s ow
     }
   }
   try {
-    for (const [shape, handedOf] of Object.entries(NOT_A_NAME)) {
-      const answered = await ask(handedOf())
+    for (const [shape, handedOf] of Object.entries(NOT_A_STRING)) {
+      const answered = await askCodes(handedOf())
       assert.deepEqual(
         answered,
-        { read: session, watch: session, readConfig: session, readSessions: session },
-        `${shape} at the panel endpoints: a value that is not a non-empty string is not a name, so every endpoint must answer the session's own root`,
+        { read: 'root-not-string', watch: 'root-not-string', readConfig: 'root-not-string', readSessions: 'root-not-string' },
+        `${shape} at the panel endpoints: a root that is neither a string nor absent must be refused with the boundary's one code`,
       )
     }
 
-    /* The control that makes the table above a reading of the criterion: a real named root wins at all
-     * four endpoints, so "answers the session's root" above is about the value and not about the door. */
-    const named = await ask(namedRoot)
+    /* The values that are empty or not there at all keep the answer they have always given: the
+     * unnamed fallback, this session's own root — `''` spelled the panel's way, `null` and
+     * `undefined` the wire's. */
+    for (const [shape, handedOf] of Object.entries(NOT_THERE)) {
+      const fake = context({ sessionCwd: session, sandboxRoot: session })
+      const gateway = new SuperworkerRecordsGateway(fake.ctx)
+      const reading = await gateway.read(SESSION, handedOf())
+      assert.equal(reading.workspaceRoot, session, `${shape}: the unnamed fallback must still answer this session's own root`)
+    }
+
+    /* The control that makes the refusals above a reading of the criterion: a real named root wins
+     * at all four endpoints, so "refused" above is about the value and not about the door. */
+    const named = await askRoots(namedRoot)
     assert.deepEqual(
       named,
       { read: namedRoot, watch: namedRoot, readConfig: namedRoot, readSessions: namedRoot },
-      'a real named root did not win at the panel endpoints, so the cells above prove nothing',
+      'a real named root did not win at the panel endpoints, so the refusal cells above prove nothing',
     )
 
-    /* The other control: a name this door accepts is handed out **in the spelling it arrived in**. A
+    /* The other control: a name this door accepts is handed out in the spelling it arrived in. A
      * second spelling of the named tree (a junction) is a name like any other, and an endpoint that
-     * canonicalised it would answer the tree behind it — which is what the doors that *write* a root
-     * down do, and deliberately not what these do. Also `'   '`: a non-empty string that is not a
-     * directory is still a name here (only the resolver refuses those, and these endpoints never call
-     * it), so its spelling comes back untouched too. */
+     * canonicalised it would answer the tree behind it. Also `'   '`: a non-empty string that is
+     * not a directory is still a name here (only the resolver refuses those, and these endpoints
+     * never call it), so its spelling comes back untouched too. */
     const alias = aliasOf(namedRoot)
     try {
-      const spelled = await ask(alias)
+      const spelled = await askRoots(alias)
       assert.deepEqual(
         spelled,
         { read: alias, watch: alias, readConfig: alias, readSessions: alias },
@@ -1067,7 +1250,7 @@ test('The panel endpoints read a non-string as no name at all: the session\'s ow
     } finally {
       rmSync(alias, { recursive: true, force: true })
     }
-    const whitespace = await ask('   ')
+    const whitespace = await askRoots('   ')
     assert.deepEqual(
       whitespace,
       { read: '   ', watch: '   ', readConfig: '   ', readSessions: '   ' },

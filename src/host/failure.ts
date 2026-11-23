@@ -15,6 +15,12 @@
 export type RecordRefusalCode =
   /** An argument cannot address a record: the segment gate in `executor.ts` refused it. */
   | 'arg-not-allowed'
+  /**
+   * The workspace root handed to a gateway endpoint is neither a string nor absent (`['x']`,
+   * `{ length: 1 }`, `42`, …): the gateway boundary refused it before any resolver saw it, so
+   * nothing was read, written, or opened on a tree the call never named.
+   */
+  | 'root-not-string'
   /** The words layer answered non-zero; `detail` is its own output. */
   | 'tool-refused'
   /** An instruction scope outside the three the tool spells. */

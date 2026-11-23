@@ -286,7 +286,12 @@ export class RecordsPump {
  * What a frame is compared by: everything but the moment it was read. Two reads
  * that say the same thing send one frame, so a wedged writer that keeps touching
  * files cannot make the panel redraw for nothing.
+ *
+ * Exported for the one other deduper there is: the gateway's split-key follow
+ * (a worktree session's frame wakes on two roots) must not resend a frame the
+ * other key just carried, so it compares frames by this same spelling rather
+ * than growing a second one that could drift.
  */
-function stampOf(frame: SuperworkerFrame): string {
+export function stampOf(frame: SuperworkerFrame): string {
   return JSON.stringify({ reading: frame.reading, sessions: frame.sessions, failure: frame.failure ?? null })
 }

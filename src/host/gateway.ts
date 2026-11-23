@@ -15,6 +15,7 @@ import type {} from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { bindTypertRemote, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type { TypertGatewayBinding } from '@deepseek-ai/dsh-typert-protocol'
+import { projectRootOf } from 'superworker-core'
 import {
   INSTRUCTION_SCOPES,
   instructionAddLine,
@@ -25,8 +26,8 @@ import {
 import { readInstructionScopes } from './instruction-scopes.ts'
 import type { SuperworkerFrame, SuperworkerReading, SuperworkerReadOptions, SuperworkerRecords } from './contract.ts'
 import { openConsultSession, openConductSession, openRouteSession, type SessionOpenOutcome } from './executor.ts'
-import type { RecordOutcome } from './failure.ts'
-import { RecordsPump } from './pump.ts'
+import type { RecordFailure, RecordOutcome, RecordRefusalCode } from './failure.ts'
+import { RecordsPump, stampOf } from './pump.ts'
 import { readPoolWeights, type PoolWeightsFolder } from './pool-weights.ts'
 import { declaredOptions, parseConfigList, withDeclaredOptions, type SuperworkerConfigReading } from './project-config.ts'
 import { dispatchCell } from './relay.ts'
@@ -75,6 +76,81 @@ const STREAM_METHODS: ReadonlySet<string> = new Set(['watch'])
  * process and is not interruptible.
  */
 const NEVER_ABORT = new AbortController().signal
+
+/**
+ * The verdict a root argument earns once, at this boundary — before any resolver, and before any
+ * of the doors below asks the seam's "is this a name" question.
+ *
+ * The wire delivers whatever a caller handed over (`SuperworkerRecordsGateway`'s parameters are
+ * `string` at compile time only), and until this narrowing every value reached the doors: a
+ * `['x']` or a `{ length: 1 }` was read as a name by the consult open's own criterion and minted
+ * a session whose `cwd` was the array, and a `42` fell through the panel's doors onto the calling
+ * session's workspace without a peep. The boundary settles it in one place instead:
+ *
+ * - a **string** passes verbatim, empty included (`''` stays the panel's "this session's own root");
+ * - a value that is **not there at all** — `undefined`, a missing key, `null` — rides on as it
+ *   arrived, so every door answers it exactly as it did before this narrowing existed: the panel
+ *   doors take their unnamed fallback, the consult open keeps its refuse;
+ * - everything else — arrays, plain objects, numbers, booleans, boxed anything — is refused with
+ *   the one code (`root-not-string`), before a record is read, a word is run, or a session is
+ *   minted. The doors' own "is this a name" readings are not simplified or levelled here: this is
+ *   a boundary check in front of them, not a replacement for them.
+ */
+type RootArgument =
+  | { readonly verdict: 'string'; readonly root: string }
+  | { readonly verdict: 'absent' }
+  | { readonly verdict: 'refused'; readonly detail: string }
+
+function rootArgumentOf(workspaceRoot: unknown): RootArgument {
+  if (workspaceRoot === undefined || workspaceRoot === null) return { verdict: 'absent' }
+  if (typeof workspaceRoot === 'string') return { verdict: 'string', root: workspaceRoot }
+  return { verdict: 'refused', detail: rootArgumentDetailOf(workspaceRoot) }
+}
+
+/** The offending argument, as the refusal's `detail` carries it: arrays and objects rendered whole, primitives as their own words. */
+function rootArgumentDetailOf(value: unknown): string {
+  if (value !== null && typeof value === 'object') {
+    try {
+      return JSON.stringify(value) ?? String(value)
+    } catch {
+      return String(value)
+    }
+  }
+  return String(value)
+}
+
+/**
+ * The refusal a write or an open answers with: the boundary's one code, the offending value as
+ * the detail, and nothing performed — no record moved, no session minted.
+ */
+function rootArgumentRefusal(detail: string): RecordFailure {
+  return { ok: false, code: 'root-not-string', detail }
+}
+
+/**
+ * The error a read answers with when its root argument is refused: reads throw on an unusable
+ * read (`readReading` rethrows real errors the same way), and the code rides on the error so a
+ * caller — and a log reader — can tell this refusal from any other.
+ */
+function rootArgumentRefusedError(detail: string): Error & { readonly code: RecordRefusalCode } {
+  const error = new Error(
+    `the workspace root this call was handed is ${detail}: not a string, so the boundary refused it before any record was read`,
+  ) as Error & { code: RecordRefusalCode }
+  error.code = 'root-not-string'
+  return error
+}
+
+/**
+ * The tree the panel's record doors act on: the record-bearing tree itself.
+ *
+ * A plain directory answers as it is; a linked worktree's checkout leads back to the main tree
+ * that really holds `.superworker/` — the engine's own `projectRootOf`, the same function the
+ * context injection (`instruction-context.ts`) resolves the account with, so the panel's reading
+ * and a session's injected listing are two reads of one record, never two.
+ */
+function recordRootOf(root: string): string {
+  return projectRootOf(undefined, root)
+}
 
 /**
  * Attach an endpoint marker to a method on an instance.
@@ -159,12 +235,19 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * gateway parses parameters from the method source, and either pattern
    * would be judged "unclear signature", disabling the whole endpoint.
    * Omitting the final cancel signal is the same as passing an empty object.
+   *
+   * The root is narrowed once at the boundary ({@link rootArgumentOf}: a non-string,
+   * non-absent argument is refused before any read), and the reading lands on the
+   * record-bearing tree ({@link recordRootOf}) — the same root the context injection reads, so
+   * a worktree session's panel and its injected listing are one record.
    * @param sessionId - Session identity; the workspace file gateway resolves paths by it.
    * @param workspaceRoot - The workspace root to read; an empty string means this session's own root.
    */
   async read(sessionId: SessionId, workspaceRoot: string, options?: SuperworkerReadOptions): Promise<SuperworkerReading> {
+    const argument = rootArgumentOf(workspaceRoot)
+    if (argument.verdict === 'refused') throw rootArgumentRefusedError(argument.detail)
     const signal = options?.signal ?? NEVER_ABORT
-    const root = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
+    const root = recordRootOf((await workspaceRootOf(this.ctx, { sessionId, named: argument.verdict === 'string' ? argument.root : '' })).root)
     /* The two plugin declarations the reading leans on — the pool's weight table and the instruction
      * account's scope vocabulary — are read off the same shipped plugins folder before the records:
      * neither is one of the four records, and both cost a cached lookup after the first frame. */
@@ -190,28 +273,94 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    *
    * The stream ends when the browser stops reading it: the cancellation is the carrier's own, handed
    * to the one parameter the gateway appends.
+   *
+   * The root is narrowed once at the boundary ({@link rootArgumentOf}: a non-string, non-absent
+   * argument is refused before the channel exists). One stream, two trees when they differ: the
+   * frame's records half (the instruction column among them) reads the record-bearing tree
+   * ({@link recordRootOf}) — the same record the context injection reads — while the session side
+   * reads the root the caller resolved, where the dispatch writes its claims and notes; the pump
+   * follows each tree under its own key, so a words write at the record tree and a dispatch's stir
+   * at the session root both wake this channel.
+   *
    * @param sessionId - Session identity; the workspace file gateway resolves paths by it.
    * @param workspaceRoot - The workspace root to read, absolute; an empty string means this session's own root.
    * @param signal - The stream's cancellation; ending the iteration releases the workspace.
    */
   async *watch(sessionId: SessionId, workspaceRoot: string, signal: AbortSignal): AsyncIterable<SuperworkerFrame> {
-    const root = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
-    yield* this.#pump.follow(root, (mine) => this.#frameOf(sessionId, root, mine), signal)
+    const argument = rootArgumentOf(workspaceRoot)
+    if (argument.verdict === 'refused') throw rootArgumentRefusedError(argument.detail)
+    const root = (await workspaceRootOf(this.ctx, { sessionId, named: argument.verdict === 'string' ? argument.root : '' })).root
+    const records = recordRootOf(root)
+    /* One tree, one key — the shape every plain session takes. The split below is only for the
+       worktree case, where the two halves really live apart. */
+    if (records === root) {
+      yield* this.#pump.follow(root, (mine) => this.#frameOf(sessionId, root, mine), signal)
+      return
+    }
+    yield* this.#followSplitKeys(sessionId, root, records, signal)
   }
 
   /**
-   * One frame: the two halves read together, at one moment, off one root.
+   * The split-key follow: the two halves of the frame live on two trees, and each tree carries its
+   * own wake — the dispatch's stir and its claims at the caller's root, a words write and the
+   * records at the record-bearing tree. Two followers, one stream: whichever key wakes first hands
+   * over its frame, a frame the other key just carried is not sent twice (the pump's own stamp
+   * judges), and ending the iteration or the cancellation releases both roots.
    *
    * A true private, like the write path's `#superworker`: the endpoint table's missing-registration
    * scan reads the prototype, and this is no endpoint of its own.
-   * @param workspaceRoot - The workspace root to read, in **the spelling the caller used**: this door
-   * hands out that spelling and deliberately does not canonicalise it. Canonicalising here would change
-   * the answer every gateway endpoint has given since before the one root seam, and that answer is the
-   * selector's ("which root did the caller name"), not an engine write's.
+   */
+  async *#followSplitKeys(sessionId: SessionId, root: string, records: string, signal: AbortSignal): AsyncIterable<SuperworkerFrame> {
+    type Step = { readonly iterator: AsyncIterator<SuperworkerFrame>; readonly step: IteratorResult<SuperworkerFrame> }
+    /* One pending read per follower; a step that lands arms its follower again. A rejection is
+       folded into an ended step, so the race below can never sit on a promise nobody handles. */
+    const arm = (iterator: AsyncIterator<SuperworkerFrame>): Promise<Step> => iterator.next().then(
+      (step): Step => ({ iterator, step }),
+      (): Step => ({ iterator, step: { done: true, value: undefined } }),
+    )
+    const read = (mine: AbortSignal): Promise<SuperworkerFrame> => this.#frameOf(sessionId, root, mine)
+    const followers = [root, records].map((key) => this.#pump.follow(key, read, signal))
+    const iterators = followers.map((stream) => stream[Symbol.asyncIterator]())
+    const armed = new Map(iterators.map((iterator) => [iterator, arm(iterator)]))
+    try {
+      let previous: string | undefined
+      while (!signal.aborted && armed.size > 0) {
+        const { iterator, step } = await Promise.race([...armed.values()])
+        armed.delete(iterator)
+        if (step.done) continue
+        const stamp = stampOf(step.value)
+        if (stamp !== previous) {
+          previous = stamp
+          yield step.value
+        }
+        armed.set(iterator, arm(iterator))
+      }
+    } finally {
+      /* Every follower is taken back, not just the ones still armed: the one whose frame the race
+         consumed is suspended at its own yield, holding its root, and nobody will ask it again —
+         an ending stream or a cancellation must reach it too, or the pump's watcher outlives the
+         channel and keeps the host alive after it. */
+      for (const iterator of iterators) {
+        void iterator.return?.()?.then(() => undefined, () => undefined)
+      }
+    }
+  }
+
+  /**
+   * One frame: the two halves read together, at one moment, each off its own root.
+   *
+   * A true private, like the write path's `#superworker`: the endpoint table's missing-registration
+   * scan reads the prototype, and this is no endpoint of its own.
+   * @param workspaceRoot - The root the stream resolved from the caller's argument, and the one the
+   * frame names: the session side (notes, claims, tickets) reads here — where the dispatch writes
+   * them — while the records half reads the record-bearing tree ({@link recordRootOf}), the same
+   * record the context injection reads. On a plain workspace the two roots are one string and the
+   * frame is what it always was.
    * @param signal - The read's cancellation.
    */
   async #frameOf(sessionId: SessionId, workspaceRoot: string, signal: AbortSignal): Promise<SuperworkerFrame> {
     const scope = { sessionId, workspaceRoot }
+    const recordScope = { sessionId, workspaceRoot: recordRootOf(workspaceRoot) }
     /* The weight table first, then the records weighed by it: it is not one of the four records, but
      * the frame that carries the issues has to carry the table they are weighed by. The read is a
      * module load off the shipped plugin folder — after the first frame it costs a cached lookup — and
@@ -220,7 +369,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
     const poolWeights = await readPoolWeights(this.#weightsFolder)
     const instructionScopes = await readInstructionScopes(this.#weightsFolder)
     const [reading, sessions] = await Promise.all([
-      readReading(this.ctx.workspaceFiles, scope, signal, poolWeights, instructionScopes),
+      readReading(this.ctx.workspaceFiles, recordScope, signal, poolWeights, instructionScopes),
       readSessionSide(this.ctx.workspaceFiles, scope, signal, () => aliveAgentIds(this.ctx)),
     ])
     /* The frame's roster is sampled here — after the whole reading, records and session side alike,
@@ -244,6 +393,10 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * forwards the words and reports the words layer's own code; the plugin's
    * `--scope` choices are still the authority on the vocabulary.
    *
+   * The root is narrowed once at the boundary ({@link rootArgumentOf}), and the write lands on the
+   * record-bearing tree ({@link recordRootOf}) — the same record the context injection reads — via
+   * the shared write path below.
+   *
    * The parameter list stays on one line with no trailing comma: the gateway
    * splits method parameters from source, same reason as `read` above.
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
@@ -254,7 +407,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
     if (!line.ok) {
       return { ok: false, code: line.code, ...(line.detail.length > 0 ? { detail: line.detail } : {}) }
     }
-    return this.#superworker(sessionId, workspaceRoot, line.argv)
+    return this.#superworker(sessionId, workspaceRoot, line.argv, recordRootOf)
   }
 
   /**
@@ -263,7 +416,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    */
   async archiveInstruction(sessionId: SessionId, workspaceRoot: string, id: string): Promise<RecordOutcome> {
-    return this.#superworker(sessionId, workspaceRoot, instructionArchiveLine(id))
+    return this.#superworker(sessionId, workspaceRoot, instructionArchiveLine(id), recordRootOf)
   }
 
   /**
@@ -271,7 +424,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    */
   async reviveInstruction(sessionId: SessionId, workspaceRoot: string, id: string): Promise<RecordOutcome> {
-    return this.#superworker(sessionId, workspaceRoot, instructionReviveLine(id))
+    return this.#superworker(sessionId, workspaceRoot, instructionReviveLine(id), recordRootOf)
   }
 
   /**
@@ -279,7 +432,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    */
   async removeInstruction(sessionId: SessionId, workspaceRoot: string, id: string): Promise<RecordOutcome> {
-    return this.#superworker(sessionId, workspaceRoot, instructionRemoveLine(id))
+    return this.#superworker(sessionId, workspaceRoot, instructionRemoveLine(id), recordRootOf)
   }
 
   /**
@@ -297,10 +450,16 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * a client change.
    *
    * The parameter list stays on one line with no trailing comma, same reason as `read`.
+   *
+   * The root is narrowed once at the boundary ({@link rootArgumentOf}): a non-string, non-absent
+   * argument is refused before the words layer is asked — a refusal of the reading side itself,
+   * which this reading answers by throwing, the way every read here answers an unusable read.
    * @param workspaceRoot - The workspace root to read; an empty string means this session's own root.
    */
   async readConfig(sessionId: SessionId, workspaceRoot: string): Promise<SuperworkerConfigReading> {
-    const project = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
+    const argument = rootArgumentOf(workspaceRoot)
+    if (argument.verdict === 'refused') throw rootArgumentRefusedError(argument.detail)
+    const project = (await workspaceRootOf(this.ctx, { sessionId, named: argument.verdict === 'string' ? argument.root : '' })).root
     const outcome = await runWords(project, ['config', 'list'])
     if (!outcome.ok) {
       return {
@@ -336,10 +495,14 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * treatment: only the engine knows which keys it accepts, so no allow-list is
    * kept here — key and value are passed through as-is; for an unknown key it
    * errors, answers non-zero, writes nothing, and its message surfaces verbatim.
+   *
+   * The root is narrowed once at the boundary ({@link rootArgumentOf}), but this door does not
+   * move to the record-bearing tree: the settings column is the one panel door that reads its own
+   * boundary, kept as it is by this node's own terms.
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    */
   async setConfig(sessionId: SessionId, workspaceRoot: string, key: string, value: string): Promise<RecordOutcome> {
-    return this.#superworker(sessionId, workspaceRoot, ['config', 'set', key, value])
+    return this.#superworker(sessionId, workspaceRoot, ['config', 'set', key, value], (root) => root)
   }
 
   /**
@@ -355,10 +518,16 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * gone) is the model layer's call.
    *
    * The parameter list stays on one line with no trailing comma, same reason as `read`.
+   *
+   * The root is narrowed once at the boundary ({@link rootArgumentOf}): a non-string, non-absent
+   * argument is refused before any read. This door is not one of the panel's record doors — the
+   * notes are read where the caller names, per this node's own boundary.
    * @param workspaceRoot - The workspace root to read; an empty string means this session's own root.
    */
   async readSessions(sessionId: SessionId, workspaceRoot: string, options?: SuperworkerReadOptions): Promise<SuperworkerSessionsReading> {
-    const root = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
+    const argument = rootArgumentOf(workspaceRoot)
+    if (argument.verdict === 'refused') throw rootArgumentRefusedError(argument.detail)
+    const root = (await workspaceRootOf(this.ctx, { sessionId, named: argument.verdict === 'string' ? argument.root : '' })).root
     const scope = { sessionId, workspaceRoot: root }
     const signal = options?.signal ?? NEVER_ABORT
     return readSessionSide(this.ctx.workspaceFiles, scope, signal, () => aliveAgentIds(this.ctx))
@@ -381,12 +550,19 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * named; a dispatch the engine refuses carries its reason verbatim as the
    * `dispatch-refused` detail. The parameter list stays on one line with no
    * trailing comma, same reason as `read`.
+   *
+   * The root is narrowed once at the boundary ({@link rootArgumentOf}): a non-string, non-absent
+   * argument is refused before the dispatch, so no claim lands and no session is minted on a tree
+   * the call never named. This is a session-opening door: the root the caller named is the one it
+   * opens at, and the boundary check is the only thing added in front of it.
    * @param workspaceRoot - The workspace to open the session in, absolute; an empty string means this session's own root.
    * @param cycle - Which line this cell sits on, by line id.
    * @param node - Which node to open the session for, by node id.
    */
   async openNodeSession(sessionId: SessionId, workspaceRoot: string, cycle: string, node: string): Promise<SessionOpenOutcome> {
-    const root = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
+    const argument = rootArgumentOf(workspaceRoot)
+    if (argument.verdict === 'refused') return rootArgumentRefusal(argument.detail)
+    const root = (await workspaceRootOf(this.ctx, { sessionId, named: argument.verdict === 'string' ? argument.root : '' })).root
     const outcome = await dispatchCell(this.ctx, sessionId, root, cycle, node)
     /* A dispatch lands the claim and the session note: the panel that pressed the button sees its own
        dispatch on the next frame instead of on the next page flip. */
@@ -404,10 +580,18 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * and answers its own refusals as codes, the way every open here does.
    *
    * The parameter list stays on one line with no trailing comma, same reason as `read`.
+   *
+   * The root is narrowed once at the boundary ({@link rootArgumentOf}): a non-string, non-absent
+   * argument is refused before the open — the array that used to ride into `create()` as the
+   * session's `cwd` stops here. A value that is not there at all passes on as it arrived, so the
+   * open answers it exactly as it always has. These are session-opening doors: the root the caller
+   * named is the one the session opens at.
    * @param workspaceRoot - The workspace to open the session in, absolute; an empty string means this session's own root.
    */
   async consultMigration(sessionId: SessionId, workspaceRoot: string): Promise<SessionOpenOutcome> {
-    return openConsultSession(this.ctx, sessionId, workspaceRoot)
+    const argument = rootArgumentOf(workspaceRoot)
+    if (argument.verdict === 'refused') return rootArgumentRefusal(argument.detail)
+    return openConsultSession(this.ctx, sessionId, argument.verdict === 'string' ? argument.root : workspaceRoot)
   }
 
   /**
@@ -422,18 +606,31 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * @param workspaceRoot - The workspace to open the session in, absolute; an empty string means this session's own root.
    */
   async consultRoute(sessionId: SessionId, workspaceRoot: string): Promise<SessionOpenOutcome> {
-    return openRouteSession(this.ctx, sessionId, workspaceRoot)
+    const argument = rootArgumentOf(workspaceRoot)
+    if (argument.verdict === 'refused') return rootArgumentRefusal(argument.detail)
+    return openRouteSession(this.ctx, sessionId, argument.verdict === 'string' ? argument.root : workspaceRoot)
   }
 
   async consultConduct(sessionId: SessionId, workspaceRoot: string): Promise<SessionOpenOutcome> {
-    return openConductSession(this.ctx, sessionId, workspaceRoot)
+    const argument = rootArgumentOf(workspaceRoot)
+    if (argument.verdict === 'refused') return rootArgumentRefusal(argument.detail)
+    return openConductSession(this.ctx, sessionId, argument.verdict === 'string' ? argument.root : workspaceRoot)
   }
 
   /**
    * The single write path shared by the five write endpoints; the true private `#superworker` is not on the prototype, so the endpoint table's missing-registration scan cannot see it.
+   *
+   * The root argument is narrowed once here for all five ({@link rootArgumentOf}): a non-string,
+   * non-absent argument is refused before any word is run, with the boundary's one code. What the
+   * resolved root is then worth is the caller's stated difference, hung on `atRecords`: the four
+   * instruction verbs hand it {@link recordRootOf}, so their write — and the pump stir that wakes
+   * the panel — land on the record-bearing tree, the same record the context injection reads;
+   * `setConfig` hands the root through as it resolved, per its own node's terms.
    */
-  async #superworker(sessionId: SessionId, workspaceRoot: string, args: readonly string[]): Promise<RecordOutcome> {
-    const root = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
+  async #superworker(sessionId: SessionId, workspaceRoot: string, args: readonly string[], atRecords: (root: string) => string): Promise<RecordOutcome> {
+    const argument = rootArgumentOf(workspaceRoot)
+    if (argument.verdict === 'refused') return rootArgumentRefusal(argument.detail)
+    const root = atRecords((await workspaceRootOf(this.ctx, { sessionId, named: argument.verdict === 'string' ? argument.root : '' })).root)
     const outcome = await runWords(root, args)
     /* The write landed on disk a moment ago: the panel's channel is told now rather than waiting for
        its own file change to come back around through the directory watch. */

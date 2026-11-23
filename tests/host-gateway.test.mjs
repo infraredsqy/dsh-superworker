@@ -810,6 +810,94 @@ test('The opener door opens on the root the caller named: whose tree gets the se
   }
 })
 
+/**
+ * The boundary every endpoint narrows its root argument at: a string passes, a value that is not
+ * there at all keeps the unnamed fallback, and everything else is refused with the boundary's one
+ * code before any word is run or any session is minted.
+ *
+ * What this case pins is the change, with the old answers spelled beside it as the reason: before
+ * the boundary, `consultMigration(['x'])` minted a session whose `cwd` **was** the array (the
+ * consult open's own `length` reading handed the value to `create()`), a `42` fell through onto
+ * this session's own tree without a peep, and a write with an array for a root landed in this
+ * session's records. Now all three answer `root-not-string` — the write on the outcome, the open
+ * on the outcome, the read on the thrown error's code — and nothing moves: no tree's records
+ * change, no claim lands, and the rig's registry stays empty. The absent spellings (`''` and the
+ * key omitted from the payload) keep the answer they have always given: the unnamed fallback,
+ * this session's own tree.
+ */
+test('The gateway boundary refuses a root argument that is neither a string nor absent: one code, nothing written, nothing opened', { skip: !wired }, async () => {
+  const rig = await writeRig()
+  const { ctx, call, own, sandbox, named, agents } = rig
+  /** The three shapes the debt names, as the payload a hand-written call carries. */
+  const BOGUS = {
+    'array': () => ['x'],
+    'length-object': () => ({ length: 1 }),
+    'number': () => 42,
+  }
+  try {
+    for (const [shape, payloadOf] of Object.entries(BOGUS)) {
+      const before = [recordsOf(own).instructions, recordsOf(sandbox).instructions, recordsOf(named).instructions]
+
+      /* A write: the refusal rides the outcome, and no tree moves. */
+      const written = await call('addInstruction', { sessionId: 's1', workspaceRoot: payloadOf(), text: 'a sentence for a root nobody named', scope: 'global', cycle: '' })
+      assert.equal(written.ok, true, String(written.message))
+      assert.equal(written.value.ok, false, `${shape}: a non-string root must be refused, not written`)
+      assert.equal(written.value.code, 'root-not-string', `${shape}: the refusal is the boundary's one code: ${JSON.stringify(written.value)}`)
+
+      /* A consult open: the refusal rides the outcome, and no session is minted — the answer the
+       * old `['x']` reading could not give, since it minted one with the array as the cwd. */
+      const consulted = await call('consultMigration', { sessionId: 's1', workspaceRoot: payloadOf() })
+      assert.equal(consulted.ok, true, String(consulted.message))
+      assert.equal(consulted.value.ok, false, `${shape}: a non-string root must be refused, not opened`)
+      assert.equal(consulted.value.code, 'root-not-string', `${shape}: the refusal is the boundary's one code: ${JSON.stringify(consulted.value)}`)
+
+      /* A read: the refusal rides the thrown error's code — the channel a real read failure rides. */
+      const read = await call('read', { sessionId: 's1', workspaceRoot: payloadOf() })
+      assert.equal(read.ok, false, `${shape}: a refused read must not answer a reading`)
+      assert.equal(read.code, 'root-not-string', `${shape}: the read refusal is the boundary's one code: ${read.message}`)
+
+      assert.equal(agents.created.length, 0, `${shape}: a refused open minted a session`)
+      assert.deepEqual(
+        [recordsOf(own).instructions, recordsOf(sandbox).instructions, recordsOf(named).instructions],
+        before,
+        `${shape}: a refused call moved a record anyway`,
+      )
+    }
+
+    /* The node open shares the boundary: refused before the dispatch, no claim on any tree. */
+    const opened = await call('openNodeSession', { sessionId: 's1', workspaceRoot: { length: 1 }, cycle: 'c-1', node: 'n-1' })
+    assert.equal(opened.ok, true, String(opened.message))
+    assert.equal(opened.value.ok, false, 'a non-string root must stop the node open before the dispatch')
+    assert.equal(opened.value.code, 'root-not-string', `the node open's refusal is the boundary's one code: ${JSON.stringify(opened.value)}`)
+    assert.equal(recordsOf(named).claim, false, 'the refused node open landed a claim on the named tree')
+    assert.equal(recordsOf(own).claim, false, 'the refused node open landed a claim on this session\'s tree')
+    assert.equal(agents.created.length, 0, 'the refused node open minted a session')
+
+    /* The absent spellings keep their answer: `''` and the key omitted are the panel's unnamed
+     * call, and the write lands on this session's own tree exactly as it did before the boundary. */
+    const fell = await call('addInstruction', { sessionId: 's1', workspaceRoot: '', text: 'a sentence bound for this session\'s own tree', scope: 'global', cycle: '' })
+    assert.equal(fell.ok, true, String(fell.message))
+    assert.equal(fell.value.ok, true, `the empty-string write was refused: ${String(fell.value.detail)}`)
+    assert.match(String(fell.value.text), /^INSTRUCTION i-\d+:/u, 'the empty-string write did not report the entry it minted')
+    assert.equal(recordsOf(own).instructions.length, 3, 'the empty-string write did not land on this session\'s own tree')
+    assert.deepEqual(recordsOf(named).instructions, ['i-1:live', 'i-2:withdrawn'], 'the empty-string write landed on the named tree')
+
+    const omitted = await call('addInstruction', { sessionId: 's1', text: 'the missing-key spelling of the same call', scope: 'global', cycle: '' })
+    assert.equal(omitted.ok, true, String(omitted.message))
+    assert.equal(omitted.value.ok, true, `the missing-key write was refused: ${String(omitted.value.detail)}`)
+    assert.match(String(omitted.value.text), /^INSTRUCTION i-\d+:/u, 'the missing-key write did not report the entry it minted')
+    assert.equal(recordsOf(own).instructions.length, 4, 'the missing-key write did not land on this session\'s own tree')
+
+    const readHome = await call('read', { sessionId: 's1', workspaceRoot: '' })
+    assert.equal(readHome.ok, true, String(readHome.message))
+    assert.equal(readHome.value.workspaceRoot, own, 'the empty-string read did not fall back to this session\'s own root')
+    assert.equal(agents.created.length, 0, 'none of the cells in this case may mint a session')
+  } finally {
+    await ctx.stop?.()
+    for (const root of [own, sandbox, named]) rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('The record-an-instruction endpoint: the words pass the gateway and land as the tool\'s line', { skip: !wired }, async () => {
   const root = syntheticWorkspace()
   const { ctx, call } = await liveGateway(root)

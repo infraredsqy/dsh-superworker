@@ -67,7 +67,7 @@ test('The live session header speaks: the cwd it wrote is the root readings are 
     stored: { s1: { header: { cwd: 'C:\\from-the-stored-header' } } },
   })
   apply(ctx)
-  const reading = await provided.superworker.read('s1', { signal })
+  const reading = await provided.superworker.read('s1', '', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\from-the-live-session')
   assert.ok(asked.length > 0)
@@ -80,7 +80,7 @@ test('The live session header speaks: the cwd it wrote is the root readings are 
 test('With no live session, the stored session header speaks', async () => {
   const { ctx, provided, asked } = context({ stored: { s2: { header: { cwd: 'C:\\from-the-stored-header' } } } })
   apply(ctx)
-  const reading = await provided.superworker.read('s2', { signal })
+  const reading = await provided.superworker.read('s2', '', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\from-the-stored-header')
   assert.equal(asked[0].scope.workspaceRoot, 'C:\\from-the-stored-header')
@@ -93,7 +93,7 @@ test('A live header ends the stored one\'s say: with no cwd in it, the sandbox p
     sandboxRoot: 'C:\\sandbox-root-for-tests',
   })
   apply(ctx)
-  const reading = await provided.superworker.read('s4', { signal })
+  const reading = await provided.superworker.read('s4', '', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\sandbox-root-for-tests')
   assert.equal(asked[0].scope.workspaceRoot, 'C:\\sandbox-root-for-tests')
@@ -107,7 +107,7 @@ test('With cwd in neither session header, it falls to the sandbox policy root', 
     sandboxRoot: 'C:\\sandbox-root-for-tests',
   })
   apply(ctx)
-  const reading = await provided.superworker.read('s3', { signal })
+  const reading = await provided.superworker.read('s3', '', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\sandbox-root-for-tests')
   assert.equal(asked[0].scope.workspaceRoot, 'C:\\sandbox-root-for-tests')
@@ -116,7 +116,7 @@ test('With cwd in neither session header, it falls to the sandbox policy root', 
 test('A session nobody knows still goes to the sandbox policy root, and the read does not throw', async () => {
   const { ctx, provided } = context({ sandboxRoot: 'C:\\sandbox-root-for-tests' })
   apply(ctx)
-  const reading = await provided.superworker.read('nobody-knows-me', { signal })
+  const reading = await provided.superworker.read('nobody-knows-me', '', { signal })
 
   assert.equal(reading.workspaceRoot, 'C:\\sandbox-root-for-tests')
   assert.deepEqual(reading.sources, { nodes: 'missing', cycles: 'missing', instructions: 'missing', issues: 'missing' })
