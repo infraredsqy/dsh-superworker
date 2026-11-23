@@ -3,12 +3,6 @@
 Check yourself against this before executing. The criteria themselves live in
 [`./SKILL.md`](./SKILL.md); this keeps symptoms, correction signals and instances only.
 
-## `route-reads-source-code` — reading the project's source code directly
-
-**Symptom**: the user mentions some feature, and the agent reads the source file directly
-
-**Correction signal**: the user says "why are you looking at the code"
-
 ## `route-edits-project-files-directly` — changing project files directly, past the pipeline
 
 **Symptom**: during the discussion the agent edits / writes project code or doc bodies itself

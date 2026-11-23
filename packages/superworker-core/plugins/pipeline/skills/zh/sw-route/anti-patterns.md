@@ -2,12 +2,6 @@
 
 执行前对照检查。判据正文在 [`./SKILL.md`](./SKILL.md) 里，这里只留症状、纠正信号与实例。
 
-## `route-reads-source-code` · 直接读取工程源码
-
-**症状**：用户提及某个功能，Agent 直接 read 了源码文件
-
-**纠正信号**：用户说"你怎么在看代码"
-
 ## `route-edits-project-files-directly` · 绕过管线直接修改工程文件
 
 **症状**：讨论过程中 Agent 自己 edit/write 了工程代码或文档正文

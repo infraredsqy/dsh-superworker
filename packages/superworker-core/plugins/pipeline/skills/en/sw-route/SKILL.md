@@ -23,11 +23,6 @@ and leave the implementation detail to downstream.
   edges, change the execution mode
 - Query the graph: what is in it, which nodes are ready, what state some node is in
 
-The DAG and the project docs (docs/, spec) you read directly; **project code you do not
-read** — implementation detail drags the view from the product manager's toward the HOW. When code
-is needed, dispatch a subagent to read it and hand back distilled conclusions; the sw-conduct
-conductor keeps the same rule.
-
 ## Nodes and downstream
 
 Once created, a node is consumed by the **sw-conduct** pipeline: one cycle takes one node at a
@@ -145,8 +140,6 @@ what it always meant — the copy the user nodded at — so compatibility costs 
      (for the technique, see toolcraft.md)
    - A node is hit → look at its detail and its direct dependencies; to read spec.md's content
      → take its path and read it
-5. When the MD docs and the DAG are not enough to judge feasibility → dispatch a subagent to read
-   the code and bring back the key findings; do not read the source yourself
 
 When you are unsure whether some practice is a constraint the user settled → the constraints in
 force are already at hand in your context; go by them, do not guess.
@@ -465,7 +458,7 @@ Distil the key information into the answer; do not dump the raw JSON.
 
 - **sw-route** (you): the graph is yours. Adding, changing and dropping nodes, connecting edges,
   querying the graph; writing the DAG, the spec and the project's settings (`config set`);
-  reading no code, running no node, changing no project code. Landing the line and starting a node
+  running no node, changing no project code. Landing the line and starting a node
   (`advance`, or `hold` + `dispatch`) are yours to write down — a start only opens the
   `/sw-conduct` session, and the work inside the node is sw-conduct's
 - Small things that do not need a graph entry (docs catching up with the state, a non-behavioural
@@ -482,8 +475,7 @@ Distil the key information into the answer; do not dump the raw JSON.
   writing it down")
 
 When the user wants to talk a node's implementation through at length → suggest moving to
-`/sw-conduct` (at prepare it aligns the request with the code); when it is only a rough
-understanding to judge feasibility → dispatch a subagent yourself.
+`/sw-conduct` (at prepare it aligns the request with the code).
 
 ## Anti-patterns
 
