@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { standInContext } from '../src/plugins/standin';
+import { projectRootOf } from '../src/words/out';
 import { CORE_READING_SOURCES } from '../src/plugins/types';
 import type { PluginDeclaration } from '../src/plugins/types';
 
@@ -59,5 +60,20 @@ describe('the stand-in reads declared cells through the registry, not through a 
     expect(await ctx.knob('mode')).toBe('fast');
     expect(await ctx.knob('armed')).toBe('on');
     expect(await ctx.knob('not_declared')).toBeNull();
+  });
+});
+
+describe('the stand-in hands in the engine\u2019s own resolution, not a rule of its own', () => {
+  it('ctx.projectRootOf is the engine\u2019s own function, the very one a real context hands in', () => {
+    // `PluginContext` is assembled in two places: `createContext` at run time, and this stand-in when
+    // doctor asks a real question. The cell a `--project` line acts on is the one whose absence would
+    // be invisible: a local rule has the identical signature `(named, start) => string`, so `tsc` and
+    // every behavioural assertion stay green while doctor's question and the run-time door answer
+    // about two different directories. Identity is the assertion, not behaviour — the rework in
+    // `src/words/out.ts` is the answer the plugin contract points at, and this is where it is handed
+    // in a second time. No git scene is needed: any local rule, even one spelled the same, is another
+    // function and this stays red.
+    const ctx = standInContext({}, PROJECT);
+    expect(ctx.projectRootOf).toBe(projectRootOf);
   });
 });

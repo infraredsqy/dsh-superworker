@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import type { ConfigValue } from '../config';
 import { cellOf, group, isKnownKind, servedSources, wordsCell } from './cells';
 import { pluginBase } from './base';
+import { projectRootOf } from '../words/out';
 import type { PluginContext, PluginDeclaration, PluginInsertTarget } from './types';
 
 /**
@@ -55,6 +56,10 @@ export function standInContext(decl: PluginDeclaration, project: string): Plugin
     sig: {},
     dag: { nodes: {} },
     target: null as PluginInsertTarget | null,
+    // The one resolution, and the very function a real context hands in — not a rule of the
+    // stand-in's own. It is not a constant answer: asked, it stats `.git` under the start it is given,
+    // so a door that calls it reads disk and is answered about the directory it named.
+    projectRootOf,
     knob: (name: string) => Promise.resolve(values.get(name) ?? null),
     reading: (key: string) => Promise.resolve(numbers.get(key) ?? null),
     nodesWithTag: () => [],

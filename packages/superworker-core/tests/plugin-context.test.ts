@@ -6,6 +6,7 @@ import { createContext } from '../src/plugins/context';
 import { readGraphSnapshot } from '../src/graph';
 import { loadPlugins } from '../src/plugins/registry';
 import { recordPaths } from '../src/paths';
+import { projectRootOf } from '../src/words/out';
 import { makeLab } from './helpers/plugin-lab';
 
 /**
@@ -201,6 +202,30 @@ describe('the record base on the context', () => {
       expect(typeof ctx.base.withLock).toBe('function');
       expect(typeof ctx.base.verbSurface).toBe('function');
       expect(ctx.base.nowMicro()).toMatch(/\.\d{6}Z$/);
+    } finally {
+      lab.cleanup();
+    }
+  });
+
+  it('ctx.projectRootOf is the engine\u2019s own function, not a local rule that happens to answer alike', async () => {
+    // The same one-foundation promise the record base above carries, for the other cell the assembly
+    // hands in. `ctx.base` is observed cell by cell; the project root a `--project` line acts on is the
+    // one cell whose absence would be invisible: a local rule has the identical signature `(named, start)
+    // => string`, so `tsc` and every behavioural assertion pass while the plugin's command surface has
+    // quietly stopped leading a worktree root back to the main tree. Identity is the assertion, not
+    // behaviour: the rule itself may be spelled any way at all and this stays red only when the assembly
+    // stopped handing the engine's own answer in.
+    const lab = makeLab('superworker-plugin-ctx-');
+    try {
+      const folders = (await loadPlugins(join(lab.root, 'plugins'))).folders;
+      const ctx = createContext({
+        root: lab.root,
+        folders,
+        homeDir: lab.home,
+        warnings: [],
+        dag: { nodes: {} },
+      });
+      expect(ctx.projectRootOf).toBe(projectRootOf);
     } finally {
       lab.cleanup();
     }

@@ -32,8 +32,7 @@
  * Whether a record directory counts as init-ed is the engine's reading alone — this layer does not
  * answer that question a second time.
  */
-import { readFileSync, statSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { join } from 'node:path'
 
 // The record directory's name is spelled here because a plugin's tool file cannot import the engine's constant.
 const RECORD_DIR_NAME = '.superworker'
@@ -54,52 +53,6 @@ export function instructionsPath(root) {
  */
 export function instructionsLockPath(root) {
   return join(recordDir(root), 'meta', 'instructions.lock')
-}
-
-/**
- * The main tree a linked worktree's checkout root points back at, or `null` when this is no worktree root.
- *
- * A worktree root is recognised by its `.git` being a **file**, whose first line is
- * `gitdir: <main>/.git/worktrees/<name>`; that pointer leads back to the main tree, and only when the
- * main tree really has a `.superworker/` of its own. Everything else — a subdirectory, a submodule (its
- * `.git` file points at `.git/modules/…`), a directory that is no project at all — is no main tree.
- */
-function mainTreeOf(start) {
-  let firstLine
-  try {
-    const dotGit = join(start, '.git')
-    if (!statSync(dotGit).isFile()) return null
-    firstLine = readFileSync(dotGit, 'utf8').split('\n')[0].trim()
-  } catch {
-    return null
-  }
-  if (!firstLine.startsWith('gitdir:')) return null
-  const target = firstLine.slice('gitdir:'.length).trim()
-  if (target === '') return null
-  const gitdir = resolve(start, target)
-  // `<main>/.git/worktrees/<name>` and nothing else: a submodule's `gitdir:` does not name a worktree.
-  if (basename(dirname(gitdir)) !== 'worktrees') return null
-  const main = resolve(gitdir, '..', '..', '..')
-  try {
-    if (!statSync(join(main, RECORD_DIR_NAME)).isDirectory()) return null
-  } catch {
-    return null
-  }
-  return main
-}
-
-/**
- * The project root an explicitly named `--project` acts on: the directory named, else the main tree a
- * linked worktree's checkout root points back at.
- *
- * A worktree's own copy of `.superworker/` is never the account: it is the record as of the fork, so a
- * command that accepted it would settle on a stale snapshot. That decision belongs here, with the word
- * — the host used to resolve it before handing the word over. The default path is not this function's
- * business: `ctx.root` arrives already resolved by the host and is taken exactly as it comes.
- */
-export function projectRootOf(named) {
-  const base = resolve(named)
-  return mainTreeOf(base) ?? base
 }
 
 /**

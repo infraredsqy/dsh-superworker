@@ -5,6 +5,7 @@ import type { PluginAssembly } from './assembly';
 import { implOf } from './scan';
 import { declaredKnobSpecs, readingsOf } from './tables';
 import { routableCommands } from '../words/plugin-commands';
+import { projectRootOf } from '../words/out';
 import type {
   PluginCommandEntry,
   PluginContext,
@@ -273,6 +274,11 @@ export function createContext(options: ContextOptions): PluginContext {
     sig: options.sig ?? null,
     dag: options.dag ?? { nodes: {} },
     target: options.target ?? null,
+    // Which project root a directory named on a command line acts on: the engine answers it in one
+    // place (`src/words/out.ts`), and this is the one way a plugin's command surface reaches that
+    // answer. Nothing here re-spells the rule — a second copy would be the drift this seam exists to
+    // prevent.
+    projectRootOf,
 
     async knob(name: string) {
       if (name === '') return null;

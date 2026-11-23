@@ -219,6 +219,17 @@ export interface PluginContext {
   readonly root: string;
   /** Whether this round is a rehearsal (`--dry-run`), and the door being asked is its preview: the context can read, and `run` refuses. */
   readonly preview?: boolean;
+  /**
+   * The project root a directory named on a command line acts on — `projectRootOf(named, start)` of
+   * `src/words/out.ts`, handed in rather than copied: the engine's resolution (a linked worktree's
+   * checkout root leads back to the main tree that really holds the record directory, everything else
+   * is the directory it is) is the one answer, and a plugin's command surface asks here instead of
+   * carrying a second implementation of the rule. An argument the engine's own words accept: an
+   * explicit directory, or `undefined` / `''` for "the caller's own root", which is `start`. A named
+   * directory is resolved the way the engine's own words resolve it — against the process's working
+   * directory, as `resolve(named)` — not against `start`: `start` only decides the nameless fallback.
+   */
+  projectRootOf(named: string | undefined, start: string): string;
   /** This line's record (the scene of a close / dispatch); an empty object when there is no line. */
   readonly cycle: Readonly<Record<string, unknown>>;
   /** The id of the node in hand (the one being closed, at close time); null when there is none. */

@@ -29,9 +29,10 @@
  * node-scoped entry with nothing to bind to is refused, because an unbound entry would be read as
  * visible to everyone, forever, which is what the scope exists to prevent.
  *
- * The project a line acts on is `ctx.root` unless the line names one: `--project` is resolved from this
- * process's own directory, and a linked worktree's checkout root leads back to the main tree that holds
- * the account (see `projectRootOf` in `storage.mjs`).
+ * The project a line acts on is `ctx.root` unless the line names one: `--project` goes through
+ * `ctx.projectRootOf`, the engine's one resolution of "which project root does this directory mean" —
+ * a linked worktree's checkout root leads back to the main tree that holds the account, and nothing of
+ * that rule is written in this folder.
  */
 import {
   EOL,
@@ -41,7 +42,6 @@ import {
   STATE_MARKS,
   VALID_SCOPES,
   VALID_TARGETS,
-  projectRootOf,
   readCycles,
   readInstructions,
   readNodes,
@@ -97,6 +97,24 @@ function baseOf(ctx) {
     )
   }
   return base
+}
+
+/**
+ * The resolution a `--project` line is answered with: the engine's one answer, handed in as
+ * `ctx.projectRootOf` beside the record base. Read on every call that has to resolve a named root, so
+ * a build of this plugin run by an engine that hands no such cell in is named as it is, instead of
+ * failing with a bare `is not a function` the caller cannot act on.
+ */
+function seamOf(ctx) {
+  const seam = ctx === null || typeof ctx !== 'object' ? undefined : ctx.projectRootOf
+  if (typeof seam !== 'function') {
+    throw new Error(
+      'the instruction tool reads which project root a --project directory acts on from the context the ' +
+        'host hands in (ctx.projectRootOf), and this engine hands none in: update the engine, or install ' +
+        'the build of this plugin that still carries its own project root resolution',
+    )
+  }
+  return seam
 }
 
 function surfaceOf(base) {
@@ -578,14 +596,15 @@ async function cmdRm(args, ctx) {
 const RUNNERS = { add: cmdAdd, list: cmdList, resolve: cmdResolve, rm: cmdRm, revive: cmdRevive }
 
 /**
- * The context one verb runs under: a named `--project` replaces the root the host handed in,
- * resolved from this process's own directory — and, being an explicit root, resolved through a linked
- * worktree back to the main tree that holds the account. No name means the host's root as it came:
- * the host already resolved it.
+ * The context one verb runs under: a named `--project` replaces the root the host handed in. Which
+ * root that is has one home — the engine's `projectRootOf`, handed in as `ctx.projectRootOf`: a linked
+ * worktree's checkout root leads back to the main tree that holds the account, and everything else is
+ * the directory it is. None of that judgement is repeated in this folder. No name means the host's root
+ * exactly as it came: `ctx.root` is already resolved by the host, and asking again could only move it.
  */
 function contextOf(args, ctx) {
   const named = args.options.project
-  const root = named === undefined || named === '' ? ctx.root : projectRootOf(named)
+  const root = named === undefined || named === '' ? ctx.root : seamOf(ctx)(named, ctx.root)
   return { ...ctx, root }
 }
 

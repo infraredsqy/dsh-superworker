@@ -16,10 +16,12 @@ export { answer, describe, topHelp } from './words/router';
 export { COMMANDS, GROUPS, specOf } from './words/spec';
 export { helpText, parse, usageError } from './words/argparse';
 export { LONG_RESULT_LIMIT, longResultPointerOf } from './words/out';
-/* "Which project root does this session act on" is one question with one answer. The words layer asks
+/* "Which project root does this directory mean" is one question with one answer. The words layer asks
    `projectRootOf` before every verb; the host half's record-presence gate asks the same function, so a
-   node's linked-worktree session is looked for at the main tree that holds the account there too,
-   rather than the host keeping a second mirror of that resolution. */
+   node's linked-worktree session is looked for at the main tree that holds the account there too, rather
+   than the host keeping a second mirror of that resolution; and a plugin's command surface reaches it
+   through `ctx.projectRootOf` (see `src/plugins/types.ts`), so a plugin folder carries no copy of the
+   rule. */
 export { projectRootOf } from './words/out';
 export type { WordsIndex } from './words/router';
 export type { WordsIO } from './words/types';

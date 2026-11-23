@@ -1,12 +1,16 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { main as instruction } from '../plugins/instruction/tools/commands.mjs';
 import { UsageError } from '../src/plugins/verb-surface';
 import { pluginBase, type PluginBase } from '../src/plugins/base';
 import { atomicWriteJson, jsonBytes, jsonOptionsForRecord } from '../src/jsonio';
 import { open } from '../src/open';
+import { projectRootOf } from '../src/words/out';
+import { git, makeRepo } from './helpers/git-runner';
+import { SLOW } from './helpers/slow';
 
 /**
  * The `instruction` command surface, this plugin folder's own (`plugins/instruction/`): register,
@@ -40,6 +44,7 @@ interface InstructionRecord {
 interface Ctx {
   root: string;
   base: PluginBase;
+  projectRootOf: typeof projectRootOf;
 }
 
 let root: string;
@@ -51,7 +56,7 @@ const SECONDS_SHAPE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'superworker-ins-cmd-'));
-  ctx = { root, base: pluginBase() };
+  ctx = { root, base: pluginBase(), projectRootOf };
   superworker = open(root);
   await superworker.ledger.init();
 });
@@ -68,7 +73,25 @@ afterEach(() => {
  * The context is the case's own root with the record base the host hands in.
  */
 async function out(argv: string[]): Promise<string> {
-  return String(await (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(argv, ctx));
+  return String(await runIn(root, argv));
+}
+
+/**
+ * One line run against a context of this case's own, with the cells the host hands in replaced: the
+ * record base, the root a line acts on, or the resolution a named `--project` is answered with.
+ */
+async function outIn(cells: Partial<Ctx>, argv: string[]): Promise<string> {
+  return String(await (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(argv, { ...ctx, ...cells }));
+}
+
+/** One line run against a named root instead of this case's own project. */
+async function runIn(dir: string, argv: string[]): Promise<unknown> {
+  return outIn({ root: dir }, argv);
+}
+
+/** The texts one listing carries, in account order: the cell that tells two accounts apart. */
+async function textsOf(cells: Partial<Ctx>, argv: string[]): Promise<string[]> {
+  return (JSON.parse(await outIn(cells, argv)) as InstructionRecord[]).map((row) => row.text);
 }
 
 async function err(argv: string[]): Promise<string> {
@@ -564,15 +587,131 @@ describe('list: position, order and the two views', () => {
     }
   });
 
+  it('a named --project is answered by the engine\'s resolution, never by a rule of this folder', async () => {
+    // The invariant is sameness, not the shape of the rule: whatever `projectRootOf` answers for a
+    // directory, the command surface acts on exactly that root. A second copy of the worktree reading
+    // in this folder would drift from the engine's the day one side changes; nothing here pins how the
+    // rule is written, only that both sides are one answer.
+    const main = mkdtempSync(join(tmpdir(), 'superworker-ins-seam-main-'));
+    const linked = mkdtempSync(join(tmpdir(), 'superworker-ins-seam-linked-'));
+    const submodule = mkdtempSync(join(tmpdir(), 'superworker-ins-seam-sub-'));
+    try {
+      await open(main).ledger.init();
+      await runIn(main, ['add', '--scope', 'global', '--text', 'the main tree answers']);
+      mkdirSync(join(main, '.git', 'worktrees', 'node-checkout'), { recursive: true });
+      writeFileSync(join(linked, '.git'), `gitdir: ${join(main, '.git', 'worktrees', 'node-checkout')}\n`);
+      writeFileSync(join(submodule, '.git'), `gitdir: ${join(main, '.git', 'modules', 'sub')}\n`);
+
+      const engineAnswer = projectRootOf(linked, root);
+      expect(engineAnswer).toBe(main);
+      expect(await idsOf(['list', '--json', '--project', linked])).toEqual(['i-0001']);
+      // The same read through the engine's own answer: one root, one account.
+      expect(await idsOf(['list', '--json', '--project', engineAnswer])).toEqual(['i-0001']);
+      // A submodule pointer is not a worktree pointer: the engine answers the directory itself, and the
+      // word acts on that same directory.
+      expect(projectRootOf(submodule, root)).toBe(submodule);
+      expect(await idsOf(['list', '--json', '--project', submodule])).toEqual([]);
+    } finally {
+      for (const dir of [main, linked, submodule]) rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('the root a --project line acts on is the seam\'s answer, even when that answer is not this folder\'s own', async () => {
+    // The decisive one: a decoy resolution answers a third directory whatever it is asked, and that
+    // directory's account carries different text. A folder that asked the seam reads the decoy's
+    // account; a folder that still carried the worktree rule of its own would answer `main` and read
+    // `main`'s text, because the real rule for `linked` is `main`. This is the only case here that can
+    // tell the two implementations apart — every other assertion is satisfied by both.
+    const main = mkdtempSync(join(tmpdir(), 'superworker-ins-decoy-main-'));
+    const decoy = mkdtempSync(join(tmpdir(), 'superworker-ins-decoy-third-'));
+    const linked = mkdtempSync(join(tmpdir(), 'superworker-ins-decoy-linked-'));
+    try {
+      await open(main).ledger.init();
+      await open(decoy).ledger.init();
+      await runIn(main, ['add', '--scope', 'global', '--text', 'ACCOUNT=main']);
+      await runIn(decoy, ['add', '--scope', 'global', '--text', 'ACCOUNT=decoy']);
+      // A real worktree-shaped pointer, whose *own* answer the engine states as `main`.
+      mkdirSync(join(main, '.git', 'worktrees', 'node-checkout'), { recursive: true });
+      writeFileSync(join(linked, '.git'), `gitdir: ${join(main, '.git', 'worktrees', 'node-checkout')}\n`);
+      expect(projectRootOf(linked, linked)).toBe(main);
+
+      // Handed a resolution that answers `decoy`: the line acts on `decoy`, not on `main`.
+      const decoySeam = (): string => decoy;
+      expect(await textsOf({ projectRootOf: decoySeam }, ['list', '--json', '--all', '--project', linked])).toEqual([
+        'ACCOUNT=decoy',
+      ]);
+      // And with the engine's own resolution in that same cell, the same line reads `main`: the answer
+      // is the cell's, which is what "the folder owns no rule" means.
+      expect(await textsOf({}, ['list', '--json', '--all', '--project', linked])).toEqual(['ACCOUNT=main']);
+    } finally {
+      for (const dir of [main, decoy, linked]) rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a context with no resolution on it is refused with a sentence, not a bare `is not a function`', async () => {
+    // The seam is a cell the host must hand in; an engine too old to know it should hear so. The
+    // refusal names the cell and what to do about it, the way the record base's own guard does.
+    const other = mkdtempSync(join(tmpdir(), 'superworker-ins-noseam-'));
+    try {
+      const { projectRootOf: _dropped, ...withoutSeam } = ctx;
+      await expect(
+        (instruction as (argv: string[], ctx: Partial<Ctx>) => Promise<unknown>)(
+          ['list', '--json', '--project', other],
+          withoutSeam,
+        ),
+      ).rejects.toThrow(
+        /ctx\.projectRootOf\)?, and this engine hands none in: update the engine, or install the build of this plugin/,
+      );
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
+  });
+
+  it('the plugin folder carries no copy of the worktree reading: the second home cannot come back unseen', () => {
+    // Criterion 2 of the node's spec, as a standing guard: "the plugin's storage no longer carries its
+    // own recognition". Nothing else in the suite would go red if somebody copied `mainTreeOf` back
+    // into `plugins/instruction/tools/storage.mjs` — `guard.test.ts` guards `src/`, not `plugins/` —
+    // so the regression this node exists to prevent would pass silently.
+    //
+    // What is guarded is the *implementation*, not a vocabulary, and no broader claim: a second copy
+    // of the rule cannot be written without reading the `.git` pointer under the directory it was
+    // handed. So the assertion is "this folder reads `.git` nowhere", and a plugin that reads the
+    // resolution from `ctx.projectRootOf` (the shape `types.ts` documents, `ctx.projectRootOf(named,
+    // ctx.root)`) is a legitimate reader and stays green. The shapes below are the ones that prove a
+    // read is *about `.git`* — the pointer's own file name, the `gitdir:` line inside it, and the
+    // `worktrees` segment of a linked worktree's record path. Generic calls such as `readFileSync(`
+    // and `statSync(` are deliberately not in the list: this folder may read files for its own
+    // reasons (a sibling plugin reads a `--from-file` argument the same way), and those calls say
+    // nothing about where a project root comes from. Scanning is recursive over the whole folder:
+    // `impl.mjs` is the entry point and the most likely place for a copied rule, and the two tools
+    // files are reached from it.
+    const pluginFolder = fileURLToPath(new URL('../plugins/instruction/', import.meta.url));
+    const files = readdirSync(pluginFolder, { recursive: true })
+      .map((name) => String(name))
+      .filter((name) => name.endsWith('.mjs'))
+      .map((name) => join(pluginFolder, name));
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.some((file) => file.endsWith('impl.mjs'))).toBe(true);
+    // The shapes a `.git` read takes: the pointer's own file name, the `gitdir:` line inside it, and
+    // the worktree record directory that line names.
+    const readShapes = ['.git', 'gitdir:', 'worktrees'];
+    for (const file of files) {
+      const text = readFileSync(file, 'utf8');
+      for (const shape of readShapes) {
+        expect(
+          text,
+          `${file} carries "${shape}": this folder reads .git — the resolution has one home, src/words/out.ts`,
+        ).not.toContain(shape);
+      }
+    }
+  });
+
   it('--project at a linked worktree root acts on the main tree; a submodule or a main tree with no record is taken as it is', async () => {
     const main = mkdtempSync(join(tmpdir(), 'superworker-ins-main-'));
     const linked = mkdtempSync(join(tmpdir(), 'superworker-ins-linked-'));
     const submodule = mkdtempSync(join(tmpdir(), 'superworker-ins-sub-'));
     const plain = mkdtempSync(join(tmpdir(), 'superworker-ins-plain-'));
     const orphan = mkdtempSync(join(tmpdir(), 'superworker-ins-orphan-'));
-    /** One line run against a named root instead of this case's own project (`add` takes no `--project`). */
-    const runIn = async (dir: string, argv: string[]): Promise<unknown> =>
-      (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(argv, { root: dir, base: pluginBase() });
     try {
       await open(main).ledger.init();
       await runIn(main, ['add', '--scope', 'global', '--text', 'kept in the main tree']);
@@ -615,7 +754,7 @@ describe('list: position, order and the two views', () => {
       await open(other).ledger.init();
       await (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(
         ['add', '--scope', 'global', '--text', 'an entry in the other project'],
-        { root: other, base: pluginBase() },
+        { root: other, base: pluginBase(), projectRootOf },
       );
       const locksTaken: string[] = [];
       const real = pluginBase();
@@ -630,7 +769,7 @@ describe('list: position, order and the two views', () => {
         String(
           await (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(
             ['resolve', 'i-0001', '--state', 'withdrawn', '--project', other],
-            { root, base: watching },
+            { root, base: watching, projectRootOf },
           ),
         ),
       ).toBe('INSTRUCTION i-0001 → withdrawn');
@@ -640,7 +779,7 @@ describe('list: position, order and the two views', () => {
       locksTaken.length = 0;
       await (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(
         ['resolve', 'i-0001', '--state', 'withdrawn'],
-        { root, base: watching },
+        { root, base: watching, projectRootOf },
       );
       expect(locksTaken).toEqual([join(root, '.superworker', 'meta', 'instructions.lock')]);
     } finally {
@@ -768,14 +907,7 @@ describe('the write verbs carry no init gate of their own', () => {
     const bare = mkdtempSync(join(tmpdir(), 'superworker-ins-gate-'));
     try {
       const line = ['add', '--scope', 'global', '--text', 'lands without a plugin-level gate'];
-      expect(
-        String(
-          await (instruction as (argv: string[], ctx: Ctx) => Promise<unknown>)(line, {
-            root: bare,
-            base: pluginBase(),
-          }),
-        ),
-      ).toContain('INSTRUCTION i-0001');
+      expect(String(await runIn(bare, line))).toContain('INSTRUCTION i-0001');
       expect(readFileSync(join(bare, '.superworker', 'instructions.json'), 'utf8')).toContain(
         'lands without a plugin-level gate',
       );
@@ -996,4 +1128,104 @@ describe('the bytes a write lands: the record base\u2019s one writer, this recor
     })))).toBe(true);
     expect(Object.keys(readInstructionFile())).toEqual(['instructions', 'removed']);
   });
+});
+
+describe('a real linked worktree: one answer, one account', () => {
+  it.skipIf(!SLOW)(
+    'the worktree root as --project writes to the main tree, and the engine answers the same root',
+    async () => {
+      // The fixture is a real worktree, not a hand-written pointer: `git worktree add` lays down the
+      // checkout this pipeline's parallel mode really produces — a `.git` *file* pointing into the main
+      // tree's `.git/worktrees/<name>`, and no `.superworker/` of its own.
+      const main = mkdtempSync(join(tmpdir(), 'superworker-ins-wt-main-'));
+      const side = mkdtempSync(join(tmpdir(), 'superworker-ins-wt-side-'));
+      const worktree = join(side, 'tree');
+      try {
+        await makeRepo(main);
+        await git(main, 'worktree', 'add', worktree, '-b', 'side');
+        expect(statSync(join(worktree, '.git')).isFile()).toBe(true);
+        expect(existsSync(join(worktree, '.superworker'))).toBe(false);
+
+        await open(main).ledger.init();
+        await runIn(main, ['add', '--scope', 'global', '--text', 'the main tree keeps the account']);
+
+        // The rule the engine states, asked of the very root this case is about.
+        expect(projectRootOf(worktree, worktree)).toBe(main);
+
+        // A writing verb pointed at the worktree root lands on the main tree's account, and the worktree
+        // keeps no record of its own — the accident this seam exists to prevent is the write that goes
+        // into the worktree snapshot where nobody sees it.
+        const throughWorktree = ['resolve', 'i-0001', '--state', 'withdrawn', '--project', worktree];
+        expect(String(await runIn(root, throughWorktree))).toBe('INSTRUCTION i-0001 → withdrawn');
+        expect(readFileSync(join(main, '.superworker', 'instructions.json'), 'utf8')).toContain('"state": "withdrawn"');
+        expect(existsSync(join(worktree, '.superworker', 'instructions.json'))).toBe(false);
+
+        // Both spellings of the same root read the same account: the word's own read and the engine's answer.
+        expect(await idsOf(['list', '--json', '--all', '--project', worktree])).toEqual(['i-0001']);
+        expect(await idsOf(['list', '--json', '--all', '--project', projectRootOf(worktree, worktree)]))
+          .toEqual(['i-0001']);
+      } finally {
+        rmSync(main, { recursive: true, force: true });
+        rmSync(side, { recursive: true, force: true });
+      }
+    },
+    20000,
+  );
+
+  it.skipIf(!SLOW)(
+    'the production assembly carries that answer: conductor.pluginCommand writes to the main tree when --project names the worktree',
+    async () => {
+      // The case above hands the plugin a context the case built itself, so its `projectRootOf` cell is
+      // the case's own reading of the rule. This one goes the way a person does: the shipped plugin
+      // folder is installed into a project, and the line is routed through `conductor.pluginCommand` —
+      // i.e. through the real assembly (`createContext`) that fills that cell in. What it pins is the
+      // cell's *wiring*, which no hand-built context can observe: a local rule spelled into the assembly
+      // answers a linked worktree root as itself and every hand-built-context assertion above still
+      // passes, while `--project <worktree>` goes back to writing into the worktree snapshot.
+      const main = mkdtempSync(join(tmpdir(), 'superworker-ins-prod-main-'));
+      const side = mkdtempSync(join(tmpdir(), 'superworker-ins-prod-side-'));
+      const worktree = join(side, 'tree');
+      try {
+        await makeRepo(main);
+        await git(main, 'worktree', 'add', worktree, '-b', 'side');
+        expect(statSync(join(worktree, '.git')).isFile()).toBe(true);
+        expect(existsSync(join(worktree, '.superworker'))).toBe(false);
+
+        // The shipped folder as a project would have it: `open(root)` scans `<root>/plugins`.
+        mkdirSync(join(main, 'plugins'), { recursive: true });
+        cpSync(fileURLToPath(new URL('../plugins/instruction', import.meta.url)), join(main, 'plugins', 'instruction'), {
+          recursive: true,
+        });
+
+        const superworker = open(main);
+        await superworker.ledger.init();
+        const added = await superworker.conductor.pluginCommand({
+          word: 'instruction',
+          argv: ['add', '--scope', 'global', '--text', 'the main tree keeps the account'],
+        });
+        expect(added.error).toBeNull();
+        expect(added.ran).toBe(true);
+
+        const written = await superworker.conductor.pluginCommand({
+          word: 'instruction',
+          argv: ['resolve', 'i-0001', '--state', 'withdrawn', '--project', worktree],
+        });
+        expect(written.error).toBeNull();
+        expect(written.ran).toBe(true);
+        // The write landed on the main tree's account, and the worktree kept no account of its own.
+        expect(readFileSync(join(main, '.superworker', 'instructions.json'), 'utf8')).toContain('"state": "withdrawn"');
+        expect(existsSync(join(worktree, '.superworker', 'instructions.json'))).toBe(false);
+
+        const listed = await superworker.conductor.pluginCommand({
+          word: 'instruction',
+          argv: ['list', '--json', '--all', '--project', worktree],
+        });
+        expect((JSON.parse(String(listed.text)) as InstructionRecord[]).map((row) => row.id)).toEqual(['i-0001']);
+      } finally {
+        rmSync(main, { recursive: true, force: true });
+        rmSync(side, { recursive: true, force: true });
+      }
+    },
+    30000,
+  );
 });
