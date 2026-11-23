@@ -24,6 +24,10 @@ export const en: Readonly<Record<WordKey, string>> = {
   'panel.unreadable': 'This workspace’s record cannot be read.',
   'panel.no-session': 'No session is selected, so the workspace cannot be determined.',
 
+  /* The pane-level crash guard's sentence (`pane-boundary.tsx`). The Chinese wording is the
+   * reader's own, approved verbatim; this is its English rendering of the same sentence. */
+  'panel.crashed': 'An error occurred while displaying this page.',
+
   /* The legacy-directory notice: the workspace still holds the previous record directory, so the
    * panel has nothing to draw and one way forward. The body names the directory this plugin reads,
    * never the one it replaced — the old name is the engine's fact to spell, not this panel's. */

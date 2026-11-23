@@ -32,6 +32,11 @@ export const zh = {
   'panel.unreadable': '无法读取当前工作区的记录。',
   'panel.no-session': '尚未选中会话，无法确定工作区。',
 
+  /* The pane-level crash guard's sentence (`pane-boundary.tsx`): one pane that cannot be drawn
+   * says so in its own place instead of the whole cell going dark. The wording is the reader's
+   * own, approved verbatim — not invented here. */
+  'panel.crashed': '当前页面显示时出现错误。',
+
   /* The legacy-directory notice: the workspace still holds the previous record directory, so the
    * panel has nothing to draw and one way forward. The body names the directory this plugin reads,
    * never the one it replaced — the old name is the engine's fact to spell, not this panel's. */

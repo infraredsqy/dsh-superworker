@@ -1,6 +1,7 @@
 /**
  * The widgets shared by the client's panes: a movable split, a foldable section, a count pill, a
- * modal shell, a commit-style input, and the pane shell every view stands in.
+ * modal shell, a commit-style input, and the pane shell every view stands in — with the crash
+ * guard (`pane-boundary.tsx`) wired into that shell, so a pane's body always draws behind it.
  *
  * Each exists only once: the drag measurement differs in three places, but draggable + keyboard +
  * double-click-to-default is written down in one way; the modal's overlay, Escape, and focus all
@@ -10,6 +11,7 @@
 import * as React from 'react'
 import { NOT_ENABLED_WORD } from './constants.ts'
 import { useT } from './locale.ts'
+import { PaneBoundary } from './pane-boundary.tsx'
 
 /**
  * The shell every pane stands in: one tabpanel per view, its `id` and `aria-labelledby` derived from
@@ -44,7 +46,15 @@ export function PaneFrame(props: {
       data-fill={props.fill === true ? '' : undefined}
       hidden={!props.active}
     >
-      {props.noNodes ? <p className="superworker-innone">{t(NOT_ENABLED_WORD)}</p> : props.children}
+      {props.noNodes ? <p className="superworker-innone">{t(NOT_ENABLED_WORD)}</p> : (
+        /* The pane's body draws behind the crash guard: a pane that cannot be drawn collapses to
+         * one sentence in its own place, and the shell — the header, the tab row, the other panes —
+         * lives on (`pane-boundary.tsx`). The guard sits inside the section, so a crashed pane
+         * keeps its `hidden` and its tab wiring; the sentence is this table's own approved word. */
+        <PaneBoundary pane={props.id} active={props.active} said={t('panel.crashed')}>
+          {props.children}
+        </PaneBoundary>
+      )}
     </section>
   )
 }

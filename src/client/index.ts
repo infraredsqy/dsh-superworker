@@ -59,6 +59,9 @@ export type { LocaleService, LocaleSource, LocaleSnapshot, Translate } from './l
 export { WORD_TABLES, zh as FALLBACK_WORD_TABLE } from './locales/index.ts'
 export { failureWord } from './words.ts'
 
+/** The pane-level crash guard, readable off the bundle so a case can press it directly. */
+export { PaneBoundary } from './pane-boundary.tsx'
+
 export { NO_WORKSPACES, workspaceOf, workspacesAt } from './workspaces.ts'
 export type { WorkspaceChoice, WorkspaceSnapshot, WorkspaceSource } from './workspaces.ts'
 

@@ -207,3 +207,62 @@ test('this build: the shell loads, the panel draws, every tab opens, cycle names
 
   assert.deepEqual(consoleErrors, [], 'there is an error in the console')
 })
+
+test('a pane that fails to draw keeps the workshop up: the guard says so, the catch is loud, coming back retries', { skip: bundleSkip }, async () => {
+  const mounted = await mountBuiltPanel({ record: record() })
+  const { window, React, act, client, container, consoleErrors } = mounted
+
+  /* The wiring proof is the healthy mount itself: every pane body now draws behind a guard, the
+   * panel above drew clean, and no guard tripped on its own. */
+  assert.notEqual(container.querySelector('.superworker-page'), null, 'the panel is drawn behind the guards')
+
+  /* The guard pressed directly, on a root of its own: the child throws while `broken` stands, on
+   * every attempt — the stand-in for a pane whose drawing went wrong (the overview's measure-loop
+   * crash was exactly one of these, and without the guard it retired the whole center cell). A
+   * throw-once child would not do: React retries a failed render once before a boundary may
+   * catch it, so the child must still be broken on the retry. The flag moves between draws,
+   * never inside one. The sentence is this case's own, so the panel's wording stays out of the
+   * unit's hands. */
+  const { PaneBoundary } = client
+  const { createRoot } = await import('react-dom/client')
+  let broken = true
+  const FlakyPane = () => {
+    if (broken) throw new Error('the drawing went wrong')
+    return React.createElement('p', null, 'the pane drew')
+  }
+  const holder = window.document.createElement('div')
+  window.document.body.appendChild(holder)
+  const root = createRoot(holder)
+  const draw = async (active) => {
+    await act(async () => {
+      root.render(
+        React.createElement(PaneBoundary, { pane: 'probe', active, said: 'the pane could not be drawn' }, React.createElement(FlakyPane)),
+      )
+    })
+  }
+
+  await draw(true)
+  assert.equal(holder.textContent, 'the pane could not be drawn', 'a pane that cannot draw says so in its own place')
+  assert.ok(consoleErrors.some((line) => line.includes('did not draw')), 'the catch is loud: a crash must leave a traceable line')
+
+  /* Still broken, the reader leaves and comes back: the re-arm re-runs the pane, and a crash that
+   * still happens crashes again — the sentence returns, loud a second time. */
+  await draw(false)
+  await draw(true)
+  assert.equal(holder.textContent, 'the pane could not be drawn', 'a pane that is still broken says so again')
+  const loud = () => consoleErrors.filter((line) => line.includes('did not draw')).length
+  assert.equal(loud(), 2, 'each crash is loud exactly once')
+
+  /* A pane whose fault is gone heals on the way back: the flag lifts while the pane is away, and
+   * the re-arm's retry draws the body instead of the sentence. */
+  broken = false
+  await draw(false)
+  await draw(true)
+  assert.equal(holder.textContent, 'the pane drew', 'coming back retries the pane, and a healed one draws again')
+  assert.equal(holder.querySelector('.superworker-none'), null, 'no sentence stands over a drawn pane')
+  assert.equal(loud(), 2, 'a healed draw crashes no third time')
+
+  await act(async () => { root.unmount() })
+  holder.remove()
+  await mounted.unmount()
+})
