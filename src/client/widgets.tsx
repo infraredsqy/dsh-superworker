@@ -263,8 +263,13 @@ export function CommitNumberInput(props: {
   readonly onCommit: (text: string) => void
 }): React.ReactElement {
   const t = useT()
-  const [text, setText] = React.useState(props.held)
-  React.useEffect(() => { setText(props.held) }, [props.held, props.revision])
+  /* What the box holds while nobody is typing: the reading's text — except on a reading that has no
+   * value, which the unset face already says in the placeholder. A number box cannot print the tool's
+   * dash at all: the browser refuses the value and says so in the console, and the box then stands
+   * there holding something it never drew. */
+  const resting = props.unset ? '' : props.held
+  const [text, setText] = React.useState(resting)
+  React.useEffect(() => { setText(resting) }, [resting, props.revision])
   const commit = (): void => {
     props.onCommit(text.trim())
   }
