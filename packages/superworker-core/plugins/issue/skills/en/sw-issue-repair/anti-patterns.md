@@ -1,54 +1,41 @@
-# sw-issue-repair anti-patterns
+# sw-issue-repair Anti-patterns
 
-Check yourself against this before starting. The criteria themselves live in
-[`./SKILL.md`](./SKILL.md) and `/sw-conduct`; this keeps symptoms and correction signals only.
+Check before starting. The full rules live in [`./SKILL.md`](./SKILL.md) and `/sw-conduct`; this page lists symptoms and correction signals only.
 
-## `issue-repair-skips-review-for-throughput` — skipping the review for throughput
+## `issue-repair-skips-review-for-throughput` — Skipping review for throughput
 
-**Symptom**: with many entries you think "this one is too small to review" and commit right after
-the Fix — and you cannot judge what counts as "no review needed".
+**Symptom**: Deciding an entry is "too small to review" and committing straight after Fix—there is no reliable way to judge what needs no review.
 
-**Instance**: a change that "just lifts an RAII guard into a shared header" missed an `#include`,
-did not compile, and only the review ran into it.
+**Example**: A change that "merely lifted an RAII guard into a shared header" missed an `#include`, broke compilation, and was only caught in review.
 
-**Correction signal**: this batch has the Fix report only, and not the Review one.
+**Correction signal**: A batch has a Fix report without a corresponding Review report.
 
-## `issue-repair-mixes-change-domains-in-one-batch` — mixing change domains into one batch
+## `issue-repair-mixes-change-domains-in-one-batch` — Mixing change domains in one batch
 
-**Symptom**: entries from different modules that cannot be verified in one pass are packed off to
-the same Fix; or fixing an entry inside the batch changes code outside it in passing — what is
-smuggled in from outside pollutes the batch's boundary, and the review cannot trace it.
+**Symptom**: Bundling entries from unrelated modules that cannot share one verification pass into one Fix; or editing unrelated code outside the batch, polluting batch boundaries and breaking review traceability.
 
-**Correction signal**: this batch's entries land in two or more modules, while there is only one
-verification.
+**Correction signal**: Entries in one batch span two or more modules under a single verification run.
 
-## `issue-repair-batch-composition-unreported` — the report not listing the batch composition
+## `issue-repair-batch-composition-unreported` — Omitting batch composition from the report
 
-**Symptom**: how the batches were cut and what each holds goes unmentioned at the close.
+**Symptom**: The final report omits how batches were partitioned and which entries each batch contained.
 
-**Correction signal**: the report has the readings and the settling table, yet the reader cannot
-piece together which entries this batch changed or which commit it took.
+**Correction signal**: The report lists readings and a disposal table, but a reader cannot map entries to batches and commits.
 
-## `issue-repair-acknowledge-or-external-as-exit` — acknowledge or external as repair's exit
+## `issue-repair-acknowledge-or-external-as-exit` — Using `acknowledge` or `external` as an escape hatch
 
-**Symptom**: when it cannot be fixed, it gets `acknowledge`; an entry that has been given a
-solution, and whose solution still holds, gets re-ruled `external`.
+**Symptom**: Marking hard entries as `acknowledge`, or reclassifying entries with valid written solutions as `external`.
 
-**Correction signal**: `acknowledge` shows up in the settling table, or an entry given a solution
-is turned into `external`.
+**Correction signal**: `acknowledge` appears in the disposal table, or an entry with a viable solution is flipped to `external`.
 
-## `issue-repair-batch-uncommitted` — a batch that passed review but is uncommitted
+## `issue-repair-batch-uncommitted` — Leaving a passed batch uncommitted
 
-**Symptom**: a whole batch is changed and the review has passed, and the next batch is opened
-right away, with no commit.
+**Symptom**: Starting the next batch without committing a batch that has already passed review.
 
-**Correction signal**: the next batch's changes are mixed into the same uncommitted change as the
-previous batch's.
+**Correction signal**: Changes from the next batch are mixed with uncommitted changes from the previous batch.
 
-## `issue-repair-widens-scope` — widening the repair surface past the scope
+## `issue-repair-widens-scope` — Widening scope beyond the caller's target
 
-**Symptom**: the spec says "pull this one metric back under the line", and you clear the pool's
-other domains in passing.
+**Symptom**: The spec asks to bring one metric below threshold, but you also clean up unrelated domains in the pool.
 
-**Correction signal**: among the entries this run resolved, several have a metric that is not in
-whatever called you in.
+**Correction signal**: Resolved entries include domains or metrics outside the caller's specified scope.

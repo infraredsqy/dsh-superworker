@@ -1,78 +1,78 @@
 ---
 name: sw-issue-repair
-description: 把 issue 池里的债修到线下：按改动域分批、每批 Fix→Review、批过即提交；一条条目怎么处置只看「谁还开着板子」。
+description: 修复 issue 池中可执行的债直至达标：按改动域分批，每批 Fix → Review，复审通过即提交。
 disable-model-invocation: true
 ---
 
 # sw-issue-repair
 
-> 绑哪个插件：`issue` —— 这个技能随那个插件一起装、一起卸；插件不在，这个技能也不在
-> 谁跑我：指挥者——管线节点的指挥者，或用户自己的会话
-> 我解决什么：把池子里能修的条目修到线下（一个度量 / 一批，范围由叫你来的那份东西定）
-> 我派不派 subagent：派，只派一层（Fix / Review）。被派来的执行者读到这份，停手回报，别照它干
+> 所属插件：`issue`（随插件安装/卸载）。
+> 调用方：指挥者（管线节点指挥者或用户会话）。
+> 职责：将 issue 池中可修条目修至目标达标（按调用方指定的度量阈值或批次范围）。
+> 是否派发 subagent：是，仅一层（Fix / Review）；被派发的执行者若读到此文件，停手回报。
 
-取材只有一处：池子。工具与口径见 [`./pool.md`](./pool.md)。**范围不归你定**——管线节点的 spec、「为什么被插进来」那几行、或用户那句话，谁叫你来的谁定；别自己扩到全库。判据过了就停手。
+所有条目均来自 issue 池，工具与口径见 [`./pool.md`](./pool.md)。**修复范围由调用方决定**（管线节点 `spec.md`、插入说明或用户指令），不得自行扩大到全库；完成判定达成即停手。
 
-管线这些词是一张表一个入口：走 `superworker` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
+所有管线命令均通过 `superworker` 工具调用（传 `word` 与 `args`，加 `help` 查看用法）。
 
-## 一条条目怎么处置
+## 处置原则
 
-判据只有一条：**这条债的板子还开着吗**。别按「改到了哪一层」「体量大不大」「归哪条线」选处置——那三样都不是判据。
+每条债如何处置，唯一判据是**是否已有明确裁定**，不得按「涉及哪一层」「体量大小」「属于哪个 cycle」做判断：
 
-| 板子 | 这条的样子 | 处置 |
+| 状态 | 特征 | 处置 |
 |---|---|---|
-| **已经拍过** | `reason` / `suggestion` 里把路与规则写全了、或挂着 `plan_path`；`decision=autofix` 说的就是这个 | **做掉它**，完了 `resolve` |
-| **还开着** | 没人拍过板、只有用户能选；或照解法做下来发现它行不通 | `update --decision external`，reason 写两条路与代价 |
-| **不是债** | 查下来站不住 | `reject`，reason 写为什么不修 |
+| **已有裁定** | `reason` / `suggestion` 已写清修法与规则，或挂有 `plan_path`（即 `decision=autofix`） | **直接修复**，完成后 `resolve` |
+| **仍待裁定** | 尚无定案且只能由用户权衡；或按既有方案实施时发现行不通 | `update --decision external`，`--reason` 写清两个选项与各自代价 |
+| **不是债** | 核查后问题不成立 | `reject`，`--reason` 写清不修原因 |
 
-出口就这三个：押后（`acknowledge`）是池子人机面（`sw-issue-discuss`）管，这里不做。
+出口仅此三个：`acknowledge`（暂缓）由 `/sw-issue-discuss` 处理，本技能不使用。
 
-两条硬规矩：
+两条硬约束：
 
-- **这一趟真排不下的留着不动**——权重照算、汇报里点名。
-- **读数按实报。** 没到线就报没到线、点名谁挡着；在管线里跑时读数没到线写 `failed`、把读到的数写进 `-s`，别写 `completed`。
+- **本轮排不下的条目保持原样**：权重照常计入，在汇报中点名说明。
+- **读数如实汇报**：未降至阈值以下就如实报告并点名阻塞项；在管线节点中运行时，未达标必须将节点记为 `failed` 并在 `-s` 中写明实测读数，禁止记为 `completed`。
 
-## 取材
+## 取材与分诊
 
-1. 先读**标准**：spec 的「完成判定」写的是什么——一个度量的读数（`issue weight -v`），还是「这批条目全部走到终态」
-2. 取出这一轮要动的条目：**actionable**（三档口径见 pool.md；只加 `--status open` 会把押后的漏掉）**且 `decision=autofix`**，按严重度排（要收窄就加 `--severity` / `--module`）
-3. 处置还没定的先定：`decision` 还是 `unknown` 的当场定——能修的改判 `autofix` 并排进这一轮；取舍在用户的改判 `external`。`decision=external` 的不修
-4. `reason` / `suggestion` 已经写清怎么修的照它做，不重新讨论；挂 `plan_path` 的先 read 计划
+1. **确认完成标准**：读取调用方要求——是某项度量达标（如 `issue weight -v` 降至阈值以下），还是指定批次全部进入终态。
+2. **拉取待处理条目**：取 **actionable**（`open` / `acknowledged` / `resolving`，口径见 [`./pool.md`](./pool.md)；仅滤 `--status open` 会漏掉 `acknowledged`）且 `decision=autofix` 的条目，按严重度排序（按需加 `--severity` / `--module` 收窄范围）。
+3. **现场分诊 `unknown`**：对 `decision=unknown` 的条目当场按处置原则定案——可修的改判 `autofix` 并排入本轮，需用户权衡的改判 `external`。`decision=external` 不修。
+4. **遵循既有方案**：`reason` / `suggestion` 已写清修法的直接照办，不重新讨论；挂有 `plan_path` 的先读取设计文档。
 
-## 跑
+## 执行循环
 
-循环与指挥者那几条不做，照 `/sw-conduct` 走，这里不抄第二份。本流程只多三条：
+主循环与指挥者职责边界沿用 `/sw-conduct`，本技能仅补充三条：
 
-- **分批按改动域，批宽受进行中上限管**：同一模块的条目成一批；确需跨模块的改动族整批显式声明。批内的改动能被同一次验证覆盖。每批 Fix 加 Review 是 2 个进行中，几批一起派之前先按 `config get max_agents` 数一遍
-- **每批 Fix → Review**：Fix 与 Review 读本技能目录下的 `subagent-prompts/fix.md` 与 `subagent-prompts/review.md`（Review 那份只读）。这两份是 `sw-conduct` 同名角色卡的副本（正本在 `sw-conduct` 技能目录的 `subagent-prompts/`，见本目录 `subagent-prompts/README.md`）——只装了 issue 时也读得到。prompt 写三句：这一批改哪几条（按上一条分批）、验证跑哪条命令、报告写哪一份；`sw-conduct`「Fix」那一节装了就照它，不在这里时这三句就是替身
-- **批过即 commit**：整批判 no issue 才提交。不在管线里跑时没有节点收尾那一步，提交就落在这里
+- **按改动域分批，受并发上限约束**：同一模块的条目归为一批；确需跨模块的改动族整批显式声明，确保单批改动可被同一次验证覆盖。每批 Fix + Review 占 2 个并发名额，多批并行前先核对 `config get max_agents`。
+- **每批执行 Fix → Review**：Fix 与 Review 分别读取本技能目录下的 `subagent-prompts/fix.md` 与 `subagent-prompts/review.md`（Review 只读）。这两份文件是 `sw-conduct/subagent-prompts/` 同名角色卡的副本（见 `subagent-prompts/README.md`），保证单独安装 `issue` 插件时同样可读。派发 prompt 至少写明三项：本批负责的条目清单、验证命令、报告输出路径（若同时安装了 `sw-conduct`，遵循其「Fix」一节）。
+- **批过即 commit**：整批 Review 无阻塞问题后立即提交。脱离管线独立运行时没有节点收尾阶段，提交就落在这里。
 
-`critical > 0` → 派新的一轮 Fix，修完回 Review；`minor` 且明确无害 → 记成新条目留待后续同域批次，其余照修。
+Review 结果处理：`critical > 0` → 派新一轮 Fix，修完重回 Review；明确无害的 `minor` → 记为新条目留给后续同域批次，其余照修。
 
-干活里撞见的新债照旧记进池子（`add`，口径见 [`./pool.md`](./pool.md)），随后**当场定处置**：同批同域能收的收掉，收不动的照实落定。新记的条目照实计入读数——「它是刚发现的」顶不掉这个数。
+修复过程中新发现的债照常 `add` 入池（口径见 [`./pool.md`](./pool.md)），并**当场处置**：同批同域能收的顺手收掉，收不动的按处置原则落定。新条目照实计入当前读数，不得以「刚发现」为由排除。
 
 ## 落定
 
-落定，不留半开：
+所有条目必须明确落定，不留中间态：
 
 ```pwsh
-issue resolve <id…> --reason "<改在哪、验证读数>"
-issue update  <id…> --decision external --reason "<两条路与代价>"
-issue reject  <id…> --reason "<为什么不修>"
+issue resolve <id…> --reason "<修改位置与验证读数>"
+issue update  <id…> --decision external --reason "<两个方案与各自代价>"
+issue reject  <id…> --reason "<不修原因>"
 ```
 
-同一发提交、同一句验证读数收掉的一批，用一个 `<id…>` 一次写完；每条 reason 不同的裁定走 `update --from-file <行文件>`。
+同一发提交、同一验证读数关闭的一批条目，用 `<id…>` 一次写完；每条 `reason` 不同的改判走 `update --from-file <行文件>`。
 
-**只有用户能拍的**，一条都不许自己定：逐条写进汇报的「留给人」一节，连同两条路与代价。
+**只能由用户拍板的条目一条也不许代定**：逐条写入汇报的「留给人」一节，附上两个方案与各自代价。
 
 ## 汇报
 
-- **分批构成**：每批含哪些条目、哪个改动域、哪一次提交
-- **落定表**：resolve / external / reject 各几条，逐条一行
-- **标准读数**：spec 要的那个数现在是多少（`weight -v` 的实测值）
-- **留给人**：逐条写清取舍在哪、两条路各要什么代价
-- **已知未解决项**：这一趟没做掉的条目单列一行（哪条、为什么没做掉、谁开下一轮能接着做），没有就写「无」
+- **批次构成**：每批包含哪些条目、所属改动域、对应 commit
+- **落定表**：`resolve` / `external` / `reject` 各自条数，逐条一行
+- **标准读数**：目标指标当前实测值（如 `issue weight -v`）
+- **留给人**：逐条写清取舍点与各方案代价
+- **已知未解决项**：本轮未处理的条目逐条列出（ID、未处理原因、下一轮接手条件），无则写「无」
 
 ## 反模式
 
-开工前读 [`./anti-patterns.md`](./anti-patterns.md) 对照自查。
+开始前对照 [`./anti-patterns.md`](./anti-patterns.md) 自查。

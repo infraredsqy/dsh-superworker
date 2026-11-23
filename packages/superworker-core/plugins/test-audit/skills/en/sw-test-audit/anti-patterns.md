@@ -1,71 +1,57 @@
-# sw-test-audit anti-patterns
+# sw-test-audit Anti-patterns
 
-Check yourself against this before starting. The criteria themselves live in
-[`./SKILL.md`](./SKILL.md), [`./garbage-patterns.md`](./garbage-patterns.md) and
-[`./compression-criteria.md`](./compression-criteria.md); this keeps symptoms and correction
-signals only.
+Check before starting. The full rules live in [`./SKILL.md`](./SKILL.md), [`./garbage-patterns.md`](./garbage-patterns.md), and [`./compression-criteria.md`](./compression-criteria.md); this page lists symptoms and correction signals only.
 
-## `test-audit-conductor-reads-code` — the conductor reads code
+## `test-audit-conductor-reads-code` — Conductor reads test source directly
 
-**Symptom**: the conductor flips through the test source files with Read.
+**Symptom**: The conductor opens and reads test source files directly.
 
-**Correction signal**: what the subagent reports, the conductor had already seen in the source.
+**Correction signal**: The conductor has already read the raw source that the subagent is reporting on.
 
-## `test-audit-ships-without-verifying` — shipping without verifying
+## `test-audit-ships-without-verifying` — Closing without verification
 
-**Symptom**: nothing is compiled and the remaining tests are not run after the change.
+**Symptom**: Finishing without compiling or running the remaining tests after edits.
 
-**Correction signal**: the close report carries no compile or test reading.
+**Correction signal**: The final report lacks compile and test readings.
 
-## `test-audit-deletes-a-whole-mixed-case` — deleting a whole mixed case
+## `test-audit-deletes-a-whole-mixed-case` — Deleting a whole mixed test case
 
-**Symptom**: only some assertions in a TEST_CASE are garbage, and the whole thing gets deleted.
+**Symptom**: Deleting an entire `TEST_CASE` when only some of its assertions are garbage.
 
-**Correction signal**: the deletion grain is the whole container, while assertions verifying
-business are still left in it.
+**Correction signal**: Deletion is applied at the whole-case level while valid business assertions remain inside it.
 
-## `test-audit-empties-a-file-without-the-build` — emptying a file without the build system
+## `test-audit-empties-a-file-without-the-build` — Emptying a file without updating the build system
 
-**Symptom**: a test file emptied out stays where it is, and the build system still compiles it.
+**Symptom**: Leaving an emptied test file on disk while the build system still compiles it.
 
-**Correction signal**: the file is empty, and CMakeLists.txt / Cargo.toml / package.json still
-lists it.
+**Correction signal**: The file is empty, yet `CMakeLists.txt` / `Cargo.toml` / `package.json` still references it.
 
-## `test-audit-splits-for-the-count` — splitting subagents to pad the count
+## `test-audit-splits-for-the-count` — Splitting subagents unnecessarily
 
-**Symptom**: four or five scan subagents are carved out by module mechanically when there are not
-even many files.
+**Symptom**: Mechanically spawning four or five scan subagents by module when there are few test files.
 
-**Correction signal**: one subagent could have carried the whole list, and it got split into
-several.
+**Correction signal**: One subagent could easily cover the entire list, yet it was split into several.
 
-## `test-audit-trades-coverage-for-time` — trading deletion for time
+## `test-audit-trades-coverage-for-time` — Trading coverage for speed
 
-**Symptom**: to press down the fast lane's measured time, tests that are slow but verify real
-business are deleted.
+**Symptom**: Deleting slow tests that verify real business logic just to reduce fast-lane duration.
 
-**Correction signal**: the to-delete entries hit the compression criterion only, and the quality
-column stands empty.
+**Correction signal**: Entries marked for deletion match only the compression criterion, with quality empty or `none`.
 
-## `test-audit-moves-one-lane-only` — touching the fast lane only, not the other one
+## `test-audit-moves-one-lane-only` — Updating only the fast lane without the slow lane
 
-**Symptom**: tests are moved out of the fast lane without the slow lane's command / marker /
-collection list kept in step; or nothing is actually run once after the move.
+**Symptom**: Moving tests out of the fast lane without updating the slow-lane command, marker, or collection list—or without running verification afterward.
 
-**Correction signal**: the case that was moved is in neither lane, or the report has no measured
-reading after the move.
+**Correction signal**: Moved tests disappear from both lanes, or the report lacks post-move measured readings.
 
-## `test-audit-scanner-decides` — the scan result carrying "suggest deleting"
+## `test-audit-scanner-decides` — Scan subagent outputs "suggest deleting"
 
-**Symptom**: a scan subagent writes "suggest deleting" or "can be deleted" in its return.
+**Symptom**: A scan subagent writes "suggest deleting" or "safe to delete" in its output.
 
-**Correction signal**: the structured return carries an action verdict, while the hit facts of the
-two criteria are gone.
+**Correction signal**: Structured output contains action verdicts instead of raw hit facts for both criteria.
 
-## `test-audit-asks-the-human` — pushing the verdict back to the user
+## `test-audit-asks-the-human` — Pushing decisions back to the user
 
-**Symptom**: the report says "please tick which ones to delete" or "waiting for your confirmation
-before touching anything".
+**Symptom**: The report asks "please check which ones to delete" or "waiting for your confirmation before editing".
 
-**Correction signal**: a to-be-confirmed question shows up in a report that was meant to run to
-the end.
+**Correction signal**: A report meant to run end-to-end ends with confirmation questions.

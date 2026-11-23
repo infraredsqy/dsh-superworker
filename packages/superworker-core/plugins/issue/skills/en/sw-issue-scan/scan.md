@@ -1,52 +1,45 @@
-# Scan role card
+# Scan Role Card
 
-> Role: the executor — dispatched by the conductor. It scans only the few files handed to it, and
-> **dispatches nobody further down**.
+> Role: executor (dispatched by the conductor). Scan only the files assigned to you and **never dispatch further subagents**.
 
-## The duty
+## Responsibility
 
-Scan the code of the module named, find the quality debt under the dimensions named, and write it
-as structured JSON for the conductor to merge; in passing, check whether the existing entries
-handed to you are still there.
+Scan the assigned module code across the specified dimensions, write structured quality-debt findings as JSON for the conductor to merge, and verify whether assigned existing entries are still present.
 
-## How to run it
+## Workflow
 
-1. Read every file assigned to you and understand the context (the callers + the callees)
-2. Analyse one dimension at a time: repeated code / a responsibility crossing its line / a
-   structural problem
-3. Give each finding a structured set of fields + a unique ID
-4. Write it to `.superworker/meta/scan/<module-slug>.json`
-5. Check the list of existing entries by the three layers
-6. Return the summary
+1. Read all assigned files to understand caller/callee context.
+2. Analyze across the assigned dimensions: duplicated code, boundary/responsibility violations, and structural issues.
+3. Generate structured fields and a unique ID for each finding.
+4. Write all findings at once to `.superworker/meta/scan/<module-slug>.json`.
+5. Check the existing entry list using three-layer location.
+6. Return the structured summary.
 
-## The ID rule
+## ID rules
 
-`<module-slug>-<short-slug>`, kebab-case (lower case + hyphens), ≤64 characters.
+`<module-slug>-<short-slug>`, kebab-case (lowercase + hyphens), ≤64 characters.
 
-- Right: `export-job-close-no-event`, `ui-direct-cache-writes`
-- Wrong: `export_job_close` (underscores), `issue 1` (a space), `fix-grid` (says nothing about what
-  it is)
+- Valid: `export-job-close-no-event`, `ui-direct-cache-writes`
+- Invalid: `export_job_close` (underscores), `issue 1` (space), `fix-grid` (vague)
 
-## The output file format
+## Output file format
 
-`.superworker/meta/scan/<module-slug>.json` (like `export.json`, `ui.json`), a JSON array. Every entry must
-carry:
+Write a JSON array to `.superworker/meta/scan/<module-slug>.json` (e.g., `export.json`, `ui.json`). Required fields per entry:
 
-| Field | Type | Meaning |
-|------|------|------|
-| `id` | string | the unique ID |
-| `severity` | string | P0 / P1 / P2 / P3 (the conventions are in [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)) |
-| `module` | string | the module name (like `core/export`, `export`, `ui`) |
-| `title` | string | a short title (≤30 characters) |
-| `description` | string | one sentence saying what the trouble is |
-| `suggestion` | string | one sentence saying how to fix it |
-| `files` | [string] | the files involved (relative paths) |
-| `functions` | [string] | the function names involved |
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Unique ID |
+| `severity` | string | `P0` / `P1` / `P2` / `P3` (criteria in [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)) |
+| `module` | string | Module name (e.g., `core/export`, `export`, `ui`) |
+| `title` | string | Short title (≤30 characters) |
+| `description` | string | One-sentence description of the issue |
+| `suggestion` | string | One-sentence suggested fix |
+| `files` | string[] | Involved files (relative paths) |
+| `functions` | string[] | Involved function names |
 
-**There is no `decision` field**: ruling `autofix` or `external` is not yours, and an entry goes
-into the pool as `unknown`.
+**Omit `decision`**: deciding `autofix` vs. `external` is outside scan scope; new entries default to `unknown`.
 
-An example:
+Example:
 
 ```json
 [
@@ -54,19 +47,18 @@ An example:
     "id": "export-job-close-no-event",
     "severity": "P0",
     "module": "export",
-    "title": "export_job_close is missing the JobClosed event",
-    "description": "export_job_close sends no JobClosed event and clears no cache reference, while export_image_close does both.",
-    "suggestion": "introduce one shared internal close-job helper for the two bridge functions to call.",
+    "title": "export_job_close missing JobClosed event",
+    "description": "export_job_close neither emits JobClosed nor clears cache references, whereas export_image_close does both.",
+    "suggestion": "Extract a shared internal close-job helper called by both bridge functions.",
     "files": ["src/export/bridge_image.cpp", "src/export/bridge_csv.cpp"],
     "functions": ["export_job_close", "export_image_close"]
   }
 ]
 ```
 
-## The returned summary
+## Return summary
 
-At the end of the return message, give the structured summary (the conductor rounds it up from
-this):
+Append this structured summary at the end of your reply for the conductor to aggregate:
 
 ```
 SCAN_RESULT:
@@ -75,20 +67,16 @@ SCAN_RESULT:
   scan_file: ".superworker/meta/scan/export.json"
 ```
 
-- `wrote`: how many entries were written this time
-- `alive_ids`: the existing entries confirmed still there (leave out any you could not confirm)
+- `wrote`: number of findings written
+- `alive_ids`: existing entry IDs confirmed still present (omit unconfirmed ones)
 
-## The rules
+## Rules
 
-- **Read every file before writing the JSON**, and write it in one go, not entry by entry
-- **Locate by the three layers**: a function name / class name → the semantic description → the
-  file path, with line numbers left out (they move most easily); check existing entries by the
-  same three layers, and only what none of the three can locate stays out of `alive_ids`
-- **When you are not sure how to fix it, still write it straight**: `suggestion` says which lesson
-  you are missing (which background you did not read, which design is not settled), and do not use
-  "not sure" as a reason to push it onto the user
-- **Report only what you read**: a file you never opened does not go into `files`
+- **Read all assigned files first, then write the JSON in one pass**—do not write entry by entry.
+- **Use three-layer location**: function/class name → semantic description → file path (omit volatile line numbers). Apply the same three layers when checking existing entries; exclude an entry from `alive_ids` only if none of the three layers locate it.
+- **Be explicit when uncertain**: if the fix is unclear, state in `suggestion` what context or design decision is missing rather than punting to the user.
+- **Report only files you read**: never list a file in `files` that you did not open.
 
 ## Anti-patterns
 
-Before starting, read [`./anti-patterns.md`](./anti-patterns.md) and check yourself against it.
+Check [`./anti-patterns.md`](./anti-patterns.md) before starting.

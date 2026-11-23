@@ -1,146 +1,99 @@
 ---
 name: sw-test-audit
-description: Audit test code for two verdicts: tests that verify nothing real, tests that slow the fast lane; then act and prove it.
+description: Audit a test suite for two verdicts in one pass—tests that verify nothing real (delete) and tests that slow the fast lane (move or split)—then execute and verify timings.
 disable-model-invocation: true
 ---
 
 # sw-test-audit
 
-> Plugin I bind: `test-audit` — this skill is installed and removed with that plugin; the plugin not installed, this skill is not here
-> Who runs me: the user (`/sw-test-audit`, type it and it runs itself to the end) / the conductor (named by a node spec's `method: ` line — that is how the maintenance channel's node comes about)
-> What I am for: take the test suite once — delete what verifies nothing real, move out or split what slows the fast lane, and build a tier yourself when the split is missing
-> Do I dispatch subagents: yes, one layer (scan / removal) — an executor dispatched here reads this and stops to report back
+> Plugin: `test-audit` (installed and removed with the plugin).
+> Caller: the user (`/sw-test-audit`, runs end-to-end) or a conductor (named by a node spec's `method: ` line for maintenance-channel nodes).
+> Responsibility: audit the test suite—delete tests that verify nothing real, move or split tests that slow the fast lane, and create a slow lane when none exists.
+> Dispatches subagents: yes, one layer (scan / removal); if a dispatched executor reads this file, stop and report back.
 
-> ⛔ **Hard constraints (must hold)**
-> 1. **Read the docs first**: the project instruction files (AGENTS.md / CLAUDE.md, whichever
->    is there) and docs/
-> 2. **The conductor does not read code**: the scan has to go to a subagent, and the conductor
->    reads docs and structured results only
-> 3. **Make the call yourself**: the verdict is yours — produce no to-be-confirmed list and
->    stop for no questions; when the user gives other instructions on the call, narrow the scope
->    by what he says
-> 4. **Verify after changing anything**: compile + run the remaining tests
-> 5. Breaking any one of the above = the task failed.
-
-## The role
-
-You are **the test audit's conductor**: dispatch the scan, round up, rule, do the work, prove it
-yourself.
+> **Hard constraints (violating any one = task failure)**
+> 1. **Conductor does not read test source**: delegate scanning to subagents; the conductor works only from high-level context and structured scan results.
+> 2. **Decide autonomously**: never produce a to-be-confirmed checklist or pause to ask the user (if the caller passed explicit scope limits, narrow scope accordingly).
+> 3. **Verify after every change**: compile + run remaining tests and report measured timings.
 
 ## Two criteria, one action table
 
-The two criteria read the same file and come out in one scan — splitting them wastes a pass.
+Both criteria inspect the same files and are evaluated in a single scan pass:
 
-- **Quality**: does it verify anything real. The criterion is in `./garbage-patterns.md` (the
-  garbage patterns and the safety exceptions).
-- **Compression**: does it take up the fast lane's road. The criterion is in
-  `./compression-criteria.md` (what counts as slowing it down, how a splittable one is split, how
-  to move a test).
+- **Quality**: does the test verify real behavior? Criteria in [`./garbage-patterns.md`](./garbage-patterns.md) (garbage patterns, coverage gate, and safety exceptions).
+- **Compression**: does it slow the fast lane? Criteria in [`./compression-criteria.md`](./compression-criteria.md) (slowness criteria, splitting, and moving).
 
-The action follows from the two together:
+Actions follow from both verdicts:
 
-| | Worth having | Worthless |
+| | Valuable | Worthless |
 |---|---|---|
-| **Slows the fast lane** | move it out of the fast lane; a splittable one gets its fast assertions split into the fast lane | delete |
-| **Does not slow the fast lane** | keep it | delete |
+| **Slows fast lane** | Move out of fast lane; split fast assertions into fast lane if possible | Delete |
+| **Does not slow fast lane** | Keep | Delete |
 
-- **Deleting has to pass the coverage gate first**: it hits a garbage pattern **and** no other
-  case verifies that piece of business — both have to hold. Deleting just because it is slow is
-  deleting coverage.
+- **Deletion requires the coverage gate**: a test may be deleted only if it matches a garbage pattern **and** the business behavior it touches is covered elsewhere. Deleting purely for speed drops coverage.
 
-## The two ways in
+## Entry points and scope
 
-| Who is running | Where the scope comes from |
+| Caller | Scope |
 |---|---|
-| The user typing `/sw-test-audit` | the sentence he puts after it; with none, the whole test suite |
-| A pipeline node (the spec's `method: ` line names me) | the scope the spec sets, not widened to everything yourself |
+| User invoking `/sw-test-audit` | Caller's trailing instruction; otherwise the entire test suite |
+| Pipeline node (`method: ` line in `spec.md`) | Scope specified in `spec.md`—never widen to the full repository |
 
-The `mode` of the node road (whether it stops, whether it asks a human) is the node's own
-property, and sw-conduct owns it.
+Node `mode` (whether to pause or ask a human) is owned by `sw-conduct`.
 
-## The flow
+## Workflow
 
-### Step 1: understand the test structure
+All pipeline commands go through the `superworker` tool (pass `word` and `args`; pass `help` for usage).
 
-Read the project instruction files and docs/, and get: how `tests/` is organised, the test
-framework (Catch2 / Jest / pytest / node:test), the build system, the verification commands, and
-**how the fast and slow lanes each run** (the `slow` marker, the two entries, the parallel
-switch). When the docs are not enough, dispatch a subagent to sound it out.
+### 1. Understand the test setup
 
-### Step 2: the scan
+Before dispatching scans, establish the project's test layout, framework (Catch2 / Jest / pytest / node:test, etc.), build and verification commands, and fast/slow lane setup (`slow` markers, separate entry points, or parallelism flags). If details are unclear, dispatch a subagent to inspect—do not read test source files yourself.
 
-The number of scan subagents follows the number of files: 1 covering everything by default, split
-only when there are so many files that one list cannot be scanned by one. **The cap is not here**
-— before dispatching, count what is in flight against `config get max_agents`, and when it
-cannot be crossed, merge or batch.
+### 2. Dispatch scans
 
-The pipeline's words are one table with one door: call the `superworker` tool — a `word`, its
-`args`, and `help` for that word's page.
+Scale scan subagents to file count: default to 1 covering everything, splitting only when one list is too large. Check `config get max_agents` before dispatching, and merge or batch to stay within the cap.
 
-Every scan subagent's prompt has to carry:
+Every scan prompt must include:
 
-- the **absolute paths** of `./garbage-patterns.md` and `./compression-criteria.md`, for it to
-  read itself
-- the generic examples translated into the corresponding syntax for the project's framework
-- the list of files to scan
-- the return format of the two criteria
+- **Absolute paths** to [`./garbage-patterns.md`](./garbage-patterns.md) and [`./compression-criteria.md`](./compression-criteria.md)
+- Generic pattern examples translated into the project's test framework syntax
+- List of files to scan
+- The merged two-criteria return format
 
-Start every subagent in parallel. When they finish, the runtime wakes you; wait for the notice, do
-not poll.
+Launch scan subagents in parallel and wait for completion notifications—do not poll.
 
-### Step 3: round up
+### 3. Aggregate and decide
 
-Group by file, give each entry two conclusions (quality / compression) and an action, and settle
-it by the action table. The report lists by `entire` / `partial` / `move` / `split`, with the
-action and the reason written out one by one.
+Group findings by file, record both verdicts (quality and compression), and assign actions per the action table. Organize results by `entire` / `partial` / `move` / `split` with per-item actions and rationale.
 
-### Step 4: Execute
+### 4. Execute and verify
 
-Dispatch a removal subagent (1 by default, split only when the change surface is especially
-large):
+Dispatch a removal subagent (default 1; split only for very large change surfaces):
 
-- deletion: the named TEST_CASEs or assertion lines; a file emptied out gets dropped from the
-  build system
-- moving a test: move it out of the fast lane the way the criteria file gives; when the project
-  has no fast / slow split and it cannot be pressed down, split the heavy few into a slow lane of
-  your own
-- splitting: pull the fast assertions out into the fast lane, and the rest stays in the slow lane
+- **Delete**: remove targeted test cases or garbage assertion lines; remove emptied files from the build system.
+- **Move**: move slow tests out of the fast lane per the criteria; if no fast/slow split exists and heavy tests cannot be sped up, create a slow lane.
+- **Split**: extract pure-logic fast assertions into the fast lane and keep environment-dependent parts in the slow lane.
 
-**Verification is required**: it compiles + the remaining tests pass (or at least no new
-failures). Commands and tier follow sw-conduct's "Test tier and verification", taken from the
-project docs rather than copied from another project. That section's original lives in the
-`sw-conduct` skill's `SKILL.md`; with only `test-audit` installed it is not here, and the tier is
-then read with `config get test_tier` and the command taken from the project docs. **The measured
-time has to be reported**: the fast lane's measured seconds, which are the whole acceptance of the
-compression half; the node road also reports the full run's, since the maintenance channel's node
-reads exactly that for its completion rule. No reading means it was not done.
+**Verification required**: compilation passes and remaining tests pass (or at least no new failures). Follow `sw-conduct/SKILL.md` ("Test tier and verification") for commands and tier; when `test-audit` is installed standalone, read the tier via `config get test_tier` and run the project's verification commands. **Measured timings are mandatory**: always report the fast-lane duration (acceptance for compression); in pipeline-node mode, also report the full-suite duration (read by the maintenance-channel completion check). Missing timings means incomplete work.
 
-### Step 5: close out
+### 5. Close out
 
-The report: how many were deleted (N whole cases / M partial spots), how many were moved, how many
-were split, how many empty files were cleared away, the compile and test results, the fast lane's
-measured seconds, and the unhandled items (including what was kept back by the coverage gate).
+Report: deletion counts (`N` whole cases / `M` partial spots), moved count, split count, empty files removed, compile/test results, measured fast-lane (and node full-suite) timings, and unhandled items (including entries retained by the coverage gate).
 
-Commit the changes yourself: commit only the files this run touched, and do not touch anyone
-else's uncommitted changes in the workspace. The node road: the close is sw-conduct's — closing
-the node, committing, pushing and dispatching are all its to land, and here you only hand the
-report back.
-
----
+- **Standalone run**: commit only the files modified in this run; leave unrelated uncommitted changes untouched.
+- **Pipeline-node run**: do not commit—hand the report back to `sw-conduct` for node closure, committing, pushing, and dispatch.
 
 ## Boundaries
 
-| Situation | How it is handled |
+| Situation | Handling |
 |---|---|
-| The call said "look only, do not fix", or some other limit | narrow the scope by what he says, which may mean only the scan and the report |
-| Verification fails | report the failure in detail and stop — do not guess, do not roll back, do not force it |
-| A large-scale test refactor turns up | suggest moving to `/sw-route` (the refactor enters the graph as a node) |
-| The project has no tests | report "no test files found" and exit |
+| Caller specifies "audit only, no edits" or other limits | Narrow scope accordingly (e.g., scan and report only) |
+| Verification fails | Report failure details and stop—do not guess, roll back, or force it |
+| Large-scale test refactor needed | Suggest `/sw-route` to schedule it as a DAG node |
+| Project has no tests | Report "no test files found" and exit |
 
-**Products go into the report only**: the scan's conclusions enter no repository and land on no
-disk; to keep raw output, put it where Superworker's conventions say (in a node,
-`.superworker/nodes/<node uuid>/temp/`; in a project, `.tmp/`).
+**Report-only output**: scan conclusions are not persisted to any store; place raw verification artifacts in the standard temp directory (`.superworker/nodes/<node uuid>/temp/` inside a node, `.tmp/` otherwise).
 
 ## Anti-patterns
 
-Before starting, read [`./anti-patterns.md`](./anti-patterns.md) and check yourself against it.
+Check [`./anti-patterns.md`](./anti-patterns.md) before starting.

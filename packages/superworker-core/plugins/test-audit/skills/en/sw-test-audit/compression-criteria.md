@@ -1,94 +1,66 @@
-# Compression criteria
+# Compression Criteria
 
-> For a scan subagent to use, read together with `garbage-patterns.md`. The criterion looks at one
-> thing only: **how much this one adds to the fast lane's measured time**. Whether a test verifies
-> the right thing is `garbage-patterns.md`'s business.
+> For scan subagents to read alongside [`./garbage-patterns.md`](./garbage-patterns.md). This criterion looks at one thing only: **how much a test adds to the fast lane's measured duration**. Whether a test verifies real behavior belongs to `garbage-patterns.md`.
 
-## What to judge
+## What counts as slowing the fast lane
 
-A test counts as slowing the fast lane as long as it satisfies any one of these:
+A test slows the fast lane if any of the following holds:
 
-1. **It is in the fast lane and it is expensive**: it starts a real subprocess, reads something
-   outside the real filesystem, waits on real time, loads a model, opens a port, runs over the
-   network.
-2. **It is in the fast lane and it falls under the project's own slow-lane criterion** (the
-   project docs usually write the home judgement: a real service subprocess / waiting on real
-   measured time / injecting a slow model / a single one over its measured threshold).
-3. **The project has no split**, and it clearly drags the whole suite's measured time longer in
-   the full run.
+1. **In the fast lane and expensive**: spawns real subprocesses, accesses external resources, waits on wall-clock time, loads models, binds ports, or performs network I/O.
+2. **In the fast lane and matches the project's slow-lane criteria** (e.g., real service subprocesses, wall-clock waits, slow model injection, or exceeding a per-test duration threshold).
+3. **No fast/slow split exists yet**, and the test noticeably dominates total suite duration.
 
-The criterion follows **the project docs**. When the project has set a line itself (say "the fast
-lane ≤10 seconds per round"), use its line; when it has not, report the facts (how long this one
-takes, what share of the suite it is).
+Follow **the project's own criteria**. If the project sets a threshold (e.g., "fast lane ≤10s"), evaluate against it; otherwise report facts (per-test duration and share of suite runtime).
 
-## How a splittable one is split
+## Splitting rules
 
-One test may mix two kinds of assertion:
+A single test often mixes two kinds of assertions:
 
-- **Pure-logic / pure-structure assertions** — milliseconds, resting on no subprocess, clock or
-  model. These **get pulled out into the fast lane**.
-- **The part depending on a real environment** — stays in the slow lane.
+- **Pure-logic / pure-structure assertions**: millisecond-level, no subprocesses, clocks, or models → **extract into the fast lane**.
+- **Environment-dependent parts**: keep in the slow lane.
 
-A fast lane test that was pulled out has to **stand on its own**: resting on no state left behind
-by the slow lane, leaning on no shared fixture's side effects, and able to run by itself in the
-fast lane once split.
+Extracted fast-lane tests must be **self-contained**: no reliance on slow-lane state or shared fixture side effects, runnable standalone in the fast lane.
 
-> Splitting is a better action than moving the whole thing: it satisfies compression and coverage
-> at once. So when scanning, first see whether it can be split, and move it whole only when it
-> cannot.
+> **Splitting beats moving whole tests**: splitting preserves fast feedback while cutting runtime. Always check whether a test can be split before moving it whole.
 
-## The two ways to move a test
+## Moving a test out of the fast lane
 
-Which one to pick follows the project:
+Match the project's convention:
 
-- **A marker** (when there is a marker mechanism, like `slow`): put the marker on the slow one or
-  the slow file, and the fast lane command filters it out itself.
-- **An entry** (when the project has made fast and slow into two commands / two directories, like
-  `tests/` and `bench`): move the entry to the slow entry, and keep the build / collection list in
-  step.
+- **Markers** (e.g., `slow` tag): tag the slow test or file so the fast-lane command excludes it automatically.
+- **Separate entry points** (e.g., separate commands or directories such as `tests/` and `bench/`): move the test to the slow entry and update build/collection lists in step.
 
-**When the project has no fast / slow split, build one yourself.** The few that cannot be pressed
-down (starting a real subprocess, waiting on real time, loading a model, opening a port) get split
-into a slow lane of their own: give it an entry or a marker, move those few over, and change the
-build and collection lists in step. Once it is built, run each lane once and report the measured
-readings.
+**If the project has no fast/slow split, create one**: separate the irreducible heavy tests (real subprocesses, wall-clock waits, model loading, port binding) into a slow lane via a marker or dedicated entry, update build/collection lists, run both lanes once, and report measured timings.
 
-## What not to do
+## Prohibitions
 
-- **Trading deletion for time is not allowed.** For a test that is slow but verifies real
-  business, the right action is to move or split it; deleting it = deleting coverage.
-- **Moving a slow lane's assertions into the fast lane "to pad the count" is not allowed** — only
-  millisecond-level pure-logic assertions deserve the fast lane.
+- **Never trade deletion for speed**: slow tests that verify real behavior must be moved or split—deleting them drops coverage.
+- **Never pull slow assertions into the fast lane**: only millisecond-level pure-logic assertions belong in the fast lane.
 
-## The return format
+## Merged return format
 
-Merged into one with `garbage-patterns.md`'s return format, and every finding carries these two
-columns:
+Combined with `garbage-patterns.md` into one JSON object, with both `quality` and `compression` per finding:
 
 ```json
 {
   "file": "tests/test_example.mjs",
   "findings": [
     {
-      "test_name": "the shell's one job: listen on 127.0.0.1 only",
-      "quality": { "type": "hardcoded-count", "line_start": 15, "line_end": 22, "judgment": "entire" },
+      "test_name": "listens on 127.0.0.1 only",
+      "quality": { "type": "hardcoded-count", "line_start": 15, "line_end": 22, "judgment": "partial" },
       "compression": {
         "slows_fast_lane": true,
-        "reason": "starts a real service subprocess + waits on real time",
+        "reason": "spawns real service subprocess + waits on wall-clock time",
         "splittable": [
-          { "what": "the port-parsing function's pure-logic assertions", "lines": "31-38" }
+          { "what": "pure-logic assertions for port parser", "lines": "31-38" }
         ],
-        "action": "move"
+        "action": "split"
       }
     }
   ]
 }
 ```
 
-- `quality.judgment`: `entire` (the whole stretch is garbage assertions) / `partial` (mixed, only
-  the garbage lines get deleted) / `none` (it verifies something real)
-- `compression.action`: `move` (move it out of the fast lane) / `split` (splittable, with the
-  pulled-out fast assertions in `splittable`) / `none`
-- **Whether to delete is the conductor's to judge by the action table**: only when
-  `quality.judgment` is `entire` or `partial` **and** the coverage gate can be passed does
-  deletion come up. You report the facts only, not a "suggest deleting".
+- `quality.judgment`: `entire` (whole block is garbage) / `partial` (mixed; remove garbage lines only) / `none` (verifies real behavior)
+- `compression.action`: `move` (move out of fast lane) / `split` (splittable; list fast assertions in `splittable`) / `none`
+- **The conductor decides deletion via the action table**: deletion applies only when `quality.judgment` is `entire` or `partial` **and** the coverage gate passes. Scan subagents report facts only—never write "suggest deleting".

@@ -1,60 +1,59 @@
 ---
 name: sw-issue-discuss
-description: 池子的人机面：记一条、看现状、复核哪些条目真要用户拍板，再逐批把 external 定下来。
+description: issue 池的人机交互入口：记录新条目、查看现状、复核并逐批裁定 external 条目。
 disable-model-invocation: true
 ---
 
 # sw-issue-discuss
 
-> 绑哪个插件：`issue` —— 这个技能随那个插件一起装、一起卸；插件不在，这个技能也不在
-> 谁跑我：用户（`/sw-issue-discuss`）
-> 我解决什么：池子的读写与判定——收一条、看现状、定 autofix/external、把要拍板的摆到用户面前
-> 我派不派 subagent：不派。要修走 `/sw-issue-repair`，要扫走 `/sw-issue-scan`
+> 所属插件：`issue`（随插件安装/卸载）。
+> 调用方：用户（`/sw-issue-discuss`）。
+> 职责：读写 issue 池并做裁定——录入条目、报告现状、复核并逐批敲定 `autofix` / `external`。
+> 是否派发 subagent：否。批量修复走 `/sw-issue-repair`，代码扫描走 `/sw-issue-scan`。
 
-工具与口径见 [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)。
+池子的工具用法与字段口径见 [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)。所有管线命令均通过 `superworker` 工具调用（传 `word` 与 `args`，加 `help` 查看用法）。
 
-管线这些词是一张表一个入口：走 `superworker` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
+## 识别用户意图
 
-## 进门先认意图
-
-| 用户说 | 做什么 |
+| 用户输入示例 | 处理方式 |
 |---|---|
-| "hover 时高亮盖住了展开箭头" | **记录**：起 kebab-case id，`add --severity P3 --decision unknown --source manual --title "<原话>"`，回一句「已记：`<id>`」 |
-| "池子里现在有多少" | **看现状**：`status` + `top --limit 10`，报总数与按严重度、按 source 的分档 |
-| "那条修好了" | **结掉**：`search` 定位 → `resolve <id>`；不确定是哪条就摆出来让用户选 |
-| "陪我过一遍 external" | **裁定**：先复核，再逐批讨论 |
-| "把这条 bug 修了" | 单条调试是本 session 自己的活，当场做；同一批的债转 `/sw-issue-repair` |
+| 「hover 时高亮盖住了展开箭头」 | **记录**：生成 kebab-case id，执行 `add --severity P3 --decision unknown --source manual --title "<原话>"`，回复「已记：`<id>`」 |
+| 「池子里现在有多少」 | **看现状**：执行 `status` + `top --limit 10`，报告总数及按严重度、`source` 的分布 |
+| 「那条修好了」 | **关闭**：用 `search` 定位后执行 `resolve <id>`；存在歧义时列出候选项请用户确认 |
+| 「陪我过一遍 external」 | **裁定**：先复核过滤，再逐批讨论 |
+| 「把这条 bug 修了」 | 单条调试在当前会话直接处理；同域批量清债转 `/sw-issue-repair` |
 
-记录时不要追问：一句话能记就行。用户多说了文件或模块，顺手填 `--module` / `--files` / `--description`。
+记录新条目时不追问，一句话即可入库；若用户顺带提到了文件或模块，一并填入 `--module` / `--files` / `--description`。
 
-## 裁定
+## 裁定流程
 
-### 一、先复核，别把伪 external 端上去
+### 1. 先复核，过滤伪 `external`
 
-逐条看 `decision=external` 的条目：suggestion 已经明确到不需要权衡的，把改判写进一份行文件（`id` + `decision` + `reason`），一次 `update --from-file` 收掉。剩下的才是真要用户拍板的。
+逐条检查 `decision=external` 的条目：若 `suggestion` 已明确到无需人工权衡，直接将改判结果写入批量行文件（`id` + `decision` + `reason`），通过一次 `update --from-file` 收掉。只把真正需要用户拍板的条目留到下一步。
 
-### 二、逐批讨论，一次 ≤4 个决策
+### 2. 逐批讨论（每批 ≤4 个决策）
 
-多了会耗掉判断力，超出的下一批再摆。
+超出 4 个决策会消耗判断力，其余留到下一批。
 
-- 摆给用户照 [`./shared/superworker/talking.md`](./shared/superworker/talking.md)：一次一处纠缠、四行齐、概念名按 `config get answer` 那一档出场。函数名 / 变量名 / 行号 / 调用链留给条目本身——那是给动手的人读的机器语言。两种语言并存，不互相替代。
-- 用户定了之后逐条落定；同一批、同一句 reason 的可以 `update <id…>` / `reject <id…>` 一次收，每条 reason 不同的走 `update --from-file`：
-  - **简单问题**（单一函数提取、常量替换，约 5 行变动）→ `update <id> --decision autofix --status open --reason "<用户定的内容>"`
-  - **复杂问题**（跨多文件、要设计新接口）→ 先把设计写进 `.superworker/issues/specs/<id>.md`，再 `update <id> --decision autofix --status open --plan-path <path> --reason "<用户定的内容>"`
-  - 不修 → `reject <id> --reason "<原因>"`；押后 → `acknowledge <id> --reason "<等什么>"`
-- **`--reason` 里写用户定的内容本身**（"统一报错"），不写"已讨论"——动手的人只读得到这一句。
-- 每批收尾报一句：还剩几条 external。
+- **呈现方式**：遵循 [`./shared/superworker/talking.md`](./shared/superworker/talking.md)——一次只呈现一个取舍点、四行齐全、概念命名按 `config get answer` 档位输出。函数名、变量名、行号、调用链留在条目本身供执行者读取，不直接堆给用户。
+- **落定方式**：用户定案后逐条落定；同批共享同一 `reason` 的用 `update <id…>` / `reject <id…>` 一次提交，每条 `reason` 不同的走 `update --from-file`：
+  - **简单问题**（单一函数提取、常量替换，约 5 行改动）→ `update <id> --decision autofix --status open --reason "<用户裁定结论>"`
+  - **复杂问题**（跨多文件、需设计新接口）→ 先将设计写入 `.superworker/issues/specs/<id>.md`，再执行 `update <id> --decision autofix --status open --plan-path <path> --reason "<用户裁定结论>"`
+  - **不修** → `reject <id> --reason "<原因>"`
+  - **暂缓** → `acknowledge <id> --reason "<等待条件>"`
+- **`--reason` 必须写清结论本身**（如「统一报错」），禁止只写「已讨论」——后续执行者只能看到这一句。
+- 每批结束时报告剩余 `external` 条数。
 
 ## 边界
 
-| 场景 | 处理 |
+| 场景 | 处理方式 |
 |---|---|
-| 深聊某条的实现细节 | 建议转 `/sw-conduct`（准备时它把需求与代码对齐） |
-| 大规模重构信号 | 单独立一条（阈值与口径见 [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)），建议转 `/sw-route`（把重构当一个节点进图） |
-| 要修一批 | `/sw-issue-repair` |
-| 池子该刷新了 | `/sw-issue-scan` |
-| 该进图的新功能 | `/sw-route` |
+| 深入讨论单条实现细节 | 建议转 `/sw-conduct`（在准备阶段对齐需求与代码） |
+| 大规模重构信号 | 单独立条（阈值与口径见 [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)），建议转 `/sw-route` 建节点进图 |
+| 批量修复 | `/sw-issue-repair` |
+| 刷新 issue 池 | `/sw-issue-scan` |
+| 需要进图的新功能 | `/sw-route` |
 
 ## 反模式
 
-开工前读 [`./anti-patterns.md`](./anti-patterns.md) 对照自查。
+开始前对照 [`./anti-patterns.md`](./anti-patterns.md) 自查。

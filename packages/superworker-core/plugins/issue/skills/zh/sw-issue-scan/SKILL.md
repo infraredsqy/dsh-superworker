@@ -1,59 +1,55 @@
 ---
 name: sw-issue-scan
-description: 扫项目代码找还没入库的债，写进 issue 池，并核对已有条目还在不在。
+description: 扫描项目代码发现尚未入池的质量债并入库，同时核对已有条目是否仍然存在。
 disable-model-invocation: true
 ---
 
 # sw-issue-scan
 
-> 绑哪个插件：`issue` —— 这个技能随那个插件一起装、一起卸；插件不在，这个技能也不在
-> 谁跑我：用户（`/sw-issue-scan`）／指挥者（管线节点 spec 的 `method: ` 行点名）
-> 我解决什么：扫代码找新债 + 核对旧债还在不在，只入池
-> 我派不派 subagent：派，一层（scan）；执行者读到这份，停手回报
+> 所属插件：`issue`（随插件安装/卸载）。
+> 调用方：用户（`/sw-issue-scan`）或指挥者（管线节点 `spec.md` 的 `method: ` 行点名）。
+> 职责：扫描新债并入池，同时核对在位条目是否存活。
+> 是否派发 subagent：是，仅一层（scan）；被派发的执行者若读到此文件，停手回报。
 
-扫描**不修、不和用户讨论、不判 `decision`**——新条目一律留 `unknown`，判定晚一步由 `/sw-issue-discuss` 做（扫描那一刻判的，等真动手时早 stale 了）。
+扫描阶段**不修代码、不与用户讨论、不裁定 `decision`**——新条目一律保持默认 `unknown`，裁定留给后续 `/sw-issue-discuss`（扫描时做的裁定等到动手时容易过期）。
 
-池子的工具与口径见 [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)。
+池子工具与口径见 [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)。所有管线命令均通过 `superworker` 工具调用（传 `word` 与 `args`，加 `help` 查看用法）。
 
-管线这些词是一张表一个入口：走 `superworker` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
+## 派发前输入
 
-## 准备
+派发 scan subagent 前，先理清项目模块划分、架构约定与代码范围，并通过 `issue status` 与 `issue list` 获取**在位条目清单**，供本轮存活核对使用。
 
-1. 读项目 CLAUDE.md / docs/：模块怎么分、架构约定是什么。这是拆扫描面和写 prompt 的依据
-2. 摸清改动面：代码根目录、文件量级、哪些目录是工具／测试／资产
-3. 调 `status` 与 `list` 拿**在位条目**清单：这一轮要交给 scan 做存活核对
+## 派发扫描
 
-## 派扫描
+按 **模块 × 维度** 拆分扫描面（使用带写工具的 subagent，发现需落盘），每个扫描面只覆盖一份目标。维度为：重复代码、职责越界、结构问题；模块仅有一两个时可自行合并维度。
 
-按**模块 × 维度**拆面（带写工具的 subagent，发现要落文件），一个面只盯一份。维度：重复代码／职责越界／结构问题。模块只有一两个时，自己裁量要不要合并维度。
+按 `config get max_agents` 的并发上限控制批次：**单个 subagent 可承担多个扫描面**，据此决定合并与分批。
 
-面拆完之后按进行中上限收起批来：`config get max_agents` 是上限，**一个 subagent 可以装几个面**——怎么并、什么时候分批，也按这个上限收。
+每个 prompt 必须包含：
 
-每个 prompt 必须给：
+- 角色卡绝对路径：`<本技能目录>/scan.md`（角色、输出格式与禁令均在其中）
+- 项目架构约定与分配的文件清单（承担几份就列几份）
+- 在位条目清单（用于存活核对）
+- 输出路径：`.superworker/meta/scan/<module-slug>.json`（承担几份就写几个文件，每份对应一个文件）
 
-- 角色卡：`<本技能目录>/scan.md`（绝对路径）——角色、输出格式、禁止项都在里面
-- 项目架构约定（从文档提炼）、分配给它的文件清单（装了几份就列几份的文件）
-- 在位条目清单（做存活核对）
-- 输出路径：`.superworker/meta/scan/<module-slug>.json`（一个 subagent 装几份就写几份文件，一份一个文件）
-
-全批回来了再往下走。
+等整批 subagent 全部返回后再进入合并。
 
 ## 合并入库
 
-1. read 所有 `.superworker/meta/scan/*.json`
-2. **去重合并**：`files` 有交集，且（`functions` 有交集，或 description 语义相近）→ 合成一条，留描述更详细的那份，吸收另一份的 `files` / `functions`
-3. `add --from-file <合并后的>.json --auto-id`（行格式见 [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md) 的「批量」一节；一次入池，不要一条一条 `add`）；跨多文件、要设计新组件的那类另挂 `--plan-path .superworker/issues/specs/<id>.md`
-4. **存活核对**：汇总各 scan 的 `alive_ids` → `mark <ids>`（只累加 check_count 并报 candidates，**永不改状态**）。结掉一条只走逐条 `resolve <id> --reason`，且只在该条有 scan 明确的「三层定位找不到」报告时动手；刚入库的条目不在名单里是正常的
-5. 清掉 `.superworker/meta/scan/` 下的临时文件
-6. 汇报：新增 N 条（按严重度分档）、核对结果、candidates 名单
+1. 读取所有 `.superworker/meta/scan/*.json`
+2. **去重合并**：若两条发现的 `files` 有交集，且（`functions` 有交集或 `description` 语义相近），合并为一条——保留描述更详细的一份，吸收另一份的 `files` 与 `functions`
+3. **批量入池**：执行 `add --from-file <合并后的>.json --auto-id`（行格式见 [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)「批量操作」一节，禁止逐条 `add`）；跨多文件且需设计新组件的条目另挂 `--plan-path .superworker/issues/specs/<id>.md`
+4. **存活核对**：汇总各 scan 返回的 `alive_ids` → 执行 `mark <ids>`（仅累加 `check_count` 并报告 `candidates`，**绝不改状态**）。关闭条目只能逐条 `resolve <id> --reason`，且仅在该条目有 scan 明确的「三层定位均找不到」报告时执行；刚入库的新条目不在名单中属正常现象
+5. 清理 `.superworker/meta/scan/` 下的临时文件
+6. 汇报：新增 N 条（按严重度分布）、存活核对结果、`candidates` 名单
 
 ## 边界
 
-- **只能由用户或指挥者跑**：这份技能要派 subagent
-- 不修代码、不改 spec、不进图——挑选与排序是 DAG 的事
-- 撞见「该进图的新功能」记一句给用户，别自己建节点，那是 `/sw-route` 的活
-- 大规模重构信号单独立一条，阈值与判据见 [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)
+- **仅用户或指挥者可运行**：本技能会派发 subagent
+- 不修代码、不改 spec、不建 DAG 节点——任务排序属于 DAG
+- 遇到「应进图的新功能」在汇报中记一句提示用户，由 `/sw-route` 建节点
+- 大规模重构信号单独立条，阈值与口径见 [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)
 
 ## 反模式
 
-开工前读 [`./anti-patterns.md`](./anti-patterns.md) 对照自查。
+开始前对照 [`./anti-patterns.md`](./anti-patterns.md) 自查。

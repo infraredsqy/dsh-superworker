@@ -1,67 +1,54 @@
 # Garbage Test Patterns
 
-> This file is for a subagent scanning tests; the conductor does not read it.
+> For scan subagents to read alongside [`./compression-criteria.md`](./compression-criteria.md); the conductor does not read this file.
 
-## The Garbage Test patterns
+## Garbage patterns
 
-| # | Pattern | Language-agnostic description | Typical example (Catch2 / Jest / pytest) |
+| # | Pattern | Language-agnostic description | Typical examples (Catch2 / Jest / pytest) |
 |---|---|---|---|
-| P1 | `hardcoded-count` | asserts a concrete count of a collection / methods / entries | `REQUIRE(result.size() == 36)`, `expect(methods.length).toBe(10)` |
-| P2 | `trivial-init` | verifies the default initialisation state the language / framework guarantees | `REQUIRE(field == false)`, `assert(field is None)`, `expect(obj.count).toBe(0)` |
-| P3 | `field-roundtrip` | assigns a value and reads it straight back to verify | `x = val; REQUIRE(x == val)`, `obj.name = "foo"; assert obj.name == "foo"` |
-| P4 | `enum-bound` | binds an enum / constant to a concrete integer value | `REQUIRE(static_cast<int>(Enum::A) == 0)`, `assert(Color.RED == 1)` |
-| P5 | `container-op` | tests a container's basic add / remove / look-up operations | `map.erase(k); REQUIRE(map.size() == 0)`, `arr.append(x); assert len(arr) == 1` |
-| P6 | `trivial-error` | tests only that a bad argument returns a fixed error value | `REQUIRE(func(bad) == -1)`, `assert(parse("").is_err())` |
+| P1 | `hardcoded-count` | Asserts a hardcoded size/count of a collection, method list, or entries | `REQUIRE(result.size() == 36)`, `expect(methods.length).toBe(10)` |
+| P2 | `trivial-init` | Verifies only default initialization guaranteed by the language/framework | `REQUIRE(field == false)`, `assert(field is None)`, `expect(obj.count).toBe(0)` |
+| P3 | `field-roundtrip` | Assigns a value and immediately reads it back | `x = val; REQUIRE(x == val)`, `obj.name = "foo"; assert obj.name == "foo"` |
+| P4 | `enum-bound` | Pins an enum or constant to a specific integer value | `REQUIRE(static_cast<int>(Enum::A) == 0)`, `assert(Color.RED == 1)` |
+| P5 | `container-op` | Tests basic add/remove/lookup operations of a standard container | `map.erase(k); REQUIRE(map.size() == 0)`, `arr.append(x); assert len(arr) == 1` |
+| P6 | `trivial-error` | Tests only that bad input returns a fixed error value | `REQUIRE(func(bad) == -1)`, `assert(parse("").is_err())` |
 
-## The judgement principles
+## Deletion granularity
 
-- If every assertion in a whole TEST_CASE (or a container of the same kind) falls under these
-  garbage patterns → **delete the whole stretch** (judgment: `entire`)
-- If some assertions fall under these garbage patterns and some verify business logic → **delete
-  the garbage assertion lines only**, keeping the valid part (judgment: `partial`)
-- If every test inside a file is deleted → **remove that file from the build system
-  (CMakeLists.txt / Cargo.toml / package.json and the like)**
+- Every assertion in a `TEST_CASE` (or equivalent test block) matches a garbage pattern → delete the whole block (`judgment: "entire"`).
+- Some assertions are garbage and others verify real business logic → delete only the garbage lines (`judgment: "partial"`).
+- All tests in a file are removed → remove that file from the build system (`CMakeLists.txt`, `Cargo.toml`, `package.json`, etc.).
 
-## The coverage gate for deletion
+## Coverage gate for deletion
 
-Hitting a garbage pattern is only half. **Before deleting, confirm that the piece of business it
-verifies is covered elsewhere too**.
+Matching a garbage pattern is only half the requirement. **Before deleting, confirm the business behavior it touches is covered elsewhere**:
 
-- Both hold → delete
-- It hits a garbage pattern, but it is the **only** coverage of that piece of business → keep it,
-  and write this into the report (this one looks bad, yet it is the only sentinel)
-- When you cannot tell whether there is coverage elsewhere → name that piece of business in the
-  report for the conductor to check; **keep it rather than not**
+- Matches a garbage pattern **and** covered elsewhere → eligible for deletion.
+- Matches a garbage pattern, but is the **only** coverage of that behavior → keep it and note this in the report.
+- Uncertain whether coverage exists elsewhere → flag the behavior for the conductor and **keep it**.
 
-Really go and search, do not go by impression: the neighbouring cases in the same file, the tests
-of the same kind of module, the indirect coverage inside end-to-end cases.
+Search for coverage explicitly (neighboring cases in the same file, sibling module tests, indirect coverage in end-to-end tests)—never guess.
 
-## The safety exceptions
+## Safety exceptions
 
-The following are **not** garbage tests, so do not delete them by mistake:
-- verifying that some field is explicitly initialised to a non-zero / non-empty value (the
-  business asks for it and it differs from the default)
-- verifying boundary-condition behaviour (an empty-collection query does not crash, a negative
-  index gets clamped)
-- verifying a serialisation roundtrip (write it and read it back to check the fields agree)
-- verifying that a state machine's transition is legal
+The following are **not** garbage tests and must not be deleted:
 
-## The return format
+- Verifying a field is explicitly initialized to a non-zero/non-empty value required by business logic (distinct from language defaults)
+- Verifying boundary behavior (e.g., querying an empty collection does not crash, negative indices are clamped)
+- Verifying serialization roundtrips (serialize then deserialize and check field equality)
+- Verifying state-machine transition validity
+
+## Return field (`quality` object)
+
+Merged with [`./compression-criteria.md`](./compression-criteria.md) into a single JSON response. Each finding's `quality` object uses this shape (see `compression-criteria.md` for the full merged schema):
 
 ```json
-{
-  "file": "tests/app/test_example.cpp",
-  "findings": [
-    {
-      "test_name": "Enum values are correct",
-      "type": "enum-bound",
-      "line_start": 15,
-      "line_end": 22,
-      "judgment": "entire"
-    }
-  ]
+"quality": {
+  "type": "enum-bound",
+  "line_start": 15,
+  "line_end": 22,
+  "judgment": "entire"
 }
 ```
 
-- `judgment`: `entire` = the whole test is garbage assertions; `partial` = mixed with useful
-  assertions, and only the garbage lines get deleted
+- `judgment`: `entire` (whole block is garbage) / `partial` (mixed; remove garbage lines only) / `none` (verifies real behavior)

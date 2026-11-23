@@ -1,31 +1,31 @@
 ---
 name: sw-instruct
-description: 往项目指令清单里记一条约束，让以后干活的 agent 都照办（管线会话内用）
+description: 向项目指令清单追加一条约束，供后续管线会话遵循（仅限管线会话内使用）。
 disable-model-invocation: true
 ---
 
 # sw-instruct
 
-> 谁跑我：用户，只在 sw-route / sw-conduct 的会话里——这份清单由宿主随每轮上下文注入给它们（`injectInstructions` 关掉时不注入）
-> 我解决什么：把用户的一句话原话记进项目指令清单
-> 我派不派 subagent：不派
+> 适用对象：用户，仅限 `sw-route` / `sw-conduct` 会话内（宿主每轮自动注入指令清单；关闭 `injectInstructions` 时不注入）。
+> 职责：将用户的一句话**原话**记入项目指令清单。
+> 是否派发 subagent：否。
 
-别处敲了就是敲错地方，回一句，别往清单里记。
+若在非管线会话中调用，直接提示调用位置不对，不写入清单。
 
-管线这些词是一张表一个入口：走 `superworker` 工具——给它 `word`、该词的 `args`，`help` 取它那一页。
+所有管线命令均通过 `superworker` 工具调用（传 `word` 与 `args`，加 `help` 查看该词用法）。
 
-把调用行里那句话**原话照抄**进清单，`--scope` 必须点名，它决定谁能看见这条：
+将调用行中的约束**原话照抄**写入清单，`--scope` 为必填项，决定该条指令的可见范围：
 
 ```pwsh
-# global：往后每个读清单的会话都看见，一直生效
+# global：后续所有读取清单的会话均可见，持续生效
 instruction add --text "<用户原话>" --scope global
 
-# cycle：这个 cycle 里的会话看见，cycle 结束就没
+# cycle：仅当前 cycle 内的会话可见，cycle 结束后失效
 instruction add --text "<用户原话>" --scope cycle --cycle <id>
 ```
 
-- 指令只有两级：global 与 cycle。只管某一个节点的话不归清单——写进那个节点自己的 spec。
-- 两条线并排时 `--cycle <id>` 要点名，绑不上工具会拒收
-- 记完就生效，读它的那一趟会自己看见。
-- 「跑多远、何时停」的话（跑够三个就停）不归清单管：那是线自己的策略键，用 `cycle policy <cycle> stop_after_nodes 3` 写进这条线。它只能在线上加一个停点，节点自己的 `mode` 照旧先说话（`checkpoint` 该停还是停）；`off` 取消这个停点。清单里的条目不再参与停机，记在这儿也不会让它停
-- 记完把条目 id 和 scope 念给用户
+- **仅两级作用域**：`global` 与 `cycle`。只针对单个节点的约束不入清单，写入该节点的 `spec.md`。
+- **多 cycle 并行**：必须显式指定 `--cycle <id>`，无法绑定时工具会拒绝写入。
+- **即时生效**：写入后立即生效，后续读取清单的轮次会自动看到。
+- **停机条件不入清单**：类似「跑够 3 个节点就停」的运行边界属于 cycle 策略，用 `cycle policy <cycle> stop_after_nodes 3` 设置（`off` 取消）。该策略仅附加 cycle 级停点，节点自身的 `mode` 仍优先（`checkpoint` 照常停）；指令清单条目不控制停机。
+- **回执**：写入完成后，向用户报出条目的 `id` 与 `scope`。

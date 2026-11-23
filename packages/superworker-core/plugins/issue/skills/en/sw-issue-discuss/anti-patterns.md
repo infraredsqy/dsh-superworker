@@ -1,33 +1,27 @@
-# sw-issue-discuss anti-patterns
+# sw-issue-discuss Anti-patterns
 
-Check yourself against this before starting. The criteria themselves live in
-[`./SKILL.md`](./SKILL.md); this keeps symptoms and correction signals only.
+Check before starting. The full rules live in [`./SKILL.md`](./SKILL.md); this page lists symptoms and correction signals only.
 
-## `issue-discuss-batch-over-decision-quota` — a batch over the 4-decision quota
+## `issue-discuss-batch-over-decision-quota` — Exceeding the 4-decision batch cap
 
-**Symptom**: a dozen externals are laid out at once, each asked "change it or not? A or B?"
+**Symptom**: Presenting a dozen `external` entries at once and asking "fix or not? A or B?" for each.
 
-**Correction signal**: the user starts answering "you decide", or this batch laid out five or
-more.
+**Correction signal**: The user starts replying "you decide", or a batch contains five or more decisions.
 
-## `issue-discuss-submits-unreviewed-externals` — submitting externals without reviewing them
+## `issue-discuss-submits-unreviewed-externals` — Presenting unreviewed `external` entries
 
-**Symptom**: whatever is marked external in the pool is served up as it stands — of twenty
-entries, twelve actually have a suggestion that already spells out the fix.
+**Symptom**: Passing every `external` entry straight to the user—for example, 12 of 20 entries already have a concrete fix in `suggestion`.
 
-**Correction signal**: on the first one put in front of the user, you have not tried writing a
-concrete fix for it.
+**Correction signal**: You have not checked whether the first entry presented actually involves a trade-off.
 
-## `issue-discuss-details-instead-of-tradeoffs` — giving the user detail instead of trade-offs
+## `issue-discuss-details-instead-of-tradeoffs` — Dumping implementation details instead of trade-offs
 
-**Symptom**: the discussion throws function names / variable names / line numbers / call chains at
-the user, leaving him to find the decision point himself among the code detail.
+**Symptom**: Presenting function names, variable names, line numbers, or call chains and forcing the user to extract the decision point from code details.
 
-**Correction signal**: the user comes back with "so what is it that I have to settle".
+**Correction signal**: The user asks "so what exactly am I deciding?".
 
-## `issue-discuss-reason-records-discussed-only` — `--reason` says "discussed", not the call
+## `issue-discuss-reason-records-discussed-only` — Recording "discussed" instead of the decision in `--reason`
 
-**Symptom**: the user says "report errors uniformly", and the reason carries only "discussed".
+**Symptom**: The user decides "report errors uniformly", but `--reason` only records "discussed".
 
-**Correction signal**: showing that `--reason` to whoever does the work later, he cannot read what
-the user settled.
+**Correction signal**: A downstream executor reading `--reason` cannot tell what the user actually decided.

@@ -1,86 +1,55 @@
 ---
 name: sw-issue-scan
-description: Scan the code for debt not yet in the pool, record it there, and re-check that the entries already in it still stand.
+description: Scan project code for untracked quality debt, record findings in the issue pool, and verify whether existing entries still exist.
 disable-model-invocation: true
 ---
 
 # sw-issue-scan
 
-> Plugin I bind: `issue` — this skill is installed and removed with that plugin; the plugin not installed, this skill is not here
-> Who runs me: the user (`/sw-issue-scan`) / the conductor (named by a pipeline node spec's `method: ` line)
-> What I am for: scan the code for new debt + check whether the old debt is still there, and go into the pool only
-> Do I dispatch subagents: yes, one layer (scan); an executor reading this stops and reports back
+> Plugin: `issue` (installed and removed with the plugin).
+> Caller: the user (`/sw-issue-scan`) or a conductor (named by a pipeline node spec's `method: ` line).
+> Responsibility: scan code for new debt and check liveness of existing entries; pool updates only.
+> Dispatches subagents: yes, one layer (scan); if a dispatched executor reads this file, stop and report back.
 
-The scan **fixes nothing, discusses nothing with the user and rules no
-`decision`** — a new entry always stays `unknown`, and the ruling is done one step later by
-`/sw-issue-discuss` (what was ruled at the moment of the scan is stale by the time anyone really
-works on it).
+Scanning **fixes no code, holds no user discussion, and makes no `decision` rulings**—new entries always stay `unknown` for `/sw-issue-discuss` to triage later (decisions made at scan time go stale before repair).
 
-The pool's tools and conventions are in [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md).
+Pool commands and conventions live in [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md). All pipeline commands go through the `superworker` tool (pass `word` and `args`; pass `help` for usage).
 
-The pipeline's words are one table with one door: call the `superworker` tool — a `word`, its
-`args`, and `help` for that word's page.
+## Inputs before dispatch
 
-## Prepare
+Before dispatching scan subagents, establish the project's module boundaries, architecture conventions, and code scope, and run `issue status` + `issue list` to collect the **active entry list** for liveness checks.
 
-1. Read the project's CLAUDE.md / docs/: how the modules are divided, and what the architecture
-   conventions are. This is the ground for cutting the scan surface and writing the prompt
-2. Sound out the change surface: the code root, the order of magnitude of the files, which
-   directories are tools / tests / assets
-3. Call `status` and `list` for the list of **in-play entries**: the ones this round hands to the
-   scan for a liveness check
+## Dispatch scans
 
-## Dispatch the scan
+Partition the scan by **module × dimension** (using subagents with write tools, since findings are written to disk), with each scan slice covering one target. Dimensions: duplicated code, boundary/responsibility violations, and structural issues. When there are only one or two modules, merge dimensions at your discretion.
 
-Cut the surface by **module × dimension** (a subagent carrying a write tool, since findings have
-to land in a file), and each surface watches one copy only. The dimensions: repeated code / a
-responsibility crossing its line / a structural problem. When there are only one or two modules,
-use your own judgement on whether to merge the dimensions.
+Cap concurrent subagents at `config get max_agents`: **a single subagent may carry multiple scan slices**, so combine or batch slices accordingly.
 
-Once the surfaces are cut, take them in batches by the in-flight cap: `config get max_agents` is
-the cap, and **one subagent can carry several surfaces** — merging them and batching them go by
-that cap too.
+Every prompt must provide:
 
-Every prompt has to give:
+- Absolute path to the role card: `<this skill's directory>/scan.md` (defines role, output schema, and prohibitions)
+- Project architecture conventions and assigned file list (covering all slices assigned to that subagent)
+- Active entry list (for liveness verification)
+- Output path: `.superworker/meta/scan/<module-slug>.json` (one file per slice if a subagent carries multiple slices)
 
-- the role card: `<this skill's directory>/scan.md` (the absolute path) — the role, the output
-  format and the prohibitions are all in it
-- the project's architecture conventions (distilled from the docs) and the file list handed to it
-  (as many files as it carries)
-- the list of in-play entries (for the liveness check)
-- the output path: `.superworker/meta/scan/<module-slug>.json` (as many files as the subagent carries, one
-  file each)
-
-Only once the whole batch is back do you go on.
+Wait until the full batch finishes before merging.
 
 ## Merge into the pool
 
-1. read every `.superworker/meta/scan/*.json`
-2. **Dedup and merge**: when `files` overlap **and** (`functions` overlap, or the descriptions are
-   close in meaning) → merge them into one entry, keep the more detailed description, and absorb
-   the other's `files` / `functions`
-3. `add --from-file <the merged>.json --auto-id` (the row shape is in
-   [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)'s "Batching" section; one pass into
-   the pool, not one `add` per entry); for the kind that spans several files or needs a new
-   component designed, also carry `--plan-path .superworker/issues/specs/<id>.md`
-4. **Liveness check**: round up the scans' `alive_ids` → `mark <ids>` (it only adds to check_count
-   and reports candidates, and **never changes a status**). Settling an entry goes through
-   `resolve <id> --reason` one entry at a time, and only when that entry has a scan's explicit
-   "not locatable by the three layers" report; a freshly added entry not being on the list is
-   normal
-5. Clear away the temporary files under `.superworker/meta/scan/`
-6. Report: N new entries (graded by severity), the check's result, the candidate list
+1. Read all `.superworker/meta/scan/*.json` files.
+2. **Deduplicate and merge**: if two findings share overlapping `files` **and** (overlapping `functions` or semantically equivalent `description`), merge them into one—keep the more detailed description and union their `files` and `functions`.
+3. **Batch insert**: run `add --from-file <merged>.json --auto-id` (row format in [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md) under "Batching"; do not call `add` one by one). For multi-file issues requiring new component design, also set `--plan-path .superworker/issues/specs/<id>.md`.
+4. **Liveness check**: aggregate `alive_ids` from all scan summaries → run `mark <ids>` (increments `check_count` and reports `candidates`; **never changes status**). Only resolve an entry individually via `resolve <id> --reason` when a scan explicitly reports it could not be located across all three location layers; newly added entries missing from `alive_ids` is expected.
+5. Delete temporary files under `.superworker/meta/scan/`.
+6. Report: N new entries (broken down by severity), liveness check results, and the `candidates` list.
 
 ## Boundaries
 
-- **Only the user or a conductor runs it**: this skill dispatches subagents
-- It fixes no code, changes no spec and enters no graph — picking and ordering are the DAG's
-  business
-- On running into "a new feature that should enter the graph", record one line for the user; build
-  no node yourself, that is `/sw-route`'s work
-- A large-scale refactor signal gets an entry of its own, and its threshold and criterion are in
-  [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)
+- **User or conductor only**: this skill dispatches subagents.
+- No code fixes, no spec edits, and no DAG node creation—prioritization belongs to the DAG.
+- If you encounter a new feature that belongs in the DAG, note it in the report for the user; let `/sw-route` create the node.
+- Log large-scale refactor signals as separate entries per the threshold in [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md).
 
 ## Anti-patterns
 
-Before starting, read [`./anti-patterns.md`](./anti-patterns.md) and check yourself against it.
+Check [`./anti-patterns.md`](./anti-patterns.md) before starting.

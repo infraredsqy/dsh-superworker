@@ -1,63 +1,37 @@
-# The pool (the issue store)
+# Issue Pool (Shared Conventions)
 
-> The pool's scanning, ruling and repairing skills share this one. For command detail go by
-> `--help`; this writes the conventions only.
+> Shared by `sw-issue-scan`, `sw-issue-discuss`, and `sw-issue-repair`. Refer to `--help` for CLI flags; this page defines conventions only.
 
-The pool lives in the project's `.superworker/issues/` and is one unified to-do list. `source` only says
-how the entry came about: `scan` (scanned into the pool), `manual` (written down by the user in
-passing), `conduct` (run into by a working session).
+The issue pool lives in `.superworker/issues/` as a unified quality-debt backlog. `source` records origin only: `scan` (code scan), `manual` (user-logged), or `conduct` (discovered during execution).
 
-## Go through the tool only
+## Tool access only
 
-Before touching the pool, ask the word itself: `issue --help` gives its page, and the
-door is the `superworker` tool — a `word` plus its `args` to run one, and `help` for that word's
-page.
+Check `issue --help` via the `superworker` tool (pass `word` and `args`; pass `help` for usage) before operating on the pool.
 
-- **Every** read and write of the pool goes through the `issue` word only. **Reading
-  `.superworker/issues/issues.json` directly is forbidden**: a giant JSON, it burns context and it bypasses
-  the tool's own counting conventions too.
+- **All reads and writes must go through the `issue` command**. **Never read `.superworker/issues/issues.json` directly**—it is large, wastes context, and bypasses the tool's counting conventions.
 
 ## Batching
 
-When one action applies to N records, use the word's own batch shape instead of sending it once
-per record:
+When applying the same operation to multiple entries, use the command's batch form rather than invoking it one entry at a time:
 
-- into the pool: `add --from-file <rows file>` — one entry per row, `--auto-id` saves the ids.
-- changing the pool: `update --from-file <rows file>` — one `id` per row plus the fields it
-  changes; rulings whose reason differs per entry go this way.
-- closing the pool: `resolve <id…> --reason "<one verification reading>"`; likewise `reject` /
-  `acknowledge` / `remove`, and `mark <id…>` was already batched.
+- **Batch insert**: `add --from-file <rows file>` (one entry per row; `--auto-id` omits explicit IDs)
+- **Batch update**: `update --from-file <rows file>` (`id` plus changed fields per row; use when each entry needs a distinct `reason`)
+- **Batch close**: `resolve <id…> --reason "<shared verification reading>"`; same for `reject` / `acknowledge` / `remove`, and `mark <id…>` is natively batched
 
-Rows files go in `.superworker/meta/batch/` and are deleted once the batch has run. A bad row (an unknown
-field, a missing id, a bad value) refuses the whole batch and not a byte is written; an id that is
-not in the pool refuses `update` / `resolve` / `reject` / `acknowledge` / `remove` the same way. A
-duplicate id in `add` or an unknown id in `mark` is a known fact named per row, not a bad row. N=1
-behaves exactly like the single form.
+Place batch rows files in `.superworker/meta/batch/` and delete them once done. Any malformed row (unknown field, missing `id`, invalid value) rejects the entire batch atomically without writing; missing IDs in `update` / `resolve` / `reject` / `acknowledge` / `remove` also reject the entire batch. Duplicate IDs in `add` and unknown IDs in `mark` are reported per row rather than rejected as malformed. `N=1` behaves identically to single-entry calls.
 
-## The conventions
+## Field and metric conventions
 
-- Status: `open` / `acknowledged` / `resolving` are the three that count as actionable; `resolved`
-  / `rejected` do not.
-- `decision`: `autofix` (it can be fixed by ourselves) / `external` (the trade-off is still open
-  in the user's hands) / `unknown` (not ruled yet, the default on the way into the pool). **An
-  entry whose call has already been made, with the solution written inside it, is `autofix`
-  without exception** — landing on another node or another line counts too.
-- **The weighted sum** is what `issue weight` computes: entries that are actionable and whose
-  `decision` is not `external`, each counted by its tier's weight. **The weights live in the plugin's
-  own declaration only (`SEVERITY_WEIGHTS` in `tools/storage.mjs`)** and are not restated anywhere
-  else — that constant is the one place to read a tier's number. `unknown` presses
-  on the line just as `autofix` does; ruled `external` and it drops out of the count.
-- Severity (judge by this when writing each entry): **P0** duplicated and carrying a bug risk, or
-  standing on a business-critical path; **P1** a responsibility crossing its line and holding
-  iteration back (business logic inside the UI, the logic layer touching the DOM, a dependency
-  across layers); **P2** a structural improvement that raises efficiency (an extractable repeated
-  pattern, scattered configuration, a feature that takes 3+ files to change); **P3** tidiness
-  (naming, stale comments, dead code, formatting).
-- **A large change gets an entry of its own**: a refactor signal of ≥3 files that also changes
-  inter-module dependencies gets an entry of its own, and moving to `/sw-route` (the refactor enters
-  the graph as a node) is suggested.
-  The pool keeps that piece of debt and its criterion only; the refactor plan is not unfolded
-  here.
-- **Search for the same entry before pooling**: before a new finding enters the pool, search the
-  pool once with like words; dedup and merge on the way in — the same piece of debt in two records
-  leaves the reader to recognise its own kin.
+- **Status**: `open`, `acknowledged`, and `resolving` are **actionable**; `resolved` and `rejected` are not.
+- **`decision`**:
+  - `autofix`: ready for autonomous repair. **Any entry whose decision is already settled with a written solution is `autofix`**, even if it belongs to another node or cycle.
+  - `external`: requires a user trade-off decision.
+  - `unknown`: not yet triaged (default on insert).
+- **Weighted sum**: computed by `issue weight` over actionable entries where `decision != external`, weighted by severity. **Authoritative weights live solely in `SEVERITY_WEIGHTS` (`tools/storage.mjs`)** and are not duplicated here. Both `unknown` and `autofix` count toward the weight; reclassifying to `external` excludes the entry.
+- **Severity**:
+  - **P0**: duplicated logic carrying bug risk, or defects on a business-critical path.
+  - **P1**: boundary/responsibility violations blocking iteration (business logic in UI, logic layer touching DOM, cross-layer coupling).
+  - **P2**: structural improvements boosting velocity (extractable repeated patterns, scattered config, single feature requiring 3+ files).
+  - **P3**: hygiene (naming, stale comments, dead code, formatting).
+- **Large refactors as standalone entries**: refactor signals touching ≥3 files and changing inter-module dependencies get their own entry, with a recommendation to schedule them as a DAG node via `/sw-route`. Keep only the debt and criteria in the pool—do not expand the refactor plan here.
+- **Deduplicate before inserting**: search the pool with related keywords before adding a new finding, and merge duplicates so the same debt is never tracked twice.

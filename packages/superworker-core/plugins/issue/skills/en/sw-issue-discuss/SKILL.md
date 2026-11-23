@@ -1,75 +1,59 @@
 ---
 name: sw-issue-discuss
-description: The pool's human face: record an entry, read the state, review which entries need a call, settle them batch by batch.
+description: Human interface for the issue pool: record entries, inspect status, filter false externals, and settle external decisions in batches.
 disable-model-invocation: true
 ---
 
 # sw-issue-discuss
 
-> Plugin I bind: `issue` — this skill is installed and removed with that plugin; the plugin not installed, this skill is not here
-> Who runs me: the user (`/sw-issue-discuss`)
-> What I am for: reading, writing and ruling on the pool — take one entry in, look at the state, rule autofix/external, and put what needs the call in front of the user
-> Do I dispatch subagents: no. To repair, go to `/sw-issue-repair`; to scan, go to `/sw-issue-scan`
+> Plugin: `issue` (installed and removed with the plugin).
+> Caller: the user (`/sw-issue-discuss`).
+> Responsibility: read, write, and triage the issue pool—record new entries, report status, filter false `external` entries, and settle true decisions with the user.
+> Dispatches subagents: no. Use `/sw-issue-repair` for batch repair and `/sw-issue-scan` for code scanning.
 
-Tools and conventions are in [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md).
+Pool commands and conventions live in [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md). All pipeline commands go through the `superworker` tool (pass `word` and `args`; pass `help` for usage).
 
-The pipeline's words are one table with one door: call the `superworker` tool — a `word`, its
-`args`, and `help` for that word's page.
+## Intent routing
 
-## Read the intent at the door
-
-| The user says | What to do |
+| User input example | Action |
 |---|---|
-| "the highlight covers the expand arrow on hover" | **Record**: make a kebab-case id, `add --severity P3 --decision unknown --source manual --title "<his own words>"`, and answer "recorded: `<id>`" |
-| "how much is in the pool right now" | **Look at the state**: `status` + `top --limit 10`, reporting the total and the grades by severity and by source |
-| "that one is fixed" | **Settle it**: locate with `search` → `resolve <id>`; when you are not sure which one it is, lay them out for the user to pick |
-| "walk me through the external ones" | **Rule**: review first, then discuss batch by batch |
-| "fix this bug" | A single debug is this session's own work -- do it here; a batch of same-domain debt goes to `/sw-issue-repair` |
+| "the highlight covers the expand arrow on hover" | **Record**: generate a kebab-case id, run `add --severity P3 --decision unknown --source manual --title "<user's words>"`, and reply `recorded: <id>` |
+| "how many issues are in the pool" | **Inspect status**: run `status` + `top --limit 10`, reporting the total and breakdowns by severity and `source` |
+| "that one is fixed" | **Resolve**: locate via `search` → `resolve <id>`; if ambiguous, list candidates for the user to pick |
+| "walk me through the external issues" | **Triage**: review and filter first, then discuss in batches |
+| "fix this bug" | Handle a single bug debug directly in this session; route same-domain batch debt to `/sw-issue-repair` |
 
-When recording, do not cross-examine: one sentence is enough to record it. When the user says more
-about the file or the module, fill in `--module` / `--files` / `--description` in passing.
+Do not interrogate the user when recording—one sentence is enough. If the user mentions files or a module, populate `--module` / `--files` / `--description` in passing.
 
-## Ruling
+## Triage workflow
 
-### 1. Review first; put no fake external up
+### 1. Filter out false `external` entries first
 
-Go through the entries with `decision=external`: when the suggestion is already clear enough that
-no trade-off is needed, put the re-ruling into a rows file (`id` + `decision` + `reason`) and close
-the whole set with one `update --from-file`. What is left over is what really needs the user's call.
+Review entries marked `decision=external`: if an entry's `suggestion` is already concrete with no genuine trade-off, reclassify it via a batch rows file (`id` + `decision` + `reason`) and apply in one `update --from-file` call. Present only genuine user decisions next.
 
-### 2. Discuss batch by batch, at most 4 decisions at a time
+### 2. Discuss in batches (≤4 decisions per batch)
 
-More burns the judgement, so what is over goes into the next batch.
+More than 4 decisions per batch degrades decision quality; defer the rest to the next batch.
 
-- Putting it to the user follows [`./shared/superworker/talking.md`](./shared/superworker/talking.md):
-  one tangle at a time, all four lines, the concept name at the setting `config get answer` reads.
-  Function names / variable names / line numbers / call chains stay with the entry itself — that is
-  what the one doing the work reads. The two registers live side by side and do not stand in for
-  each other.
-- Once the user has settled it, settle each entry; one batch sharing one reason can close with
-  `update <id…>` / `reject <id…>` in one call, and rulings whose reason differs per entry go
-  through `update --from-file`:
-  - **A simple problem** (extracting a single function, replacing a constant, about 5 changed
-    lines) → `update <id> --decision autofix --status open --reason "<the settled call>"`
-  - **A complex problem** (spanning several files, needing a new interface designed) → first write
-    the design into `.superworker/issues/specs/<id>.md`, then
-    `update <id> --decision autofix --status open --plan-path <path> --reason "<the settled call>"`
-  - Not fixing it → `reject <id> --reason "<why>"`; putting it off →
-    `acknowledge <id> --reason "<waiting for what>"`
-- **`--reason` carries what the user settled itself** ("report errors uniformly"), not "discussed"
-  — the one who does the work can read that sentence only.
-- Close each batch with one line: how many externals are left.
+- **Presentation**: follow [`./shared/superworker/talking.md`](./shared/superworker/talking.md)—one trade-off at a time, all four lines present, terminology calibrated to `config get answer`. Keep function names, variable names, line numbers, and call chains inside the issue entry for the implementer rather than dumping them on the user.
+- **Recording decisions**: settle entries once decided. Entries sharing one reason can be updated in one `update <id…>` / `reject <id…>` call; entries with distinct reasons go through `update --from-file`:
+  - **Simple fix** (single helper extraction, constant replacement, ~5 lines) → `update <id> --decision autofix --status open --reason "<settled decision>"`
+  - **Complex fix** (multi-file change, new interface design) → write the design to `.superworker/issues/specs/<id>.md`, then run `update <id> --decision autofix --status open --plan-path <path> --reason "<settled decision>"`
+  - **Won't fix** → `reject <id> --reason "<why>"`
+  - **Defer** → `acknowledge <id> --reason "<waiting on what>"`
+- **`--reason` must state the decision itself** (e.g., "report errors uniformly"), never just "discussed"—downstream executors only see that line.
+- End each batch by stating how many `external` entries remain.
 
 ## Boundaries
 
-| Situation | What to do |
+| Situation | Handling |
 |---|---|
-| Talking a single entry's implementation through at length | suggest moving to `/sw-conduct` (at prepare it aligns the request with the code) |
-| A large-scale refactor signal | an entry of its own (threshold and conventions in [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)), and suggest moving to `/sw-route` (the refactor enters the graph as a node) |
-| A batch to repair | `/sw-issue-repair` |
-| The pool is due for a refresh | `/sw-issue-scan` |
-| A new feature that should enter the graph | `/sw-route` |
+| Deep dive into one entry's implementation details | Suggest `/sw-conduct` (aligns requirements with code during preparation) |
+| Large-scale refactor signal | Log as its own entry (thresholds in [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md)) and suggest `/sw-route` to schedule it as a DAG node |
+| Batch repair | `/sw-issue-repair` |
+| Refresh the pool | `/sw-issue-scan` |
+| New feature for the DAG | `/sw-route` |
 
 ## Anti-patterns
 
-Before starting, read [`./anti-patterns.md`](./anti-patterns.md) and check yourself against it.
+Check [`./anti-patterns.md`](./anti-patterns.md) before starting.

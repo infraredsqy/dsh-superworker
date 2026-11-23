@@ -1,60 +1,45 @@
-# sw-issue-scan anti-patterns
+# sw-issue-scan Anti-patterns
 
-Check yourself against this before starting. The criteria themselves live in
-[`./SKILL.md`](./SKILL.md), [`./scan.md`](./scan.md) and
-[`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md); this keeps symptoms and correction signals only.
+Check before starting. The full rules live in [`./SKILL.md`](./SKILL.md), [`./scan.md`](./scan.md), and [`../sw-issue-repair/pool.md`](../sw-issue-repair/pool.md); this page lists symptoms and correction signals only.
 
-## `issue-scan-full-corpus-in-one-agent` — covering the whole scan with one subagent
+## `issue-scan-full-corpus-in-one-agent` — Covering the entire corpus with one subagent
 
-**Symptom**: one subagent scans every module and comes back with a pile of repeated code +
-responsibilities crossing their lines + structural problems all mixed together.
+**Symptom**: One subagent scans every module and returns duplicated code, boundary violations, and structural issues jumbled together.
 
-**Correction signal**: the number of surfaces dispatched against the number of modules — one agent
-carried several copies.
+**Correction signal**: Multiple module/dimension slices are piled onto one agent unnecessarily.
 
-## `issue-scan-explores-without-reading-docs` — exploring without reading the project docs first
+## `issue-scan-explores-without-reading-docs` — Dispatching scans without understanding project architecture
 
-**Symptom**: the scan is dispatched without reading CLAUDE.md / docs.
+**Symptom**: Scan subagents are dispatched before establishing module boundaries and architecture conventions.
 
-**Correction signal**: when cutting the surfaces and writing the prompt, you cannot say how this
-project's modules are divided.
+**Correction signal**: While slicing scans or writing prompts, you cannot articulate how the project's modules are divided.
 
-## `issue-scan-finding-not-locatable` — a pooled finding with no way to locate it
+## `issue-scan-finding-not-locatable` — Recording findings that cannot be located
 
-**Symptom**: "there is repeated code in game_ui.js" — no function name, and no meaning.
+**Symptom**: Writing "duplicated code in `game_ui.js`" with no function name or semantic anchor.
 
-**Correction signal**: taking that finding back to look for it lands on no function and no stretch
-of meaning.
+**Correction signal**: Trying to trace the finding back to code lands on no concrete function or logic block.
 
-## `issue-scan-rescans-without-pool-dedup` — rescanning without dedup against the pool
+## `issue-scan-rescans-without-pool-dedup` — Rescanning without deduplicating against the pool
 
-**Symptom**: every full scan run adds another copy to the pool, where one has long been sitting.
+**Symptom**: Every full scan re-inserts entries that already exist in the pool.
 
-**Correction signal**: several of the new entries share a site and a symptom with an old entry in
-the pool.
+**Correction signal**: Newly added entries share the same site and symptom as existing pool entries.
 
-## `issue-scan-absence-read-as-resolved` — absence read as the entry being gone
+## `issue-scan-absence-read-as-resolved` — Treating absence as resolved
 
-**Symptom**: entries that are not on the liveness list are resolved in bulk; or the scan does not
-find the code for some entry and rules it already fixed (when really the code just moved); or the
-check is run right after a scan has pooled something, and a new entry is cleared by mistake for
-"not being on the list".
+**Symptom**: Bulk-resolving entries absent from `alive_ids`; assuming an unlocated entry is fixed when the code merely moved; or running a liveness check right after inserting new entries and clearing them because they are not in `alive_ids`.
 
-**Correction signal**: over one check, one of the settled entries went through no entry-by-entry
-confirmation.
+**Correction signal**: Any entry is closed during a liveness check without entry-by-entry confirmation.
 
-## `issue-scan-refactor-as-small-item` — a structural refactor logged as a small item
+## `issue-scan-refactor-as-small-item` — Logging a structural refactor as a small item
 
-**Symptom**: a module's structure turns out to be terrible, and it is written as one small
-`autofix` entry and dropped into the pool.
+**Symptom**: A badly structured module is logged as a small `autofix` entry in the pool.
 
-**Correction signal**: this piece of debt's file surface spreads over three or more modules, while
-the entry's size reads like a passing change.
+**Correction signal**: The debt spans three or more modules, yet the entry frames it as a quick tweak.
 
-## `issue-scan-decides-for-the-user` — the scan stage ruling decision for the user
+## `issue-scan-decides-for-the-user` — Ruling `decision` during the scan stage
 
-**Symptom**: entries that are not clear are all marked "the user has to settle this", and twenty
-externals come back.
+**Symptom**: Marking every uncertain finding as "needs user decision", flooding the pool with twenty `external` entries.
 
-**Correction signal**: the entry's `description` / `suggestion` says "needs the call", and cannot
-say which lesson is missing.
+**Correction signal**: `description` or `suggestion` says "needs decision" without naming what context is missing or what trade-off exists.
