@@ -24,12 +24,11 @@ instruction add --text "<the user's own words>" --scope global
 
 # cycle: the sessions in this cycle see it, and it is gone when the cycle ends
 instruction add --text "<the user's own words>" --scope cycle --cycle <id>
-
-# node: it governs only the node it was recorded on, and it is gone when that node closes
-instruction add --text "<the user's own words>" --scope node --node <id>
 ```
 
-- With two lines side by side, `--cycle <id>` / `--node <id>` has to be named; when it cannot
+- Instructions have two levels only: global and cycle. A sentence that governs one node only does
+  not belong to this list — it goes in that node's own spec.
+- With two lines side by side, `--cycle <id>` has to be named; when it cannot
   bind, the tool refuses the call
 - It takes effect as soon as it is recorded; the run that reads it sees it.
 - Words about "how far it runs, when it stops" (stop after three) do not belong to this list:

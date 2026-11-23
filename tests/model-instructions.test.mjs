@@ -81,23 +81,16 @@ test('a closed moment later than the reading moment: at that moment it still cou
   assert.equal(out[0].closedAt, null, 'not yet closed at that moment: the reading carries no such moment')
 })
 
-test('scope: a bound cycle not in service does not count, a bound cell already delivered does not count', () => {
+test('scope: a bound cycle not in service does not count; a binding nobody can measure still counts', () => {
   const out = read([
     instruction({ id: 'global', scope: 'global' }),
     instruction({ id: 'in-service', scope: 'cycle', cycle: 'c1' }),
     instruction({ id: 'out-of-service', scope: 'cycle', cycle: 'c2' }),
     instruction({ id: 'gone-cycle', scope: 'cycle', cycle: 'c9' }),
-    instruction({ id: 'open-node', scope: 'node', node: 'n1' }),
-    instruction({ id: 'completed-node', scope: 'node', node: 'n2' }),
-    instruction({ id: 'gone-node', scope: 'node', node: 'n9' }),
     instruction({ id: 'no-binding', scope: 'cycle' }),
     instruction({ id: 'no-scope' }),
     instruction({ id: 'other-scope', scope: 'elsewhere' }),
   ], {
-    nodes: {
-      n1: { mode: 'auto', status: 'todo', dependencies: [] },
-      n2: { mode: 'auto', status: 'completed', dependencies: [], completed_at: '2026-03-10T09:00:00.000Z' },
-    },
     cycles: [
       { id: 'c1', status: 'active', holding: [], path: [] },
       { id: 'c2', status: 'inactive', holding: [], path: [] },
@@ -106,10 +99,10 @@ test('scope: a bound cycle not in service does not count, a bound cell already d
 
   assert.deepEqual(
     ids(out.filter((item) => item.inForce)),
-    ['global', 'in-service', 'gone-cycle', 'open-node', 'gone-node', 'no-binding', 'no-scope', 'other-scope'],
-    'what cannot be measured counts: a bound cycle or cell no longer in the record still reads',
+    ['global', 'in-service', 'gone-cycle', 'no-binding', 'no-scope', 'other-scope'],
+    'what cannot be measured counts: a bound cycle no longer in the record still reads',
   )
-  assert.deepEqual(ids(out.filter((item) => !item.inScope)), ['out-of-service', 'completed-node'])
+  assert.deepEqual(ids(out.filter((item) => !item.inScope)), ['out-of-service'])
 })
 
 test('a field the record did not write stays empty, no default filled in', () => {
@@ -133,15 +126,14 @@ test('a note in the record rides along with the reading: none written means none
   assert.equal(Object.hasOwn(out[2], 'note'), false)
 })
 
-test('grouping comes from the reading: global first, cycles in record order, an unrecognized cycle in its own group, the last slot', () => {
+test('grouping comes from the reading: the globals first, cycles in record order, an unrecognized cycle in its own group, the last slot', () => {
   const project = readProject({
-    nodes: { n1: { mode: 'auto', status: 'todo', dependencies: [] } },
+    nodes: {},
     cycles: [
       { id: 'c2', status: 'active', holding: [], path: [] },
       { id: 'c1', status: 'active', holding: [], path: [] },
     ],
     instructions: [
-      instruction({ id: 'node-1', scope: 'node', node: 'n1' }),
       instruction({ id: 'line-c1', scope: 'cycle', cycle: 'c1' }),
       instruction({ id: 'line-gone', scope: 'cycle', cycle: 'c9' }),
       instruction({ id: 'line-none', scope: 'cycle' }),
@@ -154,13 +146,13 @@ test('grouping comes from the reading: global first, cycles in record order, an 
   })
   const groups = groupInstructions(project.cycles, project.instructions)
 
-  assert.deepEqual(groups.map((group) => group.key), ['global', 'cycle:c1', 'cycle:c9', 'cycle:', 'node'], 'a cycle nothing falls into forms no group')
+  assert.deepEqual(groups.map((group) => group.key), ['global', 'cycle:c1', 'cycle:c9', 'cycle:'], 'a cycle nothing falls into forms no group')
   assert.equal(groups.every((group) => !Object.hasOwn(group, 'label')), true, 'group heads no longer get words from the model: the key says which pile')
   assert.deepEqual(groups[3].entries.map((entry) => entry.id), ['line-none'], 'the bound cycle was not written: the ungrouped pile')
   assert.deepEqual(
-    groups[4].entries.map((entry) => entry.id),
-    ['node-1', 'strange', 'no-scope'],
-    'an unrecognized scope reads as in force, and falls in this group',
+    groups[0].entries.map((entry) => entry.id),
+    ['world', 'strange', 'no-scope'],
+    'a spelling that names no level this layer knows reads with the globals — the side the account\'s own reader errs towards',
   )
 })
 

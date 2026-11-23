@@ -9,19 +9,15 @@
  */
 import * as React from 'react'
 import type { InstructionScope } from '../host/gateway.ts'
-import type { CycleReading, InstructionReading, NodeReading, ProjectReading } from '../model/index.ts'
+import type { CycleReading, InstructionReading, ProjectReading } from '../model/index.ts'
 import { dayParts, groupInstructions } from '../model/index.ts'
 import type { Translate } from './locale.ts'
 import { useT } from './locale.ts'
 import { dayLabel, groupWord, timeOf, unit } from './words.ts'
-import { nameWithin, nodeName } from './nodes.ts'
 import { FoldSection, PaneFrame } from './widgets.tsx'
 
 /** With archived entries collapsed, how many non-standing rows a group may show at most. */
 const NOTES_ROWS = 5
-
-/** How many characters the scope picker's cell-bound row can print before the name is cut. */
-const SCOPE_NAME_WIDTH = 12
 
 /**
  * The full layout of the notes pane: the "record one" row plus the ledger.
@@ -34,7 +30,7 @@ export function NotesPane(props: {
   readonly noNodes: boolean
   readonly project: ProjectReading | null
   readonly showArchived: boolean
-  readonly onAdd: (text: string, scope: InstructionScope, cycle: string, node: string) => Promise<boolean>
+  readonly onAdd: (text: string, scope: InstructionScope, cycle: string) => Promise<boolean>
   readonly onArchive: (id: string) => void
   readonly onRevive: (id: string) => void
   readonly onDelete: (instruction: InstructionReading) => void
@@ -46,11 +42,7 @@ export function NotesPane(props: {
   return (
     <PaneFrame id="notes" active={props.active} noNodes={props.noNodes} fill>
       {props.project === null ? null : (
-        <InstructionAdd
-          cycles={cycles}
-          inHand={props.project.columns.running[0] ?? null}
-          onAdd={props.onAdd}
-        />
+        <InstructionAdd cycles={cycles} onAdd={props.onAdd} />
       )}
       <div className="superworker-scroll" id="notes-scroll" role="region" aria-label={t('notes.scroll.aria')} tabIndex={0}>
         {props.project === null ? null : (
@@ -76,29 +68,23 @@ interface ScopeChoice {
   readonly label: string
   readonly scope: InstructionScope
   readonly cycle: string
-  readonly node: string
 }
 
 /**
- * Which entries the scope column lists, and in which order: global, the record's lines, the cell
- * currently in hand.
+ * Which entries the scope column lists, and in which order: global, then the
+ * record's lines.
  *
- * The cell in hand is not a fixed row: the record itself says which one it is, and when none is in
- * hand, the entry is absent.
+ * The sentence has two levels to pick between — the whole project, or one
+ * line — and nothing narrower: what one cell needs is said in that cell's own
+ * spec, so the picker offers no entry for it.
  *
  * The global entry stands first, which is also what the picker falls back to when the previously
- * picked line is gone; its word, and the cell-bound entry's, are asked for here. A line's own id is a
- * record's word and is carried through as it stands.
+ * picked line is gone. A line's own id is a record's word and is carried through as it stands.
  */
-function scopeChoices(t: Translate, cycles: readonly CycleReading[], inHand: NodeReading | null): readonly ScopeChoice[] {
-  const out: ScopeChoice[] = [{ value: GLOBAL_VALUE, label: t('common.global'), scope: 'global', cycle: '', node: '' }]
+function scopeChoices(t: Translate, cycles: readonly CycleReading[]): readonly ScopeChoice[] {
+  const out: ScopeChoice[] = [{ value: GLOBAL_VALUE, label: t('common.global'), scope: 'global', cycle: '' }]
   for (const cycle of cycles) {
-    out.push({ value: `cycle:${cycle.id}`, label: cycle.id, scope: 'cycle', cycle: cycle.id, node: '' })
-  }
-  if (inHand !== null) {
-    /* The width this picker's column can print; how a name is cut is `nodes.ts`'s one answer. */
-    const short = nameWithin(nodeName(inHand), SCOPE_NAME_WIDTH)
-    out.push({ value: `node:${inHand.id}`, label: t('notes.scope.node', { node: short }), scope: 'node', cycle: '', node: inHand.id })
+    out.push({ value: `cycle:${cycle.id}`, label: cycle.id, scope: 'cycle', cycle: cycle.id })
   }
   return out
 }
@@ -111,14 +97,13 @@ function scopeChoices(t: Translate, cycles: readonly CycleReading[], inHand: Nod
  */
 function InstructionAdd(props: {
   readonly cycles: readonly CycleReading[]
-  readonly inHand: NodeReading | null
-  readonly onAdd: (text: string, scope: InstructionScope, cycle: string, node: string) => Promise<boolean>
+  readonly onAdd: (text: string, scope: InstructionScope, cycle: string) => Promise<boolean>
 }): React.ReactElement {
   const t = useT()
   const [text, setText] = React.useState('')
   const [picked, setPicked] = React.useState(GLOBAL_VALUE)
   const box = React.useRef<HTMLInputElement | null>(null)
-  const choices = scopeChoices(t, props.cycles, props.inHand)
+  const choices = scopeChoices(t, props.cycles)
   /* The previously picked entry may be gone from the record; the global entry always stands first. */
   const chosen = choices.find((one) => one.value === picked) ?? choices[0] as ScopeChoice
 
@@ -129,7 +114,7 @@ function InstructionAdd(props: {
       box.current?.focus()
       return
     }
-    void props.onAdd(said, chosen.scope, chosen.cycle, chosen.node).then((accepted) => {
+    void props.onAdd(said, chosen.scope, chosen.cycle).then((accepted) => {
       if (accepted) setText('')
     })
   }
@@ -251,7 +236,7 @@ function InstructionRow(props: {
   const moment = entry.inForce ? entry.saidAt : (entry.closedAt ?? entry.saidAt)
   const mark = entry.inForce ? '' : entry.standing ? t('notes.out-of-scope') : t('notes.archived-mark')
   return (
-    <article className={`superworker-ins${entry.inForce ? '' : ' is-out'}`} title={entry.nodeId ?? ''}>
+    <article className={`superworker-ins${entry.inForce ? '' : ' is-out'}`}>
       <div className="superworker-ins-text">{entry.text ?? ''}</div>
       <div className="superworker-ins-read" title={`${entry.inForce ? t('notes.said-at') : t('notes.said-mark', { mark })} ${timeOf(t, moment, at)}`}>
         {mark.length === 0 ? null : <span className="superworker-ins-mark">{mark}</span>}

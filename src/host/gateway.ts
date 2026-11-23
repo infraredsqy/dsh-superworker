@@ -22,6 +22,7 @@ import {
   instructionRemoveLine,
   instructionReviveLine,
 } from './instruction-lines.ts'
+import { readInstructionScopes } from './instruction-scopes.ts'
 import type { SuperworkerFrame, SuperworkerReading, SuperworkerReadOptions, SuperworkerRecords } from './contract.ts'
 import { openConsultSession, openConductSession, openRouteSession, type SessionOpenOutcome } from './executor.ts'
 import type { RecordOutcome } from './failure.ts'
@@ -117,7 +118,11 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
   readonly ctx: Context
   /** The one channel the panel watches: the reading pushed when the records change, never polled. */
   readonly #pump: RecordsPump
-  /** Where the issue pool's weight table is read from; `undefined` is the folder this package ships. */
+  /**
+   * Where this package's shipped plugin declarations are read from — the pool's weight table and the
+   * instruction account's scope vocabulary both live in that folder; `undefined` is the folder this
+   * package ships.
+   */
   readonly #weightsFolder: PoolWeightsFolder
 
   /**
@@ -125,10 +130,10 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    */
   constructor(ctx: Context, serviceKey = 'superworker') {
     this.ctx = ctx
-    /* Where the weight table is read from: the folder this package ships, unless this host names
-     * another one (`weightsFolderOf` makes that call — this half never spells a `ctx as …` itself).
-     * A host that names `null` runs with no table at all, which is the same reading as a folder with
-     * no issue plugin in it. */
+    /* Where the shipped plugin declarations are read from: the folder this package ships, unless this
+     * host names another one (`weightsFolderOf` makes that call — this half never spells a `ctx as …`
+     * itself). A host that names `null` reads no declaration at all, which is the same reading as a
+     * folder with no such plugins in it: no weights, and no scope vocabulary to filter by. */
     this.#weightsFolder = weightsFolderOf(ctx)
     const registered = new Set<string>()
     for (const method of REMOTE_METHODS) {
@@ -160,7 +165,17 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
   async read(sessionId: SessionId, workspaceRoot: string, options?: SuperworkerReadOptions): Promise<SuperworkerReading> {
     const signal = options?.signal ?? NEVER_ABORT
     const root = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
-    return readReading(this.ctx.workspaceFiles, { sessionId, workspaceRoot: root }, signal, await readPoolWeights(this.#weightsFolder))
+    /* The two plugin declarations the reading leans on — the pool's weight table and the instruction
+     * account's scope vocabulary — are read off the same shipped plugins folder before the records:
+     * neither is one of the four records, and both cost a cached lookup after the first frame. */
+    const scope = { sessionId, workspaceRoot: root }
+    return readReading(
+      this.ctx.workspaceFiles,
+      scope,
+      signal,
+      await readPoolWeights(this.#weightsFolder),
+      await readInstructionScopes(this.#weightsFolder),
+    )
   }
 
   /**
@@ -200,10 +215,12 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
     /* The weight table first, then the records weighed by it: it is not one of the four records, but
      * the frame that carries the issues has to carry the table they are weighed by. The read is a
      * module load off the shipped plugin folder — after the first frame it costs a cached lookup — and
-     * it never touches the workspace's own files. */
+     * it never touches the workspace's own files. The scope vocabulary rides the same folder and the
+     * same terms: the reading it filters is the one this frame carries. */
     const poolWeights = await readPoolWeights(this.#weightsFolder)
+    const instructionScopes = await readInstructionScopes(this.#weightsFolder)
     const [reading, notes, claims, tickets] = await Promise.all([
-      readReading(this.ctx.workspaceFiles, scope, signal, poolWeights),
+      readReading(this.ctx.workspaceFiles, scope, signal, poolWeights, instructionScopes),
       readSessionNotes(this.ctx.workspaceFiles, scope, signal),
       readClaims(this.ctx.workspaceFiles, scope, signal),
       readTickets(this.ctx.workspaceFiles, scope, signal),
@@ -227,10 +244,9 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    * splits method parameters from source, same reason as `read` above.
    * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
    * @param cycle - Which cycle to bind, by cycle id; pass an empty string for other scopes.
-   * @param node - Which node to bind, by node id; pass an empty string for other scopes.
    */
-  async addInstruction(sessionId: SessionId, workspaceRoot: string, text: string, scope: InstructionScope, cycle: string, node: string): Promise<RecordOutcome> {
-    const line = instructionAddLine({ text, scope, cycle, node })
+  async addInstruction(sessionId: SessionId, workspaceRoot: string, text: string, scope: InstructionScope, cycle: string): Promise<RecordOutcome> {
+    const line = instructionAddLine({ text, scope, cycle })
     if (!line.ok) {
       return { ok: false, code: line.code, ...(line.detail.length > 0 ? { detail: line.detail } : {}) }
     }

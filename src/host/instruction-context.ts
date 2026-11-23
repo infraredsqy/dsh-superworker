@@ -27,14 +27,16 @@
  * project root the flag changes nothing, so the text is byte for byte what `instruction list` prints
  * when run there.
  *
- * **The position the word is asked from is the session's own.** A session this host opened for a
- * node carries that node in the record's session notes, so the argv names it (`--node`) and the
- * plugin answers the constraints in force at that node — two nodes held in parallel by one line
- * hand their sessions two different listings, not the first node's for both. When no note names the
- * session (a consult, a hand-opened session, a note this machine does not hold), no `--node` goes
- * in: the fallback is the plugin's own default read, the same answer any caller that cannot name a
- * position gets — the host declines to invent a position it does not know, and the position rule
- * stays the plugin's one judgment, stated here as the chosen fallback.
+ * **The position the word is asked from is the session's own.** An instruction has two levels — the
+ * project and one line — and a session's line is not written on the session anywhere: what the record
+ * does say is which node the session works (its session notes), and a node is held by one line. So the
+ * argv names the node (`--node`), the plugin reads the line the node is in hand on, and the
+ * constraints bound to that line are what the session gets. Two lines running side by side therefore
+ * hand their sessions two different listings, not both lines' sentences to each. When no note names
+ * the session (a consult, a hand-opened session, a note this machine does not hold), no `--node` goes
+ * in: the fallback is the plugin's own default read, which for two active lines is the wide read —
+ * the host declines to invent a position it does not know, and the position rule stays the plugin's
+ * one judgment, stated here as the chosen fallback.
  *
  * **Four silences, and none of them is a box.** No record, a record whose entries cannot reach this
  * step, a record whose entries are all archived, and a host without the plugin each contribute
@@ -84,7 +86,7 @@ export const ASSEMBLE_EVENT = 'system-prompt/assemble'
  * matching a word of the plugin's English. The plugin may reword or localize its listing; the
  * injection judges structure and stays.
  */
-/** The word line the panel's instruction column and the tool answer with: the plugin's default read, at the session's own node when one is named. */
+/** The word line the panel's instruction column and the tool answer with: the plugin's default read, with the cell in hand named so the line it belongs to is pinned. */
 export function instructionListArgv(root: string, node?: string): readonly string[] {
   return node === undefined
     ? ['instruction', 'list', '--project', root]
@@ -175,11 +177,11 @@ async function nodeOfSession(accountRoot: string, sessionId: string): Promise<st
  * {@link instructionTextViewOf}): three in-process reads, and the account standing still between
  * the marks is what admits the bytes in between.
  * @param root - The session's workspace root.
- * @param sessionId - The session asking; when named, the word is asked at the session's own node
- *   (the record's session notes are the one attribution), so a line holding two nodes in parallel
- *   hands each session its own listing. A session no note names gets the plugin's default read —
- *   **the chosen fallback**: no `--node` goes in rather than an invented position, because the
- *   plugin's own default is exactly what any caller that cannot name a position answers, and
+ * @param sessionId - The session asking; when named, the word is asked with the cell that session
+ *   works (the record's session notes are the one attribution), so two lines running side by side
+ *   hand their sessions two different listings. A session no note names gets the plugin's default
+ *   read — **the chosen fallback**: no `--node` goes in rather than an invented position, because
+ *   the plugin's own default is exactly what any caller that cannot name a position answers, and
  *   naming nothing keeps the position rule in the plugin's one place instead of guessing it here.
  */
 export async function instructionContextTextOf(root: string, sessionId?: string): Promise<string> {

@@ -282,7 +282,8 @@ instruction list --project <absolute path to the project root>
 - `--project` takes **the absolute path to the project root**; leaving it out reads the current
   directory.
 - By default it gives the ones in scope where you are (global, plus those bound to the current
-  cycle / node).
+  cycle). Those are the two levels an instruction has: a sentence that governs one node only goes
+  in that node's own spec, never on this list.
 - Adding an entry has exactly one way in, `/sw-instruct` — when the user typed it, that skill
   writes it down; when they did not, something said in passing is not recorded, since it is
   already in this round's context.

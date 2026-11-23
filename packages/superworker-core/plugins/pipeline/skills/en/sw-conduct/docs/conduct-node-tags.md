@@ -3,7 +3,8 @@
 > This is the design source for **node tags and cycle routing**: the vocabulary, the criterion of the filter, and why the filter acts on the picking step alone.
 > The rest of state and advancing is in [`./conduct-state.md`](./conduct-state.md); dispatch and authentication are in
 > [`./conduct-dsh-dispatch.md`](./conduct-dsh-dispatch.md); the visibility of an instruction's scope when two active
-> cycles sit side by side belongs to the dispatch section of the state and advancing contract.
+> cycles sit side by side belongs to the dispatch section of the state and advancing contract (an
+> instruction has two levels only: global and cycle).
 >
 > The rule in one sentence: **a node may carry no tag at all; a cycle's `tags` are that line's pick set (used by every
 > pick in its whole life); the filter acts on "pick the next node" alone.**

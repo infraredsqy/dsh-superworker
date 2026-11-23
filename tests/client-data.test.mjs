@@ -109,12 +109,12 @@ test('the add-instruction seam: the endpoint is addInstruction, text and scope p
   const { calls, namespace } = fakeNamespace({ ok: true, value: { ok: true, text: 'INSTRUCTION i-0003' } })
   const port = createPanelPort({ get: (name) => (name === 'remote.superworker' ? namespace : undefined) })
 
-  const outcome = await port.say('s1', 'C:\\picked', 'read the record first, then act', 'cycle', 'panel-to-plugin', '')
+  const outcome = await port.say('s1', 'C:\\picked', 'read the record first, then act', 'cycle', 'panel-to-plugin')
 
   assert.equal(outcome.text, 'INSTRUCTION i-0003')
   assert.deepEqual(calls, [{
     method: 'addInstruction',
-    values: ['s1', 'C:\\picked', 'read the record first, then act', 'cycle', 'panel-to-plugin', ''],
+    values: ['s1', 'C:\\picked', 'read the record first, then act', 'cycle', 'panel-to-plugin'],
   }])
 })
 
@@ -230,10 +230,10 @@ test('namespace not installed: falls back to the carrier layer, endpoints and ar
   assert.equal(calls[4].endpoint, 'superworker/readSessions')
   assert.deepEqual(calls[4].payload, { args: { sessionId: 's1', workspaceRoot: '' } })
 
-  await port.say('s1', 'C:\\picked', 'read the record first, then act', 'node', '', '3fac279b')
+  await port.say('s1', 'C:\\picked', 'read the record first, then act', 'cycle', 'panel-to-plugin')
   assert.equal(calls[5].endpoint, 'superworker/addInstruction')
   assert.deepEqual(calls[5].payload, {
-    args: { sessionId: 's1', workspaceRoot: 'C:\\picked', text: 'read the record first, then act', scope: 'node', cycle: '', node: '3fac279b' },
+    args: { sessionId: 's1', workspaceRoot: 'C:\\picked', text: 'read the record first, then act', scope: 'cycle', cycle: 'panel-to-plugin' },
   })
 })
 
@@ -246,7 +246,7 @@ test('neither road connected: the seam tells the truth, a read that cannot read 
   await assert.rejects(() => port.readSessions('s1', ''), refusedWith({ code: 'not-connected' }))
   const outcome = await port.write('archive', 's1', '', 'i-1')
   assert.deepEqual(outcome, { ok: false, code: 'no-write-channel' }, 'the write face has no channel, it reports its own code')
-  const said = await port.say('s1', '', 'one sentence', 'global', '', '')
+  const said = await port.say('s1', '', 'one sentence', 'global', '')
   assert.deepEqual(said, { ok: false, code: 'no-write-channel' })
   const refused = await port.setConfig('s1', '', 'test_tier', 'minimal')
   assert.deepEqual(refused, { ok: false, code: 'no-write-channel' })

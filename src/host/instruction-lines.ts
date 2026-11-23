@@ -13,14 +13,14 @@
  *   itself has no verb for (the entry stays on the record and stops being read);
  * - `revive` and `delete` are the account's own two lines.
  *
- * The scope list is this side's copy of the record vocabulary: the panel picks one of three words and
+ * The scope list is this side's copy of the record vocabulary: the panel picks one of two words and
  * the write path forwards it verbatim, so a scope word that reaches a record is the word the user
  * chose, never a pre-judged one. The plugin's `--scope` choices are the authority — the vocabulary
  * is frozen with the record (`types.ts`) — and this list stays in step with it.
  */
 
 /** The scopes an entry can bind to, in the order the command surface lists them. */
-export const INSTRUCTION_SCOPES = ['global', 'cycle', 'node'] as const
+export const INSTRUCTION_SCOPES = ['global', 'cycle'] as const
 
 /** One of the scopes above. */
 export type InstructionScope = (typeof INSTRUCTION_SCOPES)[number]
@@ -41,8 +41,6 @@ export interface InstructionAddLineInput {
   readonly scope: string
   /** Which cycle to bind, when the scope is `cycle`. */
   readonly cycle?: string | undefined
-  /** Which node to bind, when the scope is `node`. */
-  readonly node?: string | undefined
 }
 
 /**
@@ -62,9 +60,6 @@ export function instructionAddLine(input: InstructionAddLineInput): InstructionL
   const argv: string[] = ['instruction', 'add', '--scope', scope]
   if (scope === 'cycle' && typeof input.cycle === 'string' && input.cycle.length > 0) {
     argv.push('--cycle', input.cycle)
-  }
-  if (scope === 'node' && typeof input.node === 'string' && input.node.length > 0) {
-    argv.push('--node', input.node)
   }
   argv.push('--text', text)
   return { ok: true, argv }

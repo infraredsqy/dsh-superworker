@@ -22,12 +22,10 @@ instruction add --text "<用户原话>" --scope global
 
 # cycle：这个 cycle 里的会话看见，cycle 结束就没
 instruction add --text "<用户原话>" --scope cycle --cycle <id>
-
-# node：只管记它的那个节点，节点收尾就没
-instruction add --text "<用户原话>" --scope node --node <id>
 ```
 
-- 两条线并排时 `--cycle <id>` / `--node <id>` 要点名，绑不上工具会拒收
+- 指令只有两级：global 与 cycle。只管某一个节点的话不归清单——写进那个节点自己的 spec。
+- 两条线并排时 `--cycle <id>` 要点名，绑不上工具会拒收
 - 记完就生效，读它的那一趟会自己看见。
 - 「跑多远、何时停」的话（跑够三个就停）不归清单管：那是线自己的策略键，用 `cycle policy <cycle> stop_after_nodes 3` 写进这条线。它只能在线上加一个停点，节点自己的 `mode` 照旧先说话（`checkpoint` 该停还是停）；`off` 取消这个停点。清单里的条目不再参与停机，记在这儿也不会让它停
 - 记完把条目 id 和 scope 念给用户

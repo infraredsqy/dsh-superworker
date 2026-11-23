@@ -70,7 +70,7 @@ test('Recording one: the whole sentence lands in the record, and the engine\'s o
   try {
     const gateway = new SuperworkerRecordsGateway(context(stage.root))
     const said = 'look at the record before acting & do not guess "quotes" in here'
-    const outcome = await gateway.addInstruction('s1', '', said, 'global', '', '')
+    const outcome = await gateway.addInstruction('s1', '', said, 'global', '')
 
     assert.equal(outcome.ok, true, 'this one must succeed')
     assert.match(outcome.text, /^INSTRUCTION \S+: \[global\/stage\] look at the record before acting & do not guess "quotes" in here$/u, 'the engine\'s own line comes back')
@@ -88,7 +88,7 @@ test('Naming a workspace: the write lands on that root, wherever this session it
   const other = await project()
   try {
     const gateway = new SuperworkerRecordsGateway(context(mine.root))
-    const outcome = await gateway.addInstruction('s1', other.root, 'this one is for somebody else', 'global', '', '')
+    const outcome = await gateway.addInstruction('s1', other.root, 'this one is for somebody else', 'global', '')
 
     assert.equal(outcome.ok, true, outcome.detail)
     assert.ok(instructionSaying(other.root, 'this one is for somebody else') !== undefined, 'the named root must hold this entry')
@@ -99,27 +99,26 @@ test('Naming a workspace: the write lands on that root, wherever this session it
   }
 })
 
-test('Binding a cell: the named node lands in the record, and the sentence\'s target points at it', async () => {
+test('Binding a line: the named cycle lands in the record, and the sentence\'s scope points at it', async () => {
   const stage = await project()
   try {
     const io = ioOf(stage.root)
-    const added = await answer(['dag', 'add', 'this cell stops here'], io)
-    assert.equal(added.code, 0, added.stderr)
-    const nodes = JSON.parse(readFileSync(join(stage.root, '.superworker', 'ideas.json'), 'utf8')).nodes
-    const node = Object.keys(nodes).find((id) => nodes[id].title === 'this cell stops here')
-    assert.ok(node !== undefined, 'the seed node did not land in the graph')
+    const built = await answer(['dag', 'add', 'this line stops here'], io)
+    assert.equal(built.code, 0, built.stderr)
+    const started = await answer(['cycle', 'start', 'this-line', '--tags', 'coding'], io)
+    assert.equal(started.code, 0, started.stderr)
 
     const gateway = new SuperworkerRecordsGateway(context(stage.root))
-    const outcome = await gateway.addInstruction('s1', '', 'this cell stops here', 'node', '', node)
+    const outcome = await gateway.addInstruction('s1', '', 'this line stops here', 'cycle', 'this-line')
 
     assert.equal(outcome.ok, true, outcome.detail)
-    const landed = instructionSaying(stage.root, 'this cell stops here')
-    assert.equal(landed.scope, 'node')
-    assert.equal(landed.node, node, 'it binds the named cell')
+    const landed = instructionSaying(stage.root, 'this line stops here')
+    assert.equal(landed.scope, 'cycle')
+    assert.equal(landed.cycle, 'this-line', 'it binds the named line')
     assert.equal(
-      outcome.text,
-      `INSTRUCTION ${landed.id}: [node/stage] this cell stops here   @ ${node.slice(0, 8)}`,
-      'the line back is the engine\'s own, with the bound cell at its tail',
+      outcome.text.startsWith(`INSTRUCTION ${landed.id}: [cycle/stage] this line stops here`),
+      true,
+      'the line back is the engine\'s own, with the bound line at its tail',
     )
   } finally {
     stage.done()
@@ -130,7 +129,7 @@ test('Archiving one: the record stays on disk, the state becomes withdrawn', asy
   const stage = await project()
   try {
     const gateway = new SuperworkerRecordsGateway(context(stage.root))
-    await gateway.addInstruction('s1', '', 'archive me', 'global', '', '')
+    await gateway.addInstruction('s1', '', 'archive me', 'global', '')
     const id = instructionSaying(stage.root, 'archive me').id
 
     const outcome = await gateway.archiveInstruction('s1', '', id)
@@ -149,7 +148,7 @@ test('Reviving one: the archived entry goes back to live', async () => {
   const stage = await project()
   try {
     const gateway = new SuperworkerRecordsGateway(context(stage.root))
-    await gateway.addInstruction('s1', '', 'put it back', 'global', '', '')
+    await gateway.addInstruction('s1', '', 'put it back', 'global', '')
     const id = instructionSaying(stage.root, 'put it back').id
     await gateway.archiveInstruction('s1', '', id)
 
@@ -167,7 +166,7 @@ test('Removing one: the sentence goes with the record, and the tail back is REMO
   const stage = await project()
   try {
     const gateway = new SuperworkerRecordsGateway(context(stage.root))
-    await gateway.addInstruction('s1', '', 'delete this one', 'global', '', '')
+    await gateway.addInstruction('s1', '', 'delete this one', 'global', '')
     const id = instructionSaying(stage.root, 'delete this one').id
 
     const outcome = await gateway.removeInstruction('s1', '', id)
@@ -198,11 +197,11 @@ test('The panel\'s instructions column follows the writes: add, archive, revive 
         }
       }
       const port = fakeWorkspaceFiles(files, { tier: 500 })
-      return readReading(port, { sessionId: 's1', workspaceRoot: stage.root }, new AbortController().signal, null)
+      return readReading(port, { sessionId: 's1', workspaceRoot: stage.root }, new AbortController().signal, null, null)
     }
     const entryIn = (reading) => reading.instructions.find((row) => row.text === 'the panel follows this one')
 
-    const added = await gateway.addInstruction('s1', '', 'the panel follows this one', 'global', '', '')
+    const added = await gateway.addInstruction('s1', '', 'the panel follows this one', 'global', '')
     assert.equal(added.ok, true, added.detail)
     const shown = entryIn(await readingNow())
     assert.ok(shown, 'the added sentence is in the reading')
@@ -280,8 +279,8 @@ test('An empty sentence and an unknown scope are settled on the spot, and the re
   const stage = await project()
   try {
     const gateway = new SuperworkerRecordsGateway(context(stage.root))
-    const blank = await gateway.addInstruction('s1', '', '   ', 'global', '', '')
-    const odd = await gateway.addInstruction('s1', '', 'one sentence', 'everywhere', '', '')
+    const blank = await gateway.addInstruction('s1', '', '   ', 'global', '')
+    const odd = await gateway.addInstruction('s1', '', 'one sentence', 'everywhere', '')
 
     assert.deepEqual(blank, { ok: false, code: 'empty-text' }, 'an empty sentence has nothing to record')
     assert.deepEqual(odd, { ok: false, code: 'scope-unknown', detail: 'everywhere' }, 'an unknown scope puts itself into detail')

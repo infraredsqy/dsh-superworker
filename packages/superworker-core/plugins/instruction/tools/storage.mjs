@@ -59,7 +59,17 @@ export function instructionsLockPath(root) {
  * The scopes an entry can bind to, in the order the command surface lists them — the one home of this
  * vocabulary (the `--scope` choices read it, and so does `list`'s account view).
  */
-export const VALID_SCOPES = Object.freeze(['global', 'cycle', 'node'])
+export const VALID_SCOPES = Object.freeze(['global', 'cycle'])
+
+/**
+ * The scope words this account no longer issues. A retired word is not an unknown one: an unknown
+ * word reads as `global` (erring towards visible), while a row carrying a retired word is skipped by
+ * every read — the level it named was taken out, and what a node needs is said in that node's own
+ * spec, not here. The row itself stays on the account byte for byte: `rm` still takes it off by id,
+ * and an issued number is never issued again. The panel's host half reads this same constant through
+ * the seam that loads this file, so the vocabulary has one home either way.
+ */
+export const RETIRED_SCOPES = Object.freeze(['node'])
 
 /** What an entry hangs on: a process stage, or the line-closing boundary. */
 export const VALID_TARGETS = Object.freeze(['stage', 'boundary'])
@@ -107,30 +117,12 @@ export async function writeInstructions(root, data, base) {
   await base.writeJson(instructionsPath(root), data)
 }
 
-// ═══ The other two records this layer reads (never writes) ═══════════════════
+// ═══ The one other record this layer reads (never writes) ═══════════════════
 
 /** The line account: `state.json`'s `cycles` table, read as records. */
 export async function readCycles(root, base) {
   const data = await readJsonRecord(join(recordDir(root), 'state.json'), 'state.json', base)
   return Array.isArray(data.cycles) ? data.cycles.filter(isRecord) : []
-}
-
-/**
- * The graph this account is bound against: `ideas.json`'s `nodes` table, taken from the engine's one
- * reading of it (`base.readGraph`, which is `src/graph.ts`'s `readNodeTable`) rather than read again
- * here. What a bad document answers (`parse_failure` when the top level is not a JSON object), what a
- * missing or non-table `nodes` reads as (an empty table), and which cells count as nodes (only node
- * records) are therefore the engine's answers, not a second set kept beside them — a cell that cannot
- * be a node record never becomes a node this account can bind to.
- *
- * When the context already carries the graph snapshot the host read for this round (`ctx.dag`, filled
- * by `conductor.pluginContext` through `readGraphSnapshot`), that snapshot is the table — it is the
- * same reading, taken once. Only a caller that hands in no snapshot (a test running the word with a
- * bare `{ root, base }` context) asks the base for the same reading again.
- */
-export async function readNodes(ctx) {
-  if (ctx.dag !== undefined && ctx.dag !== null && isRecord(ctx.dag.nodes)) return ctx.dag.nodes
-  return (await ctx.base.readGraph(ctx.root)).nodes
 }
 
 function isRecord(value) {

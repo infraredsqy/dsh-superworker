@@ -123,11 +123,10 @@ export function strandedTitle(t: Translate, cycleId: string, nodeId: string): st
  *
  * Spelled from the group's own key rather than carried in the reading: a group bound to a cycle is
  * headed by that cycle's id, which is a record's own word and reads the same in every language,
- * while the two unnamed groups and the cell-bound one have words of their own.
+ * while the globals and the unnamed bucket have words of their own.
  */
 export function groupWord(t: Translate, group: InstructionGroupReading): string {
   if (group.key === 'global') return t('common.global')
-  if (group.key === 'node') return t('scope.node')
   if (group.key.startsWith('cycle:')) {
     const id = group.key.slice('cycle:'.length)
     /* A cycle-bound entry whose cycle the records do not name: the same bucket as a session that

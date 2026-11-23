@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { isRecognizableLegacyRecord } from 'superworker-core'
 import { RECORD_DIR, RECORD_SOURCES } from './contract.ts'
+import { isRetiredScope, type InstructionScopes } from './instruction-scopes.ts'
 import type { PoolWeights } from '../model/records.ts'
 import type {
   SuperworkerCycle,
@@ -248,12 +249,17 @@ export async function readWholeFile(
  * @param poolWeights - The issue pool's weight table, read by the caller off the issue plugin's own
  * declaration (`pool-weights.ts`). Required on purpose: a default would let a caller that forgot the
  * table quietly read as "no table was obtained". `null` is how a caller says that itself.
+ * @param instructionScopes - The instruction account's scope vocabulary, read by the caller off the
+ * instruction plugin's own storage layer (`instruction-scopes.ts`), required on the same terms as the
+ * weight table. A row whose scope word the vocabulary retires stops here — the one door records
+ * enter the reading — so the model layer never learns a scope word; `null` filters nothing.
  */
 export async function readReading(
   port: WorkspaceFilesPort,
   scope: SuperworkerScope,
   signal: AbortSignal,
   poolWeights: PoolWeights | null,
+  instructionScopes: InstructionScopes | null,
 ): Promise<SuperworkerReading> {
   const recording = new Map<string, readonly WorkspaceDirectoryEntry[] | undefined>()
   const listDir = async (dir: string): Promise<readonly WorkspaceDirectoryEntry[] | undefined> => {
@@ -327,7 +333,11 @@ export async function readReading(
       if (collection.slot === 'nodes') for (const [id, node] of Object.entries(collection.value)) nodes[id] = node
       else if (collection.slot === 'issues') for (const [id, issue] of Object.entries(collection.value)) issues[id] = issue
       else if (collection.slot === 'cycles') for (const cycle of collection.value) cycles.push(cycle)
-      else for (const instruction of collection.value) instructions.push(instruction)
+      /* The instruction rows pass the one door where a retired scope word is judged: the row stays on
+       * the workspace's disk byte for byte, but the reading the panel draws carries no trace of it. */
+      else for (const instruction of collection.value) {
+        if (!isRetiredScope(instructionScopes, instruction.scope)) instructions.push(instruction)
+      }
       sources[key] = 'read'
     } catch (error) {
       // Cancellation is rethrown: the caller did not ask for a half-read reading.

@@ -107,7 +107,6 @@ export const en: Readonly<Record<WordKey, string>> = {
 
   /* ── The instruction ledger ───────────────────────────────────────────────────────────────── */
   'notes.scroll.aria': 'User instructions',
-  'notes.scope.node': 'This cell · {node}',
   'notes.scope.aria': 'What this sentence governs',
   'notes.text.placeholder': 'Verbatim',
   'notes.text.aria': 'Verbatim',
@@ -195,9 +194,6 @@ export const en: Readonly<Record<WordKey, string>> = {
   'span.minutes-seconds': '{minutes}m {seconds}s',
   'span.minutes': '{minutes}m',
   'span.seconds': '{seconds}s',
-
-  /* ── The scope of an instruction ──────────────────────────────────────────────────────────── */
-  'scope.node': 'This cell',
 
   /* ── The overview ─────────────────────────────────────────────────────────────────────────── */
   /* The stage's empty state: what the record says when no window can be drawn. Three situations,

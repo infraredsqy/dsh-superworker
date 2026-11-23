@@ -3,7 +3,7 @@
 > 这份是**节点 tag 与 cycle 分流**的设计出处：词表、过滤的判据、为什么过滤只落在挑人那一步。
 > 状态与推进的其余部分见 [`./conduct-state.md`](./conduct-state.md)；派发与鉴权见
 > [`./conduct-dsh-dispatch.md`](./conduct-dsh-dispatch.md)；两条 active cycle 并排时指令作用域的可见性，
-> 归状态与推进契约里讲派发的那一节。
+> 归状态与推进契约里讲派发的那一节（指令只有 global 与 cycle 两级）。
 >
 > 规则一句话：**节点可以没有 tag；cycle 的 `tags` 是这条线的选材范围（它一生里每一次挑选都用这
 > 一份）；过滤只作用在「挑下一个节点」这一步。**

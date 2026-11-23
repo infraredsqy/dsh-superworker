@@ -721,8 +721,8 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
             noNodes={noNodes}
             project={project}
             showArchived={archived}
-            onAdd={(text, scope, cycle, node) => (
-              onWrite(() => port.say(sessionId ?? '', workspaceRoot, text, scope, cycle, node))
+            onAdd={(text, scope, cycle) => (
+              onWrite(() => port.say(sessionId ?? '', workspaceRoot, text, scope, cycle))
             )}
             onArchive={(id) => { void onWrite(() => port.write('archive', sessionId ?? '', workspaceRoot, id)) }}
             onRevive={(id) => { void onWrite(() => port.write('revive', sessionId ?? '', workspaceRoot, id)) }}

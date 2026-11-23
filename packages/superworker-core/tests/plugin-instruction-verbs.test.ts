@@ -7,8 +7,6 @@ import { main as instruction } from '../plugins/instruction/tools/commands.mjs';
 import { UsageError } from '../src/plugins/verb-surface';
 import { pluginBase, type PluginBase } from '../src/plugins/base';
 import { atomicWriteJson, jsonBytes, jsonOptionsForRecord } from '../src/jsonio';
-import { readNodeTable } from '../src/graph';
-import { recordPaths } from '../src/paths';
 import { open } from '../src/open';
 import { projectRootOf } from '../src/words/out';
 import { git, makeRepo } from './helpers/git-runner';
@@ -139,23 +137,7 @@ async function plantInstructions(rows: unknown[], at: string = root): Promise<vo
 
 /** Plant the whole ideas.json document as raw text: a hand edit or a hand merge is how a bad shape gets here. */
 function plantGraph(body: string): void {
-  plantGraphInto(root, body);
-}
-
-/** The same, into a named project root. */
-function plantGraphInto(at: string, body: string): void {
-  writeFileSync(join(at, '.superworker', 'ideas.json'), body, 'utf8');
-}
-
-/** The code of a refusal (the `RecordError` code), or a marker naming what came back instead of a refusal. */
-async function refusalCodeOf(call: () => Promise<unknown>): Promise<string> {
-  try {
-    await call();
-    return 'ANSWERED';
-  } catch (error) {
-    const code = (error as { code?: unknown }).code;
-    return typeof code === 'string' ? code : `(no code: ${String((error as Error).message)})`;
-  }
+  writeFileSync(join(root, '.superworker', 'ideas.json'), body, 'utf8');
 }
 
 const add = (text: string, rest: string[] = []): Promise<string> => out(['add', '--scope', 'global', ...rest, '--text', text]);
@@ -212,56 +194,31 @@ describe('add: registering one instruction', () => {
     await superworker.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     await superworker.ledger.cycles.hold('main', node.id);
     await out(['add', '--scope', 'cycle', '--text', 'line constraint']);
-    await out(['add', '--scope', 'node', '--text', 'node constraint']);
-    const [byCycle, byNode] = entries();
+    await out(['add', '--scope', 'global', '--text', 'global constraint']);
+    const [byCycle, byGlobal] = entries();
     expect(byCycle!.cycle).toBe('main');
     expect(byCycle!.node).toBe(node.id);
-    expect(byNode!.cycle).toBe('main');
-    expect(byNode!.node).toBe(node.id);
+    expect(byGlobal!.cycle).toBe('main');
+    expect(byGlobal!.node).toBe(node.id);
   });
 
-  it('a named cycle that is not in the book, a node that is not on the graph: refused on the spot', async () => {
+  it('a named cycle that is not in the book is refused on the spot; add no longer takes --node', async () => {
     await superworker.ledger.cycles.create({ id: 'main', tags: ['coding'] });
-    await superworker.ledger.dag.add({ title: 'A' }); // a non-empty graph is what a named node is checked against
     expect(await err(['add', '--scope', 'cycle', '--cycle', 'ghost', '--text', 'x'])).toContain(
       'cycle "ghost" is not in state.json',
     );
-    expect(await err(['add', '--scope', 'node', '--node', 'no-such-node', '--text', 'x'])).toContain(
-      'node "no-such-node" is not in the DAG',
-    );
+    // The node level is retired, so `add` carries no `--node` at all: the line is refused as a
+    // usage error before anything is read. `list` keeps its own `--node` (the reader's position).
+    expect(await err(['add', '--node', 'some-node', '--text', 'x'])).toContain('unrecognized argument: --node');
     // Both refusals happen on the spot: not one byte ever landed in the account.
     expect(existsSync(join(root, '.superworker', 'instructions.json'))).toBe(false);
   });
 
-  it('a name only a prototype carries is refused exactly like a name the graph never had', async () => {
-    // Membership is ownership (`Object.hasOwn`, the question `graph.ownsKey` asks), not a spelling:
-    // a bare `in` reads `toString` / `constructor` off the prototype and binds an entry nobody can
-    // pin down — and the unbound entry would then be read as visible to everyone.
-    await superworker.ledger.dag.add({ title: 'A' }); // a non-empty graph, so the name is really checked
-    for (const name of ['toString', 'constructor', '__proto__']) {
-      const refusal = await err(['add', '--scope', 'node', '--node', name, '--text', 'x']);
-      expect(refusal, name).toContain(`node ${JSON.stringify(name)} is not in the DAG`);
-    }
-    // The same sentence `--node nope` gets, and not one byte of the account landed.
-    expect(await err(['add', '--scope', 'node', '--node', 'nope', '--text', 'x'])).toContain(
-      'node "nope" is not in the DAG',
-    );
-    expect(existsSync(join(root, '.superworker', 'instructions.json'))).toBe(false);
-  });
-
-  it('an empty graph lets a named node through: no validation, the node lands as given', async () => {
-    // The graph is not up yet (not one node): there is no graph to check against, so a named node is
-    // written as given. The cycle side has no such pass-through branch.
-    expect(await err(['add', '--scope', 'cycle', '--cycle', 'ghost', '--text', 'x'])).toContain(
-      'cycle "ghost" is not in state.json',
-    );
-    await out(['add', '--scope', 'node', '--node', 'not-in-dag', '--text', 'registration before the graph exists']);
-    expect(entries()[0]!.node).toBe('not-in-dag');
-  });
-
-  it('a cycle / node scope with nothing to bind to: refused, and not one byte lands', async () => {
+  it('a cycle scope with nothing to bind to is refused, and not one byte lands; the retired scope word is a closed-set refusal', async () => {
     expect(await err(['add', '--scope', 'cycle', '--text', 'x'])).toContain('needs a line to bind to');
-    expect(await err(['add', '--scope', 'node', '--text', 'x'])).toContain('needs a node to bind to');
+    expect(existsSync(join(root, '.superworker', 'instructions.json'))).toBe(false);
+    // `node` is a retired word, and the refusal is the closed set's own: code 2, nothing read.
+    expect(await err(['add', '--scope', 'node', '--text', 'x'])).toContain('invalid scope "node"');
     expect(existsSync(join(root, '.superworker', 'instructions.json'))).toBe(false);
   });
 
@@ -289,56 +246,17 @@ describe('add: registering one instruction', () => {
 });
 
 /**
- * The graph this account binds against is read the engine's way, not by a second reader beside it:
- * `readNodes` takes the table from `ctx.base.readGraph` (the engine's one reading of `ideas.json`),
- * so what a bad document answers and which cells count as nodes are that reading's answers.
+ * The node level is retired, and this folder no longer reads the graph at all: `add` binds a line
+ * (state.json) and `list` pins a position by the line's own hand. A broken `ideas.json` therefore
+ * stops neither the read nor the write — the account's answers rest on its own record and the line
+ * account alone.
  */
-describe('the graph this account binds against: the engine\u2019s one reading, no second tolerance', () => {
-  it('a cell that is not a node record is no node to bind to, and the rest of the table still binds', async () => {
-    plantGraph(JSON.stringify({
-      nodes: {
-        real: { title: 'the real one', status: 'todo', mode: 'auto', dependencies: [] },
-        worded: 'not a node',
-        nulled: null,
-        listed: ['not', 'a', 'node'],
-      },
-    }));
-    // A real node binds.
-    await out(['add', '--scope', 'node', '--node', 'real', '--text', 'this one is a node']);
-    expect(entries()[0]!.node).toBe('real');
-    // A cell that cannot be a node record is dropped by the one reading, so it is not a name to bind to.
-    for (const name of ['worded', 'nulled', 'listed']) {
-      expect(await err(['add', '--scope', 'node', '--node', name, '--text', 'x']), name).toContain(
-        `node ${JSON.stringify(name)} is not in the DAG`,
-      );
-    }
-    // Only the real one landed.
-    expect(entries().map((row) => row.node)).toEqual(['real']);
-  });
-
-  it.each(['[]', 'null', '123', '"x"'])(
-    'a document whose top level is not an object (%s) answers the engine\u2019s own code',
-    async (body) => {
-      plantGraph(body);
-      // The engine's reading answers `parse_failure` for this document…
-      expect(await refusalCodeOf(() => readNodeTable(recordPaths(root)))).toBe('parse_failure');
-      // …and the word answers the same code through the same reading, rather than reading an empty
-      // graph out of a document that says nothing of the kind.
-      expect(await refusalCodeOf(() => out(['add', '--scope', 'node', '--node', 'real', '--text', 'x']))).toBe(
-        'parse_failure',
-      );
-      expect(await refusalCodeOf(() => out(['list', '--json']))).toBe('parse_failure');
-      // The account stayed empty: a refused read writes nothing.
-      expect(existsSync(join(root, '.superworker', 'instructions.json'))).toBe(false);
-    },
-  );
-
-  it('a missing or non-table nodes cell reads as an empty graph, the way every engine verb reads it', async () => {
-    plantGraph('{"nodes": [{"title": "a"}]}');
-    expect((await readNodeTable(recordPaths(root))).nodes).toEqual({});
-    // An empty graph is the pass-through branch: the name is written as given (the graph is not up).
-    await out(['add', '--scope', 'node', '--node', 'not-in-dag', '--text', 'registration before the graph exists']);
-    expect(entries()[0]!.node).toBe('not-in-dag');
+describe('the account no longer reads the graph', () => {
+  it('a broken ideas.json stops neither the listing nor a write', async () => {
+    plantGraph('123');
+    expect(await out(['list', '--json'])).toBe('[]');
+    await add('written beside a broken graph');
+    expect(entries()[0]!.text).toBe('written beside a broken graph');
   });
 });
 
@@ -346,8 +264,11 @@ describe('the visibility matrix: scope x binding state x position', () => {
   /**
    * A fixed scene: the first node is todo and held by the main line, the second is completed and held
    * by that line, the third is todo and held by a line that left service; two globals (stage /
-   * boundary), one on the main line, one on the line out of service, three node bindings, one
-   * archived, one taken away (a tombstone).
+   * boundary), one on the main line, one on the line out of service, two rows an older account wrote
+   * with the retired node scope, one archived, one taken away (a tombstone). The retired rows are
+   * planted by hand — the verb no longer issues that scope word, so an old record is the only way
+   * they exist — and they sit first, so every id the verb issues after them proves a retired row
+   * still counts as an issued number.
    */
   async function plantScenario(): Promise<{ ids: Record<string, string>; nodeA: string; nodeB: string }> {
     const nodeA = (await superworker.ledger.dag.add({ title: 'A' })).id;
@@ -361,22 +282,27 @@ describe('the visibility matrix: scope x binding state x position', () => {
     await superworker.ledger.cycles.hold('two', nodeC);
     await superworker.ledger.cycles.setStatus('two', 'inactive');
 
+    const retired = (id: string, node: string, text: string): Record<string, unknown> => ({
+      id, text, scope: 'node', target: 'stage', state: 'live', cycle: null, node,
+      said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null,
+    });
+    await plantInstructions([
+      retired('i-0001', nodeA, 'retired constraint on node A'),
+      retired('i-0002', nodeB, 'retired constraint on node B'),
+    ]);
+
     const ids: Record<string, string> = {};
     await add('global constraint');
     await add('global constraint on the wrap-up edge', ['--target', 'boundary']);
     await out(['add', '--scope', 'cycle', '--cycle', 'one', '--text', 'constraint of this line']);
     await out(['add', '--scope', 'cycle', '--cycle', 'two', '--text', 'constraint of the out-of-service line']);
-    await out(['add', '--scope', 'node', '--node', nodeA, '--text', 'constraint on node A']);
-    await out(['add', '--scope', 'node', '--node', nodeB, '--text', 'constraint on node B']);
-    await out(['add', '--scope', 'node', '--node', nodeC, '--text', 'constraint on node C']);
     const planted = entries();
-    ids.g = planted[0]!.id;
-    ids.bt = planted[1]!.id;
-    ids.k1 = planted[2]!.id;
-    ids.k2 = planted[3]!.id;
-    ids.na = planted[4]!.id;
-    ids.nb = planted[5]!.id;
-    ids.nc = planted[6]!.id;
+    ids.na = planted[0]!.id;
+    ids.nb = planted[1]!.id;
+    ids.g = planted[2]!.id;
+    ids.bt = planted[3]!.id;
+    ids.k1 = planted[4]!.id;
+    ids.k2 = planted[5]!.id;
     await add('archived constraint');
     ids.nw = entries()[entries().length - 1]!.id;
     await out(['resolve', ids.nw!, '--state', 'withdrawn']);
@@ -401,14 +327,15 @@ describe('the visibility matrix: scope x binding state x position', () => {
     { key: 'k2', scope: 'cycle', binding: 'out of service', target: 'stage', spot: 'default', seen: false },
     { key: 'k2', scope: 'cycle', binding: 'out of service', target: 'stage', spot: 'on node B', seen: false },
     { key: 'k2', scope: 'cycle', binding: 'out of service', target: 'stage', spot: 'after the line leaves service', seen: false },
-    { key: 'na', scope: 'node', binding: 'unfinished (held)', target: 'stage', spot: 'default', seen: true },
-    { key: 'na', scope: 'node', binding: 'unfinished', target: 'stage', spot: 'on node B', seen: false },
-    { key: 'na', scope: 'node', binding: 'unfinished', target: 'stage', spot: 'after the line leaves service', seen: true },
-    { key: 'nb', scope: 'node', binding: 'done', target: 'stage', spot: 'default', seen: false },
-    { key: 'nb', scope: 'node', binding: 'done (the node itself)', target: 'stage', spot: 'on node B', seen: true },
-    { key: 'nb', scope: 'node', binding: 'done', target: 'stage', spot: 'after the line leaves service', seen: false },
-    { key: 'nc', scope: 'node', binding: 'out of service, unfinished', target: 'stage', spot: 'on node B', seen: false },
-    { key: 'nc', scope: 'node', binding: 'out of service, unfinished', target: 'stage', spot: 'after the line leaves service', seen: true },
+    // The retired rows: read by no view, from no spot — not even the full book.
+    { key: 'na', scope: 'node (retired)', binding: 'unfinished (held)', target: 'stage', spot: 'default', seen: false },
+    { key: 'na', scope: 'node (retired)', binding: 'unfinished (held)', target: 'stage', spot: 'on node B', seen: false },
+    { key: 'na', scope: 'node (retired)', binding: 'unfinished (held)', target: 'stage', spot: 'after the line leaves service', seen: false },
+    { key: 'na', scope: 'node (retired)', binding: 'unfinished (held)', target: 'stage', spot: 'full book', seen: false },
+    { key: 'nb', scope: 'node (retired)', binding: 'done', target: 'stage', spot: 'default', seen: false },
+    { key: 'nb', scope: 'node (retired)', binding: 'done (the node itself)', target: 'stage', spot: 'on node B', seen: false },
+    { key: 'nb', scope: 'node (retired)', binding: 'done', target: 'stage', spot: 'after the line leaves service', seen: false },
+    { key: 'nb', scope: 'node (retired)', binding: 'done', target: 'stage', spot: 'full book', seen: false },
     { key: 'nw', scope: 'global', binding: 'archived', target: 'stage', spot: 'default', seen: false },
     { key: 'nw', scope: 'global', binding: 'archived', target: 'stage', spot: 'on node B', seen: false },
     { key: 'nw', scope: 'global', binding: 'archived', target: 'stage', spot: 'after the line leaves service', seen: false },
@@ -433,6 +360,27 @@ describe('the visibility matrix: scope x binding state x position', () => {
     } else if (spot === 'full book') rows = await idsOf(['list', '--all', '--json']);
     else rows = await idsOf(['list', '--json']);
     expect(rows.includes(ids[key]!)).toBe(seen);
+  });
+
+  it('a retired row still counts as an issued number: the first add after it takes the next id', async () => {
+    await plantScenario();
+    // The two planted rows are i-0001 / i-0002; the first verb-issued entry after them is i-0003.
+    expect(entries().map((row) => row.id).slice(0, 3)).toEqual(['i-0001', 'i-0002', 'i-0003']);
+  });
+
+  it('the account views say the retired rows out loud; the reader view and the machine view say nothing', async () => {
+    await plantScenario();
+    // The reader's view (what the host injects, byte for byte) carries no mention.
+    const reader = await out(['list']);
+    expect(reader).not.toContain('retired');
+    // The machine's view is a plain array of the readable rows.
+    expect(await idsOf(['list', '--json', '--all'])).not.toContain('i-0001');
+    // The account view closes with the one line that says they are there.
+    const account = await out(['list', '--all']);
+    expect(account).toContain('(2 more entries on this account carry a retired scope word');
+    // And the account verbs still reach them by id: rm takes a retired row off.
+    expect(await out(['rm', 'i-0001'])).toContain('REMOVED i-0001');
+    expect((await out(['list', '--all']))).not.toContain('(2 more entries');
   });
 
   it('a tombstone is hidden but kept: the body is gone from disk while removed keeps the id and the stamp', async () => {
@@ -549,7 +497,7 @@ describe('list: position, order and the two views', () => {
     await plantInstructions([
       { id: 'i-0001', text: 'old global', scope: 'global', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null },
       { id: 'i-0002', text: 'on the line', scope: 'cycle', target: 'stage', state: 'live', cycle: 'c1', node: 'node-a', said_by: 'user', at: '2026-01-02T00:00:00Z', resolved_at: null, note: null },
-      { id: 'i-0003', text: 'on the node', scope: 'node', target: 'stage', state: 'live', cycle: null, node: 'node-b', said_by: 'user', at: '2026-01-03T00:00:00Z', resolved_at: null, note: null },
+      { id: 'i-0003', text: 'on the line, said later', scope: 'cycle', target: 'stage', state: 'live', cycle: 'c1', node: null, said_by: 'user', at: '2026-01-03T00:00:00Z', resolved_at: null, note: null },
       { id: 'i-0004', text: 'new global', scope: 'global', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-04T00:00:00Z', resolved_at: null, note: null },
       { id: 'i-0005', text: 'archived global', scope: 'global', target: 'stage', state: 'withdrawn', cycle: null, node: null, said_by: 'user', at: '2026-01-05T00:00:00Z', resolved_at: '2026-01-05T01:00:00Z', note: null },
     ]);
@@ -593,23 +541,24 @@ describe('list: position, order and the two views', () => {
     expect(await idsOf(['list', '--json'])).toEqual(expect.arrayContaining(['i-0001', 'i-0002']));
   });
 
-  it('an old record with no binding is visible everywhere; an unrecognized scope word reads as global', async () => {
+  it('an old record with no binding is visible everywhere; an unrecognized scope word reads as global; a retired word reads nowhere', async () => {
     await superworker.ledger.cycles.create({ id: 'c1', tags: ['coding'] });
     await superworker.ledger.cycles.hold('c1', 'node-a');
     await plantInstructions([
       { id: 'i-0001', text: 'cycle scope with nothing bound', scope: 'cycle', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-01T00:00:00Z', resolved_at: null, note: null },
-      { id: 'i-0002', text: 'node scope with nothing bound', scope: 'node', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-02T00:00:00Z', resolved_at: null, note: null },
+      { id: 'i-0002', text: 'the retired level, written by an older account', scope: 'node', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-02T00:00:00Z', resolved_at: null, note: null },
       { id: 'i-0003', text: 'old-word scope', scope: 'once', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-03T00:00:00Z', resolved_at: null, note: null },
     ]);
-    // node-a is in hand and c1 is in service: all three are readable (an empty binding measures
-    // nothing; `once` reads as global), in the order the file holds them.
-    expect(await idsOf(['list', '--json'])).toEqual(['i-0001', 'i-0002', 'i-0003']);
+    // node-a is in hand and c1 is in service: the unbound cycle row and the foreign word are
+    // readable (an empty binding measures nothing; `once` reads as global), in the order the file
+    // holds them. The retired row is read by nobody, binding or not.
+    expect(await idsOf(['list', '--json'])).toEqual(['i-0001', 'i-0003']);
     // The scope filter works on the scope as read: `once` falls into the global group.
     expect(await idsOf(['list', '--scope', 'global', '--json'])).toEqual(['i-0003']);
     expect(await idsOf(['list', '--scope', 'cycle', '--json'])).toEqual(['i-0001']);
     // The live account view keeps the raw rows, and drops what is not live.
     const live = JSON.parse(await out(['list', '--live', '--json'])) as Array<Record<string, unknown>>;
-    expect(live.map((row) => row.id)).toEqual(['i-0001', 'i-0002', 'i-0003']);
+    expect(live.map((row) => row.id)).toEqual(['i-0001', 'i-0003']);
     expect('state' in live[0]!).toBe(true);
   });
 
@@ -629,7 +578,6 @@ describe('list: position, order and the two views', () => {
     await superworker.ledger.cycles.hold('one', nodeA);
     await add('global constraint');
     await out(['add', '--scope', 'cycle', '--cycle', 'one', '--text', 'line constraint']);
-    await out(['add', '--scope', 'node', '--node', nodeA, '--text', 'constraint on A']);
     await out(['resolve', 'i-0001', '--state', 'withdrawn']);
 
     const file = join(root, '.superworker', 'instructions.json');
@@ -639,11 +587,10 @@ describe('list: position, order and the two views', () => {
     const fullBook = await idsOf(['list', '--all', '--json']);
     // Scope is worked out on every read and never written: after three readings the bytes are as they were.
     expect(readFileSync(file, 'utf8')).toBe(before);
-    expect(defaultView.sort()).toEqual(['i-0002', 'i-0003']);
-    // With one line in service, naming the second node gives the spot (one, that node), so the entry
-    // bound to the first node is not read.
+    expect(defaultView).toEqual(['i-0002']);
+    // Naming the second node still pins the same line (one, that node), so the line constraint reads.
     expect(namedNodeB).toEqual(['i-0002']);
-    expect(fullBook).toEqual(['i-0001', 'i-0002', 'i-0003']);
+    expect(fullBook).toEqual(['i-0001', 'i-0002']);
   });
 
   it('a foreign state word reads as archived: absent from the default view, still in the full book, never written back', async () => {
@@ -875,45 +822,6 @@ describe('list: position, order and the two views', () => {
         { root, base: watching, projectRootOf },
       );
       expect(locksTaken).toEqual([join(root, '.superworker', 'meta', 'instructions.lock')]);
-    } finally {
-      rmSync(other, { recursive: true, force: true });
-    }
-  });
-
-  it('a line naming another project binds against that project\u2019s graph, never the caller\u2019s snapshot', async () => {
-    // The word takes the graph from the context the host handed in (`ctx.dag`). A line that names
-    // another project moves the root, so the caller's snapshot is the wrong graph for it: the entry
-    // must be judged against the named project's nodes. Both graphs carry the same node id here, with
-    // opposite statuses, so a read against the caller's snapshot answers the opposite of the named
-    // project's own table.
-    const other = mkdtempSync(join(tmpdir(), 'superworker-ins-graph-other-'));
-    const node = (status: string): string =>
-      JSON.stringify({ nodes: { shared: { title: 'the shared node', status, mode: 'auto', dependencies: [] } } });
-    const row = (id: string, text: string, at: string): Record<string, unknown> => ({
-      id, text, scope: 'node', target: 'stage', state: 'live', cycle: null, node: 'shared',
-      said_by: 'user', at, resolved_at: null, note: null,
-    });
-    try {
-      await open(other).ledger.init();
-      // The same node id on both graphs: still open here, already delivered there.
-      plantGraphInto(root, node('todo'));
-      plantGraphInto(other, node('completed'));
-      await plantInstructions([row('i-0001', 'a node-scoped entry', '2026-01-01T00:00:00Z')]);
-      await plantInstructions([row('i-0001', 'a node-scoped entry', '2026-01-01T00:00:00Z')], other);
-      // A snapshot of *this* project's graph, exactly what a real context carries.
-      const callerSnapshot = { nodes: (await readNodeTable(recordPaths(root))).nodes };
-      const line = (argv: string[]): Promise<unknown> =>
-        (instruction as (argv: string[], ctx: unknown) => Promise<unknown>)(argv, {
-          root,
-          base: pluginBase(),
-          projectRootOf,
-          dag: callerSnapshot,
-        });
-      // Judged by the other project's graph the node is completed there, so its entry is not read.
-      expect(await line(['list', '--json', '--project', other])).toBe('[]');
-      // Judged by this project's own graph (no `--project`) the node is still open, so it is read — the
-      // caller's snapshot is used exactly where it belongs.
-      expect(JSON.parse(String(await line(['list', '--json']))).map((cell: { id: string }) => cell.id)).toEqual(['i-0001']);
     } finally {
       rmSync(other, { recursive: true, force: true });
     }

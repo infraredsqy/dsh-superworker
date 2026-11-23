@@ -62,7 +62,7 @@ export interface PanelPort {
   /** The most recent session opened for each cell in the named workspace: where card clicks go. */
   readSessions(sessionId: string, workspaceRoot: string): Promise<SuperworkerSessionsReading>
   /** Record an instruction: hand the user's verbatim text and scope to the tool. */
-  say(sessionId: string, workspaceRoot: string, text: string, scope: InstructionScope, cycle: string, node: string): Promise<Outcome>
+  say(sessionId: string, workspaceRoot: string, text: string, scope: InstructionScope, cycle: string): Promise<Outcome>
   /** Archive / revive / delete an instruction. */
   write(verb: WriteVerb, sessionId: string, workspaceRoot: string, id: string): Promise<Outcome>
   /** The named workspace's project settings: effective values and which layer each lives on, from the tool's command. */
@@ -193,7 +193,7 @@ function livePortOf(ctx: unknown, first: PanelPort): LivePanelPort {
     },
     read: (sessionId, workspaceRoot) => current.read(sessionId, workspaceRoot),
     readSessions: (sessionId, workspaceRoot) => current.readSessions(sessionId, workspaceRoot),
-    say: (sessionId, workspaceRoot, text, scope, cycle, node) => current.say(sessionId, workspaceRoot, text, scope, cycle, node),
+    say: (sessionId, workspaceRoot, text, scope, cycle) => current.say(sessionId, workspaceRoot, text, scope, cycle),
     write: (verb, sessionId, workspaceRoot, id) => current.write(verb, sessionId, workspaceRoot, id),
     readConfig: (sessionId, workspaceRoot) => current.readConfig(sessionId, workspaceRoot),
     setConfig: (sessionId, workspaceRoot, key, value) => current.setConfig(sessionId, workspaceRoot, key, value),
@@ -243,7 +243,7 @@ export const REMOTE_PARAM_ORDER: Readonly<Record<string, readonly string[]>> = {
   watch: ['sessionId', 'workspaceRoot'],
   read: ['sessionId', 'workspaceRoot', 'options'],
   readSessions: ['sessionId', 'workspaceRoot'],
-  addInstruction: ['sessionId', 'workspaceRoot', 'text', 'scope', 'cycle', 'node'],
+  addInstruction: ['sessionId', 'workspaceRoot', 'text', 'scope', 'cycle'],
   archiveInstruction: ['sessionId', 'workspaceRoot', 'id'],
   reviveInstruction: ['sessionId', 'workspaceRoot', 'id'],
   removeInstruction: ['sessionId', 'workspaceRoot', 'id'],
@@ -386,8 +386,8 @@ function portFromCall(source: PanelPort['source'], call: PortCall, stream?: Stre
       if (!answer.ok) throw new RefusedError(answer.failure)
       return answer.value
     },
-    async say(sessionId, workspaceRoot, text, scope, cycle, node) {
-      const answer = await call<Outcome>('addInstruction', { sessionId, workspaceRoot, text, scope, cycle, node })
+    async say(sessionId, workspaceRoot, text, scope, cycle) {
+      const answer = await call<Outcome>('addInstruction', { sessionId, workspaceRoot, text, scope, cycle })
       return answer.ok ? answer.value : refused(answer.failure)
     },
     async write(verb, sessionId, workspaceRoot, id) {

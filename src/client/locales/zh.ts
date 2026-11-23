@@ -126,7 +126,6 @@ export const zh = {
 
   /* ── The instruction ledger ───────────────────────────────────────────────────────────────── */
   'notes.scroll.aria': '用户指令',
-  'notes.scope.node': '这一格 · {node}',
   'notes.scope.aria': '这句话管到哪儿',
   'notes.text.placeholder': '原话照抄',
   'notes.text.aria': '原话照抄',
@@ -221,9 +220,6 @@ export const zh = {
   'span.minutes-seconds': '{minutes}分{seconds}秒',
   'span.minutes': '{minutes}分',
   'span.seconds': '{seconds}秒',
-
-  /* ── The scope of an instruction ──────────────────────────────────────────────────────────── */
-  'scope.node': '这一格',
 
   /* ── The overview ─────────────────────────────────────────────────────────────────────────── */
   /* The stage's empty state: what the record says when no window can be drawn. Three situations,

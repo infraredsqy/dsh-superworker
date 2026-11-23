@@ -368,10 +368,12 @@ test('the machine mark is the same read through the structured exit, at the same
   assert.deepEqual(instructionListMarkArgv('C:\\ws', 'n-1'), ['instruction', 'list', '--json', '--project', 'C:\\ws', '--node', 'n-1'])
 })
 
-test('one line holding two nodes in parallel: each session carries its own node\'s listing, not the first node\'s for both', async () => {
+test('two lines in parallel: each session carries its own line\'s listing, not the other line\'s', async () => {
   const stage = await throwaway('superworker-instruction-context-')
   try {
-    /* Two nodes on one active line — the shape a `parallel: 2` line really runs. */
+    /* Two active lines side by side, each holding one node — the shape a person running two lines at
+     * once really produces. The sentence that tells them apart is bound to the line, the only level
+     * below the project the account still has. */
     writeFileSync(join(stage.root, '.superworker', 'ideas.json'), JSON.stringify({
       nodes: {
         'n-a': { status: 'todo', title: 'first', mode: 'auto', dependencies: [] },
@@ -379,18 +381,15 @@ test('one line holding two nodes in parallel: each session carries its own node\
       },
     }))
     writeFileSync(join(stage.root, '.superworker', 'state.json'), JSON.stringify({
-      cycles: [{
-        id: 'c-1',
-        status: 'active',
-        tags: [],
-        holding: [{ id: 'n-a', since: '2026-10-18T00:00:00Z' }, { id: 'n-b', since: '2026-10-18T00:00:00Z' }],
-        path: [],
-      }],
+      cycles: [
+        { id: 'line-a', status: 'active', tags: [], holding: [{ id: 'n-a', since: '2026-10-18T00:00:00Z' }], path: [] },
+        { id: 'line-b', status: 'active', tags: [], holding: [{ id: 'n-b', since: '2026-10-18T00:00:00Z' }], path: [] },
+      ],
     }))
 
-    /* A node-scoped sentence per cell, written the way a person writes it. */
-    for (const [node, text] of [['n-a', 'only the first cell hears this'], ['n-b', 'only the second cell hears this']]) {
-      const said = await answer(['instruction', 'add', '--scope', 'node', '--node', node, '--text', text], ioAt(stage.root))
+    /* A line-scoped sentence per line, written the way a person writes it. */
+    for (const [line, text] of [['line-a', 'only the first line hears this'], ['line-b', 'only the second line hears this']]) {
+      const said = await answer(['instruction', 'add', '--scope', 'cycle', '--cycle', line, '--text', text], ioAt(stage.root))
       assert.equal(said.code, 0, said.stderr)
     }
 
@@ -402,25 +401,25 @@ test('one line holding two nodes in parallel: each session carries its own node\
     const off = installInstructionContext(ctx, {})
     try {
       const first = await assemble(freshAssembly(), { id: 's1' })
-      assert.ok(first.contexts[0].text.includes('only the first cell hears this'), 'the first node\'s session carries its own sentence')
-      assert.ok(!first.contexts[0].text.includes('only the second cell hears this'), 'and not its neighbour\'s')
+      assert.ok(first.contexts[0].text.includes('only the first line hears this'), 'the first line\'s session carries its own sentence')
+      assert.ok(!first.contexts[0].text.includes('only the second line hears this'), 'and not the neighbouring line\'s')
 
       const second = await assemble(freshAssembly(), { id: 's2' })
-      assert.ok(second.contexts[0].text.includes('only the second cell hears this'), 'the second node\'s session carries its own sentence')
-      assert.ok(!second.contexts[0].text.includes('only the first cell hears this'), 'the neighbour\'s constraint is not what it guards — the old read handed the first node\'s listing to both')
+      assert.ok(second.contexts[0].text.includes('only the second line hears this'), 'the second line\'s session carries its own sentence')
+      assert.ok(!second.contexts[0].text.includes('only the first line hears this'), 'the neighbour\'s constraint is not what it guards')
 
       /* Admission re-reads the provider per session: the carried table is keyed by session and root,
        * so each admission still reads its own text back, not the other session's. */
-      assert.ok(registered[0].text({ agent: { id: 's1' } }).includes('only the first cell hears this'))
-      assert.ok(registered[0].text({ agent: { id: 's2' } }).includes('only the second cell hears this'))
+      assert.ok(registered[0].text({ agent: { id: 's1' } }).includes('only the first line hears this'))
+      assert.ok(registered[0].text({ agent: { id: 's2' } }).includes('only the second line hears this'))
 
-      /* The stated fallback: a session no note claims (s3) is asked with no --node, so it answers the
-       * plugin's own default read — with one line active, that is the line's first held node. That is
-       * the plugin's position rule (pinned by the plugin's own suite); what this pins is that the
-       * host invented no position: it did not hand the unattributed session a listing it made up. */
+      /* The stated fallback: a session no note claims (s3) is asked with no position at all, so it
+       * answers the plugin's own default read — with two lines side by side and no node named, that
+       * is the wide read, both lines' sentences. What this pins is that the host invented no
+       * position: it did not hand the unattributed session a listing it made up. */
       const unnamed = await assemble(freshAssembly(), { id: 's3' })
-      assert.ok(unnamed.contexts[0].text.includes('only the first cell hears this'), 'the unattributed session carries the plugin\'s default read')
-      assert.ok(!unnamed.contexts[0].text.includes('only the second cell hears this'), 'which is the first held node by the plugin\'s own rule — the fallback is stated, not guessed here')
+      assert.ok(unnamed.contexts[0].text.includes('only the first line hears this'), 'the unattributed session carries the wide read')
+      assert.ok(unnamed.contexts[0].text.includes('only the second line hears this'), 'which is both lines, since no single line can be pinned down')
     } finally {
       off()
     }

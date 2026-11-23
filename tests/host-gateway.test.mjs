@@ -564,7 +564,6 @@ test('The record-an-instruction door writes on the root the caller named, not on
       text: 'look at the record before acting & do not guess',
       scope: 'global',
       cycle: '',
-      node: '',
     })
     assert.equal(answer.ok, true, String(answer.message))
     /* The door's own answer names the entry it minted — not a literal, and not a file read. */
@@ -598,7 +597,6 @@ test('The record-an-instruction door writes on the root the caller named, not on
       text: 'a sentence bound for this session\'s own tree',
       scope: 'global',
       cycle: '',
-      node: '',
     })
     assert.equal(second.ok, true, String(second.message))
     assert.equal(second.value.ok, true, `the words refused the control sentence: ${String(second.value.detail)}`)
@@ -662,7 +660,7 @@ test('The shared write path acts on the root each instruction verb was handed: f
     /* 5. `addInstruction`: the fifth verb on the same path. Its own answer names the entry it minted,
      *    and that entry lands on `named` — the byte-identical sentence shape as the door's own case
      *    above, taken here so all five verbs sharing `#superworker` are in one table. */
-    const added = await call('addInstruction', { sessionId: 's1', workspaceRoot: named, text: 'the fifth verb of the shared path', scope: 'global', cycle: '', node: '' })
+    const added = await call('addInstruction', { sessionId: 's1', workspaceRoot: named, text: 'the fifth verb of the shared path', scope: 'global', cycle: '' })
     assert.equal(added.ok, true, String(added.message))
     assert.equal(added.value.ok, true, `the words refused the sentence: ${String(added.value.detail)}`)
     const minted = /^INSTRUCTION (i-\d+):/u.exec(String(added.value.text))
@@ -678,7 +676,7 @@ test('The shared write path acts on the root each instruction verb was handed: f
      * the refusal code is the endpoint's own answer — never a `tool-refused` from the words layer,
      * because nothing was handed over. None of the three trees may move meanwhile. */
     const before = [recordsOf(own).instructions, recordsOf(sandbox).instructions, recordsOf(named).instructions]
-    const refused = await call('addInstruction', { sessionId: 's1', workspaceRoot: named, text: '   ', scope: 'global', cycle: '', node: '' })
+    const refused = await call('addInstruction', { sessionId: 's1', workspaceRoot: named, text: '   ', scope: 'global', cycle: '' })
     assert.equal(refused.ok, true, String(refused.message))
     assert.equal(refused.value.ok, false, 'an empty sentence must be refused before any write')
     assert.equal(refused.value.code, 'empty-text', `the refusal code is the endpoint's own answer: ${JSON.stringify(refused.value)}`)
@@ -753,7 +751,6 @@ test('The record-an-instruction endpoint: the words pass the gateway and land as
       text: 'look at the record before acting & do not guess',
       scope: 'global',
       cycle: '',
-      node: '',
     })
     assert.equal(answer.ok, true, String(answer.message))
   } finally {

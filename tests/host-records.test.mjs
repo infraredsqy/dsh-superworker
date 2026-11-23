@@ -111,7 +111,7 @@ const record = () => ({
 
 test('Every source was read, and the entries are the record\'s own (weight / dsh_session as they are)', async () => {
   const { port } = fakeWorkspace(record(), { pageLines: 500 })
-  const reading = await readReading(port, scope, signal, null)
+  const reading = await readReading(port, scope, signal, null, null)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'read' })
   assert.equal(reading.recordPath, '.superworker')
@@ -130,7 +130,7 @@ test('A record spanning several pages still comes back whole', async () => {
   const files = record()
   files['.superworker/ideas.json'] = json({ nodes: many })
   const { port, calls } = fakeWorkspace(files, { pageLines: 3 })
-  const reading = await readReading(port, scope, signal, null)
+  const reading = await readReading(port, scope, signal, null, null)
 
   assert.deepEqual(reading.nodes, many)
   assert.ok(calls.filter(([kind]) => kind === 'read').length > 3, 'this one takes several pages to read')
@@ -138,7 +138,7 @@ test('A record spanning several pages still comes back whole', async () => {
 
 test('No record in the workspace: an empty reading comes back without a sound', async () => {
   const { port } = fakeWorkspace({})
-  const reading = await readReading(port, scope, signal, null)
+  const reading = await readReading(port, scope, signal, null, null)
 
   assert.deepEqual(reading.sources, { nodes: 'missing', cycles: 'missing', instructions: 'missing', issues: 'missing' })
   assert.deepEqual(reading.nodes, {})
@@ -151,7 +151,7 @@ test('Record present, one file short: only that one reports missing, the rest st
   const files = record()
   delete files['.superworker/state.json']
   const { port } = fakeWorkspace(files, { pageLines: 500 })
-  const reading = await readReading(port, scope, signal, null)
+  const reading = await readReading(port, scope, signal, null, null)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'missing', instructions: 'read', issues: 'read' })
   assert.deepEqual(reading.cycles, [])
@@ -163,7 +163,7 @@ test('The unreadable one reports unusable, the reading still comes back', async 
   files['.superworker/state.json'] = '{ this line is not JSON\n'
   files['.superworker/instructions.json'] = json({ instructions: { not: 'a list' } })
   const { port } = fakeWorkspace(files, { pageLines: 500 })
-  const reading = await readReading(port, scope, signal, null)
+  const reading = await readReading(port, scope, signal, null, null)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'unusable', instructions: 'unusable', issues: 'read' })
   assert.deepEqual(reading.cycles, [])
@@ -176,7 +176,7 @@ test('A read uses only list and read, and leaves the file table it was handed un
   const snapshot = structuredClone(files)
   const { port, calls } = fakeWorkspace(files, { pageLines: 500 })
 
-  await readReading(port, scope, signal, null)
+  await readReading(port, scope, signal, null, null)
 
   assert.ok(calls.length > 0)
   assert.deepEqual([...new Set(calls.map(([kind]) => kind))].sort(), ['list', 'read'])
@@ -204,7 +204,7 @@ test('When a page breaches the byte cap it shrinks and retries: the whole record
   files['.superworker/ideas.json'] = json({ nodes: many })
   // The whole record fits within 500 lines, but a page's byte count breaches the cap: the byte side is what gets hit.
   const { port, calls, refusals } = fakeWorkspace(files, { pageLines: 500, maxBytes: 4096 })
-  const reading = await readReading(port, scope, signal, null)
+  const reading = await readReading(port, scope, signal, null, null)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'read' })
   assert.deepEqual(reading.nodes, many)
@@ -225,7 +225,7 @@ test('A requested line count above the port tier shrinks and retries too: the wh
   files['.superworker/ideas.json'] = json({ nodes: many })
   // A page holds only 40 lines and the byte cap is 8192: after the cap is hit, the shrunk tier must first fit within 40 lines.
   const { port, refusals } = fakeWorkspace(files, { pageLines: 40, maxBytes: 8192 })
-  const reading = await readReading(port, scope, signal, null)
+  const reading = await readReading(port, scope, signal, null, null)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'read' })
   assert.deepEqual(reading.nodes, many)
@@ -239,9 +239,50 @@ test('When one line alone breaches the cap, that one really is unreadable', asyn
   const files = record()
   files['.superworker/ideas.json'] = json({ nodes: { n1: { ...NODES.n2, title: 't'.repeat(9000) } } })
   const { port } = fakeWorkspace(files, { pageLines: 500, maxBytes: 4096 })
-  const reading = await readReading(port, scope, signal, null)
+  const reading = await readReading(port, scope, signal, null, null)
 
   // That line cannot pass even as a page of its own; shrinking pages cannot save it.
   assert.deepEqual(reading.sources, { nodes: 'unusable', cycles: 'read', instructions: 'read', issues: 'read' })
   assert.deepEqual(reading.nodes, {})
+})
+
+/* The one door instruction rows enter the reading through: a scope word the vocabulary retires stops
+ * here, so no layer above ever learns the word. This is the whole of the retirement judgement on this
+ * half — the model layer carries no scope vocabulary at all — which is why it is pinned here and
+ * nowhere else. The vocabulary itself is never written into this file: it is handed in, the way the
+ * host hands it in from the plugin's own storage layer. */
+const RETIRED = { valid: ['global', 'cycle'], retired: ['node'] }
+
+const retiredRecord = () => {
+  const files = record()
+  files['.superworker/instructions.json'] = json({
+    instructions: [
+      ...INSTRUCTIONS,
+      { id: 'i2', text: 'the retired level', scope: 'node', target: 'stage', state: 'live', cycle: null, node: 'n1', said_by: 'user', at: '2026-01-08T00:00:00.000Z', resolved_at: null, note: null },
+      { id: 'i3', text: 'a word nobody declares', scope: 'once', target: 'stage', state: 'live', cycle: null, node: null, said_by: 'user', at: '2026-01-09T00:00:00.000Z', resolved_at: null, note: null },
+    ],
+  })
+  return files
+}
+
+test('A row carrying a retired scope word never enters the reading; the other rows do', async () => {
+  const { port } = fakeWorkspace(retiredRecord(), { pageLines: 500 })
+  const reading = await readReading(port, scope, signal, null, RETIRED)
+
+  assert.deepEqual(reading.instructions.map((row) => row.id), ['i1', 'i3'])
+  assert.equal(reading.sources.instructions, 'read', 'the file itself was read: the rows are there, and one is judged not part of the account')
+})
+
+test('No vocabulary (a package without the plugin): nothing is judged retired, and the rows ride as they sit on disk', async () => {
+  const { port } = fakeWorkspace(retiredRecord(), { pageLines: 500 })
+  const reading = await readReading(port, scope, signal, null, null)
+
+  assert.deepEqual(reading.instructions.map((row) => row.id), ['i1', 'i2', 'i3'], 'a judgement this installation cannot spell is not made')
+})
+
+test('The retired word is matched exactly: a word the vocabulary does not name flows on, as every unknown spelling always has', async () => {
+  const { port } = fakeWorkspace(retiredRecord(), { pageLines: 500 })
+  const reading = await readReading(port, scope, signal, null, { valid: ['global', 'cycle'], retired: [] })
+
+  assert.deepEqual(reading.instructions.map((row) => row.id), ['i1', 'i2', 'i3'], 'an empty retired list retires nothing — `node` is only retired once the plugin says so')
 })

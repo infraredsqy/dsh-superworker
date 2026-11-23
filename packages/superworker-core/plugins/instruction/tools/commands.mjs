@@ -23,11 +23,17 @@
  * all. The read side never takes the lock (a write lands atomically, so a read cannot see half an
  * entry).
  *
- * Which cycle or node a new entry binds to is decided here, and it is the same decision as before:
- * take what the caller named (the named cycle has to be in the line account, a named node has to be
- * on a non-empty graph), otherwise take the single active line and the node it holds; a cycle- or
- * node-scoped entry with nothing to bind to is refused, because an unbound entry would be read as
- * visible to everyone, forever, which is what the scope exists to prevent.
+ * The account knows two levels — global, and one line (`cycle`) — and no third: the node level was
+ * retired, and what one node needs is said in that node's own spec. A row an older account carries
+ * with a retired scope word is skipped by every read (the level it named is gone); it stays on the
+ * account byte for byte, `rm` still takes it off, and the account views say how many are sitting
+ * there. `list` keeps `--node`, and it names a *position*, not a level: which node the reader holds,
+ * which pins the line the read stands on when two lines run side by side.
+ *
+ * Which cycle a new entry binds to is decided here, and it is the same decision as before:
+ * take what the caller named (the named cycle has to be in the line account), otherwise take the
+ * single active line; a cycle-scoped entry with nothing to bind to is refused, because an unbound
+ * entry would be read as visible to everyone, forever, which is what the scope exists to prevent.
  *
  * The project a line acts on is `ctx.root` unless the line names one: `--project` goes through
  * `ctx.projectRootOf`, the engine's one resolution of "which project root does this directory mean" —
@@ -39,12 +45,12 @@ import {
   ISSUED_ID,
   LIVE_STATE,
   REMOVED_KEY,
+  RETIRED_SCOPES,
   STATE_MARKS,
   VALID_SCOPES,
   VALID_TARGETS,
   readCycles,
   readInstructions,
-  readNodes,
   short,
   withInstructionsLock,
   writeInstructions,
@@ -53,11 +59,10 @@ import {
 /** The head of the usage page, and of every usage refusal. */
 const USAGE_HEAD = 'usage: instruction <verb> [options]'
 
-/** The three scopes as a reader sees them, spelled out (the account's own vocabulary). */
+/** The two scopes as a reader sees them, spelled out (the account's own vocabulary). */
 const SCOPE_WORDS = {
   global: 'global (counts anywhere)',
   cycle: 'for this run (it stops counting once this run ends)',
-  node: 'this node only (it stops counting once this node is done)',
 }
 
 /** How an entry is delivered: the two words the reader's view prints for the reach cell. */
@@ -124,7 +129,8 @@ function surfaceOf(base) {
       head: USAGE_HEAD,
       blurb: [
         'the standing instruction account: one file per project, `.superworker/instructions.json`.',
-        'scopes: global / cycle / node (where an entry can be read from, not who remembers to resolve it).',
+        'scopes: global / cycle (where an entry can be read from, not who remembers to resolve it).',
+        'scope node is retired: an old entry carrying it stays on the account, read by no view.',
         'reaches: stage / boundary (when a worker reads it: while working, or only when closing out).',
       ],
       // This word's text is LF on every platform, unlike the seam's default (the platform's line
@@ -170,15 +176,23 @@ function isLive(entry) {
   return (entry.state ?? LIVE_STATE) === LIVE_STATE
 }
 
+/**
+ * Whether this row carries a retired scope word. Not the same judgement as an unknown word: an
+ * unknown word reads as `global` (erring towards visible), while a retired word says the level this
+ * row was bound to is gone, so no read hands it to anybody. The row itself is never touched.
+ */
+function isRetired(entry) {
+  return RETIRED_SCOPES.includes(entry.scope)
+}
+
 /** The scope of an entry: a word outside the vocabulary (or a missing key) reads as global — erring towards "visible". */
 function entryScope(entry) {
   return VALID_SCOPES.includes(entry.scope) ? entry.scope : 'global'
 }
 
-/** What the scope is measured against: `('node', id)` / `('cycle', id)` / an empty binding. An empty binding is visible everywhere. */
+/** What the scope is measured against: `('cycle', id)` or an empty binding. An empty binding is visible everywhere. */
 function scopeBinding(entry) {
   const scope = entryScope(entry)
-  if (scope === 'node' && entry.node) return ['node', entry.node]
   if (scope === 'cycle' && entry.cycle) return ['cycle', entry.cycle]
   return [null, null]
 }
@@ -186,21 +200,12 @@ function scopeBinding(entry) {
 /**
  * The visibility decision (a pure function, THE one): whether an entry is visible from where the
  * reader stands. With a position the comparison is exact against the binding; without one it falls
- * back to a wide read — the bound line is still active, the bound node is not completed — so an
- * entry that cannot be pinned down is read out rather than held back (missing a real constraint costs
- * far more than reading one row too many).
+ * back to a wide read — the bound line is still active — so an entry that cannot be pinned down is
+ * read out rather than held back (missing a real constraint costs far more than reading one row too
+ * many).
  */
-function inScope(entry, nodes, activeCycleIds, readerCycle, readerNode) {
+function inScope(entry, activeCycleIds, readerCycle) {
   const [kind, bound] = scopeBinding(entry)
-  if (kind === 'node') {
-    if (readerNode !== null) return bound === readerNode
-    // Ownership first, then the cell: the graph's own membership test (`Object.hasOwn`, the same
-    // question `graph.ownsKey` asks). A bare lookup would read an inherited name as a record — the
-    // function `toString` is — and `?.status` off it reads `undefined`, which is not `completed`,
-    // so an entry that named no node would be read as visible to everyone.
-    if (!Object.hasOwn(nodes, bound)) return true
-    return nodes[bound]?.status !== 'completed'
-  }
   if (kind === 'cycle') {
     if (readerCycle !== null) return bound === readerCycle
     return activeCycleIds.has(bound)
@@ -275,7 +280,7 @@ function positionOf(cycles, namedNode) {
 }
 
 /** The binding of a new entry: named first (and checked), then the single active line and the node it holds. */
-function bindingOf(options, cycles, nodes) {
+function bindingOf(options, cycles) {
   const active = cycles.filter((record) => record.status === 'active')
   const known = cycles.map((record) => record.id).filter((id) => typeof id === 'string' && id !== '')
   let cycleId = null
@@ -292,19 +297,10 @@ function bindingOf(options, cycles, nodes) {
     cycleId = typeof only === 'string' ? only : null
   }
 
+  // The node half is provenance, never a level: where the sentence was said, taken from the line's
+  // own hand. Nothing binds to it — visibility reads the scope word and the cycle alone.
   let nodeId = null
-  if (options.node !== undefined) {
-    // A non-empty graph is the precondition for checking the name: an empty graph has nothing to
-    // check against, so the name is written as given. On a graph that does have nodes, membership is
-    // the graph's own question (`Object.hasOwn`, the same test `graph.ownsKey` asks): an inherited
-    // name (`toString`, `constructor`) is not a node just because a plain lookup finds something.
-    if (Object.keys(nodes).length > 0 && !Object.hasOwn(nodes, options.node)) {
-      throw new Error(`node ${JSON.stringify(options.node)} is not in the DAG`)
-    }
-    nodeId = options.node
-  }
-
-  if (cycleId !== null && nodeId === null) {
+  if (cycleId !== null) {
     const record = cycles.find((entry) => entry.id === cycleId)
     const holding = record === undefined ? [] : holdingIds(record)
     nodeId = holding.length > 0 ? holding[0] : null
@@ -315,13 +311,6 @@ function bindingOf(options, cycles, nodes) {
       'a cycle-scoped entry needs a line to bind to (no single active cycle in state.json). ' +
         'Name it: cycle: <id>. Without a binding the entry would be read as visible to ' +
         'everyone, forever, so nothing was written.',
-    )
-  }
-  if (options.scope === 'node' && nodeId === null) {
-    throw new Error(
-      'a node-scoped entry needs a node to bind to, and the state does not name one ' +
-        '(no active cycle, or the cycle it names is holding no node). Name it: node: <id>. ' +
-        'Without a binding the entry would be read as visible to everyone, so nothing was written.',
     )
   }
   return { cycle: cycleId, node: nodeId }
@@ -350,8 +339,17 @@ function jsonText(value) {
 function nothingVisibleLines(total) {
   return [
     'No instruction is visible from this step.',
-    `(The instruction record has ${total} entries: they are bound to another cycle or another node, or they are no longer in force. When the position cannot be pinned down these entries are still read out -- reading as empty means they really cannot reach this step.)`,
+    `(The instruction record has ${total} entries: they are bound to another line, or they are no longer in force. When the position cannot be pinned down these entries are still read out -- reading as empty means they really cannot reach this step.)`,
   ]
+}
+
+/**
+ * The one line the account views append when retired rows are sitting on the account: the only
+ * place their existence is said out loud. The reader's view and the machine's view say nothing —
+ * a retired row reaches nobody, and the injected listing is the reader's view.
+ */
+function retiredLine(count) {
+  return `(${count} more entr${count === 1 ? 'y' : 'ies'} on this account carry a retired scope word: kept, read by no view. instruction rm <id> takes one off.)`
 }
 
 /** One of the account views found nothing: say which of the four states this is. */
@@ -382,6 +380,7 @@ const FLAGS = {
   text: { long: '--text', kind: 'value' },
   scope: { long: '--scope', kind: 'value', choices: VALID_SCOPES },
   cycle: { long: '--cycle', kind: 'value' },
+  /** Names the reader's position (which node is in hand, pinning the line); `list`'s own, never a level to bind to. */
   node: { long: '--node', kind: 'value' },
   target: { long: '--target', kind: 'value', choices: VALID_TARGETS },
   said_by: { long: '--said-by', kind: 'value' },
@@ -401,7 +400,7 @@ const FLAGS = {
  */
 const SPECS = {
   add: {
-    options: ['text', 'scope', 'cycle', 'node', 'target', 'said_by', 'note', 'stop_after_nodes'],
+    options: ['text', 'scope', 'cycle', 'target', 'said_by', 'note', 'stop_after_nodes'],
     required: ['text'],
     positional: { min: 0, max: 0 },
   },
@@ -445,8 +444,7 @@ async function cmdAdd(args, ctx) {
   // what this verb does is read the account, build the entry, and land it.
   const data = await readInstructions(ctx.root, ctx.base)
   const cycles = await readCycles(ctx.root, ctx.base)
-  const nodes = await readNodes(ctx)
-  const binding = bindingOf({ ...args.options, scope, target }, cycles, nodes)
+  const binding = bindingOf({ ...args.options, scope, target }, cycles)
   const entry = {
     id: nextInstructionId(data),
     text,
@@ -482,18 +480,22 @@ async function cmdAdd(args, ctx) {
 async function cmdList(args, ctx) {
   const { all, live, scope, node, json } = args.options
   const data = await readInstructions(ctx.root, ctx.base)
+  /* Retired rows leave every view here: they are not entries a reader could reach, and counting them
+   * in a silence's sentence would say "there is something to read" about rows nothing can read. The
+   * account views below still say how many are sitting on the account. */
+  const rows = data.instructions.filter((entry) => !isRetired(entry))
+  const retiredCount = data.instructions.length - rows.length
   const accountView = all === true || live === true || scope !== undefined
 
   if (!accountView) {
     const cycles = await readCycles(ctx.root, ctx.base)
-    const nodes = await readNodes(ctx)
     const position = positionOf(cycles, node ?? null)
     const active = new Set(
       cycles.filter((record) => record.status === 'active').map((record) => record.id).filter((id) => typeof id === 'string'),
     )
-    const visible = data.instructions
+    const visible = rows
       .filter((entry) => isLive(entry))
-      .filter((entry) => inScope(entry, nodes, active, position.cycle, position.node))
+      .filter((entry) => inScope(entry, active, position.cycle))
       .map(readerRow)
     if (json === true) {
       // The machine's view carries the four structural cells and nothing else.
@@ -502,7 +504,7 @@ async function cmdList(args, ctx) {
     if (visible.length === 0) {
       // Two silences with two meanings: no record at all, or a record whose entries cannot reach this
       // step. The account's own count is what tells them apart.
-      const total = data.instructions.length
+      const total = rows.length
       return (total === 0 ? NO_RECORD_LINES : nothingVisibleLines(total)).join(EOL)
     }
     const lines = [`This project has ${visible.length} instruction(s) visible from this step:`]
@@ -518,15 +520,16 @@ async function cmdList(args, ctx) {
     return `${lines.join(EOL)}${EOL}`
   }
 
-  let cells = data.instructions
+  let cells = rows
   if (all !== true) cells = cells.filter((entry) => isLive(entry))
   if (scope !== undefined) cells = cells.filter((entry) => entryScope(entry) === scope)
   if (live === true) cells = cells.filter((entry) => isLive(entry))
   if (json === true) return jsonText(cells)
+  const tail = retiredCount > 0 ? [retiredLine(retiredCount)] : []
   if (cells.length === 0) {
-    const total = data.instructions.length
-    const globalTotal = data.instructions.filter((entry) => entryScope(entry) === 'global').length
-    return emptyAccountLines(total, scope, globalTotal).join(EOL)
+    const total = rows.length
+    const globalTotal = rows.filter((entry) => entryScope(entry) === 'global').length
+    return [...emptyAccountLines(total, scope, globalTotal), ...tail].join(EOL)
   }
   const lines = []
   for (const entry of cells) {
@@ -535,7 +538,7 @@ async function cmdList(args, ctx) {
     lines.push(`${mark} ${entry.id}  [${entry.scope}/${deliver}]  ${entry.text ?? ''}`)
     if (typeof entry.note === 'string' && entry.note !== '') lines.push(`      note: ${entry.note}`)
   }
-  return lines.join(EOL)
+  return [...lines, ...tail].join(EOL)
 }
 
 async function cmdResolve(args, ctx) {
@@ -612,10 +615,7 @@ const RUNNERS = { add: cmdAdd, list: cmdList, resolve: cmdResolve, rm: cmdRm, re
 function contextOf(args, ctx) {
   const named = args.options.project
   if (named === undefined || named === '') return ctx
-  // The graph snapshot on the context was taken by the host at the root it handed in. A line that
-  // names another project asks a different graph, so the snapshot is dropped here and `readNodes`
-  // takes that project's table through the base — never this project's nodes under another root.
-  return { ...ctx, root: seamOf(ctx)(named, ctx.root), dag: undefined }
+  return { ...ctx, root: seamOf(ctx)(named, ctx.root) }
 }
 
 /**

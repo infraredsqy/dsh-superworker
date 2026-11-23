@@ -196,15 +196,15 @@ export interface CycleReading {
  * One group on the instruction ledger: the section piled by scope. A key as
  * the group head, a stack of entries beneath.
  *
- * The key is read in exactly one place, where readings are produced: global
- * first, then each cycle in record order, then the unrecognized cycle last;
- * empty groups are not collected. What the head says is the client's business
- * — the key is what identifies the bucket, and one of them is headed by a
- * cycle's own id, which is a record's word and reads the same in every
- * language.
+ * The key is read in exactly one place, where readings are produced: the
+ * globals first, then each cycle in record order, then the entries a cycle
+ * name could not be read for; empty groups are not collected. What the head
+ * says is the client's business — the key is what identifies the bucket, and
+ * one of them is headed by a cycle's own id, which is a record's word and
+ * reads the same in every language.
  */
 export interface InstructionGroupReading {
-  /** This group's id: `global` / the bound cycle (`cycle:<cycle id>`) / `node`. */
+  /** This group's id: `global` / the bound cycle (`cycle:<cycle id>`). */
   readonly key: string
   /** The entries in this group: still-counting ones first, newly spoken ones first. */
   readonly entries: readonly InstructionReading[]
@@ -216,12 +216,10 @@ export interface InstructionReading {
   readonly text?: string
   /** The note the record itself wrote, verbatim; absent when not written. */
   readonly note?: string
-  /** The scope, verbatim: global / bound to a cycle / bound to a node, plus any other spellings in the records; absent when not written. */
+  /** The scope, verbatim: global / bound to a cycle, plus any other spellings the records carry; absent when not written. */
   readonly scope?: string
   /** Which cycle it is bound to; `null` when unbound. */
   readonly cycleId: string | null
-  /** Which node it is bound to; `null` when unbound. */
-  readonly nodeId: string | null
   /** When it was spoken, cut by that moment. */
   readonly saidAt: Date | null
   /** When it was closed, cut by that moment: not yet closed at that moment means absent. */
