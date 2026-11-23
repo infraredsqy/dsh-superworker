@@ -7,6 +7,7 @@
 - `src/` — Host half, model layer and browser half (see `src/AGENTS.md`). Read when changing data fetching, the session opener, or the UI
 - `tests/` — Unit tests; `npm test` runs both suites (see `tests/AGENTS.md`)
 - `tools/` — Build artifacts, the style check and an isolated testbed (see `tools/AGENTS.md`)
+- `design/` — Unshipped design blueprints and platform research, gitignored (local only). Read before planning work whose design is not ground truth yet
 - `docs/` — This repo's law and publishing practice (see `docs/AGENTS.md`). Read before changing the UI or shipping a version
 - `packages/superworker-core/` — The engine package: the records, the word table, the plugins and their skills (see `packages/superworker-core/AGENTS.md`)
 - `.superworker/` — This checkout's own pipeline record (gitignored, local to the machine); read when a change has to follow the record's shape
