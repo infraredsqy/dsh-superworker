@@ -1,75 +1,45 @@
-# sw-conduct anti-patterns
+# sw-conduct Anti-Patterns
 
-Check yourself against this before starting. It keeps only the ones **no tool will stop you on the
-spot, but you will walk into without noticing**; the criteria themselves live in SKILL.md.
+Review this checklist before starting. This file covers only pitfalls that **no tool will block on the spot, yet are easy to slip into unintentionally**. Authoritative rules live in [`./SKILL.md`](./SKILL.md).
 
-## `conduct-treats-critical-as-false-positive` — the conductor rules a review a false positive
+## `conduct-treats-critical-as-false-positive` — Ruling a review finding a false positive yourself
 
-**Symptom**: you disagree with the review's verdict and rule it yourself — "this is not really a
-problem" — and let it go.
+**Symptom**: You disagree with a review finding, declare it a "false positive" on your own authority, and move on.
 
-**Correction signal**: the report says "this one is a false positive", and the re-run of the
-review never happened.
+**Correction signal**: The report claims an item is a false positive without a follow-up review ever confirming it.
 
-## `conduct-polls-for-subagent-completion` — waiting for a subagent by polling
+## `conduct-polls-for-subagent-completion` — Polling to wait for a subagent
 
-**Symptom**: after dispatching a subagent, you check its product every so often with `Start-Sleep`
-plus `Test-Path`, or call `list_agents` over and over. The duration is picked by feel (90 seconds,
-240 seconds), every round burns a stretch of measured time for nothing, and the polling goes into
-the log as "progress".
+**Symptom**: After dispatching a subagent, you poll for its output using `Start-Sleep` + `Test-Path`, or repeatedly call `list_agents`. Arbitrary sleep durations (90s, 240s) waste wall-clock time and clutter logs with fake "progress."
 
-**Instance**: one node's session piled up 22 waits of this kind, each with a line reading
-`# wait-guard: a necessary wait - waiting for some subagent to write report.md`.
+**Example**: A single node session accumulated 22 polling loops, each annotated `# wait-guard: necessary wait - waiting for subagent to write report.md`.
 
-**Correction signal**: `Start-Sleep` and `Test-Path` show up in pairs in the log. A
-`# wait-guard:` is for waiting on time itself — a backoff retry, a rate-limit window.
+**Correction signal**: `Start-Sleep` and `Test-Path` appear together in logs. Reserve `# wait-guard:` strictly for time-based waits such as backoff retries or rate-limit windows.
 
-## `conduct-flat-count-read-as-convergence` — a flat review count read as convergence
+## `conduct-flat-count-read-as-convergence` — Mistaking a flat review count for convergence
 
-**Symptom**: the review reports `critical=0, minor=10` round after round, and the conductor keeps
-dispatching the next round because the numbers did not go up; or the same spot is changed three or
-four times, each round another spot produces a fresh critical, and you keep changing things along
-with what the review says.
+**Symptom**: Review reports `critical=0, minor=10` round after round, and the conductor keeps dispatching fixes because the count did not increase; or the same area is rewritten three or four times while new criticals pop up elsewhere each round.
 
-**Correction signal**: the review's identity marker on its first line lands on the same set of
-spots two rounds running.
+**Correction signal**: The first-line identity markers in review reports hit the same set of locations two rounds in a row.
 
-## `conduct-constraints-without-provenance` — an unmarked constraint read as hard all the way down
+## `conduct-constraints-without-provenance` — Treating derived constraints as hard user requirements
 
-**Symptom**: one node's session works out a budget or a cap, and writes it into a document in the
-same wording as the user's own requirement; the nodes after it copy the reference, and it becomes
-a hard constraint nobody can touch.
+**Symptom**: A node session invents a budget or cap and documents it using the same mandatory phrasing as user requirements. Downstream nodes copy it verbatim until it calcifies into an untouchable hard constraint.
 
-**Instance**: a project's goal doc (`goals.md`) does not contain a word of "chapter / segment /
-slot", and its design constraints all sit at the experience level (a reader is never left
-waiting, two panes never disagree, the outline stays visible); "a chapter holds at most three
-segments" was worked out by one `layout-budget.md` node's session, quoted layer by layer by
-`section-spec` / `render` / `diff-check` / `outline`, and finally locked horns with another one
-it derived itself, "a named diagram fills the chapter it opens in", grinding away in the middle
-for five rounds across two nodes.
+**Example**: A project's `goals.md` contained only experience-level constraints and never mentioned chapters or segments. One session (`layout-budget.md`) derived "at most 3 segments per chapter," which `section-spec`, `render`, `diff-check`, and `outline` copied downward until it deadlocked against another self-imposed rule ("a featured diagram fills its opening chapter"), wasting five rounds across two nodes.
 
-**Correction signal**: a "must / must not / always / the cap is" whose source cannot be found
-anywhere in the user's own words or the goal docs.
+**Correction signal**: A rule phrased with "must / must not / always / cap is" cannot be traced back to the user's words or the goal docs.
 
-## `conduct-freezes-criteria-with-findings` — criteria frozen along with the findings
+## `conduct-freezes-criteria-with-findings` — Freezing stale review criteria after scope changes
 
-**Symptom**: you read "word for word" as "the supplement's text is frozen" — the boundary moved (a
-line unfrozen, the scope narrowed, a user criterion swapped in), yet that criterion goes out unchanged
-in the next round's review prompt. The review judges by a stale standard, so what it reports is a
-defect in the standard; the conductor then handles it as a defect in the delivery.
+**Symptom**: Interpreting "keep criteria consistent" as "never update supplement text." Even after a boundary changes (unfreezing a line, narrowing scope, or applying a new user ruling), the next review prompt reuses the old criterion verbatim. The review flags a defect in the stale rule, and the conductor treats it as a delivery defect.
 
-**Instance**: a node's second round ruled "the stale name in that one comment has to go, the rest
-stays frozen" and told the fix so; the third round's supplement still read "any change under that
-directory is a critical", and the review reported a critical off it (1 insertion / 1 deletion, zero
-runtime impact) which the user ruled did not stand.
+**Example**: Round 2 ruled "remove the stale name comment in that directory, keep the rest frozen" and dispatched a fix. Round 3's review supplement still stated "any change under that directory is critical," triggering a critical finding on a 1-line comment edit with zero runtime impact—which the user later overruled.
 
-**Correction signal**: one criterion in this round cannot hold at the same time as the ruling you
-gave the fix last round.
+**Correction signal**: A criterion in the current review prompt directly contradicts the ruling given to the fix subagent in the previous round.
 
-## `conduct-hand-edits-ledger-or-resolves-conflicts` — hand-editing `.superworker/` or ruling a conflict
+## `conduct-hand-edits-ledger-or-resolves-conflicts` — Hand-editing `.superworker/` records or splicing JSON conflicts
 
-**Symptom**: to line the two sides' graphs up, you read and edit a record file under `.superworker/`
-yourself; or a pull stops on a conflict and you splice the two JSON files together line by line.
+**Symptom**: Reading and editing `.superworker/` record files directly to reconcile state, or manually splicing two conflicting JSON files line by line after a failed pull.
 
-**Correction signal**: a hand-edited record file in the workspace, or a stretch of JSON spliced
-together line by line.
+**Correction signal**: Manually edited record files in `.superworker/`, or hand-spliced JSON in the working tree.

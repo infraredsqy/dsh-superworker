@@ -1,63 +1,59 @@
-# conduct: node tags and cycle routing
+# Conduct: Node Tags and Cycle Routing
 
-> This is the design source for **node tags and cycle routing**: the vocabulary, the criterion of the filter, and why the filter acts on the picking step alone.
-> The rest of state and advancing is in [`./conduct-state.md`](./conduct-state.md); dispatch and authentication are in
-> [`./conduct-dsh-dispatch.md`](./conduct-dsh-dispatch.md); the visibility of an instruction's scope when two active
-> cycles sit side by side belongs to the dispatch section of the state and advancing contract (an
-> instruction has two levels only: global and cycle).
+> Design reference for **node tags and cycle routing**: vocabulary, filter criterion, and why filtering applies exclusively to node selection.
+> For state and advancement contracts, see [`./conduct-state.md`](./conduct-state.md); for dispatch, see [`./conduct-dsh-dispatch.md`](./conduct-dsh-dispatch.md); for instruction scope visibility across concurrent active cycles, see the context-injection section in `conduct-state.md` (instructions exist at two levels only: `global` and `cycle`).
 >
-> The rule in one sentence: **a node may carry no tag at all; a cycle's `tags` are that line's pick set (used by every
-> pick in its whole life); the filter acts on "pick the next node" alone.**
+> Core rule in one sentence: **A node may have no tags; a cycle's `tags` define its permanent selection scope for its entire lifetime; filtering applies only when picking the next node.**
 
-## 0. Why it exists
+## 0. Motivation
 
-Once the graph carries copy, code and image work at the same time, "what this line is doing" is scattered across each round's pick — a person who wants a line doing copy only, or a line touching code only, has no way to say it.
+When a single DAG holds copywriting, code, and art tasks together, there is no way without filtering to express "run a line for copy only" or "restrict this line to code changes."
 
-A tag is that sentence: give the nodes a tag (which kind of work this is), give the cycle a filter set (which nodes this line picks among). Start a line with `--tags coding`, and from then on it picks code work only — from the first node to the last, on the same filter set.
+Tags express that boundary: nodes declare their work category via tags, and cycles declare their selection scope via a filter set. A cycle started with `--tags coding` uses that same filter set from its first node to its last, selecting code work exclusively.
 
-## 1. The vocabulary
+## 1. Recommended Vocabulary
 
-Three words, fixed: `writing` (copy), `coding` (code), `art` (image).
+Three standard tags are defined: `writing`, `coding`, and `art`.
 
-The vocabulary is **a convention for people to read**; the engine does not take it as a hard rule: a tag outside the vocabulary warns one line and is taken as it is — when a fourth kind of work really appears, writing it in is enough, and the warning only tells a person they are standing outside the vocabulary. The filter always compares by the letter.
+This vocabulary is a **human convention**, not a hard engine restriction. Tags outside the list emit a one-line warning and are accepted as-is—if a project needs a fourth category, it works immediately while the warning flags the non-standard name. Filtering always performs exact string matching.
 
-## 2. Why it lands on those two places
+## 2. Storage and Intentional Asymmetry
 
-- **A node's tag lands in the graph**, because it is part of the graph: which kind of work it belongs to is said by the graph itself, exactly like whom it depends on and what status it is in.
-- **The cycle's filter set lands on that line's own record**, because it is **this line's** property: a line picking one kind of work is a fact that travels with the line, not with one pick. The start-up command hands the filter set to the picking and to the record **at the same time** — picking happens before the cycle exists, so writing the record alone would be too late and the first node would already be picked from another line's work; every pick after that reads it back from there and reuses it, so "the second pick caught something of another line" has nowhere to happen.
-- **The two sides are not symmetrical.** A node's tag is optional — with none, the key does not appear in the graph at all (that is part of the regression floor). **On the line, `tags` is required**: it is more than the filter set for picking, the maintenance channel's scope is expressed through it too, and a line without it would give "who may react to a maintenance metric" a second answer.
-- **The weight is computed once.** The score is still computed over the whole unfinished subgraph, and the filter set drops rows without touching the score — so "the first of the filter set" and "the first of the whole graph" use the same ranking.
+- **Node tags live in the DAG**: work category is a graph property alongside dependencies and node status.
+- **Cycle filter sets live on the cycle record**: scope is a durable property of the execution line, not of an individual pick. The start command passes the filter set to both the initial pick and the cycle record simultaneously—picking occurs before the cycle exists, so writing only to the record would let the first pick grab unrelated work. Every subsequent pick reuses the stored filter set, preventing mid-cycle drift.
+- **Asymmetry is intentional**: Node tags are optional; when omitted, the key is absent from the graph (preserving backward compatibility). **Cycle `tags` are required**: beyond filtering picks, they also define which maintenance channel domains apply to the cycle—omitting them would leave maintenance routing ambiguous.
+- **Weights are computed once**: Scores are still computed over the entire unfinished subgraph; filtering only drops non-matching rows without altering scores. The top node within a filter set therefore follows the exact same ranking as the full graph.
 
-## 3. The criterion of the filter
+## 3. Filter Criterion
 
-> A node is inside this cycle's pick set ⇔ it carries **no tag at all**, or its tags **intersect** the cycle's filter set.
+> A node is within a cycle's selection scope ⇔ it has **no tags**, or its tags **intersect** the cycle's filter set.
 
-- A node may carry several tags: a node tagged `art,writing` belongs to two lines at once, and whichever line picks it first counts.
-- **A node with no tag stays inside every set.** This is the conservative direction: missing a block costs one extra node run, while blocking wrongly costs a line's work never being done — and the second cost hangs there until somebody notices. So "no tag" always means "no limit".
-- When a cycle sets no filter set (only records of an older shape have such a row), the whole graph is its set.
+- A node may carry multiple tags (e.g., `art,writing`), making it eligible for both lines; whichever picks it first claims it.
+- **Untagged nodes match every filter set**: This is the conservative default. Failing to filter out a node costs at most one extra run, whereas wrongly hiding a node can strand work indefinitely until someone notices. "No tag" therefore always means "unrestricted."
+- If a legacy cycle record has no filter set, the entire graph is in scope.
 
-## 4. Why the filter lands on "pick the next node" alone
+## 4. Why Filtering Applies Only to "Pick the Next Node"
 
-The filter is a **picking rule**, and pushing it anywhere else grows its own trouble:
+Filtering is strictly a **selection rule**; extending it elsewhere creates state conflicts:
 
-- **The node being run is not its business.** A cycle records it on its claim when it takes a node, and reports the node on the claim record. Even when the filter set does not match it, it runs to its end and closes as usual — changing a node already running halfway is overturning the decision made when it was claimed.
-- **Dependencies change by not one word.** Being blocked and having an unmet dependency are two different things: a blocked node neither changes status nor is marked `shelved`, its dependency edges stay as they are, it is "not picked this round", and "something is wrong with it" is several steps away.
+- **In-flight nodes are unaffected**: Once a cycle claims a node, it tracks that claim directly. Even if the filter set no longer matches, the held node finishes and closes normally—overturning a claim mid-flight would break state consistency.
+- **Dependencies are untouched**: Being filtered out is distinct from having unmet dependencies. Filtered nodes do not change status, are not marked `shelved`, and retain all dependency edges—they are simply not selected in this round.
 
-## 5. The pause when another line has ready work
+## 5. Pausing When Only Other Lines Have Ready Work
 
-While this line's filter set still has a ready node, the first one is picked as always; when the whole graph has no ready node, it stops as always; **when this line has none and the graph has ready ones that the tags merely block — it stops.**
+If the current cycle's filter set has ready nodes, it picks the top-ranked one; if the entire graph has no ready nodes, it stops. **If this cycle has no ready nodes, while other ready nodes exist in the graph but are excluded by tags—it also stops.**
 
-Stopping here hands the choice back to the user: this line's work is done, and whether the other line starts and when is his to say. What the machine can compute is "this line has no work, another one has"; what it cannot compute is "whether opening the second line now is right" — that is a human sentence, and it should come from a human.
+Stopping returns the decision to the user: this line's work is done, and whether or when to launch another line is a human decision. The engine can determine that work exists elsewhere, not whether starting a second line right now is appropriate.
 
-The moment it stops it gives a one-line `reason`, written for a person: it names which nodes are ready, which tags block them, and hands over a command that can be copied straight into a new cycle. Stopping turns this line `inactive` as always; the other line's work stays on the graph as it was, nothing is locked, and no node is marked dead.
+On pause, the engine emits a human-readable `reason` naming which ready nodes were excluded by which tags, along with a ready-to-copy command to start a new cycle. The current cycle transitions to `inactive`; excluded nodes remain untouched in the graph with no locks or error flags.
 
-## 6. The node `--node` names
+## 6. Explicit `--node` Selection
 
-A node the user names by hand follows the existing semantics: a ready one goes, a not-ready one is refused with an explanation. The filter set governs "who is picked when nobody names one", and cannot reach an id typed by hand — silently eating a name just typed hides a decision the user just made. Both roads have to say "it is not inside this line's set"; saying only "it cannot start now" makes a person think of an unmet dependency.
+A node explicitly named via `--node` follows existing semantics: if ready, it runs; if not ready, it is rejected with an explanation. The filter set governs automatic selection and must not silently discard an ID the user explicitly typed. In either outcome, if the node falls outside the cycle's filter set, the message must state so explicitly rather than only saying "cannot start now" (which suggests unmet dependencies).
 
-## 7. The empty filter set (the regression floor)
+## 7. Empty Filter Set (Backward-Compatibility Floor)
 
-The writing side always gives `--tags`, so the empty filter set is a branch left for **records already on disk** whose cycle carries no tag:
+All write paths require `--tags`, so the empty-filter branch exists solely for **legacy cycle records** created without tags:
 
-- The filter set is empty ⇒ the whole graph is its set, and the pick, the recorded path and the shape of the record are byte for byte what they are without this feature.
-- A node carries no tag ⇒ it stays inside the pick set under any filter set, and the graph gains no key.
+- Empty filter set ⇒ the entire graph is in scope; selection, recorded paths, and record structure remain byte-for-byte identical to pre-tag behavior.
+- Untagged node ⇒ eligible under any filter set, with no extra key added to the graph.

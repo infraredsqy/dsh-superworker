@@ -1,72 +1,57 @@
-# Review subagent anti-patterns
+# Review Subagent Anti-Patterns
 
-Check yourself against this once you have a review task. The criteria themselves live in
-[`../subagent-prompts/review.md`](../subagent-prompts/review.md); this keeps symptoms and
-correction signals only.
+Review this checklist before starting a review task. The authoritative rules live in [`../subagent-prompts/review.md`](../subagent-prompts/review.md); this file records symptoms and correction signals only.
 
-## `conduct-review-fixes-code-itself` — changing code yourself during the review
+## `conduct-review-fixes-code-itself` — Editing code during a review
 
-**Symptom**: you find a problem and go ahead and fix it, reporting only that this one was not
-done.
+**Symptom**: Fixing an issue directly upon finding it instead of sticking to read-only reporting.
 
-**Correction signal**: the workspace changed during this round, and your prompt only let you read.
+**Correction signal**: The working tree has modifications after the review round even though your prompt granted read-only scope.
 
-## `conduct-review-only-rechecks-last-round` — rechecking only the last round, then PASS
+## `conduct-review-only-rechecks-last-round` — Rechecking only the previous round's items before reporting PASS
 
-**Symptom**: the second and third rounds only check whether the previous round's critical / minor
-findings are fixed, and report PASS as soon as they are.
+**Symptom**: On round 2 or 3, checking only whether the prior round's critical/minor items were fixed and reporting `PASS` without a full review.
 
-**Correction signal**: this round's list holds only the previous round's few items.
+**Correction signal**: The review checklist covers only the items raised in the previous round.
 
-## `conduct-review-adds-features-to-spec` — adding features the spec never asked for
+## `conduct-review-adds-features-to-spec` — Demanding features not in the spec
 
-**Symptom**: "A is a prerequisite of B, and the spec never wrote A", so the report says "A needs
-to be added".
+**Symptom**: Concluding "A is a prerequisite for B, and the spec omitted A," then flagging "must implement A" in the review report.
 
-**Correction signal**: a finding on the list asks for something the spec never mentioned.
+**Correction signal**: A finding requires functionality the spec never asked for.
 
-## `conduct-review-judges-other-nodes` — judging a prerequisite node or another node out of bounds
+## `conduct-review-judges-other-nodes` — Flagging issues belonging to other nodes
 
-**Symptom**: a prerequisite node's missing feature, or another node's work, is marked critical /
-minor.
+**Symptom**: Marking missing work from a prerequisite node or another node's scope as a critical/minor finding on this node.
 
-**Correction signal**: a finding's location falls outside this node's spec scope.
+**Correction signal**: A finding's target location falls outside this node's spec scope.
 
-## `conduct-review-accepts-preexisting-failure-claim` — taking the pre-existing claim at face value
+## `conduct-review-accepts-preexisting-failure-claim` — Accepting a "pre-existing failure" claim without verification
 
-**Symptom**: the executing side says a test failure is pre-existing, and the review nods it
-through.
+**Symptom**: Taking the executing side's claim that a test failure is pre-existing at face value and passing the review.
 
-**Correction signal**: the report only retells it, with no command and output you ran yourself.
+**Correction signal**: The report merely repeats the claim with no independently run command or output.
 
-## `conduct-review-reports-unrun-verification` — reporting a verification result without running it
+## `conduct-review-reports-unrun-verification` — Reporting verification results without running them
 
-**Symptom**: the report says "the verification flow should pass" or "the tests are expected to all
-pass", with nothing actually run.
+**Symptom**: Writing "verification should pass" or "tests are expected to pass" without actually executing them.
 
-**Correction signal**: the conclusion is in the speculative mood, and the command column is blank.
+**Correction signal**: Conclusions are phrased speculatively and the command evidence is missing.
 
-## `conduct-review-count-line-missing-or-mismatched` — no count line, or a count that mismatches
+## `conduct-review-count-line-missing-or-mismatched` — Missing or mismatched count header
 
-**Symptom**: the report is a pile of analysis with no count on the first line, or the count does
-not add up against the list.
+**Symptom**: Writing lengthy analysis without the required first-line count summary, or reporting counts that do not match the listed findings.
 
-**Correction signal**: you take the first line's two numbers down the items and they do not match.
+**Correction signal**: The two numbers on the first line do not match the actual count of items below.
 
-## `conduct-review-copies-known-material` — copying material the reader already holds
+## `conduct-review-copies-known-material` — Copying material the reader already has
 
-**Symptom**: one finding's location lists ten line numbers and every field after it lists them
-again; long stretches of the spec or the manuscript are quoted verbatim as "grounds"; it opens
-with a table of several files' `sha256` and line counts. Four hundred and more lines in a round,
-judgements making up less than half of it.
+**Symptom**: Repeating ten line numbers across every field of a finding, quoting large blocks of the spec or deliverable verbatim as "evidence," or opening with a table of file `sha256` hashes and line counts—producing a 400+ line report where actual judgment is less than half.
 
-**Correction signal**: the copied lines outweigh the judged lines.
+**Correction signal**: Copied content outweighs actual findings and analysis.
 
-## `conduct-review-clamped-reading-as-evidence` — a clamped reading passed off as evidence
+## `conduct-review-clamped-reading-as-evidence` — Using clamped readings as passing evidence
 
-**Symptom**: the proving script contains something like `segs = Math.min(slots, …)`, which clamps
-the excess back under the cap, and so "zero breaches" holds; run it again without those two clamps
-and the real overrun shows up.
+**Symptom**: A verification script clamps out-of-range values back within bounds (e.g., `segs = Math.min(slots, ...)`), producing a false "0 breaches" pass; removing the clamp immediately exposes the real overflow.
 
-**Correction signal**: the proving script reports "all pass" under the old behaviour too.
-(Instance: one node's fourth-fix-round proving script, `fix4-verify.mjs`.)
+**Correction signal**: The verification script still reports "all pass" against the old buggy behavior (e.g., a fourth-round fix verification script `fix4-verify.mjs`).

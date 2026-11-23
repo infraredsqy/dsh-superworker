@@ -1,98 +1,75 @@
-# Execute / Fix subagent anti-patterns
+# Execute / Fix Subagent Anti-Patterns
 
-Check yourself against this before executing a spec. The criteria themselves live in
-[`../subagent-prompts/execute.md`](../subagent-prompts/execute.md); this keeps symptoms and
-correction signals only.
+Review this checklist before executing a spec. The authoritative rules live in [`../subagent-prompts/execute.md`](../subagent-prompts/execute.md); this file records symptoms and correction signals only.
 
-## `conduct-execute-modifies-spec` — the executing side changes spec.md
+## `conduct-execute-modifies-spec` — Modifying `spec.md` during execution
 
-**Symptom**: you find something in the spec unreasonable and change it to your own reading, or
-settle a "to be confirmed" item by guessing.
+**Symptom**: Judging a spec item unreasonable and altering it on your own, or guessing the answer to a "to be confirmed" item.
 
-**Correction signal**: the report carries a goal that is not in the spec, and spec.md changed
-after the moment work started.
+**Correction signal**: The report introduces goals absent from the spec, and `spec.md` was modified after work began.
 
-## `conduct-execute-adds-out-of-scope-work` — adding work outside the spec yourself
+## `conduct-execute-adds-out-of-scope-work` — Adding work outside the spec
 
-**Symptom**: reading the code you see a spot that "is still missing a piece" and fill it in — the
-spec never had that in it.
+**Symptom**: Noticing a "missing piece" while reading code and implementing it even though the spec never asked for it.
 
-**Correction signal**: a line in the change list whose matching spec item cannot be named.
+**Correction signal**: An entry in the change list cannot be mapped to any requirement in the spec.
 
-## `conduct-execute-parallel-edits-other-file-group` — editing files outside your group in parallel
+## `conduct-execute-parallel-edits-other-file-group` — Editing files outside your assigned group in parallel
 
-**Symptom**: under parallel execution you change a file that is not in your file group and collide
-with another agent.
+**Symptom**: During parallel execution, editing a file outside your assigned file group and colliding with another agent.
 
-**Correction signal**: a file in the change list that was not handed to you.
+**Correction signal**: The change list includes a file not assigned to you.
 
-## `conduct-execute-does-not-stop-on-blocker` — hitting a blocker and not stopping to report
+## `conduct-execute-does-not-stop-on-blocker` — Failing to stop and report on a blocker
 
-**Symptom**: tests keep failing and you keep retrying; the spec and the real code do not line up
-and you keep changing things anyway; you muddle through an operation you are not sure about.
+**Symptom**: Repeatedly retrying failing tests, pushing forward despite a mismatch between the spec and the codebase, or guessing through uncertain operations.
 
-**Correction signal**: the report is one long "let me try again", with not one FAIL in it.
+**Correction signal**: The report is a chain of retry attempts without a clear `FAIL` escalation.
 
-## `conduct-execute-runs-irreversible-operations` — running irreversible operations
+## `conduct-execute-runs-irreversible-operations` — Running irreversible operations
 
-**Symptom**: destructive work done under the banner of "fixing the problem" — deleting files or
-directories in bulk, `git reset --hard`, overwriting on a wide scale, deleting `.git`.
+**Symptom**: Performing destructive actions under the guise of fixing an issue—bulk-deleting files or directories, running `git reset --hard`, broad overwrites, or deleting `.git`.
 
-**Correction signal**: at the moment before touching anything, you cannot answer "how does this
-step get undone".
+**Correction signal**: Before acting, you cannot explain how to roll the step back.
 
-## `conduct-execute-continues-past-failing-tests` — carrying on past a failing test
+## `conduct-execute-continues-past-failing-tests` — Continuing past failing tests
 
-**Symptom**: a test failure is reported with "it does not affect what comes later" tacked on.
+**Symptom**: Reporting a test failure with "does not affect downstream behavior" and moving on.
 
-**Correction signal**: the report's passing readings do not line up with the files this round
-touched.
+**Correction signal**: The passing test results in the report do not cover the files touched in this round.
 
-## `conduct-execute-assumes-failure-preexisting` — ruling a failure pre-existing yourself
+## `conduct-execute-assumes-failure-preexisting` — Assuming a failure is pre-existing
 
-**Symptom**: on seeing a failure you conclude "this was already broken before" and skip over it.
+**Symptom**: Dismissing a failure as "already broken before" and skipping it.
 
-**Correction signal**: the report has the conclusion and nothing else — no test, no command, no
-output.
+**Correction signal**: The report states a conclusion without citing the failing test, command, or output.
 
-## `conduct-execute-vague-deviation-report` — a deviation report that names nothing
+## `conduct-execute-vague-deviation-report` — Writing a vague deviation report
 
-**Symptom**: something in the work departs from the spec and the report says "a few small
-adjustments".
+**Symptom**: Summarizing departures from the spec as "a few minor adjustments."
 
-**Correction signal**: the deviation item is all adjectives, and no one can read out where it was
-or what was actually done.
+**Correction signal**: The deviation section contains only vague qualifiers, without identifying what diverged or what was done instead.
 
-## `conduct-execute-pastes-evidence-into-report` — pasting evidence into the report's body
+## `conduct-execute-pastes-evidence-into-report` — Pasting raw evidence into the report body
 
-**Symptom**: raw command output, synthetic samples, hashes and long quotes go into `report.md`
-whole; one delivered file comes with a thousand lines of explanation.
+**Symptom**: Dumping raw command output, synthetic samples, hashes, or long verbatim excerpts into `report.md`, inflating a single deliverable into a thousand-line report.
 
-**Correction signal**: the report is too long for the next link to finish, and most of it is
-material the reader already holds.
+**Correction signal**: The report is too bloated for downstream readers, and most of it duplicates material already on disk.
 
-## `conduct-execute-appends-stale-readings` — appending to a stale reading instead of correcting it
+## `conduct-execute-appends-stale-readings` — Appending stale readings instead of replacing them
 
-**Symptom**: a number in the body changes later, so you add "**historical reading**: …" beside it
-and leave the old reading where it was. The report goes from a few hundred lines to over two
-thousand (instance: one node's manuscript ran 429 lines and its `report.md` 2017).
+**Symptom**: When numbers change, leaving old values in place and appending "**Historical reading**: …" next to them, bloating the report from hundreds to thousands of lines (e.g., a 429-line deliverable accompanied by a 2,017-line `report.md`).
 
-**Correction signal**: the same number appears twice in one report, and one of them is marked
-"historical".
+**Correction signal**: The same metric appears multiple times in one report with earlier values labeled "historical."
 
-## `conduct-execute-dispatches-on-conductor-instructions` — dispatching on the conductor's notes
+## `conduct-execute-dispatches-on-conductor-instructions` — Dispatching subagents based on conductor-level notes
 
-**Symptom**: the spec or a method skill says "batch by change domain, dispatch Fix / Review per
-batch, commit once a batch passes", and you start dispatching subagents along with it — one layer
-inside another.
+**Symptom**: Seeing conductor-level guidance in a spec or method skill (e.g., "batch by domain, dispatch Fix/Review per batch, commit on pass") and spawning nested subagents yourself.
 
-**Correction signal**: a dispatch action shows up in your step, and your prompt does not carry
-that item.
+**Correction signal**: Your execution performs subagent dispatches that your prompt did not authorize.
 
-## `conduct-execute-defers-as-delivery` — "known unresolved" standing in for delivery
+## `conduct-execute-defers-as-delivery` — Substituting "known unresolved" for delivery
 
-**Symptom**: one item in the spec cannot be done now, so you mark it "known unresolved" and call
-it handed over.
+**Symptom**: Marking an uncompleted spec requirement as "known unresolved" and treating the task as delivered.
 
-**Correction signal**: the report ends on a "known unresolved" that cannot say what it is missing,
-who can solve it, or which acceptance items it touches.
+**Correction signal**: The report closes with "known unresolved" without specifying what is missing, who can resolve it, or which acceptance criteria are impacted.

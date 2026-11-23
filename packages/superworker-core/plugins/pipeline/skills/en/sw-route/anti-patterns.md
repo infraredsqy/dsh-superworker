@@ -1,130 +1,97 @@
-# sw-route anti-patterns
+# sw-route Anti-Patterns
 
-Check yourself against this before executing. The criteria themselves live in
-[`./SKILL.md`](./SKILL.md); this keeps symptoms, correction signals and instances only.
+Review this checklist before acting. The authoritative rules live in [`./SKILL.md`](./SKILL.md); this file records symptoms, correction signals, and examples only.
 
-## `route-edits-project-files-directly` — changing project files directly, past the pipeline
+## `route-edits-project-files-directly` — Editing project files directly outside the pipeline
 
-**Symptom**: during the discussion the agent edits / writes project code or doc bodies itself
+**Symptom**: During discussion, the agent edits or writes application code or project documentation directly.
 
-**Correction signal**: the user says "I did not tell you to change the code"
+**Correction signal**: The user says "I didn't ask you to change the code."
 
-## `route-advances-without-reading-graph-or-docs` — advancing without reading the graph or docs
+## `route-advances-without-reading-graph-or-docs` — Advancing without reading the graph or project docs
 
-**Symptom**: the user gives an idea, and the agent reads neither the DAG nor the project docs and
-goes straight into discussing it and writing nodes
+**Symptom**: Given an idea, the agent skips both the DAG and project docs, jumping straight into discussion and node creation.
 
-**Correction signal**: the user says "this node is already there", "yours clashes with the earlier
-one"
+**Correction signal**: The user says "this node already exists" or "this conflicts with an earlier design."
 
-## `route-dumps-raw-data-at-user` — showing the user raw, unrefined data
+## `route-dumps-raw-data-at-user` — Dumping raw, unrefined data at the user
 
-**Symptom**: the user asks "what is in the graph", and the agent dumps the whole node JSON at them
+**Symptom**: When asked what is in the graph, the agent dumps raw node JSON directly.
 
-**Correction signal**: the user says "that is too much", "get to the point"
+**Correction signal**: The user says "too much noise" or "get to the point."
 
-## `route-node-name-depends-on-source-context` — a name that depends on its source doc
+## `route-node-name-depends-on-source-context` — Node names that depend on external doc context
 
-**Symptom**: the node name uses an internal number or a section reference from the source doc,
-like "direction 5" or "direction 1"
+**Symptom**: The node title uses an internal numbering or section reference from a source document, such as "Direction 5" or "Direction 1."
 
-**Correction signal**: the user says "this name does not make sense", "a name should describe
-itself"
+**Correction signal**: The user says "this name doesn't make sense" or "names should be self-describing."
 
-## `route-creates-orphan-node` — a new node with no downstream declared, an orphan
+## `route-creates-orphan-node` — Creating an orphan node with no downstream dependency
 
-**Symptom**: a new node gets only its upstream dependency (who it depends on) and no downstream
-dependency (who should depend on it) — an orphan is in nobody's recommended path, its urgency and
-importance are 0, and it is as good as shut out of the pipeline
+**Symptom**: A new node declares only upstream dependencies (what it depends on) and no downstream dependents (what depends on it). An orphan sits outside every recommended path with urgency and importance of 0, effectively excluded from the pipeline.
 
-**Correction signal**: listing the graph, this node shows up in no recommended path
+**Correction signal**: Listing the graph shows the node missing from all recommended paths.
 
-## `route-deletes-node-or-edge-without-impact-check` — deleting a node or edge, no impact check
+## `route-deletes-node-or-edge-without-impact-check` — Deleting a node or edge without an impact check
 
-**Symptom**: the user says "delete this node" and the agent deletes it by force; or an edge comes
-off with no check of the up- and downstream — what was cut is somebody's prerequisite, and once it
-vanishes silently the downstream node is run on a false premise, with nothing on the graph showing
-anything was ever missing
+**Symptom**: The agent force-deletes a node on request, or removes an edge without inspecting upstream and downstream neighbors. A prerequisite vanishes silently, causing downstream nodes to run on broken assumptions with no trace in the graph.
 
-**Correction signal**: the user says "why did you cut that edge for me", "who told you to delete
-it"
+**Correction signal**: The user says "why did you cut that edge?" or "who told you to delete that?"
 
-## `route-splits-without-verification-boundary` — a split with no verification boundary
+## `route-splits-without-verification-boundary` — Splitting nodes without independent verification boundaries
 
-**Symptom**: the node split the agent proposes cannot name an independent verification standard.
-Either several nodes share one verification (split too fine), or one node mixes two different ways
-of verifying (split too coarse)
+**Symptom**: The proposed split has no clean verification boundary—either multiple nodes share a single verification step (too granular), or one node mixes distinct verification methods (too coarse).
 
-**Correction signal**: the user says "these two should be bound together", "why split it that
-fine"
+**Correction signal**: The user says "these two belong together" or "why split this so finely?"
 
-## `route-spec-has-implementation-detail-or-no-done-check` — detail in the spec, or no done check
+## `route-spec-has-implementation-detail-or-no-done-check` — Implementation details in spec, or missing done criterion
 
-**Symptom**: the spec carries function names, line numbers, call order, or implementation steps (folders and file names as landing points are allowed); or it is all
-"do the design for X" / "tune Y", with no acceptance to be found that yields a pass / fail reading
+**Symptom**: The spec includes function names, line numbers, call sequences, or step-by-step implementation instructions (directory and file names as landing points are allowed); or it consists only of vague goals like "design X" or "tune Y" with no runnable pass/fail acceptance check.
 
-**Correction signal**: sw-conduct's prepare stops and says "the completion rule cannot be run" or
-"the spec and the code's premise do not hold"
+**Correction signal**: `sw-conduct` aborts during preparation, reporting that the done criterion cannot be executed or that the spec's code assumptions do not hold.
 
-## `route-spec-scope-unpinned` — the spec does not pin its scope
+## `route-spec-scope-unpinned` — Unpinned spec scope
 
-**Symptom**: the spec says only what it does, not where the change actually lands; or it says it,
-and that wording carries more than one referent in the project
+**Symptom**: The spec states what to do without naming where the change lands, or uses wording that matches more than one location in the codebase.
 
-**Correction signal**: ask the spec "where does this change land", and the answer comes back with
-more than one place
+**Correction signal**: Asking "where does this change land?" against the spec yields more than one answer.
 
-**Instance**:
+**Example**:
 
-    this command's output is a mess, tidy it up, and mind you do not break anything else.
+    This command's output is messy—clean it up without breaking anything else.
 
-That reads neither where it lands nor what would count as done. The specification form:
+This specifies neither the target location nor a verifiable outcome. Proper form:
 
-    Goal: align the column widths of this command's three-column output.
-    Scope: this command's own entry point, not its downstream subcommands.
-    Criterion: run it once, all three columns align on the longest entry; argument parsing and
-    exit codes unchanged.
+    Goal: Align column widths for the command's three-column output.
+    Scope: The command's own entry point only, excluding downstream subcommands.
+    Criterion: Running the command once aligns all three columns to the widest entry; argument parsing and exit codes remain unchanged.
 
-## `route-lowers-parallel-instead-of-adding-edges` — lowering parallel instead of adding edges
+## `route-lowers-parallel-instead-of-adding-edges` — Lowering `parallel` instead of adding dependency edges
 
-**Symptom**: on finding that two nodes (or three) would change the same batch of files, the agent
-goes and turns this line's `parallel` down or to 1; the reason is usually written as "for safety"
-or "to avoid a crash"
+**Symptom**: When two or more nodes touch the same files, the agent reduces the cycle's `parallel` setting (often to 1), citing "safety" or "avoiding conflicts."
 
-**Correction signal**: the user says "a crash means add an edge, not lower the parallel", "do not
-patch it with parallel"
+**Correction signal**: The user says "add a dependency edge for conflicts, don't lower parallelism."
 
-## `route-writes-node-before-requirements-settle` — writing a node before the requirements settle
+## `route-writes-node-before-requirements-settle` — Creating nodes before requirements settle
 
-**Symptom**: the user is still talking the design through and the trade-offs are not settled, and
-the agent presses this round's discussion into a conclusion, builds the node and writes the spec,
-with no plan laid out in between
+**Symptom**: While the user is still exploring design trade-offs, the agent prematurely compresses the discussion into nodes and specs without first presenting a proposal for confirmation.
 
-**Correction signal**: the user says "you jumped too fast", "stop first and talk it through with
-me", "kill every node you just added"
+**Correction signal**: The user says "you jumped ahead," "slow down and align first," or "delete the nodes you just added."
 
-## `route-creates-discussion-or-acceptance-node` — a discussion or final-acceptance node
+## `route-creates-discussion-or-acceptance-node` — Modeling discussions or final manual acceptance as DAG nodes
 
-**Symptom**: nodes like "discuss the design of X with the user" or "on-device testing /
-integration / acceptance after everything is done" show up in the graph
+**Symptom**: Nodes such as "Discuss design of X with user" or "End-to-end manual testing / acceptance after all nodes complete" appear in the graph.
 
-**Correction signal**: the user says "this node does not need building", "I will try this one
-myself"
+**Correction signal**: The user says "don't create a node for that" or "I'll test that myself."
 
-## `route-reads-a-landed-line-as-a-started-node` — reading a landed line as a node at work
+## `route-reads-a-landed-line-as-a-started-node` — Treating a landed cycle as an actively running node
 
-**Symptom**: after `cycle start` / `cycle status <line> active` the agent reports "the line is
-open", "the first node is pinned, a bare /sw-conduct will pick it up", and reads the `Node:` lines
-in `cycle current` as a node running; no session was opened, and the user's "start this node" got
-only half an answer
+**Symptom**: After running `cycle start` or `cycle status <id> active`, the agent reports "the cycle is running" or "the first node is ready," misreading the `Node:` line in `cycle current` as active execution. No execution session was actually launched, leaving the user's request to start work half-done.
 
-**Correction signal**: the user asks "did it run", "who is running"
+**Correction signal**: The user asks "is it actually running?" or "which session is running it?"
 
-## `route-hands-over-a-command-without-pipeline` — the handed-over line dropped `[pipeline]`
+## `route-hands-over-a-command-without-pipeline` — Dropping `[pipeline]` from the handoff command
 
-**Symptom**: the report ends with `/sw-conduct <node id>`, `[pipeline]` missing; the user runs it,
-that one node is done, and no close, no commit and push and no next node follows — the line sits
-where it was, waiting
+**Symptom**: The handoff command is given as `/sw-conduct <node-id>` without `[pipeline]`. The user runs it, only that single node completes, and no close, commit/push, or next-node advancement occurs—leaving the cycle stalled.
 
-**Correction signal**: that session stops after the one node, and `cycle current` still has the
-line where it was
+**Correction signal**: The session exits after one node while `cycle current` remains unchanged.

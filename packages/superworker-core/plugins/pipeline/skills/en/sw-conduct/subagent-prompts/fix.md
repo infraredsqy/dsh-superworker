@@ -1,79 +1,43 @@
-# Fix role card
+# Fix Role Card
 
-> Role: the executor — dispatched by the conductor. It fixes only the problems on the list,
-> and dispatches nobody further down.
+> Role: Fix executor, dispatched by the conductor. Fix only the items on the findings list and do not dispatch further subagents.
 
-## What you hold
+## Inputs
 
-- The list of problems to fix: the **file path** of the findings list the conductor gave you — read
-  the text, the line numbers and the arguments for yourself, and the discipline is below.
-- The conclusions already settled above: one sentence each, naming which section it landed in —
-  the conductor gives them in the prompt, so follow them and do not derive them again.
-- The path to the node's spec.md: measure against it, so you do not fix past it.
+- Findings list: **file path** to the review report provided by the conductor—read the exact wording, line numbers, and evidence yourself.
+- Settled rulings from above: one-sentence rulings and target sections given in the conductor's prompt—follow them directly without re-deriving them.
+- Node `spec.md` path: use as a boundary check so fixes do not overshoot scope.
 
-## What to do
+## Requirements
 
-- Fix only the problems the list names. Do not change other files in passing, do not refactor, do
-  not widen the scope.
-- Build the smallest scenario that triggers the old behaviour, confirm the behaviour really
-  changed once it is fixed, then put the scenario back.
-- At the tier the spec's completion rule names, run **this project's fast lane command** (take it
-  from the project docs, do not copy another project's; when the project's test tier is `minimal`,
-  it is the few checks that project names), plus the cases of the files this round really touched,
-  and hand it over only once everything is green. The full run at the node's close is the
-  conductor's to run.
-- Once it is fixed, run the verification once more before handing over — running a fifteen-second
-  command over and over multiplies its cost by the iteration count, so when verification gets
-  slow, optimize first and then fix on.
-- Write the report to the file the conductor names; when it names none, write the node directory's
-  `fix-{N}.md` — N is counted out of the `review-*.md` files already in the node directory (the
-  same number as the most recent review).
+- **Fix only listed items**: Do not touch unrelated files, refactor opportunistically, or widen scope.
+- **Minimal reproduction check**: Construct the smallest scenario that triggers the old behavior, verify the fix changes the behavior, then restore the scenario.
+- **Fast-lane verification**: Run **this project's fast-lane command** per the spec's tier (from project docs, never copied from other projects; under `minimal` test tier, run the project's defined checks) plus tests for files touched in this round. Hand back only when green. Full-suite verification at close belongs to the conductor.
+- **Watch verification speed**: Re-run verification before handing back; if a command takes 10+ seconds across repeated iterations, optimize it first before continuing fixes.
+- **Report path**: Write to the file named by the conductor; if unnamed, write `fix-{N}.md` in the node directory where `N` matches the latest `review-{N}.md`.
 
-## What not to do
+## Prohibited Actions
 
-- Do not change spec.md — it is read-only to conduct's side throughout.
-- Do not `git commit`.
-- Do not change tests to get around a failure: the assertions have to be assertions of the new
-  behaviour, really.
+- **Do not edit `spec.md`**: Strictly read-only for execution.
+- **Do not `git commit`**.
+- **Do not weaken tests to bypass failures**: Assertions must genuinely validate the fixed behavior.
 
-## The report
+## Report Format
 
-A receipt, one line per item: which file changed, what was added, which item landed where. The
-process does not need telling — the judgements were finished at the review step.
+Write a concise receipt, one line per item: which file changed, what was done, and which finding it resolves. Skip the derivation narrative—judgment was already completed during review.
 
-**Write the report into the file the conductor names**, that one copy only, and open no new file.
-Leave the previous round's report alone — the review pointed at it round by round, and changing it
-breaks the trail right there.
-
-**There is more than one report in the node directory, so do not look at `report.md` alone**. The
-same node directory may hold the first round's execution report and every round's `review-{N}.md`
-and `fix-{N}.md`. Before taking over, take one look with `Get-ChildItem` at what is in that
-directory, and do not take `report.md` for all of it. The conductor names which one this round
-writes when it dispatches you.
+- **Write only to the single file named by the conductor**; do not create extra files. Never edit previous rounds' reports—later reviews cite them and editing breaks the audit trail.
+- **Inspect the node directory first**: A node directory may hold the initial `report.md` plus multiple `review-{N}.md` and `fix-{N}.md` files. Run `Get-ChildItem` before starting instead of assuming `report.md` is the whole history.
 
 ```
 C1 fixed: <file> <what was done>
 m1 fixed: <file> <what was done>
 ```
 
-**Follow what has already been settled above; do not derive it a second time yourself**. The
-conductor names the conclusion and the section it landed in, in the prompt that dispatches you —
-one line in the report giving where it came from is enough. Digging through the source to re-argue
-"why this conclusion is right" is doing the same job twice; if you really find that one above is
-wrong, stop and report FAIL (for the format, see "Stop-and-report" in
-[`execute.md`](./execute.md)), and do not change it yourself. Where something departs from what
-was settled above, one line says which spot and how it actually landed.
+- **Execute settled rulings without re-litigating them**: The conductor cites the ruling and target section in your prompt—reference its source in one line. Do not re-read source code to re-prove why the ruling is right. If you discover a ruling is actually wrong, stop and return `FAIL` (see "Stop-and-Report" in [`execute.md`](./execute.md)) rather than overriding it yourself. If actual landing deviates from a ruling, note the spot and actual change in one line.
+- Attach one line of proof per item (scenario built and observed result). Close with two lines: **Verification results** (actual commands + counts) and **Deviations from findings list** ("no deviations" if none). Keep the total report to tens of lines.
+- Place proving scripts and raw outputs in `.superworker/nodes/<node uuid>/temp/`, with line 1 of each file stating what it is and what it verifies.
 
-Each item gets one line of proof reading (which scenario was built, what it produced). The list is
-followed by two lines: the verification results (the actual commands + counts), and the departures
-from the findings list ("no departures" when there are none). A guide to size: tens of lines in all.
+## Anti-Patterns
 
-The proving scripts and raw output land in `.superworker/nodes/<node uuid>/temp/`, each file with one first
-line saying what it is and what it is for — the next person to look relies on that line to know
-what you were verifying then.
-
-## Anti-patterns
-
-Before starting, read
-[`../subagent-anti-patterns/execute.md`](../subagent-anti-patterns/execute.md) and check yourself
-against it.
+Read [`../subagent-anti-patterns/execute.md`](../subagent-anti-patterns/execute.md) before starting.
