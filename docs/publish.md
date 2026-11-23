@@ -3,6 +3,8 @@
 > 这页只写**做法**与**已知限制**：这个包怎么发出去、别人怎么装进来、装完怎么核。
 > 它写的是**通用口径**，每次发版本都适用；某一次发布里的临时问题、清理残留的事项不进这页。
 > **这页不写版本号**：插件自己的号与 DSH 的号都不进这页。
+> **清单不抄第二份**：`files`、技能名单、命令串的写法以 `package.json`、各 `plugin.json` 与引擎的
+> [merge.md](../packages/superworker-core/docs/merge.md) 为准，这页只说它们是什么意思、什么次序不能动。
 > 包名与仓名都是 `dsh-superworker`，侧栏那一格叫「超级工坊」，DSH 设置里那一节叫「工坊配置」。
 
 ## 交付形态：预构建产物随包走
@@ -205,15 +207,11 @@ dsh plugin --profile <名字> remove dsh-superworker      # 撤销：依赖与�
 `superworker` 工具，面板里是那几手端点，两边走同一份 `answer()`。字段上也看得出来：`package.json`
 没有 `bin`，`files` 里没有 `bin/`。
 
-唯一会被别的进程启动的文件是 git 的合并驱动，它在引擎产物里：
-
-- `<装机目录>/packages/superworker-core/dist/merge-ledger.mjs`。git 按 `merge.superworker.driver` 这条字符串起进程，
-  参数是 `%O %A %B %P`；登记在承载记录的那个仓库的 git config 里，`init` 顺带写、`register` 重写。
-- 登记只有一种写法，绝对形——`"<node 可执行文件的绝对路径>" "<本包 merge-ledger.mjs 的绝对路径>" %O %A %B %P`，
-  两条路径都带引号（Windows 的 node 路径里有空格，git 按空格切这条命令串）。绝对形只指向发布件里自己的
-  文件，不回到仓、也不要 `node_modules`，所以装到哪儿都答得起来；登记不探测 `PATH`——`PATH` 上有什么
-  命令与登记无关。
-- `doctor` 的 `merge-driver` 那一格认这条写法，并判断它在这台机器上真的跑不跑得起来。
+唯一会被别的进程启动的文件是 git 的合并驱动，它在引擎产物里
+（`<装机目录>/packages/superworker-core/dist/merge-ledger.mjs`）。git 按 `merge.superworker.driver` 那条
+字符串起进程；登记只有绝对形一种写法，`init` 顺带写、`register` 重写，`doctor` 的 `merge-driver` 那一格
+判断它在这台机器上跑不跑得起来。命令串、参数与判据的正本在
+[引擎的 merge.md](../packages/superworker-core/docs/merge.md)，这里不抄第二份。
 
 卸掉插件：
 
@@ -221,12 +219,7 @@ dsh plugin --profile <名字> remove dsh-superworker      # 撤销：依赖与�
 dsh plugin --profile <名> remove dsh-superworker
 ```
 
-面板那一行从 profile 的 `dsh.profile.bundles` 里消失；再装上同一个 `.tgz` 就回到新的这份。技能那一半也由发布件供给：`issue` 与 `test-audit` 两个插件带的四条
-（`sw-issue-scan` / `sw-issue-repair` / `sw-issue-discuss` / `sw-test-audit`），加上 `pipeline` 插件带的两条核心技能
-（`sw-conduct` / `sw-route`，每份把它正文指向的 `shared/superworker/` 单页带在自己目录里）与 `instruction` 插件带的一条
-（`sw-instruct`）。都落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的同哈希，根序 rank 400）。派发的第一行
-`/sw-conduct <节点 id>` 因此在干净机器上也读得到；DSH 自己的 `~\.agents\skills` 是 rank 500 的那一根，
-同一个名字在它面前读的是 `$DSH_HOME/skills` 这一份。
+面板那一行从 profile 的 `dsh.profile.bundles` 里消失；再装上同一个 `.tgz` 就回到新的这份。技能那一半也由发布件供给：四个插件各自带的技能（名单以各自的 `plugin.json` 为准）都落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的同哈希，根序 rank 400）。派发的第一行 `/sw-conduct <节点 id>` 因此在干净机器上也读得到；DSH 自己的 `~\.agents\skills` 是 rank 500 的那一根，同一个名字在它面前读的是 `$DSH_HOME/skills` 这一份。
 
 ## 发版前走一遍
 
