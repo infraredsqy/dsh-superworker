@@ -30,6 +30,11 @@ function context({ live = {}, stored = {}, sandboxRoot = 'C:\\fallback-root' } =
   return standIn({ live, stored, sandboxRoot, files: {}, provide: true })
 }
 
+/* The reading's map containers carry no borrowed prototype (records.ts builds them with
+ * Object.create(null)): the assertions pin the own key table, so `own` copies it onto a plain
+ * shell — deepStrictEqual would otherwise split hairs over the container's prototype. */
+const own = (map) => ({ ...map })
+
 test('The plugin name and dependency declaration are the host\'s four', () => {
   assert.equal(name, 'superworker-records')
   assert.deepEqual(inject, ['workspaceFiles', 'sessions', 'sandboxPolicy', 'tools'])
@@ -115,7 +120,7 @@ test('A session nobody knows still goes to the sandbox policy root, and the read
 
   assert.equal(reading.workspaceRoot, 'C:\\sandbox-root-for-tests')
   assert.deepEqual(reading.sources, { nodes: 'missing', cycles: 'missing', instructions: 'missing', issues: 'missing' })
-  assert.deepEqual(reading.nodes, {})
+  assert.deepEqual(own(reading.nodes), {})
 })
 
 test('The service is installed on ctx, and the caller\'s abort signal is handed on to the port', async () => {
