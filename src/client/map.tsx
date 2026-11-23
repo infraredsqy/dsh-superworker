@@ -269,6 +269,15 @@ export function MapPane(props: {
   React.useEffect(() => {
     const held = field.current
     if (held === null) return undefined
+    /* The camera's `tx`/`ty` are measured from the field's own origin — the canvas is an absolutely
+     * positioned plane pinned to it — so every point the camera arithmetic is handed has to be local
+     * to the field. The wheel reads the rect for exactly this; the fingers must too. A midpoint left
+     * in the page's coordinates keeps the field's own `left`/`top` in it, and the zoom then pivots
+     * that far away from the fingers: the drawing slides out from under the pinch as it opens. */
+    const localAt = (x: number, y: number): { x: number; y: number } => {
+      const rect = held.getBoundingClientRect()
+      return { x: x - rect.left, y: y - rect.top }
+    }
     const fingerOf = (event: TouchEvent, id: number): Touch | null => {
       for (const touch of event.touches) {
         if (touch.identifier === id) return touch
@@ -283,14 +292,15 @@ export function MapPane(props: {
       }
       return null
     }
-    /* The beat a pinch starts from: the two fingers and the camera, read at the same moment. */
+    /* The beat a pinch starts from: the two fingers and the camera, read at the same moment, the
+     * fingers in the field's coordinates the camera is held in. */
     const pinchFrom = (a: Touch, b: Touch): void => {
       stopSettle()
       pinch.current = {
         a: a.identifier,
         b: b.identifier,
         dist: Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY),
-        mid: { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 },
+        mid: localAt((a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2),
         s: view.current.s,
         tx: view.current.tx,
         ty: view.current.ty,
@@ -342,7 +352,7 @@ export function MapPane(props: {
         /* Every move is held from the first one, the same as a pan's: an unprevented move is the
          * browser's own scroll or page pinch begun, and the gesture loses the fingers to it. */
         event.preventDefault()
-        const mid = { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 }
+        const mid = localAt((a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2)
         const dist = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY)
         /* The spread scales the camera around the fingers' midpoint, and the midpoint's own travel
          * carries the page: the one gesture a wheel and a drag split in two on the desk. */

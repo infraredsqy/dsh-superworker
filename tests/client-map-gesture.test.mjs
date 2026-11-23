@@ -99,6 +99,66 @@ test('a one-finger drag: the drawing follows and the move is prevented', { skip:
   }
 })
 
+/**
+ * Lay the field out where a real page holds it. jsdom measures every element as a zero box, and this
+ * pane is not at the page's corner: the rail stands to its left, so a field laid out here is the
+ * everyday iPad case, and the one a pinch has to answer to.
+ */
+function laidOut(field, { left, top, width = 800, height = 600 }) {
+  const box = { left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }
+  field.getBoundingClientRect = () => box
+}
+
+/** The camera the canvas is carrying: `translate(tx, ty) scale(s)`, in the field's own coordinates. */
+function cameraOf(canvas) {
+  const found = /translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(canvas.style.transform)
+  assert.notEqual(found, null, `the canvas carries no camera: ${canvas.style.transform}`)
+  return { tx: Number(found[1]), ty: Number(found[2]), s: Number(found[3]) }
+}
+
+test('a pinch pivots on the fingers wherever the field stands on the page', { skip: bundleSkip }, async () => {
+  /* The camera holds the drawing from the field's own origin, so the fingers have to be read there
+   * too. Read in the page's coordinates instead — the field's `left` left in — and the pivot lands a
+   * field-offset away from the fingers: the drawing slides out from under the pinch as it opens,
+   * which is the whole of "the zoom is not centred on my fingers". */
+  const mounted = await mountBuiltPanel({ record: record() })
+  try {
+    const mapTab = mounted.tabs().find((tab) => tab.getAttribute('aria-controls') === 'pane-map')
+    const field = mounted.container.querySelector('.superworker-field')
+    assert.notEqual(field, null, 'the map field is missing')
+    /* Laid out before the tab is pressed: the pane measures itself when it becomes the visible one.
+     * 194 is the rail's own width, its 176 and the 18 of ground beside it. */
+    const rail = { left: 176 + 18, top: 72 }
+    laidOut(field, rail)
+    await mounted.act(async () => { mapTab.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true })) })
+    await mounted.settle()
+    const canvas = mounted.container.querySelector('.superworker-canvas')
+
+    const before = cameraOf(canvas)
+    assert.ok(before.s > 0, 'the pane opened with no camera')
+    /* The fingers' midpoint, and the ground of the drawing that stands under it, both in the page's
+     * coordinates — the one frame in which "under the fingers" means anything. */
+    const mid = { x: 494, y: 372 }
+    const under = (mid.x - rail.left - before.tx) / before.s
+
+    await mounted.act(async () => {
+      field.dispatchEvent(touchAt(mounted.window, 'touchstart', [[3, [394, 372]], [4, [594, 372]]]))
+      field.dispatchEvent(touchAt(mounted.window, 'touchmove', [[3, [294, 372]], [4, [694, 372]]]))
+      field.dispatchEvent(touchAt(mounted.window, 'touchend', [[3, [294, 372]], [4, [694, 372]]]))
+    })
+    const after = cameraOf(canvas)
+    assert.ok(after.s > before.s, `the spread did not zoom in: ${String(before.s)} → ${String(after.s)}`)
+
+    /* The same ground, where the camera puts it now: it must still be under the fingers. The axis
+     * pinned here is the horizontal one — the one the rail offsets, and the one every iPad session
+     * has — because at this drawing's size the camera's own bounds hold the vertical one still. */
+    const landed = rail.left + under * after.s + after.tx
+    assert.ok(Math.abs(landed - mid.x) < 0.5, `the zoom pivoted ${(landed - mid.x).toFixed(1)}px off the fingers: the ground they pinched slid sideways`)
+  } finally {
+    await mounted.unmount()
+  }
+})
+
 test('a two-finger spread: the camera scales around the midpoint and the move is prevented', { skip: bundleSkip }, async () => {
   const mounted = await mountBuiltPanel({ record: record() })
   try {
