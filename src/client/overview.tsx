@@ -479,7 +479,8 @@ function WindowPane(props: {
    * where the geometry puts it, and how small it starts on the way. A child grows from the dispatch
    * row that opened it; the main window and any unanchored child have no source and only fade. The
    * three numbers are read once, by the stage, on the beat the window joined — a flight already in
-   * the air is not re-aimed by a re-measure under it (`flightOf`). */
+   * the air is not re-aimed by a re-measure under it, and the render only reads what is already
+   * flying. */
   const born = props.born
   const cls = [
     'superworker-opane',
@@ -609,6 +610,52 @@ interface PastPane {
   readonly main: boolean
 }
 
+/** The shift and the size a window's flight starts at, read once on the joining beat and kept for
+ * the entrance's span. */
+interface Flight {
+  readonly dx: number
+  readonly dy: number
+  readonly s: number
+}
+
+/** The map without the one flight; a map that never held it is returned as it stands, so nothing
+ * redraws for a drop that was already true. */
+function withoutFlight(map: ReadonlyMap<string, Flight>, id: string): ReadonlyMap<string, Flight> {
+  if (!map.has(id)) return map
+  const next = new Map(map)
+  next.delete(id)
+  return next
+}
+
+/** The map without the one row count; same bail as {@link withoutFlight}. */
+function withoutRows(map: ReadonlyMap<string, number>, id: string): ReadonlyMap<string, number> {
+  if (!map.has(id)) return map
+  const next = new Map(map)
+  next.delete(id)
+  return next
+}
+
+/** Whether a set of ids and a list of ids hold the same names: the beat effects' bail-out, so a
+ * beat that names the same windows re-renders nothing extra. */
+function sameIds(stood: ReadonlySet<string>, ids: readonly string[]): boolean {
+  if (stood.size !== ids.length) return false
+  for (const id of ids) if (!stood.has(id)) return false
+  return true
+}
+
+/** Whether two casts are the same list — same names in the same order, same row counts: the bail
+ * that keeps the previous cast's identity across a beat that changed nothing. */
+function sameCast(
+  left: readonly { readonly id: string; readonly rows: number }[],
+  right: readonly { readonly id: string; readonly rows: number }[],
+): boolean {
+  if (left.length !== right.length) return false
+  return left.every((one, index) => {
+    const other = right[index]
+    return other !== undefined && one.id === other.id && one.rows === other.rows
+  })
+}
+
 /**
  * The overview pane over the reading of one moment. The motion facts ride the beat the reading
  * changes: enter on an id the previous beat had not, leave on a vanished id (held until the leave's
@@ -679,18 +726,17 @@ export function OverviewPane(props: {
   /* The stage's own arrival — the panel opening, or a reader coming back to this tab.
    *
    * It is read during the render that first draws the windows at their real boxes, because that is
-   * the only frame the growth may start on: published from an effect it would land a paint late,
-   * after the windows had already been seen standing at full size. `stageArrived` then holds the
-   * mark for the entrance's span, and is set from a **layout** effect so that any redraw landing
-   * between the commit and the paint still reads it — a pushed frame that dropped the class for one
-   * render would restart the growth from its first keyframe.
+   * the only frame the growth may start on. The fact lives in state, not in a note the render
+   * writes as it draws: both passes of a double render (StrictMode) read the same answer, so the
+   * committed frame is the frame the arrival belongs to. The layout effect below publishes it and
+   * arms the mark — running after the commit but before the paint, its update still lands in that
+   * frame, so a pushed frame dropping the class for one render cannot restart the growth from its
+   * first keyframe.
    *
    * The hold is shed once the span has run: left standing, it would answer for every window that
    * joins the stage later, and a child's own flight from its dispatch row would never play. */
-  const stageArrived = React.useRef(false)
-  const arrivalNow = measured && !stageArrived.current
-  if (arrivalNow) stageArrived.current = true
-  if (!measured) stageArrived.current = false
+  const [stageArrived, setStageArrived] = React.useState(false)
+  const arrivalNow = measured && !stageArrived
 
   /* The marks that stand alone share one registry: the stage's own arrival, the hand-over's, and
    * the room closing up when a fold has run. Each declares its id and its span below; the registry
@@ -698,10 +744,16 @@ export function OverviewPane(props: {
   const marks = useTimedMarks()
   const stageEntered = marks.held.has(STAGE_MARK)
   React.useLayoutEffect(() => {
+    if (!measured) {
+      /* A pane behind another tab measures as nothing: the arrival is un-said, so coming back plays it again. */
+      if (stageArrived) setStageArrived(false)
+      return undefined
+    }
     if (!arrivalNow) return undefined
+    setStageArrived(true)
     marks.hold([STAGE_MARK], ENTER_SPAN_MS)
     return undefined
-  }, [arrivalNow])
+  }, [arrivalNow, measured, stageArrived])
 
   const mainRows = reading.main?.rows.length ?? 0
 
@@ -721,16 +773,26 @@ export function OverviewPane(props: {
    * beat — the session list's two projections disagreeing about a child's running bit while its
    * scope is being made, a seat falling out of the five-window cap and back — is no second arrival,
    * and playing one said the window had just come when the reader was still looking at it. The name
-   * leaves this set when the window's fold has run, which is the moment the stage really lost it, and
-   * is written while drawing, on the arrival itself: the drawing asks this set for the entrance's
-   * first frame, so it has to be answerable before the commit. */
+   * leaves this set when the window's fold has run, which is the moment the stage really lost it;
+   * the beat's own effect records the arrival after the commit, and the render reads the set as the
+   * previous beat left it — the answer the entrance's first frame needs. */
   const arrivedOnce = React.useRef<Set<string>>(new Set())
-  const heldIds = React.useRef<ReadonlySet<string>>(currentIds)
-  const heldMain = React.useRef<string | undefined>(mainId)
+  /* The ids and the subject the previous beat drew with, held in state: the render reads them as
+   * they stand and diffs them against this beat's reading, and the effect below advances them after
+   * the commit. Both passes of a double render read the same previous beat, so the difference is
+   * the difference — not whatever the first pass happened to note. */
+  const [heldIds, setHeldIds] = React.useState<ReadonlySet<string>>(() => currentIds)
+  const [heldMain, setHeldMain] = React.useState<string | undefined>(() => mainId)
+  /* The row counts of the windows that have just left, read off their frozen readings at the beat
+   * they left: a held slot the previous cast never named — a window that arrived while an earlier
+   * fold was already in flight, and left before the stage drew a foldless beat again — measures the
+   * column from these. The layout effect at the cast fills them before the paint, so the fold's
+   * first frame never re-measures without the slot. */
+  const [heldRows, setHeldRows] = React.useState<ReadonlyMap<string, number>>(() => new Map())
 
   /* Leave: the ids that vanished keep their last box for the leave's span, then the page loses them.
-   * The comparison is the previous beat's ids against this one's, held in a ref: state is what the
-   * drawing reads, the ref is what the diff reads, and they are never asked to be the same thing.
+   * The comparison is the previous beat's ids (state, above) against this one's: the drawing reads
+   * state, and the beat's effect advances it — they are never asked to be the same thing.
    *
    * The same diff says which windows arrived, which is what an entrance is played for — and that one
    * is read during the render, not published from here (the note at `arrivedNow` says why). The
@@ -742,6 +804,7 @@ export function OverviewPane(props: {
      * in the same breath as the removal — the render that hands out the freed boxes carries the
      * mark, so the close-up spends on the way rather than snapping after it. */
     arrivedOnce.current.delete(id)
+    setHeldRows((stood) => withoutRows(stood, id))
     marks.hold([SETTLE_MARK], SETTLE_SPAN_MS)
   })
 
@@ -757,70 +820,64 @@ export function OverviewPane(props: {
    * beat's reading of the line; the shift and the size are that one beat's, and the mark is dropped
    * with the join mark itself (the enter span below).
    *
-   * The mark is taken on that joining beat's own drawing (`flightOf` below), which is the only
-   * drawing whose box is the one the window arrives at. Taken a beat later, the window already
-   * stands where it belongs and the shift reads as nothing: the entrance played with a zero
-   * translate, which is a window that simply appears. */
-  const flying = React.useRef<Map<string, { readonly dx: number; readonly dy: number; readonly s: number }>>(new Map())
+   * The mark is taken by the beat's capture effect (below), on the joining beat's own drawing —
+   * the only drawing whose box is the one the window arrives at. Taken a beat later, the window
+   * already stands where it belongs and the shift reads as nothing: the entrance played with a zero
+   * translate, which is a window that simply appears. The map itself lives in state: the render
+   * reads what is already flying, and the effects are what record and drop the flights. */
+  const [flying, setFlying] = React.useState<ReadonlyMap<string, Flight>>(() => new Map())
 
   /* The windows inside their entrance's span: the mark is held for exactly that long (the note at
    * `arrivedNow` says why the *arrival* is not read from this). The flight's aim dies with the mark:
    * the aim was read on the joining beat, and a flight outliving its entrance has nothing left to aim. */
-  const joined = useTimedMarks((id) => { flying.current.delete(id) })
+  const joined = useTimedMarks((id) => { setFlying((stood) => withoutFlight(stood, id)) })
 
   /* The order the column last drew with no fold in flight: what a held window's slot is read from,
    * and — on a hand-over — the page the stage is closing. Declared here, above the drawing's own
-   * beats, because that page has to be readable on the very render the stage moves. */
-  const castOrder = React.useRef<readonly string[]>([])
-  /* The cast and the subject the stage drew with before this render: the two refs the effect below
-   * advances after the commit, so during the render they still name the previous page. */
-  const castBefore = castOrder.current
-  const mainBefore = heldMain.current
+   * beats, because that page has to be readable on the very render the stage moves. It lives in
+   * state, and the layout effect at the cast is what writes it after the commit — the render reads
+   * the cast the previous beat drew with, and the cast it just drew becomes the next render's
+   * previous one. */
+  const [castOrder, setCastOrder] = React.useState<readonly { readonly id: string; readonly rows: number }[]>([])
+  /* The cast and the subject the stage drew with before this render: the render reads them as the
+   * previous page, and the beat's effect below advances them after the commit. */
+  const castBefore = castOrder
+  const mainBefore = heldMain
 
-  /* The last box and the last reading each id drew from: what a leaving pane has to draw with. */
+  /* The last box and the last reading each id drew from: what a leaving pane has to draw with.
+   * Written by the layout effect at the cast, after the commit — the render reads whatever the
+   * previous beat left, which is exactly what its diffs and its folding pages are owed. */
   const boxesRef = React.useRef<Map<string, OverviewBox>>(new Map())
   const windowsRef = React.useRef<Map<string, OverviewWindow>>(new Map())
 
-  /* The windows that left on THIS beat, read during render rather than from the leave state.
-   *
-   * `heldIds` is advanced inside the effect below, so at this point it still names the previous beat:
-   * the difference is exactly the windows the reading just dropped. Waiting for the effect to publish
-   * the same fact would give one painted frame in which the column had already re-measured without
-   * the folding window — the pane would blink out, the survivors would jump, and the fold would then
-   * play in a room that had already moved. Reading it here means the very first render after the
-   * reading changes already holds the slot, so no such frame is ever painted. */
-  /* Recomputed on every render, never memoized: `heldIds` is a ref the effect advances *after* the
-   * commit, so a memoized answer would keep naming the window long after its fold had finished and
-   * the cast would hold the slot forever. Reading the ref here is what makes the diff self-correcting
-   * on the very next render.
-   *
-   * A **changed main window** is asked first: another conversation on the stage is another cast, not
-   * a set that lost a window, so nothing this beat is gone — every pane of the old cast is simply
-   * gone. The effect below drops the hold for the same reason, but it lands after this render, so a
-   * diff that still named the old windows would paint one folded pane of the step the reader just
-   * left — which is exactly the tear a switch shows as a window flying out of the stage. */
-  const swappedMain = heldMain.current !== mainId
+  /* Whether the stage's subject changed under this render: another conversation on the stage is
+   * another cast, not a set that lost a window. A person's pick and a changed seat keep the instant
+   * swap — those are asks, and a page a reader did not ask for is not closed under their hand. */
+  const swappedMain = heldMain !== mainId
   /* The one replacement that is not a wholesale one: **the line handed the stage on**. The page the
    * reader was reading is a step that finished and left the line — its conversation stopped, the
    * record delivered it — and the stage now stands where the line went, on the step still being
    * worked. That is the same line's next page, so it is closed and opened rather than swapped: the
-   * page folds away in the boxes it last drew in, and the page arriving grows where it stands. A
-   * person's pick and a changed seat keep the instant swap — those are asks, and a page a reader did
-   * not ask for is not closed under their hand. Another record under the pane never reaches this
-   * drawing at all: the panel hands the stage a fresh element for it, so the page before it is cut
-   * rather than closed, and none of its marks outlive the record they belonged to. */
+   * page folds away in the boxes it last drew in, and the page arriving grows where it stands.
+   * Another record under the pane never reaches this drawing at all: the panel hands the stage a
+   * fresh element for it, so the page before it is cut rather than closed, and none of its marks
+   * outlive the record they belonged to. */
   const pastWindow = mainBefore === undefined ? undefined : windowsRef.current.get(mainBefore)
   const handedOn = swappedMain && reading.mainFrom === 'line' && pastWindow?.settled === true
-  /* The page being closed, at the boxes and readings it last drew with: built on the hand-over's own
-   * render, where the refs still name the previous cast, and kept for the fold's span — the step now
-   * being worked pushes frames constantly, and a redraw must not blink the fold away. The verdict is
-   * not repeated on it: that page's reading is one beat old, and what it came to is said by the page
-   * the stage now stands on. */
-  const past = React.useRef<readonly PastPane[]>([])
+  /* The page being closed, at the boxes and readings it last drew with: built by the hand-over's
+   * own layout effect, while the refs still name the previous cast, and kept in state for the
+   * fold's span — the step now being worked pushes frames constantly, and a redraw must not blink
+   * the fold away. The verdict is not repeated on it: that page's reading is one beat old, and what
+   * it came to is said by the page the stage now stands on. The build runs after the commit but
+   * before the paint, so the fold is on the page in the very frame the stage moves; nothing is
+   * written while drawing — the render reads the page from state, the effect is what records it. */
+  const [past, setPast] = React.useState<readonly PastPane[]>([])
   /* The page holds for the fold's span, then goes: the expiry is what empties it, and the redraw
    * that reads the emptied page is the registry's own. */
-  const pastMarks = useTimedMarks(() => { past.current = [] })
-  if (handedOn) {
+  const pastMarks = useTimedMarks(() => { setPast([]) })
+  const handEntered = marks.held.has(HAND_MARK)
+  React.useLayoutEffect(() => {
+    if (!handedOn) return undefined
     const out: PastPane[] = []
     const remember = (id: string, main: boolean): void => {
       const window = windowsRef.current.get(id)
@@ -828,33 +885,35 @@ export function OverviewPane(props: {
       if (window !== undefined && box !== undefined) out.push({ id, window, box, main })
     }
     if (mainBefore !== undefined) remember(mainBefore, true)
-    for (const id of castBefore) if (id !== mainBefore) remember(id, false)
-    past.current = out
-  }
-  React.useEffect(() => {
-    if (!handedOn) return undefined
+    for (const { id } of castBefore) if (id !== mainBefore) remember(id, false)
+    setPast(out)
     pastMarks.hold([PAST_MARK], LEAVE_SPAN_MS)
-    return undefined
-  }, [handedOn])
-  /* The page a hand-over opens: every window of it grows where it stands, the way the panel's own
-   * opening does. Nothing travels from the page being closed — one cast replacing another has no
-   * source point, and the only true motion there is the old page folding under the new one. */
-  const handEntered = marks.held.has(HAND_MARK)
-  React.useLayoutEffect(() => {
-    if (!handedOn) return undefined
+    /* The page a hand-over opens: every window of it grows where it stands, the way the panel's own
+     * opening does. Nothing travels from the page being closed — one cast replacing another has no
+     * source point, and the only true motion there is the old page folding under the new one. */
     marks.hold([HAND_MARK], ENTER_SPAN_MS)
     return undefined
   }, [handedOn])
   const appearing = arrivalNow || stageEntered || handEntered || handedOn
-  const goneNow = swappedMain ? [] : [...heldIds.current].filter((id) => !currentIds.has(id))
-  /* The leave list as a stable reference: Set equivalence — same length, every id present — keeps
-   * the array the memo below already saw when a render re-reads the same difference, so only a real
-   * change re-runs it. Written while drawing, the way the other refs above are. */
-  const goneRef = React.useRef<readonly string[]>([])
-  const gone = goneRef.current.length === goneNow.length && goneNow.every((id) => goneRef.current.includes(id))
-    ? goneRef.current
-    : goneNow
-  goneRef.current = gone
+  /* The windows that left on THIS beat, read during render rather than from the leave state.
+   *
+   * `heldIds` is advanced inside the effect below, so at this point it still names the previous beat:
+   * the difference is exactly the windows the reading just dropped. Waiting for the effect to publish
+   * the same fact would give one painted frame in which the column had already re-measured without
+   * the folding window — the pane would blink out, the survivors would jump, and the fold would then
+   * play in a room that had already moved. Reading it here means the very first render after the
+   * reading changes already holds the slot, so no such frame is ever painted. The memo keeps the
+   * answer stable across a beat's redraws: same previous beat, same difference, same array.
+   *
+   * A **changed main window** is asked first: another conversation on the stage is another cast, not
+   * a set that lost a window, so nothing this beat is gone — every pane of the old cast is simply
+   * gone. The effect below drops the hold for the same reason, but it lands after this render, so a
+   * diff that still named the old windows would paint one folded pane of the step the reader just
+   * left — which is exactly the tear a switch shows as a window flying out of the stage. */
+  const gone = React.useMemo(
+    () => (swappedMain ? [] : [...heldIds].filter((id) => !currentIds.has(id))),
+    [swappedMain, heldIds, currentIds],
+  )
   const leavingIds = React.useMemo(
     () => {
       const out = [...leaving.held]
@@ -865,7 +924,7 @@ export function OverviewPane(props: {
   )
 
   /* The windows that arrived on THIS beat, read the same way and for the same reason — the other
-   * direction of the one difference above, against the same ref.
+   * direction of the one difference above, against the same state.
    *
    * An entrance is a motion from a place the window does not stand in yet, so it has to be on the
    * pane in the very frame that first draws the window at the box it lands on. Publishing the
@@ -877,10 +936,15 @@ export function OverviewPane(props: {
    *
    * A window already named in `arrivedOnce` is no arrival: the reading lost it for a beat and handed
    * it back, and that window has been standing the whole time. A replaced cast arrives whole in
-   * nothing — another conversation's windows were here before this pane was. */
-  const arrivedNow = swappedMain
-    ? []
-    : [...currentIds].filter((id) => !heldIds.current.has(id) && !arrivedOnce.current.has(id))
+   * nothing — another conversation's windows were here before this pane was. The ref is read, never
+   * written, while drawing — the beat's effect records the arrivals after the commit — so both
+   * passes of a double render read the same difference. */
+  const arrivedNow = React.useMemo(
+    () => (swappedMain
+      ? []
+      : [...currentIds].filter((id) => !heldIds.has(id) && !arrivedOnce.current.has(id))),
+    [swappedMain, currentIds, heldIds],
+  )
 
   /* The cast the column is measured over: the reading's children, plus the ones still folding, held
    * in the slot each one stood in. A fold is a window on its way out — it is still on the stage while
@@ -892,15 +956,14 @@ export function OverviewPane(props: {
     const held = leavingIds.filter((id) => !live.some((one) => one.id === id))
     if (held.length === 0) return live
     const out: { id: string; rows: number }[] = []
-    for (const id of castOrder.current) {
+    for (const { id, rows } of castBefore) {
       const now = live.find((one) => one.id === id)
       if (now !== undefined) { out.push(now); continue }
       if (!held.includes(id)) continue
-      const window = windowsRef.current.get(id)
-      if (window !== undefined) out.push({ id, rows: window.rows.length })
+      out.push({ id, rows })
     }
     for (const one of live) if (!out.some((kept) => kept.id === one.id)) out.push(one)
-    /* A window still folding that `castOrder` never named: one that arrived while an earlier fold was
+    /* A window still folding that the previous cast never named: one that arrived while an earlier fold was
      * already in flight, so it was never live on a beat with nothing leaving, and every rebuild since
      * has walked a list it is not on. It is drawn, so it has to be measured — the column's count is
      * what decides whether the field seats a children column at all, and a cast that leaves it out
@@ -909,16 +972,49 @@ export function OverviewPane(props: {
      * is alone, and the folding pane keeps the box it drew its last measured beat in: the two are drawn
      * on top of each other, which is a frame no single layout produced and no reading describes. Its
      * slot goes last on purpose: it was never anywhere in this order, and a window on its way out does
-     * not get to push a survivor along. */
+     * not get to push a survivor along. The row count comes from `heldRows`, the state the beat it
+     * left captured — this memo reads state alone, never the refs. */
     for (const id of held) {
       if (out.some((kept) => kept.id === id)) continue
-      const window = windowsRef.current.get(id)
-      if (window !== undefined) out.push({ id, rows: window.rows.length })
+      const rows = heldRows.get(id)
+      if (rows !== undefined) out.push({ id, rows })
     }
     return out
-  }, [reading, leavingIds])
-  /* The order the column last drew with no fold in flight: what a held window's slot is read from. */
-  if (leavingIds.length === 0) castOrder.current = cast.map((one) => one.id)
+  }, [reading, leavingIds, castBefore, heldRows])
+
+  /* The row counts of the windows that have just left, read off their frozen readings while the refs
+   * still name the beat they left on: the cast's last loop draws a held slot the previous cast never
+   * named from these. The effect lands before the paint, so the fold's first frame measures the
+   * column with the slot already standing. */
+  React.useLayoutEffect(() => {
+    const landed = new Map<string, number>()
+    for (const id of heldIds) {
+      if (currentIds.has(id)) continue
+      const window = windowsRef.current.get(id)
+      if (window !== undefined) landed.set(id, window.rows.length)
+    }
+    if (landed.size === 0) return
+    setHeldRows((stood) => {
+      let changed = false
+      const next = new Map(stood)
+      for (const [id, rows] of landed) {
+        if (next.get(id) === rows) continue
+        next.set(id, rows)
+        changed = true
+      }
+      return changed ? next : stood
+    })
+  }, [currentIds, heldIds])
+
+  /* The order the column last drew with no fold in flight: what a held window's slot is read from.
+   * Written after the commit — the render above read the previous cast, and this cast becomes the
+   * next render's previous one. Identity is kept when the list says the same thing, so a beat that
+   * changed no row re-renders nothing extra. */
+  React.useLayoutEffect(() => {
+    if (leavingIds.length !== 0) return
+    const next = cast.map((one) => ({ id: one.id, rows: one.rows }))
+    setCastOrder((stood) => (sameCast(stood, next) ? stood : next))
+  }, [leavingIds, cast])
 
   const childRows = React.useMemo(() => cast.map((one) => one.rows), [cast])
   /* The rail's own count, not the column's: the lane is kept for the line's switch, and a stage that
@@ -1000,13 +1096,22 @@ export function OverviewPane(props: {
    * row keeps the arm only as long as the opening could plausibly last, so a re-measure later is
    * never spent. */
   const openings = React.useRef<Map<string, { readonly at: number; rowsAt?: number }>>(new Map())
-  const openingMarks = useTimedMarks()
-  const rowsIn = new Map<string, number>()
-  if (reading.main !== null) rowsIn.set(reading.main.id, reading.main.rows.length)
-  for (const one of reading.children) rowsIn.set(one.id, one.rows.length)
-  const opening: string[] = []
-  {
+  /* The windows inside their opening, published as state: the render reads the set, and this
+   * layout effect is what re-reads the clock and the deadlines — the drawing never asks
+   * `Date.now()` while it draws, so both passes of a double render answer the same beat with the
+   * same set. The layout phase keeps the arm on the pane before the paint, exactly where the
+   * render wrote it before. */
+  const [opening, setOpening] = React.useState<ReadonlySet<string>>(() => new Set<string>())
+  /* An opening's shed is its timer's own: the expiry bumps this beat, the effect re-reads the
+   * deadlines, and the redraw that drops the expired marks is the one that recomputed them. */
+  const [openingBeat, setOpeningBeat] = React.useState(0)
+  const openingMarks = useTimedMarks(() => setOpeningBeat((beat) => beat + 1))
+  React.useLayoutEffect(() => {
+    const rowsIn = new Map<string, number>()
+    if (reading.main !== null) rowsIn.set(reading.main.id, reading.main.rows.length)
+    for (const one of reading.children) rowsIn.set(one.id, one.rows.length)
     const now = Date.now()
+    const open: string[] = []
     const deadlines = new Map<string, number>()
     for (const id of currentIds) {
       let held = openings.current.get(id)
@@ -1016,7 +1121,7 @@ export function OverviewPane(props: {
       }
       if (held.rowsAt === undefined && (rowsIn.get(id) ?? 0) > 0) held.rowsAt = now
       if (held.rowsAt === undefined ? now - held.at >= OPENING_MAX_MS : now - held.rowsAt >= GROW_SPAN_MS) continue
-      opening.push(id)
+      open.push(id)
       /* The rows landing is what shortens this window's deadline, so the wait is re-read from the
        * deadline it was set for rather than only when there is none: a stale 3s wait would hold the
        * mark long past the opening and spend a re-measure the reader did not ask for. The deadline
@@ -1026,20 +1131,20 @@ export function OverviewPane(props: {
     }
     /* The span running out is what sheds the mark: a class left standing would spend the next
      * change too, and only the opening's growth is allowed to travel. */
-    openingMarks.holdUntil(opening, (id) => deadlines.get(id) ?? now)
-  }
+    openingMarks.holdUntil(open, (id) => deadlines.get(id) ?? now)
+    setOpening((stood) => (sameIds(stood, open) ? stood : new Set<string>(open)))
+  }, [reading, currentIds, openingBeat])
 
   React.useEffect(() => {
-    const before = heldIds.current
-    heldIds.current = currentIds
+    setHeldIds((stood) => (sameIds(stood, [...currentIds]) ? stood : currentIds))
     /* A replaced set has nothing to leave: drop what was held, say nothing, and draw the new cast. */
-    const swappedNow = heldMain.current !== mainId
-    heldMain.current = mainId
+    const swappedNow = heldMain !== mainId
+    setHeldMain(mainId)
     if (swappedNow) {
       leaving.end()
       joined.end()
       arrivedOnce.current.clear()
-      flying.current.clear()
+      setFlying((stood) => (stood.size === 0 ? stood : new Map<string, Flight>()))
       return
     }
     /* The beat's arrivals — read during the render above, so the drawing that first stands these
@@ -1052,7 +1157,7 @@ export function OverviewPane(props: {
     }
     /* A window back before its span ran keeps standing: its leave is cancelled, not replayed. */
     leaving.shed(currentIds)
-    const gone = [...before].filter((id) => !currentIds.has(id))
+    const gone = [...heldIds].filter((id) => !currentIds.has(id))
     if (gone.length === 0) return
     /* A window on its way out keeps no join mark: it is leaving, not arriving, and a return before
      * its fold has run is the same window standing again — the mark's absence is what keeps that
@@ -1061,8 +1166,13 @@ export function OverviewPane(props: {
     for (const id of gone) {
       openings.current.delete(id)
       lastRowKeyRef.current.delete(id)
-      flying.current.delete(id)
     }
+    setFlying((stood) => {
+      const next = new Map(stood)
+      let changed = false
+      for (const id of gone) if (next.delete(id)) changed = true
+      return changed ? next : stood
+    })
     joined.shed(gone)
     openingMarks.shed(gone)
     /* The fold is armed for the leave's own span. Its expiry is what really loses the window — a
@@ -1081,18 +1191,23 @@ export function OverviewPane(props: {
    * one cast replacing another has no source point, so nothing of it travels. */
   const joining = arrivedNow.length > 0 || joined.held.size > 0
 
-  /* The box and the reading each id drew from on this beat: a leaving pane reads them back below, and
-   * the cast above reads a held window's row count from `windowsRef` after the reading drops it. */
-  if (reading.main !== null) {
-    boxesRef.current.set(reading.main.id, placement.main)
-    windowsRef.current.set(reading.main.id, reading.main)
-  }
-  reading.children.forEach((one, i) => {
-    const box = placement.children[i]
-    if (box === undefined) return
-    boxesRef.current.set(one.id, box)
-    windowsRef.current.set(one.id, one)
-  })
+  /* The box and the reading each id drew from on this beat: a leaving pane reads them back below,
+   * and the cast reads a held window's row count from the beat it left. Written by the layout
+   * effect, after the commit — the render reads whatever the previous beat left, which is exactly
+   * what its diffs and its folding pages are owed; the hand-over's own build runs ahead of this
+   * effect for that reason. */
+  React.useLayoutEffect(() => {
+    if (reading.main !== null) {
+      boxesRef.current.set(reading.main.id, placement.main)
+      windowsRef.current.set(reading.main.id, reading.main)
+    }
+    reading.children.forEach((one, i) => {
+      const box = placement.children[i]
+      if (box === undefined) return
+      boxesRef.current.set(one.id, box)
+      windowsRef.current.set(one.id, one)
+    })
+  }, [reading, placement])
 
   /* The ties from a dispatch row to the window it opened: one per child the field draws, paired by
    * the row's own call id — the reading hands the child that id and nothing is guessed from a
@@ -1154,21 +1269,29 @@ export function OverviewPane(props: {
    * from. A child is listed the moment its session exists, while the dispatch row that anchors it is
    * written when the tool that started it answers, a few frames later: the source is not always
    * there on the arrival. Once taken, the aim is never re-read, so a re-measure under the flight
-   * cannot re-aim it. */
-  const flightOf = (id: string, box: OverviewBox): { readonly dx: number; readonly dy: number; readonly s: number } | undefined => {
-    const held = flying.current.get(id)
-    if (held !== undefined) return held
-    if (!arrivedNow.includes(id) && !joined.held.has(id)) return undefined
-    const born = births.get(id)
-    if (born === undefined) return undefined
-    const mark = {
-      dx: Math.round(born.x - box.left),
-      dy: Math.round(born.y - box.top),
-      s: Math.min(BORN_SCALE, BORN_BASE_W / Math.max(1, box.width)),
+   * cannot re-aim it. The capture is this layout effect's own move — the render only reads what is
+   * already flying — and it lands before the paint, so the frame the joiner is first drawn in is
+   * the frame that carries the flight. */
+  React.useLayoutEffect(() => {
+    for (const one of reading.children) {
+      if (flying.has(one.id)) continue
+      if (!arrivedNow.includes(one.id) && !joined.held.has(one.id)) continue
+      const box = boxOf(one.id)
+      if (box === undefined) continue
+      const born = births.get(one.id)
+      if (born === undefined) continue
+      setFlying((stood) => {
+        if (stood.has(one.id)) return stood
+        const next = new Map(stood)
+        next.set(one.id, {
+          dx: Math.round(born.x - box.left),
+          dy: Math.round(born.y - box.top),
+          s: Math.min(BORN_SCALE, BORN_BASE_W / Math.max(1, box.width)),
+        })
+        return next
+      })
     }
-    flying.current.set(id, mark)
-    return mark
-  }
+  }, [reading, arrivedNow, flying, joined.held, births, boxOf])
 
   return (
     <div className="superworker-overview" ref={bodyRef}>
@@ -1236,7 +1359,7 @@ export function OverviewPane(props: {
             /* The main window has no source: it is the conversation this pane is about, so it was
              * already here. Its own appearance scales up where it stands; it never travels. */
             born={undefined}
-            grow={opening.includes(reading.main.id)}
+            grow={opening.has(reading.main.id)}
             go={props.go}
           />
         ) : null}
@@ -1258,8 +1381,8 @@ export function OverviewPane(props: {
                * until the entrance's span has run. A child that joins *during* the stage's own
                * arrival keeps its flight — the sheet excludes a flying window from the stage's
                * appearance, so the two never put two transforms on one box. */
-              born={flightOf(one.id, box)}
-              grow={opening.includes(one.id)}
+              born={flying.get(one.id)}
+              grow={opening.has(one.id)}
               go={props.go}
             />
           )
@@ -1298,7 +1421,7 @@ export function OverviewPane(props: {
             />
           )
         })}
-        {past.current.map((pane) => (
+        {past.map((pane) => (
           /* The page the line handed on from, drawing its fold over the page that replaced it: the
            * incoming windows are already standing, and a fold is only seen when it closes in front
            * of them. It states no verdict — the reading it was built from is one beat old — and it

@@ -11,13 +11,15 @@
  *
  * The reading carries one more thing the printed lines never did: each key's
  * candidate words, read off the engine's own declaration (`knobSpecs`, the
- * one merge of the engine's built-ins and the plugins' declarations). That
- * declaration is the only copy of a vocabulary there is — the client spells
- * none of it, so an engine edit moves the panel without a client change. A
- * key whose declaration states no vocabulary carries no candidates, and the
- * row drawn for it falls back to a text box.
+ * one merge of the engine's built-ins and the plugins' declarations — the
+ * plugin half scanned from the same folder this half hands the engine on
+ * every words call). That declaration is the only copy of a vocabulary there
+ * is — the client spells none of it, so an engine edit moves the panel
+ * without a client change. A key whose declaration states no vocabulary
+ * carries no candidates, and the row drawn for it falls back to a text box.
  */
-import { knobSpecs } from 'superworker-core'
+import { declaredKnobSpecs, knobSpecs, loadPlugins } from 'superworker-core'
+import { shippedPluginsDir } from './skill-paths.ts'
 import type { RecordRefusal } from './failure.ts'
 
 /** Which layer a value actually lives on. */
@@ -124,14 +126,18 @@ export function parseConfigList(text: string): Record<string, ConfigEntry> {
 
 /**
  * The candidate words the engine's declaration states, keyed by setting name: read off the engine's
- * own list, so the reading carries the declaration itself rather than a copy of it. Only keys whose
- * declaration states a vocabulary are here; a key absent from this table draws a text box, never
- * invented options. The table is a plain copy, so no caller can reach back into the engine's cells
- * through it.
+ * own list — the built-ins plus the knobs the shipped plugins declare, folded through the engine's
+ * one merge (`knobSpecs(declaredKnobSpecs(...))`, the same table doctor reads) — so the reading
+ * carries the declaration itself rather than a copy of it. The plugin folder is the one this half
+ * hands the engine on every words call (`shippedPluginsDir()`), so the candidates describe the same
+ * declaration the printed lines were answered from. Only keys whose declaration states a vocabulary
+ * are here; a key absent from this table draws a text box, never invented options. The table is a
+ * plain copy, so no caller can reach back into the engine's cells through it.
  */
-export function declaredOptions(): Record<string, readonly string[]> {
+export async function declaredOptions(): Promise<Record<string, readonly string[]>> {
+  const scan = await loadPlugins(shippedPluginsDir())
   const out: Record<string, readonly string[]> = {}
-  for (const [key, spec] of Object.entries(knobSpecs())) {
+  for (const [key, spec] of Object.entries(knobSpecs(declaredKnobSpecs(scan.folders)))) {
     const values = spec.values
     if (values !== undefined && values.length > 0) out[key] = [...values]
   }
@@ -142,10 +148,14 @@ export function declaredOptions(): Record<string, readonly string[]> {
  * Lay the declaration's candidates onto the parsed entries: an entry keeps whatever its key declares,
  * and a key the declaration says nothing about — or one the tool never printed — is left untouched,
  * since candidates ride on readings and are never fabricated for a key the reading does not hold.
+ *
+ * The candidates are handed in, not defaulted: a default would fall back to a partial declaration
+ * without a word said, which is exactly how the plugin vocabularies went missing once — the caller
+ * that has the reading makes the one call that reads the whole declaration.
  */
 export function withDeclaredOptions(
   entries: Record<string, ConfigEntry>,
-  candidates: Readonly<Record<string, readonly string[]>> = declaredOptions(),
+  candidates: Readonly<Record<string, readonly string[]>>,
 ): Record<string, ConfigEntry> {
   const out: Record<string, ConfigEntry> = {}
   for (const [key, entry] of Object.entries(entries)) {

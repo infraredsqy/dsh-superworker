@@ -189,6 +189,34 @@ describe('the knob list and its layers', () => {
     expect(acceptedLayers(hijack['max_agents']!)).toEqual(['project', 'global']);
   });
 
+  it('the package exit hands the plugin-declared half over under its own name: the same read doctor takes, not a respell', async () => {
+    const exit = await import('../src/index');
+    expect(exit.declaredKnobSpecs).toBe(declaredKnobSpecs);
+
+    // A plugin folder's word knob, read through the exit's name, carries the vocabulary it declares:
+    // the shape a caller folds into `knobSpecs` to state a key's candidate words.
+    const { root } = await makeProject();
+    try {
+      const folder = join(root, 'plugins', 'wordy');
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(join(folder, 'plugin.json'), JSON.stringify({
+        name: 'wordy',
+        summary: 'a plugin declaring one word knob',
+        timing: 'close',
+        action: 'insert',
+        knobs: {
+          voice: { kind: 'word', values: ['laconic', 'wordy'], default: 'laconic', summary: 'how it speaks' },
+        },
+      }, null, 2), 'utf8');
+      writeFileSync(join(folder, 'impl.mjs'), 'export function offer() { return null; }\n', 'utf8');
+
+      const { folders } = await loadPlugins(join(root, 'plugins'));
+      expect(exit.declaredKnobSpecs(folders)['voice']?.values).toEqual(['laconic', 'wordy']);
+    } finally {
+      cleanup(root);
+    }
+  });
+
   it('a declaration that leaves the default out is refused when the list is merged, and the refusal names the setting', () => {
     const noDefault = { kind: 'number', summary: 'nothing in force' } as unknown as KnobSpec;
     expect(() => knobSpecs({ no_default: noDefault })).toThrow(TypeError);

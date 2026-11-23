@@ -795,3 +795,84 @@ test('a refused door navigates nowhere: there is no session to be carried into',
   await mounted.unmount()
   assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
 })
+
+/* ------------------------------------------------------------------ the double render: a drawing that reads nothing it wrote */
+
+/* The stage's motion facts live in state and the registry, and the render only reads them: in
+ * development React draws every component twice (StrictMode), so a render that wrote what it read
+ * would answer its own second pass with the first pass's notes — the arrival beat would find
+ * itself already arrived and commit without its entrance mark. The panel is mounted here the way
+ * the seat mounts it, wrapped in StrictMode, and the marks are read on the very commits they
+ * belong to. */
+test('under StrictMode the beat marks stand on their own first commit: the double render reads nothing the first pass wrote', { skip: bundleSkip }, async () => {
+  const service = fakeSessionsService()
+  service.set('m1', [said('start.', 100)])
+  const mounted = await mountBuiltPanel({
+    record: record(),
+    sessionsService: service,
+    useSessions: (select) => select(snapshotOf([])),
+    sessionId: 'm1',
+  })
+  const { React, act, window, panel } = mounted
+  const { createRoot } = await import('react-dom/client')
+  const holder = window.document.createElement('div')
+  window.document.body.appendChild(holder)
+  const root = createRoot(holder)
+  /* No `windows` on this root: the session-event windows are one forwarding instance per plugin
+   * (`apply` made it), and a second panel that `watch`es it would fight the first over which
+   * windows are held — each watch releases the other's ids, and the reading would flip forever.
+   * The marks this case reads are window-set facts, not rows, so the strict root draws without
+   * them and the two roots never touch the same holds. */
+  const draw = async (snap) => {
+    await act(async () => {
+      root.render(React.createElement(
+        React.StrictMode,
+        null,
+        React.createElement(panel.Panel, {
+          port: panel.port,
+          sessionId: 'm1',
+          prefs: panel.prefs,
+          useSessions: (select) => select(snap),
+        }),
+      ))
+    })
+  }
+  try {
+    const field = () => holder.querySelector('.superworker-ofield')
+    const pane = (id) => holder.querySelector(`[data-window="${id}"]`)
+
+    await draw(snapshotOf([]))
+    /* The stage is measured on its own root, the way `stageAt` measures the seat's mount: jsdom has
+     * no layout engine, so the box is pinned per draw. */
+    const bodyEl = holder.querySelector('.superworker-overview')
+    Object.defineProperty(bodyEl, 'clientWidth', { value: 1024, configurable: true })
+    Object.defineProperty(bodyEl, 'clientHeight', { value: 720, configurable: true })
+    await draw(snapshotOf([]))
+
+    /* The stage's own arrival is the commit that first draws the windows at their real boxes, and
+     * the entrance mark stands on that very commit — the double render must not read the first
+     * pass's note and find the stage already arrived. */
+    assert.ok(field().className.includes('is-first'), 'the stage’s arrival mark missed its own first commit under the double render')
+    assert.ok(pane('m1') !== null && pane('m1').className.includes('is-grow'), 'the opening window carried no growth mark on its first beat')
+
+    /* A joiner seated on a later beat: the join mark is on the field in the same breath, read off
+     * the previous beat's held ids — a fact the render only reads, twice, the same way. */
+    const join = snapshotOf([{ id: 'c1', running: true, title: 'the joining child' }])
+    await draw(join)
+    assert.ok(field().className.includes('is-join'), 'the beat that seated a joiner carried no join mark under the double render')
+    assert.ok(pane('c1') !== null && pane('c1').className.includes('is-grow'), 'the joining window carried no growth mark on its first beat')
+
+    /* Drawing the same beat again draws the same stage: the render is a read, not a diary. */
+    const held = field().className
+    await draw(join)
+    assert.equal(field().className, held, 'a second draw of the same beat drew another stage')
+
+    await across(mounted, () => !field().className.includes('is-join'), 'the join mark to shed when the entrance span had run')
+    await across(mounted, () => !field().className.includes('is-first'), 'the arrival mark to shed when the entrance span had run')
+  } finally {
+    await act(async () => { root.unmount() })
+    holder.remove()
+    await mounted.unmount()
+  }
+  assert.deepEqual(mounted.consoleErrors, [], 'there is an error in the console')
+})

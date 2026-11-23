@@ -20,7 +20,8 @@ import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
 import { RecordsPump } from '../src/host/pump.ts'
 import { declaredOptions } from '../src/host/project-config.ts'
 import { fakeAgents } from './helpers/agents-registry.mjs'
-import { absentError, readPage } from './helpers/workspace-files-port.mjs'
+import { absentError, fakeWorkspaceFiles, readPage } from './helpers/workspace-files-port.mjs'
+import { flush, until } from './helpers/wait.mjs'
 import { pinHome } from './helpers/env.mjs'
 
 /* One machine layer for this file: the settings endpoint reads the global layer, which lives in the
@@ -447,6 +448,74 @@ test('registry list() throws: alive answers null', async () => {
   assert.equal(reading.alive, null)
 })
 
+/* ---- the frame's roster sampling moment -------------------------------------- */
+
+test('The frame samples the roster after the whole reading lands: an agent that appears while the records read is still out is the one the frame carries', async () => {
+  /* The reading's own read of the issues record is held on a gate; the session side's three reads
+   * land long before it, so the stretch in between is exactly the window the frame's sampling point
+   * decides about. The roster is grown inside that window: the frame must carry the roster as of
+   * after the whole reading landed — the moment this door sampled before the assembly existed —
+   * not the assembly's own sample, which is taken when the session side's three reads are in and
+   * is `readSessions`' moment to keep. */
+  const GATED = '.superworker/issues/issues.json'
+  const dict = {
+    '.superworker/ideas.json': JSON.stringify({ nodes: { 'n-1': { id: 'n-1', title: 'one cell', status: 'todo', created_at: '2026-10-01T00:00:00Z' } } }),
+    '.superworker/state.json': JSON.stringify({ cycles: [{ id: 'line-1', status: 'active', created_at: '2026-10-01T00:00:00Z', path: [], holding: [] }] }),
+    '.superworker/instructions.json': JSON.stringify({ instructions: [{ id: 'i-1', text: 'one sentence', scope: 'global', state: 'live', at: '2026-10-01T00:00:00Z' }] }),
+    '.superworker/issues/issues.json': JSON.stringify({ issues: {} }),
+  }
+  const inner = fakeWorkspaceFiles(dict)
+  let releaseReading
+  const readingGate = new Promise((resolve) => { releaseReading = resolve })
+  const port = {
+    calls: inner.calls,
+    async list(scope, dir, signal) { return inner.list(scope, dir, signal) },
+    async read(scope, path, range, signal) {
+      if (path === GATED) await readingGate
+      return inner.read(scope, path, range, signal)
+    },
+  }
+  const roster = [{ id: 'session-early' }]
+  const gateway = new SuperworkerRecordsGateway({
+    workspaceFiles: port,
+    sessions: { get: () => ({ header: { cwd: 'C:\\ws' } }) },
+    sandboxPolicy: { workspaceRoot: 'C:\\ws' },
+    get: (name) => (name === 'agents' ? { list: () => roster } : undefined),
+  })
+  const root = mkdtempSync(join(tmpdir(), 'superworker-gateway-frame-'))
+  const cancel = new AbortController()
+  const stream = gateway.watch('s1', root, cancel.signal)
+  const frames = []
+  const pumping = (async () => {
+    for await (const frame of stream) frames.push(frame)
+  })()
+
+  /* The session side's three walks have all listed: with the assembly's shape, its own roster
+   * sample lands within the next few microtasks — while the gated read is still out. */
+  const SESSION_LAYERS = ['.superworker/meta/sessions', '.superworker/meta/launch', '.superworker/signals']
+  await until(() => {
+    const listed = port.calls.filter((call) => call.kind === 'list').map((call) => call.path)
+    return SESSION_LAYERS.every((layer) => listed.includes(layer))
+  }, 'the session side\'s three walks reach the port')
+  await flush()
+
+  /* One agent stops and another starts inside the window: the roster the frame must carry names
+   * only the one that is live as of after the whole reading landed. */
+  roster.splice(0, roster.length, { id: 'session-late' })
+  releaseReading()
+
+  await until(() => frames.length >= 1, 'the first frame answers after the gate releases')
+  const frame = frames[0]
+  assert.ok(frame.reading !== null && frame.reading.sources.issues === 'read', 'the reading really went through the gated read')
+  assert.deepEqual(
+    frame.sessions.alive,
+    ['session-late'],
+    'the frame carries the roster as of after the whole reading landed, not the assembly\'s mid-window sample',
+  )
+  cancel.abort()
+  await pumping
+})
+
 test('The workspace endpoints keep the spelling the caller used, one cell each: an alias comes back as the alias', async () => {
   /* The intention's hard line for this half, taken once per endpoint instead of once for all of them:
    * `read` used to be the only one with a reading, so a `.canonicalRoot()` slipped into any other
@@ -777,7 +846,7 @@ test('The three write endpoints and the two settings ones also answer through th
     assert.ok(Object.keys(listed.value.entries).length > 0, 'those lines parse into settings entries')
     assert.deepEqual(
       listed.value.entries['test_tier']?.options,
-      declaredOptions()['test_tier'],
+      (await declaredOptions())['test_tier'],
       'the declaration\'s candidates survive the wire: the panel reads them off this reading',
     )
     const written = await call('setConfig', { sessionId: 's1', workspaceRoot: '', key: 'test_tier', value: 'minimal' })

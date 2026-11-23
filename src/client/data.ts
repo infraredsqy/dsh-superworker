@@ -165,7 +165,7 @@ function resolvedPort(ctx: unknown): PanelPort {
 function livePortOf(ctx: unknown, first: PanelPort): LivePanelPort {
   let current = first
   const restarts = new Set<() => void>()
-  return {
+  const port: Record<string, unknown> = {
     get source() {
       return current.source
     },
@@ -176,7 +176,7 @@ function livePortOf(ctx: unknown, first: PanelPort): LivePanelPort {
       for (const restart of [...restarts]) restart()
       return true
     },
-    watch(sessionId, workspaceRoot, onFrame) {
+    watch(sessionId: string, workspaceRoot: string, onFrame: (frame: SuperworkerFrame) => void) {
       let live = true
       let off = current.watch(sessionId, workspaceRoot, onFrame)
       const restart = () => {
@@ -191,17 +191,16 @@ function livePortOf(ctx: unknown, first: PanelPort): LivePanelPort {
         off()
       }
     },
-    read: (sessionId, workspaceRoot) => current.read(sessionId, workspaceRoot),
-    readSessions: (sessionId, workspaceRoot) => current.readSessions(sessionId, workspaceRoot),
-    say: (sessionId, workspaceRoot, text, scope, cycle) => current.say(sessionId, workspaceRoot, text, scope, cycle),
-    write: (verb, sessionId, workspaceRoot, id) => current.write(verb, sessionId, workspaceRoot, id),
-    readConfig: (sessionId, workspaceRoot) => current.readConfig(sessionId, workspaceRoot),
-    setConfig: (sessionId, workspaceRoot, key, value) => current.setConfig(sessionId, workspaceRoot, key, value),
-    openNodeSession: (sessionId, workspaceRoot, cycle, node) => current.openNodeSession(sessionId, workspaceRoot, cycle, node),
-    consultMigration: (sessionId, workspaceRoot) => current.consultMigration(sessionId, workspaceRoot),
-    consultRoute: (sessionId, workspaceRoot) => current.consultRoute(sessionId, workspaceRoot),
-    consultConduct: (sessionId, workspaceRoot) => current.consultConduct(sessionId, workspaceRoot),
   }
+  /* The calling methods forward to whichever layer is in force at call time — the same face table
+   * the port itself is generated from, so a method added there is forwarded here on its own. */
+  for (const method of Object.keys(PANEL_FACE)) {
+    port[method] = (...parts: unknown[]) => {
+      const layer = current as unknown as Readonly<Record<string, unknown>>
+      return (layer[method] as (...ps: unknown[]) => unknown).apply(layer, parts)
+    }
+  }
+  return port as unknown as LivePanelPort
 }
 
 /** The mounted remote namespace; both lookups are tried. */
@@ -318,8 +317,127 @@ function openOutcome(answer: Answer<SessionOpenOutcome>): Outcome {
 }
 
 /**
- * The common skeleton of the panel's port: the six methods written once, with the two paths
- * differing only in the `call` layer.
+ * How a row's answer unfolds for the method that made it: `reject` throws a {@link RefusedError}
+ * (a caller awaiting a reading has nowhere to put a failure but the rejection), `refuse` answers
+ * the failure as an `Outcome` (its callers place the reason on the note line and carry on), and
+ * `open` unfolds a door open through {@link openOutcome}.
+ */
+type Unfold = 'reject' | 'refuse' | 'open'
+
+/** The methods that call through: every one of the port's but the `source` tag and the `watch` channel. */
+type PanelMethod = Exclude<keyof PanelPort, 'source' | 'watch'>
+
+/** One row of the face table as the generation loop reads it: the loose shape at the seam. */
+interface PanelFace {
+  /** The host endpoint the method lands on; `write` resolves its own per verb (`WRITE_ENDPOINTS`). */
+  readonly endpoint: string | Readonly<Record<WriteVerb, string>>
+  readonly unfold: Unfold
+  readonly args: (...parts: readonly unknown[]) => Readonly<Record<string, unknown>>
+}
+
+/** One row checked against the method's own signature, so an args builder that stops matching the
+ * `PanelPort` face fails to compile on its own. */
+type FaceOf<M extends PanelMethod> = PanelPort[M] extends (...parts: infer P) => unknown
+  ? {
+    readonly endpoint: string | Readonly<Record<WriteVerb, string>>
+    readonly unfold: Unfold
+    readonly args: (...parts: P) => Readonly<Record<string, unknown>>
+  }
+  : never
+
+/**
+ * The port's one table: each calling method's route — which host endpoint it lands on, how the
+ * answer unfolds, and how the method's arguments lay out as the endpoint's named arguments. The
+ * three port implementations are generated from it (`portFromCall`, `livePortOf`'s forwarding,
+ * `absentPort`), so adding an endpoint touches this table, the `PanelPort` face and
+ * `REMOTE_PARAM_ORDER` — and nothing else.
+ */
+const PANEL_FACE = {
+  read: {
+    endpoint: 'read',
+    unfold: 'reject',
+    args: (sessionId: string, workspaceRoot: string) => readArgs(sessionId, workspaceRoot),
+  },
+  readSessions: {
+    endpoint: 'readSessions',
+    unfold: 'reject',
+    args: (sessionId: string, workspaceRoot: string) => ({ sessionId, workspaceRoot }),
+  },
+  say: {
+    endpoint: 'addInstruction',
+    unfold: 'refuse',
+    args: (sessionId: string, workspaceRoot: string, text: string, scope: InstructionScope, cycle: string) => ({ sessionId, workspaceRoot, text, scope, cycle }),
+  },
+  write: {
+    endpoint: WRITE_ENDPOINTS,
+    unfold: 'refuse',
+    args: (_verb: WriteVerb, sessionId: string, workspaceRoot: string, id: string) => ({ sessionId, workspaceRoot, id }),
+  },
+  readConfig: {
+    endpoint: 'readConfig',
+    unfold: 'reject',
+    args: (sessionId: string, workspaceRoot: string) => ({ sessionId, workspaceRoot }),
+  },
+  setConfig: {
+    endpoint: 'setConfig',
+    unfold: 'refuse',
+    args: (sessionId: string, workspaceRoot: string, key: string, value: string) => ({ sessionId, workspaceRoot, key, value }),
+  },
+  openNodeSession: {
+    endpoint: 'openNodeSession',
+    unfold: 'open',
+    /* The receipt's session id is an address for navigation, not a word the panel shows: a landed open says nothing on the note line, and the re-read that follows shows the session where it belongs. */
+    args: (sessionId: string, workspaceRoot: string, cycle: string, node: string) => ({ sessionId, workspaceRoot, cycle, node }),
+  },
+  consultMigration: {
+    endpoint: 'consultMigration',
+    unfold: 'open',
+    /* The same silence as an opened node session: a landed consult renders nothing here — the
+     * new session appearing in DSH is the whole effect, and the migration itself happens over
+     * there, so a re-read could only repeat this panel's own notice. */
+    args: (sessionId: string, workspaceRoot: string) => ({ sessionId, workspaceRoot }),
+  },
+  consultRoute: {
+    endpoint: 'consultRoute',
+    unfold: 'open',
+    /* And the same silence: the session the door opens appears in DSH, which is the whole
+     * effect — what it is asked to do is the skill's own opening conversation, so a re-read
+     * could only repeat this corner's own state. */
+    args: (sessionId: string, workspaceRoot: string) => ({ sessionId, workspaceRoot }),
+  },
+  consultConduct: {
+    endpoint: 'consultConduct',
+    unfold: 'open',
+    /* And the same silence: the door's session appears in DSH with the bare `/sw-conduct` as its
+     * first word, which is the whole effect — what it is asked to do is that conversation's own
+     * work, so a re-read could only repeat this corner's own state. */
+    args: (sessionId: string, workspaceRoot: string) => ({ sessionId, workspaceRoot }),
+  },
+} satisfies { readonly [M in PanelMethod]: FaceOf<M> }
+
+/** The endpoint a row lands on; the verb-shaped row resolves its own per verb (`WRITE_ENDPOINTS`). */
+function endpointOf(face: PanelFace, parts: readonly unknown[]): string {
+  if (typeof face.endpoint === 'string') return face.endpoint
+  return face.endpoint[parts[0] as WriteVerb]
+}
+
+/** One call through a row: the arguments laid out as the endpoint names them, the answer unfolded per the row's mode. */
+async function faceCall(face: PanelFace, parts: readonly unknown[], call: PortCall): Promise<unknown> {
+  const answer = await call<unknown>(endpointOf(face, parts), face.args(...parts))
+  switch (face.unfold) {
+    case 'reject':
+      if (!answer.ok) throw new RefusedError(answer.failure)
+      return answer.value
+    case 'refuse':
+      return answer.ok ? answer.value : refused(answer.failure)
+    case 'open':
+      return openOutcome(answer as Answer<SessionOpenOutcome>)
+  }
+}
+
+/**
+ * The common skeleton of the panel's port: the `watch` channel written once, and every calling
+ * method generated from {@link PANEL_FACE}, with the two paths differing only in the `call` layer.
  *
  * Every call is a read or a write the panel means to see through: the panel draws what comes back,
  * and a call nobody waits for is a call nobody wanted. So none of them carries a cancellation — a
@@ -332,9 +450,9 @@ function openOutcome(answer: Answer<SessionOpenOutcome>): Outcome {
  * @param call - Given the endpoint name and named arguments; it unfolds the answer into the two branches.
  */
 function portFromCall(source: PanelPort['source'], call: PortCall, stream?: StreamOpen | undefined): PanelPort {
-  return {
+  const port: Record<string, unknown> = {
     source,
-    watch(sessionId, workspaceRoot, onFrame) {
+    watch(sessionId: string, workspaceRoot: string, onFrame: (frame: SuperworkerFrame) => void) {
       if (stream !== undefined) {
         try {
           return stream('watch', { sessionId, workspaceRoot }, (item) => {
@@ -376,57 +494,13 @@ function portFromCall(source: PanelPort['source'], call: PortCall, stream?: Stre
       })()
       return () => { live = false }
     },
-    async read(sessionId, workspaceRoot) {
-      const answer = await call<SuperworkerReading>('read', readArgs(sessionId, workspaceRoot))
-      if (!answer.ok) throw new RefusedError(answer.failure)
-      return answer.value
-    },
-    async readSessions(sessionId, workspaceRoot) {
-      const answer = await call<SuperworkerSessionsReading>('readSessions', { sessionId, workspaceRoot })
-      if (!answer.ok) throw new RefusedError(answer.failure)
-      return answer.value
-    },
-    async say(sessionId, workspaceRoot, text, scope, cycle) {
-      const answer = await call<Outcome>('addInstruction', { sessionId, workspaceRoot, text, scope, cycle })
-      return answer.ok ? answer.value : refused(answer.failure)
-    },
-    async write(verb, sessionId, workspaceRoot, id) {
-      const answer = await call<Outcome>(WRITE_ENDPOINTS[verb], { sessionId, workspaceRoot, id })
-      return answer.ok ? answer.value : refused(answer.failure)
-    },
-    async readConfig(sessionId, workspaceRoot) {
-      const answer = await call<SuperworkerConfigReading>('readConfig', { sessionId, workspaceRoot })
-      if (!answer.ok) throw new RefusedError(answer.failure)
-      return answer.value
-    },
-    async setConfig(sessionId, workspaceRoot, key, value) {
-      const answer = await call<Outcome>('setConfig', { sessionId, workspaceRoot, key, value })
-      return answer.ok ? answer.value : refused(answer.failure)
-    },
-    async openNodeSession(sessionId, workspaceRoot, cycle, node) {
-      const answer = await call<SessionOpenOutcome>('openNodeSession', { sessionId, workspaceRoot, cycle, node })
-      /* The receipt's session id is an address for navigation, not a word the panel shows: a landed open says nothing on the note line, and the re-read that follows shows the session where it belongs. */
-      return openOutcome(answer)
-    },
-    async consultMigration(sessionId, workspaceRoot) {
-      const answer = await call<SessionOpenOutcome>('consultMigration', { sessionId, workspaceRoot })
-      /* The same silence as an opened node session: a landed consult renders nothing here — the
-       * new session appearing in DSH is the whole effect, and the migration itself happens over
-       * there, so a re-read could only repeat this panel's own notice. */
-      return openOutcome(answer)
-    },
-    async consultRoute(sessionId, workspaceRoot) {
-      const answer = await call<SessionOpenOutcome>('consultRoute', { sessionId, workspaceRoot })
-      /* And the same silence: the session the door opens appears in DSH, which is the whole
-       * effect — what it is asked to do is the skill's own opening conversation, so a re-read
-       * could only repeat this corner's own state. */
-      return openOutcome(answer)
-    },
-    async consultConduct(sessionId, workspaceRoot) {
-      const answer = await call<SessionOpenOutcome>('consultConduct', { sessionId, workspaceRoot })
-      return openOutcome(answer)
-    },
   }
+  for (const [method, face] of Object.entries(PANEL_FACE) as readonly [string, PanelFace][]) {
+    port[method] = async (...parts: unknown[]) => faceCall(face, parts, call)
+  }
+  /* The seam: the row shapes were checked against the `PanelPort` face by the table's own
+   * `satisfies` clause, so the assembled record is cast back to the interface here. */
+  return port as unknown as PanelPort
 }
 
 /** The remote-namespace path: lays arguments out positionally per the parameter table. */
@@ -511,7 +585,15 @@ function absentPort(): PanelPort {
     throw new RefusedError({ code: 'not-connected' })
   }
   const refusedWrite = async (): Promise<Outcome> => ({ ok: false, code: 'no-write-channel' })
-  return { source: 'none', watch: () => () => undefined, read: missing, readSessions: missing, say: refusedWrite, write: refusedWrite, readConfig: missing, setConfig: refusedWrite, openNodeSession: refusedWrite, consultMigration: refusedWrite, consultRoute: refusedWrite, consultConduct: refusedWrite }
+  const port: Record<string, unknown> = { source: 'none', watch: () => () => undefined }
+  /* A read face (which rejects through a real port) throws here too; the write and door faces
+   * refuse, each with its own code. The face table keeps the two vocabularies from drifting. */
+  for (const [method, face] of Object.entries(PANEL_FACE) as readonly [string, PanelFace][]) {
+    port[method] = face.unfold === 'reject' ? missing : refusedWrite
+  }
+  /* The seam: the row shapes were checked against the `PanelPort` face by the table's own
+   * `satisfies` clause, so the assembled record is cast back to the interface here. */
+  return port as unknown as PanelPort
 }
 
 /**

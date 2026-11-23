@@ -8,7 +8,7 @@
  * as no record: the panel stands on the factory defaults.
  */
 import type { WordKey } from './locales/index.ts'
-import { createStore } from './store.ts'
+import { createStore, upstreamBinding } from './store.ts'
 import {
   NODE_MODES,
   PANEL_PREF_DEFAULTS,
@@ -207,8 +207,8 @@ function samePrefs(left: PanelPrefs, right: PanelPrefs): boolean {
  */
 export function createPrefsSource(): PrefsStore {
   const store = createStore<PrefsSnapshot>(UNAVAILABLE, sameSnapshot)
+  const binding = upstreamBinding()
   let form: PrefsForm | null = null
-  let off: (() => void) | null = null
 
   /** Mark whether the last write landed; a successful write or a form swap takes it back. */
   const setRefused = (refused: boolean): void => {
@@ -238,15 +238,9 @@ export function createPrefsSource(): PrefsStore {
   }
 
   const detach = (): void => {
-    const held = off
-    off = null
-    form = null
-    if (held === null) return
-    try {
-      held()
-    } catch (error) {
-      /* If it cannot be detached, let it go: the reading has already fallen back to the factory copy. */
-    }
+    binding.detach(() => {
+      form = null
+    })
   }
 
   return {
@@ -259,11 +253,7 @@ export function createPrefsSource(): PrefsStore {
         return () => undefined
       }
       form = next
-      try {
-        off = next.subscribe(derive)
-      } catch (error) {
-        off = null
-      }
+      binding.bind(() => next.subscribe(derive))
       derive()
       return () => {
         if (form === next) detach()

@@ -1796,3 +1796,67 @@ test('the reading asks the packet and nothing else: no packet, no gate, no deliv
   assert.equal(judged.main.waiting, true, 'the packet\'s gate did not reach the window')
   assert.equal('delivered' in judged.main, false, 'a gated window was also drawn as handed in')
 })
+
+test('one session\'s events table is walked a bounded number of times, however many seats, bars and ghosts read it', () => {
+  /* The reading asks the same session's log four kinds of questions — when it started, when it
+    * ended, how its last turn ended, when its last turn ended — and it asks them at every seat, every
+    * bar, every yield and every superseded test. The invariant this pins: whatever the scene's size,
+    * one session's events table is scanned a bounded number of times (a small constant — the
+    * derived-values index once, the fold once, the dispatch anchors' two passes for the main), never
+    * once per reader, and never growing with the number of seats, bars, ghosts or siblings. The
+    * counting array makes the scan count a fact of the input's own shape: every pass of the table is
+    * the one iteration the reading itself performs. */
+  const counts = {}
+  class CountedEvents extends Array {
+    constructor(items, id) {
+      super(...items)
+      this.id = id
+    }
+
+    [Symbol.iterator]() {
+      counts[this.id] = (counts[this.id] ?? 0) + 1
+      return super[Symbol.iterator]()
+    }
+  }
+
+  /* One line, deliberately big: a main session, twenty-four stopped legs the record still owes
+    * (each superseded by the one that began after it, so the replaced test walks the whole list for
+    * every ghost), and three legs still running. Before the per-session index this scene read each
+    * leg's table once per sibling (the replaced test) plus once per seat and bar — a count that grew
+    * with the line. */
+  const legs = Array.from({ length: 24 }, (_, i) => `leg-${i}`)
+  const runs = ['run-0', 'run-1', 'run-2']
+  const ids = [MAIN, ...legs, ...runs]
+  const byId = { [MAIN]: mainRow(MAIN) }
+  for (const id of legs) byId[id] = childRow(id, MAIN, false)
+  for (const id of runs) byId[id] = childRow(id, MAIN)
+  const events = {}
+  let base = 0
+  for (const id of ids) {
+    base += 10
+    const at = id === MAIN ? base : base + (id.startsWith('leg-') ? Number(id.slice(4)) : 0)
+    events[id] = new CountedEvents([
+      { type: 'user/message', time: at, data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'leg opened.' }] } },
+      { type: 'turn/end', time: at + 1, data: { reason: { kind: 'completed' } } },
+    ], id)
+  }
+  const nodeOf = { [MAIN]: OWED_NODE }
+  for (const [i, id] of legs.entries()) nodeOf[id] = `n-${i}`
+  for (const [i, id] of runs.entries()) nodeOf[id] = `n-run-${i}`
+  const reading = readOverview({
+    sessions: snapshot(ids, byId),
+    events,
+    pipelineSessions: ids,
+    at: 10_000,
+    judgement: packetOf({ nodeOf, undeliveredSessions: [MAIN, ...legs] }),
+  })
+
+  /* The scene is honest: every step kept its bar, and the stopped ones stood as ghosts would. */
+  assert.equal(reading.legs.length, ids.length, 'the line did not keep every step\'s bar')
+
+  /* The bound itself: four passes, whatever the line's size. */
+  for (const id of ids) {
+    const walked = counts[id] ?? 0
+    assert.ok(walked <= 4, `session ${id}'s events table was walked ${walked} times — the per-session index leaked`)
+  }
+})

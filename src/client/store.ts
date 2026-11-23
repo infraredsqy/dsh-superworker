@@ -60,3 +60,43 @@ export function createStore<T>(initial: T, same: (left: T, right: T) => boolean 
     },
   }
 }
+
+/**
+ * The one rebind skeleton the attachable ports run: a held disposer, a detach that drops the
+ * references and swallows a disposer that throws, and a subscribe probe that falls back to no
+ * upstream. The preferences port and the language port each attach an upstream they do not own —
+ * the settings form, DSH's locale service — and this is the shape both share, written once, so
+ * changing it cannot be forgotten in the other place.
+ */
+export interface UpstreamBinding {
+  /** Drop the held disposer — running it once, swallowing a throw — and clear the port's references on the way. */
+  detach(clear?: () => void): void
+  /** Try the next subscription: the disposer it returns is held; a throw, a `null`, or a non-function means no upstream. */
+  bind(attempt: () => (() => void) | null | undefined): void
+}
+
+/** Build one binding. Each port keeps its own: the held disposer is theirs alone. */
+export function upstreamBinding(): UpstreamBinding {
+  let off: (() => void) | null = null
+  return {
+    detach(clear) {
+      const held = off
+      off = null
+      clear?.()
+      if (held === null) return
+      try {
+        held()
+      } catch {
+        /* If it cannot be detached, let it go: the port has already fallen back to its own reading. */
+      }
+    },
+    bind(attempt) {
+      try {
+        const held = attempt()
+        off = typeof held === 'function' ? held : null
+      } catch {
+        /* A subscribe that throws leaves the port with no upstream: the port's own reading carries it. */
+      }
+    },
+  }
+}

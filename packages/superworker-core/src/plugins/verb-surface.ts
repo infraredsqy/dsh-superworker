@@ -88,7 +88,10 @@ export interface VerbSurfaceTables<C> {
    * must carry (an `add` that names no sentence); a check throws whatever the word answers that
    * with. Nothing is read from or written to the record before them, so a line they refuse leaves
    * no trace on disk — the lock's directory included — which is how a refusal read before this
-   * layer held the lock and the write together. Keyed by verb: a writing verb with no entry is
+   * layer held the lock and the write together. The ordering is a gap the instruction migration
+   * exposed: a refused writing verb that reached the lock would leave `.superworker/meta/` behind
+   * (the lock's taking creates it), and that directory alone flips an unmigrated workspace's
+   * `migrate` from `ready` to `both-present`. Keyed by verb: a writing verb with no entry is
    * left to its runner, inside the lock, exactly as before.
    */
   readonly lineChecks?: Readonly<Record<string, (parsed: ParsedVerbArgs, ctx: C) => void>>;
@@ -96,14 +99,18 @@ export interface VerbSurfaceTables<C> {
    * The context one parsed line runs under. The default is the one the caller handed in. A word
    * whose line can name another project rewrites it here — after the line is parsed and **before**
    * the writing lock is taken, so the lock lands on the record this line acts on rather than on the
-   * one its caller happened to stand in.
+   * one its caller happened to stand in. A `--project` rewrite left to the runner is the gap the
+   * instruction migration exposed: the lock would land on the caller's own tree while the write
+   * lands on the named one.
    */
   readonly contextOf?: (parsed: ParsedVerbArgs, ctx: C) => C;
   /**
    * The line ending of this word's text product — its usage page and the sentences it answers. The
    * default is the platform's (`jsonio.ts`), which is what a word whose text a person reads on this
    * machine follows; a word whose answers were LF on every platform before this layer took them over
-   * declares `'\n'` here instead.
+   * declares `'\n'` here instead. This cell came out of the instruction migration: that word's page
+   * and answers are LF on every platform, and the platform default would have bent them CRLF on
+   * Windows.
    */
   readonly eol?: string;
   /**
@@ -111,14 +118,18 @@ export interface VerbSurfaceTables<C> {
    * sentence) — the default, and what a word whose refusals have always read that way answers.
    * `false` leaves the sentence standing alone: `new UsageError(sentence).message` is the sentence,
    * and the whole page when the sentence is the page. Both are defensible readings; the word that
-   * owns the refusals declares which.
+   * owns the refusals declares which. Another instruction-migration gap: that word's refusals are
+   * the bare sentence, and the head-first default would have prefixed a usage head they never
+   * carried.
    */
   readonly refusalHead?: boolean;
   /**
    * What a line that names no verb at all means for this word. `help` (the default) answers the
    * usage page as a success; `refuse` is a usage refusal — `code: 2`, the page as its sentence —
    * which is what a word whose caller reads "no verb named" as a refused line answers. The two are
-   * both defensible readings of the same empty line, so the word that owns it declares which.
+   * both defensible readings of the same empty line, so the word that owns it declares which. Also
+   * a gap the instruction migration exposed: an empty line is a `code: 2` refusal in that word,
+   * where the default answers the same line with the usage page as a success.
    */
   readonly emptyArgv?: 'help' | 'refuse';
 }

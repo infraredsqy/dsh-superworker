@@ -10,7 +10,9 @@
  * A missing manifest is an empty placement, not a fault — a host that never saw this line has nothing
  * of ours anywhere. A manifest that exists but cannot be trusted is a refusal: overwriting a root
  * whose contents we cannot read, or taking back files we cannot enumerate, is how somebody else's
- * skill gets deleted.
+ * skill gets deleted. A write interrupted between its two renames leaves the previous record as a
+ * backup, and the next load restores the record from it — so a crash never leaves this line's files
+ * on disk with no record to prove whose they are.
  */
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
@@ -33,9 +35,14 @@ export interface SkillsManifest {
   readonly skills: readonly PlacedSkill[]
 }
 
-/** Reading the placement record: what is there, or why it cannot be trusted. */
+/** Reading the placement record: what is there — and whether an on-disk record backs the answer — or why it cannot be trusted. */
 export type ManifestReading =
-  | { readonly ok: true; readonly manifest: SkillsManifest }
+  | {
+      readonly ok: true
+      readonly manifest: SkillsManifest
+      /** Whether a record on disk answers this reading: the file itself, or an interrupted write's backup restored over it. */
+      readonly recorded: boolean
+    }
   | SkillRefusal
 
 /** Whether one filesystem refusal says the path is simply not there — nothing to read, nothing to take back. */
@@ -51,6 +58,11 @@ export function absent(error: unknown): boolean {
 /** One refusal of this layer's own: a code, and the names this half does not own. */
 export function refused(code: SkillRefusalCode, detail: string): SkillRefusal {
   return { ok: false, code, detail }
+}
+
+/** Where an interrupted write leaves the previous record for the next load to restore. */
+export function manifestBackupPathOf(dshHome: string = dshHomeOf()): string {
+  return `${manifestPathOf(dshHome)}.backup`
 }
 
 /** A path recorded in the manifest may only point inside the skill root: no absolute path, no `..`. */
@@ -91,16 +103,18 @@ function manifestOf(raw: unknown, file: string, root: string): ManifestReading {
     }
     skills.push({ name: one.name, dir: one.name, files })
   }
-  return { ok: true, manifest: { version: MANIFEST_VERSION, root, skills } }
+  return { ok: true, manifest: { version: MANIFEST_VERSION, root, skills }, recorded: true }
 }
 
 /**
  * What this line placed before, read back: the skills an upgrade replaces and an unload takes back.
  *
  * A missing manifest is an empty placement, not a fault — a host that never saw this line has nothing
- * of ours anywhere. A manifest that exists but cannot be trusted is a refusal: overwriting a root
- * whose contents we cannot read, or taking back files we cannot enumerate, is how somebody else's
- * skill gets deleted.
+ * of ours anywhere — unless an interrupted write left its backup: then the previous record is
+ * restored from the backup and answered as the record, so the files the last completed placement
+ * left behind stay accounted for. A manifest (or a backup) that exists but cannot be trusted is a
+ * refusal: overwriting a root whose contents we cannot read, or taking back files we cannot
+ * enumerate, is how somebody else's skill gets deleted.
  */
 export function placedSkills(dshHome: string = dshHomeOf()): ManifestReading {
   const file = manifestPathOf(dshHome)
@@ -109,8 +123,8 @@ export function placedSkills(dshHome: string = dshHomeOf()): ManifestReading {
   try {
     text = readFileSync(file, 'utf8')
   } catch (error) {
-    if (absent(error)) return { ok: true, manifest: { version: MANIFEST_VERSION, root, skills: [] } }
-    return refused('manifest-unreadable', `${file}: ${messageOf(error)} (nothing was overwritten or taken back)`)
+    if (!absent(error)) return refused('manifest-unreadable', `${file}: ${messageOf(error)} (nothing was overwritten or taken back)`)
+    return placedSkillsFromBackup(dshHome, root)
   }
   let parsed: unknown
   try {
@@ -121,16 +135,74 @@ export function placedSkills(dshHome: string = dshHomeOf()): ManifestReading {
   return manifestOf(parsed, file, root)
 }
 
-/** Write the manifest the next load reads and the unload follows, by way of a rename so a half-written record is never read. */
+/**
+ * The record is not on disk: either this host never saw this line, or a write was interrupted
+ * between moving the previous record to its backup and writing the new one. A backup left by such an
+ * interruption is the record this line itself wrote — restore it and answer it, so the placement it
+ * accounts for is never mistaken for somebody else's files. A backup that exists but cannot be
+ * trusted is a refusal, like the record itself would be.
+ */
+function placedSkillsFromBackup(dshHome: string, root: string): ManifestReading {
+  const backup = manifestBackupPathOf(dshHome)
+  const empty: ManifestReading = { ok: true, manifest: { version: MANIFEST_VERSION, root, skills: [] }, recorded: false }
+  let text: string
+  try {
+    text = readFileSync(backup, 'utf8')
+  } catch (error) {
+    if (absent(error)) return empty
+    return refused('manifest-unreadable', `${backup}: ${messageOf(error)} (nothing was overwritten or taken back)`)
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch (error) {
+    return refused('manifest-unreadable', `${backup}: ${messageOf(error)} (nothing was overwritten or taken back)`)
+  }
+  const reading = manifestOf(parsed, backup, root)
+  if (!reading.ok) return reading
+  try {
+    renameSync(backup, manifestPathOf(dshHome))
+  } catch {
+    /* Best effort: the reading is already in hand, and the next load restores again. */
+  }
+  return reading
+}
+
+/**
+ * Write the manifest the next load reads and the unload follows.
+ *
+ * Each step of the swap is one rename, so a half-written record is never read: the new record is
+ * staged whole, the previous record moves to the backup, the staged one takes its place, and only
+ * then does the backup go. A crash between the two renames leaves no record — but leaves the
+ * previous one as the backup, which the next load restores, so the files already on disk are never
+ * stranded without a record of whose they are. When the staged record cannot take its place, the
+ * previous record moves back and the staged file is taken back with it — the failed attempt leaves
+ * nothing of its own behind.
+ */
 export function writeManifest(dshHome: string, skills: readonly PlacedSkill[]): string {
   const file = manifestPathOf(dshHome)
+  const backup = manifestBackupPathOf(dshHome)
   const root = skillRootOf(dshHome)
   mkdirSync(dirname(file), { recursive: true })
   const staging = `${file}.writing`
   writeFileSync(staging, `${JSON.stringify({ version: MANIFEST_VERSION, root, skills }, null, 2)}\n`, 'utf8')
-  /* A rename over an existing file is not portable on Windows; remove the old record first, so a
-   * crash in between leaves no record at all rather than the previous version's. */
-  rmSync(file, { force: true })
-  renameSync(staging, file)
+  rmSync(backup, { force: true })
+  try {
+    renameSync(file, backup)
+  } catch (error) {
+    if (!absent(error)) throw error
+  }
+  try {
+    renameSync(staging, file)
+  } catch (error) {
+    try {
+      renameSync(backup, file)
+    } catch {
+      /* Best effort; the refusal the caller raises names the real failure. */
+    }
+    rmSync(staging, { force: true })
+    throw error
+  }
+  rmSync(backup, { force: true })
   return file
 }

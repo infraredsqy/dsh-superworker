@@ -85,65 +85,79 @@ export async function readSessionNotes(
 }
 
 /**
+ * One walk down a line→cell directory, the shape both session-side readers share: list the lines,
+ * list the cells each line holds, and carry what the cell's own reader hands back. The refusal
+ * discipline lives here, once: the layer itself absent answers empty (the ordinary "never
+ * dispatched here"), the layer itself refusing rethrows — an endpoint-level failure is not "no
+ * claims", and a reading that failed is not a reading that came back empty — and a subtree that
+ * cannot be listed is skipped quietly, the way an unreadable note is: one fewer cell moved, and the
+ * reading side draws off exactly that absence. A cell whose own read fails answers `undefined` and
+ * moves nothing; that skip is the cell reader's own judgment, not the walk's.
+ */
+async function collectLineCells(
+  port: WorkspaceFilesPort,
+  scope: SuperworkerScope,
+  signal: AbortSignal,
+  layer: string,
+  cellOf: (line: string, cell: WorkspaceDirectoryEntry) => Promise<readonly [string, string] | undefined>,
+): Promise<Record<string, string>> {
+  const collected: Record<string, string> = {}
+  let lines: readonly WorkspaceDirectoryEntry[]
+  try {
+    lines = (await port.list(scope, layer, signal)).entries
+  } catch (error) {
+    if (!isAbsent(error)) throw error
+    return collected
+  }
+  for (const line of lines) {
+    if (line.type !== 'directory') continue
+    let cells: readonly WorkspaceDirectoryEntry[]
+    try {
+      cells = (await port.list(scope, `${layer}/${line.name}`, signal)).entries
+    } catch {
+      continue
+    }
+    for (const cell of cells) {
+      const carried = await cellOf(line.name, cell)
+      if (carried !== undefined) collected[carried[0]] = carried[1]
+    }
+  }
+  return collected
+}
+
+/**
  * Bring back the dispatch claims on disk: which node's launch cell carries a
  * `started` marker, valued by the line the cell sits under.
  *
- * The walk goes down the launch directory's own shape — lines, then the nodes
- * each line holds cells for, then the cell's entries — and a subtree that
- * cannot be listed (absent, refused) is skipped quietly: one fewer claim
- * moved, the way an unreadable note is. The claim's own content is nobody's
- * reading here; presence is the whole fact.
+ * The walk is the launch layer's own shape ({@link collectLineCells}); the
+ * cell's own reading is this one: a cell that holds no `started` file carries
+ * nothing, and the claim's own content is nobody's reading here — presence is
+ * the whole fact.
  */
 export async function readClaims(
   port: WorkspaceFilesPort,
   scope: SuperworkerScope,
   signal: AbortSignal,
 ): Promise<Record<string, string>> {
-  const claims: Record<string, string> = {}
-  let lines: readonly WorkspaceDirectoryEntry[]
-  try {
-    lines = (await port.list(scope, RECORD_LAUNCH, signal)).entries
-  } catch (error) {
-    /* The launch layer itself refusing (not merely absent) is an endpoint-level failure, and it
-     * keeps the same discipline as the notes half above: rethrow, so the whole reading fails
-     * instead of quietly claiming "no claims" — a claim that was never read is not a claim that
-     * is not there. Absent stays the normal "never dispatched here" shape. The subtree walk
-     * below still skips what it cannot list: that is claim-level absence, not the endpoint's. */
-    if (!isAbsent(error)) throw error
-    return claims
-  }
-  for (const line of lines) {
-    if (line.type !== 'directory') continue
-    let cells: readonly WorkspaceDirectoryEntry[]
+  return collectLineCells(port, scope, signal, RECORD_LAUNCH, async (line, cell) => {
+    if (cell.type !== 'directory') return undefined
+    let entries: readonly WorkspaceDirectoryEntry[]
     try {
-      cells = (await port.list(scope, `${RECORD_LAUNCH}/${line.name}`, signal)).entries
+      entries = (await port.list(scope, `${RECORD_LAUNCH}/${line}/${cell.name}`, signal)).entries
     } catch {
-      continue
+      return undefined
     }
-    for (const cell of cells) {
-      if (cell.type !== 'directory') continue
-      let entries: readonly WorkspaceDirectoryEntry[]
-      try {
-        entries = (await port.list(scope, `${RECORD_LAUNCH}/${line.name}/${cell.name}`, signal)).entries
-      } catch {
-        continue
-      }
-      if (entries.some((entry) => entry.type === 'file' && entry.name === 'started')) {
-        claims[cell.name] = line.name
-      }
-    }
-  }
-  return claims
+    return entries.some((entry) => entry.type === 'file' && entry.name === 'started') ? [cell.name, line] : undefined
+  })
 }
 
 /**
  * Bring back the handoff tickets on disk: which node handed a verdict in, and
  * which word it stated.
  *
- * The walk is the same shape the claims walk takes — line directories, then the
- * `<node>.json` ticket files under each — and the value is the ticket's own
- * `status`, the one field every other reader of a ticket goes through
- * (`settleGate` in the engine, and the planner before it).
+ * The walk is the signals layer's own shape ({@link collectLineCells}); the
+ * value is the ticket's own `status`, the one field every other reader of a
+ * ticket goes through (`settleGate` in the engine, and the planner before it).
  *
  * A ticket still stating `pending` is **not** a handed-in verdict: it is the
  * mark a re-run leaves, and the engine's own gate refuses to settle one. So
@@ -157,38 +171,42 @@ export async function readTickets(
   scope: SuperworkerScope,
   signal: AbortSignal,
 ): Promise<Record<string, string>> {
-  const tickets: Record<string, string> = {}
-  let lines: readonly WorkspaceDirectoryEntry[]
-  try {
-    lines = (await port.list(scope, RECORD_SIGNALS, signal)).entries
-  } catch (error) {
-    /* Same discipline as the claims half: the layer itself refusing is an endpoint-level failure
-     * and rethrows, while its absence is the ordinary "no line was ever worked here". */
-    if (!isAbsent(error)) throw error
-    return tickets
-  }
-  for (const line of lines) {
-    if (line.type !== 'directory') continue
-    let cells: readonly WorkspaceDirectoryEntry[]
+  return collectLineCells(port, scope, signal, RECORD_SIGNALS, async (line, cell) => {
+    if (cell.type !== 'file' || !cell.name.endsWith('.json')) return undefined
+    let raw: string
     try {
-      cells = (await port.list(scope, `${RECORD_SIGNALS}/${line.name}`, signal)).entries
+      raw = await readWholeFile(port, scope, `${RECORD_SIGNALS}/${line}/${cell.name}`, signal)
     } catch {
-      continue
+      return undefined
     }
-    for (const cell of cells) {
-      if (cell.type !== 'file' || !cell.name.endsWith('.json')) continue
-      let raw: string
-      try {
-        raw = await readWholeFile(port, scope, `${RECORD_SIGNALS}/${line.name}/${cell.name}`, signal)
-      } catch {
-        continue
-      }
-      const status = verdictOf(raw)
-      if (status === undefined) continue
-      tickets[cell.name.slice(0, -'.json'.length)] = status
-    }
-  }
-  return tickets
+    const status = verdictOf(raw)
+    return status === undefined ? undefined : [cell.name.slice(0, -'.json'.length), status]
+  })
+}
+
+/**
+ * The session side of one root, assembled once: the notes, the dispatch claims
+ * and the handoff tickets fetched together, and the live-agents half spread on
+ * at the end — one {@link SuperworkerSessionsReading}. Both doors that carry
+ * the session side (the watch frame and the session-notes endpoint) assemble
+ * through here, so a session-side reading added later lands in this one place.
+ * @param alive - The live-agents half, asked after the three reads land: the
+ *   roster as of the moment the reading goes out, not as of the moment it
+ *   started. It comes in as a reader because it is the host's own registry's
+ *   answer, not a files-port read this module could make itself.
+ */
+export async function readSessionSide(
+  port: WorkspaceFilesPort,
+  scope: SuperworkerScope,
+  signal: AbortSignal,
+  alive: () => readonly string[] | null,
+): Promise<SuperworkerSessionsReading> {
+  const [notes, claims, tickets] = await Promise.all([
+    readSessionNotes(port, scope, signal),
+    readClaims(port, scope, signal),
+    readTickets(port, scope, signal),
+  ])
+  return { ...notes, claims, tickets, alive: alive() }
 }
 
 /**

@@ -44,6 +44,7 @@ RECORD_DIR_NAME
 SIGNALS_DIR_NAME
 SimulatedExecutor
 answer
+declaredKnobSpecs
 describe
 hasLegacyRecord
 helpText
@@ -65,7 +66,8 @@ usageError
 
 `BUILTIN_KNOBS` 是引擎自己的设置声明（`KnobSpec`：种类、出厂默认、词表、所收的层），`knobSpecs(declared?)`
 是它与插件声明并成一张表的唯一并点；谁要给别人递一份设置的候选值（面板给每行递的下拉词）就从这里读，
-不抄第二份。`PLUGIN_SKILL_FILE` 是技能文件名（`SKILL.md`）；`SimulatedExecutor` 是执行者接缝；`open` 是句柄入口。`LEGACY_DIR_NAME` / `legacyRecordDir` / `hasLegacyRecord` / `isRecognizableLegacyRecord` / `migrationPreconditions` / `CONSULT_PROMPT` 是旧目录那一问的六个词，见下面「旧目录与迁移」。
+不抄第二份。`declaredKnobSpecs(folders)` 是插件声明的那一半（doctor 读的同一张表）：扫好的插件目录进来，
+交回插件声明的那几个设置格，并过 `knobSpecs` 即全表。`PLUGIN_SKILL_FILE` 是技能文件名（`SKILL.md`）；`SimulatedExecutor` 是执行者接缝；`open` 是句柄入口。`LEGACY_DIR_NAME` / `legacyRecordDir` / `hasLegacyRecord` / `isRecognizableLegacyRecord` / `migrationPreconditions` / `CONSULT_PROMPT` 是旧目录那一问的六个词，见下面「旧目录与迁移」。
 `loadPlugins` / `skillFolders` / `skillProblems` 读的是插件自带技能——`loadPlugins` 装载插件目录，
 `skillFolders` 交出一个插件带的技能目录，`skillProblems` 说出它与声明对不上的两种情形（度量点名的
 方法没有技能、一个技能名被两个插件交出）。读的是同一个插件目录，判什么由调用方定：引擎只交结论，

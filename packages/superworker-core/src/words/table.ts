@@ -32,7 +32,7 @@ export const TOP = {
   ]
 };
 
-export const COMMANDS = {
+const COMMANDS = {
   "init": {
     "word": "init",
     "prog": "init",
@@ -558,7 +558,7 @@ export const COMMANDS = {
   }
 };
 
-export const GROUPS = {
+const GROUPS = {
   "cycle": {
     "word": "cycle",
     "prog": "cycle",
@@ -1787,7 +1787,8 @@ export const GROUPS = {
 
 // The rows as the readers type them. `COMMANDS` holds the top-level verbs only: a group's verb lives
 // once, in its group row's `commands`, and the flat `"<group> <verb>"` view below is derived from
-// those — there is no second copy to drift.
+// those — there is no second copy to drift. The pair stays module-private: the `COMMANDS` /
+// `GROUPS` names on the package exit spell the flat view in spec.ts, so these must not share them.
 const commandRows = COMMANDS as unknown as Record<string, WordRow>;
 const groupRows = GROUPS as unknown as Record<string, WordRow>;
 const tableTop = TOP as TableTop;

@@ -133,8 +133,12 @@ export type {
 } from './config';
 /* The knob list and its one merge, exported rather than respelled: the settings a caller hands to a
    reader (the panel's per-row candidates) are read off this declaration, so no caller keeps a second
-   copy of a vocabulary the engine already states. */
+   copy of a vocabulary the engine already states. The plugin-declared half rides along under its own
+   name — the one table doctor reads: a caller that has the plugin folders (the host scans the folder
+   it ships) folds them through `knobSpecs(declaredKnobSpecs(folders))` instead of walking a table of
+   its own. */
 export { BUILTIN_KNOBS, knobSpecs } from './config';
+export { declaredKnobSpecs } from './plugins/registry';
 export type { SessionNoteRole, SessionNoteSummary, SessionShow, SessionsNamespace } from './sessions';
 export type { PreparedDispatch, PreparedNode } from './prepare';
 export type {

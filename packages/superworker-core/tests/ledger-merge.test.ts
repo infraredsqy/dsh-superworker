@@ -1446,3 +1446,59 @@ describe('the settings file is not the driver\'s to merge', () => {
     expect(run1.oursBytes.equals(bytesOf(oursText))).toBe(true);
   });
 });
+
+/**
+ * A top-level field that spells `__proto__` is the one own key whose assignment on a plain `{}`
+ * accumulator sets the prototype instead of creating a cell, so that field used to vanish from the
+ * merge result — the same family of defect the record IO's own key walk (`jsonio.sortDeep`) was
+ * built against. The generic walk's accumulators are own-key tables now; the two runs here pin the
+ * behaviour end to end: the ticket's engine reaches `mergeMapping`'s accumulator, the graph's
+ * engine reaches `mergeCollection`'s `out` and then its `merged`.
+ */
+describe('a top-level own key named __proto__ stays in the merge result', () => {
+  /** The one field both sides wrote: a hand-written object, identical on the two sides. */
+  const proto = { hand: 'written' };
+
+  it('the ticket: the field both sides agree on is in the merged record', async () => {
+    const nodeA = 'aaaaaaaa-1111-4111-8111-111111111111';
+    const ticket = (extra: Record<string, unknown>): string =>
+      JSON.stringify(
+        {
+          cycle: 'superworker-core',
+          node: nodeA,
+          status: 'completed',
+          summary: 'the report both sides wrote',
+          outputs: {},
+          timestamp: '2026-02-01T01:00:00Z',
+          ...extra,
+        },
+        null,
+        2,
+      );
+    const run1 = await run({
+      base: ticket({}),
+      ours: ticket({ ['__proto__']: proto }),
+      theirs: ticket({ ['__proto__']: proto }),
+      path: `.superworker/signals/superworker-core/${nodeA}.json`,
+    });
+    expect(run1.code).toBe(0);
+    const landed = JSON.parse(run1.oursBytes.toString('utf8')) as Record<string, unknown>;
+    expect(Object.hasOwn(landed, '__proto__')).toBe(true);
+    expect(landed['__proto__']).toEqual(proto);
+  });
+
+  it('the graph: the field beside the collection is in the merged record', async () => {
+    const graph = (extra: Record<string, unknown>): string =>
+      JSON.stringify({ nodes: {}, ...extra }, null, 2);
+    const run1 = await run({
+      base: graph({}),
+      ours: graph({ ['__proto__']: proto }),
+      theirs: graph({ ['__proto__']: proto }),
+      path: '.superworker/ideas.json',
+    });
+    expect(run1.code).toBe(0);
+    const landed = JSON.parse(run1.oursBytes.toString('utf8')) as Record<string, unknown>;
+    expect(Object.hasOwn(landed, '__proto__')).toBe(true);
+    expect(landed['__proto__']).toEqual(proto);
+  });
+});

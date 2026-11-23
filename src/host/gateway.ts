@@ -28,11 +28,11 @@ import { openConsultSession, openConductSession, openRouteSession, type SessionO
 import type { RecordOutcome } from './failure.ts'
 import { RecordsPump } from './pump.ts'
 import { readPoolWeights, type PoolWeightsFolder } from './pool-weights.ts'
-import { parseConfigList, withDeclaredOptions, type SuperworkerConfigReading } from './project-config.ts'
+import { declaredOptions, parseConfigList, withDeclaredOptions, type SuperworkerConfigReading } from './project-config.ts'
 import { dispatchCell } from './relay.ts'
 import { readReading } from './records.ts'
 import { aliveAgentIds, weightsFolderOf, workspaceRootOf } from './seams.ts'
-import { readClaims, readSessionNotes, readTickets, type SuperworkerSessionsReading } from './sessions.ts'
+import { readSessionSide, type SuperworkerSessionsReading } from './sessions.ts'
 import { runWords } from './write.ts'
 
 /**
@@ -219,14 +219,18 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
      * same terms: the reading it filters is the one this frame carries. */
     const poolWeights = await readPoolWeights(this.#weightsFolder)
     const instructionScopes = await readInstructionScopes(this.#weightsFolder)
-    const [reading, notes, claims, tickets] = await Promise.all([
+    const [reading, sessions] = await Promise.all([
       readReading(this.ctx.workspaceFiles, scope, signal, poolWeights, instructionScopes),
-      readSessionNotes(this.ctx.workspaceFiles, scope, signal),
-      readClaims(this.ctx.workspaceFiles, scope, signal),
-      readTickets(this.ctx.workspaceFiles, scope, signal),
+      readSessionSide(this.ctx.workspaceFiles, scope, signal, () => aliveAgentIds(this.ctx)),
     ])
-    const sessions: SuperworkerSessionsReading = { ...notes, claims, tickets, alive: aliveAgentIds(this.ctx) }
-    return { workspaceRoot, at: Date.now(), reading, sessions }
+    /* The frame's roster is sampled here — after the whole reading, records and session side alike,
+     * has landed: the moment this door sampled it before the session side moved into the assembly.
+     * The assembly asks after its own three reads, which can land while `readReading` is still out;
+     * that moment is `readSessions`' own, and its endpoint carries it. A frame that carried the
+     * assembly's sample would let agents starting or stopping inside that window reach the panel
+     * under a sampling moment the frame never stood for, so this path overwrites the slot with one
+     * taken now. */
+    return { workspaceRoot, at: Date.now(), reading, sessions: { ...sessions, alive: aliveAgentIds(this.ctx) } }
   }
 
   /**
@@ -312,7 +316,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
       ok: true,
       text: outcome.text,
       refusal: null,
-      entries: withDeclaredOptions(parseConfigList(outcome.text)),
+      entries: withDeclaredOptions(parseConfigList(outcome.text), await declaredOptions()),
     }
   }
 
@@ -357,12 +361,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
     const root = (await workspaceRootOf(this.ctx, { sessionId, named: workspaceRoot })).root
     const scope = { sessionId, workspaceRoot: root }
     const signal = options?.signal ?? NEVER_ABORT
-    const [reading, claims, tickets] = await Promise.all([
-      readSessionNotes(this.ctx.workspaceFiles, scope, signal),
-      readClaims(this.ctx.workspaceFiles, scope, signal),
-      readTickets(this.ctx.workspaceFiles, scope, signal),
-    ])
-    return { ...reading, claims, tickets, alive: aliveAgentIds(this.ctx) }
+    return readSessionSide(this.ctx.workspaceFiles, scope, signal, () => aliveAgentIds(this.ctx))
   }
 
   /**

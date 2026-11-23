@@ -66,6 +66,7 @@ import type { Agent, AgentOptions, AgentRegistry, AgentSetup } from '@deepseek-a
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createUserMessage } from '@deepseek-ai/dsh-llm/message'
 import { CONSULT_PROMPT, type Executor } from 'superworker-core'
+import { BoundedMap, PER_ROOT_STATE_CAP } from './bounded-map.ts'
 import { LAUNCH_PROMPT_FILE, RECORD_LAUNCH } from './contract.ts'
 import type { RecordFailure, RecordRefusalCode } from './failure.ts'
 import { isAbsent, readWholeFile, type SuperworkerScope } from './records.ts'
@@ -148,14 +149,27 @@ function attachMissReason(registry: WorkspaceRegistryPort | undefined): string {
  * The per-workspace queue: opens aimed at one workspace hold its line one at
  * a time, whatever the previous open answered — a refusal must not poison
  * the line for the next open. One process, one queue: two gateway instances
- * in the same host would still be writing the same directories.
+ * in the same host would still be writing the same directories. The table
+ * itself stays bounded ({@link BoundedMap}): a fork-mode host keeps meeting
+ * new worktree roots, and a root nobody opened for a long time gives its seat
+ * up for a newer one. A seat whose line is still in flight, though, is pinned,
+ * and eviction skips pinned seats ({@link BoundedMap} may sit past its cap
+ * while pins hold it there — that stretch is bounded by the lines actually
+ * running, and it is what keeps the serialization below real under the
+ * bound): a line being worked is never the one that gives way, whatever the
+ * other roots open meanwhile. Once a line lands, its hold is released and the
+ * seat is evictable again — what it then holds is only the settled promise
+ * the next open chains behind, so losing it costs nothing: the next open
+ * starts from a resolved promise either way.
  */
-const queues = new Map<string, Promise<unknown>>()
+const queues = new BoundedMap<string, Promise<unknown>>(PER_ROOT_STATE_CAP)
 
 function inLine<T>(root: string, step: () => Promise<T>): Promise<T> {
   const ahead = queues.get(root) ?? Promise.resolve()
   const mine = ahead.then(step, step)
   queues.set(root, mine.then(() => undefined, () => undefined))
+  queues.pin(root)
+  mine.then(() => queues.unpin(root), () => queues.unpin(root))
   return mine
 }
 

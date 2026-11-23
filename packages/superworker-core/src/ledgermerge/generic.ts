@@ -453,7 +453,8 @@ export function mergeMapping(
   theirs: unknown,
   resolve: FieldResolver,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+  // The accumulator is an own-key table (`Object.create(null)`): a field spelling `__proto__` must land as a cell.
+  const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const key of keyOrder(ours, theirs)) {
     const value = resolve(key, get(base, key), get(ours, key), get(theirs, key));
     if (value !== MISSING) out[key] = value;
@@ -619,7 +620,8 @@ export function mergeCollection(
   options: MergeCollectionOptions,
 ): Record<string, unknown> {
   const label = kindRow(report.kind).fileName ?? report.name;
-  const out: Record<string, unknown> = {};
+  // Own-key accumulator, like `mergeMapping`'s: a field spelling `__proto__` must land as a cell.
+  const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const field of keyOrder(ours, theirs)) {
     const slot = options.slots.find((each) => each.key === field);
     if (slot !== undefined) {
@@ -644,7 +646,8 @@ export function mergeCollection(
       );
     }
   }
-  const merged: Record<string, unknown> = {};
+  // Own-key table as well: the cells copied in here may spell `__proto__`, and on a plain `{}` that copy would set the prototype.
+  const merged: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const [key, value] of Object.entries(out)) {
     if (value !== MISSING) merged[key] = value;
   }

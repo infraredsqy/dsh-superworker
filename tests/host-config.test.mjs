@@ -102,8 +102,8 @@ test('Anything but a setting line is dropped: the extra warning, blank lines, th
   assert.deepEqual(Object.keys(entries), ['max_agents'])
 })
 
-test('The candidates this half hands are the engine\'s own declaration, read key by key — not a second list', () => {
-  const options = declaredOptions()
+test('The candidates this half hands are the engine\'s own declaration, read key by key — not a second list', async () => {
+  const options = await declaredOptions()
   assert.ok(Object.keys(options).length > 0, 'the engine declares at least one vocabulary; an empty table would hand the panel nothing')
   for (const [key, spec] of Object.entries(knobSpecs())) {
     const declared = spec.values === undefined || spec.values.length === 0 ? undefined : [...spec.values]
@@ -111,8 +111,17 @@ test('The candidates this half hands are the engine\'s own declaration, read key
   }
 })
 
-test('Candidates are laid onto the parsed entries: only keys the declaration gives a vocabulary, nothing fabricated for the rest', () => {
-  const options = declaredOptions()
+test('A plugin-declared word knob\'s vocabulary rides the same read: the pipeline plugin\'s answer declares exactly technical / plain', async () => {
+  const options = await declaredOptions()
+
+  /* The plugin half reaches this table only through the engine's own declaration read
+   * (`declaredKnobSpecs` folded into `knobSpecs`): the values are the shipped declaration's, in its
+   * order — a second spelling here would drift from the plugin the engine answers from. */
+  assert.deepEqual(options['answer'], ['technical', 'plain'], 'the plugin\'s word knob is read off the shipped declaration, not dropped')
+})
+
+test('Candidates are laid onto the parsed entries: only keys the declaration gives a vocabulary, nothing fabricated for the rest', async () => {
+  const options = await declaredOptions()
   const entries = withDeclaredOptions(parseConfigList(LISTED), options)
   assert.deepEqual(entries['worktree_mode'], { value: 'off', layer: 'project', options: options['worktree_mode'] })
   assert.deepEqual(entries['test_tier'], { value: 'full', layer: 'project', options: options['test_tier'] })
@@ -133,7 +142,7 @@ test('A read answers `config list` at this workspace root; the table is the line
     assert.equal(reading.refusal, null, 'the success branch carries no refusal')
     assert.deepEqual(
       reading.entries['worktree_mode'],
-      { value: 'off', layer: 'default', options: declaredOptions()['worktree_mode'] },
+      { value: 'off', layer: 'default', options: (await declaredOptions())['worktree_mode'] },
       'unset means the factory default, and the declaration\'s candidates ride along',
     )
     assert.equal(reading.entries['max_agents']?.layer, 'default')

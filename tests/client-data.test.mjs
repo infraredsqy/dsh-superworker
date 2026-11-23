@@ -352,3 +352,55 @@ test('the answer is not something readable: report unparsable-answer, no made-up
   await assert.rejects(() => port.read('s1', ''), refusedWith({ code: 'unparsable-answer' }))
   assert.deepEqual(await port.write('archive', 's1', '', 'i-1'), { ok: false, code: 'unparsable-answer' })
 })
+
+test('the port climbs with refresh(): a read after the climb is answered by the layer now in force, the one source and watch already stand on', async () => {
+  /* The namespace mounts asynchronously in production (the mount callback drives refresh), so a port
+   * assembled on the carrier meets it mid-life. A forwarding closure that reads the layer once at
+   * creation keeps calling the carrier after the climb while `source` and `watch` have moved on —
+   * so each road answers with its own marker, and the read after the climb has to carry the
+   * mounted namespace's marker, not the road the port was born on. */
+  const calls = []
+  const carrier = {
+    rpc: {
+      call: async (_path, endpoint, { args }) => {
+        calls.push({ road: 'carrier', endpoint, sessionId: args.sessionId })
+        return { ok: true, value: { workspaceRoot: 'C:\\ws', served: 'carrier' } }
+      },
+    },
+  }
+  const namespace = {
+    read: async (sessionId, workspaceRoot) => {
+      calls.push({ road: 'remote', endpoint: 'read', sessionId })
+      return { ok: true, value: { workspaceRoot, served: 'remote' } }
+    },
+    watch: () => {
+      calls.push({ road: 'remote', endpoint: 'watch' })
+      const stream = (async function* () {
+        yield { at: 1, workspaceRoot: 'C:\\ws', reading: { served: 'remote' }, sessions: null }
+      })()
+      return Object.assign(stream, { dispose: () => undefined })
+    },
+  }
+  const holder = { connection: carrier }
+  const port = createPanelPort({ get: (name) => holder[name] })
+
+  assert.equal(port.source, 'carrier')
+  assert.equal((await port.read('s1', 'C:\\picked')).served, 'carrier', 'before the mount lands, the carrier road is what answers')
+
+  holder['remote.superworker'] = namespace
+  assert.equal(port.refresh(), true, 'the namespace becoming readable is the climb')
+  assert.equal(port.source, 'remote')
+  assert.equal(
+    (await port.read('s1', 'C:\\picked')).served,
+    'remote',
+    'a read after the climb is answered by the layer in force at call time, not the one the port was born on',
+  )
+
+  let landed
+  const frame = new Promise((resolve) => { landed = resolve })
+  const off = port.watch('s1', 'C:\\ws', landed)
+  const opened = await frame
+  off()
+  assert.equal(opened.reading.served, 'remote', 'a channel opened after the climb stands on the same layer source names')
+  assert.deepEqual(calls.map((call) => call.road), ['carrier', 'remote', 'remote'], 'each road answered once, in that order')
+})

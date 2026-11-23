@@ -17,17 +17,16 @@ export type {
   JudgementInput,
   OverviewCellVerdict,
   OverviewEnding,
-  OverviewEvent,
   OverviewInput,
   OverviewJudgement,
   OverviewLeg,
   OverviewReading,
-  OverviewRow,
-  OverviewRowKind,
   OverviewSessionRow,
   OverviewSnapshot,
   OverviewWindow,
 } from './overview.ts'
+export type { OverviewEvent, OverviewRow, OverviewRowKind } from './overview-fold.ts'
+export type { OverviewMainFrom } from './overview-main.ts'
 export { readLine, readPool } from './pool.ts'
 export { belongsTo, bucketOf, dispatchCycleOf, everySourceIs, lineStateOf, nodesOf, ownersOf, rankOf } from './reading.ts'
 export type { CycleState, DetailGroupKey, NodeBucket, NodeRank } from './reading.ts'

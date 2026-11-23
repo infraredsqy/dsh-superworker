@@ -249,7 +249,7 @@ test('Reading settings: every line the engine printed parses into the table, and
     assert.ok(reading.text.length > 0, 'the success branch carries the lines the engine printed')
     assert.equal(reading.entries['worktree_mode']?.value, 'fork', 'the value written to the project layer is here')
     assert.equal(reading.entries['worktree_mode']?.layer, 'project', 'the layer it was written to is the layer the tag reads')
-    assert.deepEqual(reading.entries['worktree_mode']?.options, declaredOptions()['worktree_mode'], 'the declaration\'s candidates ride along')
+    assert.deepEqual(reading.entries['worktree_mode']?.options, (await declaredOptions())['worktree_mode'], 'the declaration\'s candidates ride along')
     assert.equal(reading.entries['max_agents']?.layer, 'default', 'an unwritten key reads as the factory default')
   } finally {
     stage.done()

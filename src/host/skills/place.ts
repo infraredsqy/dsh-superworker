@@ -321,6 +321,10 @@ async function place(
   const previous = placedSkills(home)
   if (!previous.ok) return { outcome: previous, dispose: () => undefined }
   const owned = new Set(previous.manifest.skills.map((skill) => skill.name))
+  /* With a record on disk, the set above is the whole truth about what this line placed, so a name
+   * outside it is provably not ours. Without one, nothing can prove whose the files in this root
+   * are — the refusal says so instead of claiming they are somebody else's. */
+  const unrecorded = !previous.recorded
 
   /* A name already held in this root by somebody else's copy. Placing over it would put two
    * definitions in one directory (or two directories that cannot share a name), and silently
@@ -334,8 +338,11 @@ async function place(
     const heldAt = existsSync(directory) ? join(directory, PLUGIN_SKILL_FILE) : flatFile
     if (heldAt === undefined) continue
     collisions.push(
-      `${one.method}: this line ships ${one.file}, but ${heldAt} already holds a skill with that ` +
-        'name and this line did not place it',
+      unrecorded
+        ? `${one.method}: this line ships ${one.file}, but ${heldAt} already holds a skill with that ` +
+          'name, and no placement record exists to prove who placed it'
+        : `${one.method}: this line ships ${one.file}, but ${heldAt} already holds a skill with that ` +
+          'name and this line did not place it',
     )
   }
   if (collisions.length > 0) {

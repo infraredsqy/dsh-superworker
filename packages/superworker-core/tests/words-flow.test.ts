@@ -6,7 +6,7 @@ import { SimulatedExecutor } from '../src/executor';
 import { open } from '../src/open';
 import { CORE_SELF_VERBS } from '../src/words/core-words';
 import { answer } from '../src/words/router';
-import { COMMAND_ROWS, COMMANDS, GROUP_ROWS, TABLE_TOP } from '../src/words/table';
+import { COMMAND_ROWS, GROUP_ROWS, TABLE_TOP } from '../src/words/table';
 import type { WordsIO } from '../src/words/types';
 
 /**
@@ -261,13 +261,20 @@ describe('the engine and the words agree', () => {
 
 describe('the word table: the listing and the route table are the same words', () => {
   it('every verb and group the top lists is a row the router answers, and no row goes unlisted', () => {
-    // The listing prints the top; the router routes the rows. The two self words (`doctor`,
+    // The listing prints the top; the router routes the rows. The flat rows spell a group's verb
+    // with a space, so the space-less keys are the top verbs. The two self words (`doctor`,
     // `version`) are rows without a verbs line of their own (the `the tool itself:` block prints
-    // them), so the guard reads the rows with those two taken out. A word added to the rows but
+    // them), so the guard reads those rows with the two taken out. A word added to the rows but
     // not the top fails here instead of routing in silence.
     const selfWords = CORE_SELF_VERBS.map(([word]) => word);
-    const routed = Object.keys(COMMANDS).filter((word) => !selfWords.includes(word));
+    const routed = Object.keys(COMMAND_ROWS).filter((word) => !word.includes(' ') && !selfWords.includes(word));
     expect([...routed].sort()).toEqual([...TABLE_TOP.verbs].sort());
     expect(Object.keys(GROUP_ROWS).sort()).toEqual([...TABLE_TOP.groups].sort());
+  });
+
+  it('COMMANDS and GROUPS name only the flat view the package exit spells: the table module exports no pair of its own', async () => {
+    const table = await import('../src/words/table');
+    expect(Object.keys(table)).not.toContain('COMMANDS');
+    expect(Object.keys(table)).not.toContain('GROUPS');
   });
 });

@@ -58,6 +58,7 @@
  */
 import { answer, open, projectRootOf } from 'superworker-core'
 import type { Context } from '@deepseek-ai/cordis'
+import { BoundedMap, PER_ROOT_STATE_CAP } from './bounded-map.ts'
 import { answerHandleOf } from './write.ts'
 import { recordPresentAt } from './records.ts'
 import { PANEL_PREF_FIELDS } from './settings-fields.ts'
@@ -139,8 +140,8 @@ export function instructionTextViewOf(view: WordAnswer, mark: WordAnswer, rechec
   return view.stdout.replace(/[\r\n]+$/u, '')
 }
 
-/** The last text computed per session and its workspace root: what the synchronous provider hands back. */
-const carried = new Map<string, string>()
+/** The last text computed per session and its workspace root: what the synchronous provider hands back. The table stays bounded ({@link BoundedMap}) — a long host keeps meeting new (root, session) pairs, and a pair nobody asked for gives its seat up; the provider's own reads and the assembly's writes both touch their entry, so an entry still being carried is never the one evicted. */
+const carried = new BoundedMap<string, string>(PER_ROOT_STATE_CAP)
 
 /** One carried entry's key: the workspace root and the session that asked — two sessions in one root work two nodes and carry two listings. */
 const carriedKeyOf = (root: string, id: string): string => `${root}\u0000${id}`

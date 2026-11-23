@@ -30,14 +30,14 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadPlugins, skillFolders } from 'superworker-core'
 import { apply } from '../src/host/index.ts'
 import { DEFAULT_LANGUAGE, SKILL_ROOT_RANK, manifestPathOf, shippedPluginsDir, skillRootOf } from '../src/host/skill-paths.ts'
 import { readSkillFile } from '../src/host/skills/frontmatter.ts'
-import { placedSkills } from '../src/host/skills/manifest.ts'
+import { manifestBackupPathOf, placedSkills } from '../src/host/skills/manifest.ts'
 import { installPluginSkills, installSkillsWhenReady } from '../src/host/skills/place.ts'
 import { confirmSkillsInView } from '../src/host/skills/view.ts'
 import { pinTo } from './helpers/env.mjs'
@@ -386,6 +386,35 @@ test('Upgrade: the old version the previous manifest recorded is taken back firs
   }
 })
 
+test('A crash between moving the record aside and writing the new one: the files stay, the next install restores the record and replaces — no permanent refusal', async () => {
+  const h = homes()
+  try {
+    const first = await installPluginSkills({}, { dshHome: h.dsh })
+    assert.equal(first.outcome.ok, true, `install refused: ${JSON.stringify(first.outcome)}`)
+    /* The exact state an interrupted write leaves: the previous record has moved to its backup, the
+     * new one has not taken its place yet, and every file of the last completed placement is still
+     * on disk. Before the backup the same state answered an empty manifest and every name in the
+     * root was refused forever as somebody else's. */
+    renameSync(manifestPathOf(h.dsh), manifestBackupPathOf(h.dsh))
+    assert.equal(existsSync(manifestPathOf(h.dsh)), false, 'the crash-window premise is wrong: the record is still in place')
+
+    const second = await installPluginSkills({}, { dshHome: h.dsh })
+    assert.equal(
+      second.outcome.ok,
+      true,
+      `the interrupted write stranded the placement: ${JSON.stringify(second.outcome)}`,
+    )
+    assert.deepEqual([...second.outcome.names].sort(), [...first.outcome.names].sort())
+    /* The record is back where every later read finds it, naming what is on disk now. */
+    const restored = placedSkills(h.dsh)
+    assert.equal(restored.ok, true)
+    assert.deepEqual(restored.manifest.skills.map((one) => one.name).sort(), [...first.outcome.names].sort())
+    second.dispose()
+  } finally {
+    h.clean()
+  }
+})
+
 test('Somebody already holds our name in the same root: no overwrite, no coexistence, skill-shadowed naming both places', async () => {
   const h = homes()
   try {
@@ -399,6 +428,56 @@ test('Somebody already holds our name in the same root: no overwrite, no coexist
     assert.match(install.outcome.detail, new RegExp(first, 'u'), 'the error does not name that skill')
     assert.ok(install.outcome.detail.includes(held), 'the error does not name the copy holding the name')
     assert.match(readFileSync(held, 'utf8'), /somebody else put this here/u, 'somebody else\'s skill was overwritten')
+  } finally {
+    h.clean()
+  }
+})
+
+test('The skill-shadowed refusal says only what it can prove: with a record it names what this line did not place, without one it says no record can prove who placed it', async () => {
+  const h = homes()
+  try {
+    const declared = await declaredMethods()
+    const first = declared[0]
+    assert.ok(first !== undefined, 'the plugin set declares no skills')
+    const install = await installPluginSkills({}, { dshHome: h.dsh })
+    assert.equal(install.outcome.ok, true, `install refused: ${JSON.stringify(install.outcome)}`)
+
+    /* With a record: drop one entry from it, leave that skill's files in place, install again — the
+     * record proves that name is no longer this line's, and the refusal says exactly that. */
+    const record = JSON.parse(readFileSync(manifestPathOf(h.dsh), 'utf8'))
+    record.skills = record.skills.filter((one) => one.name !== first)
+    writeFileSync(manifestPathOf(h.dsh), JSON.stringify(record), 'utf8')
+    const proven = await installPluginSkills({}, { dshHome: h.dsh })
+    assert.equal(proven.outcome.ok, false, 'a name the record does not list was installed over')
+    assert.equal(proven.outcome.code, 'skill-shadowed')
+    assert.match(proven.outcome.detail, new RegExp(first, 'u'), 'the refusal does not name that skill')
+    assert.equal(
+      proven.outcome.detail.split('this line did not place it').length - 1,
+      1,
+      `the proven refusal says exactly once that this line did not place it: ${proven.outcome.detail}`,
+    )
+    assert.equal(
+      proven.outcome.detail.includes('no placement record exists'),
+      false,
+      'the proven refusal claimed the record was missing',
+    )
+
+    /* Without a record at all: nothing can prove whose the files in the root are, so the refusal
+     * must say so instead of claiming they are somebody else's — the old wording pinned a claim no
+     * record backed. */
+    rmSync(manifestPathOf(h.dsh))
+    const unproven = await installPluginSkills({}, { dshHome: h.dsh })
+    assert.equal(unproven.outcome.ok, false, 'no record and it installed anyway')
+    assert.equal(unproven.outcome.code, 'skill-shadowed')
+    for (const name of declared) assert.match(unproven.outcome.detail, new RegExp(name, 'u'))
+    assert.match(unproven.outcome.detail, /no placement record exists to prove who placed it/u)
+    assert.equal(
+      unproven.outcome.detail.includes('this line did not place it'),
+      false,
+      'the unprovable refusal claimed a proof it does not have',
+    )
+    assert.ok(existsSync(join(skillRootOf(h.dsh), first, 'SKILL.md')), 'the refusal path wrote over the files anyway')
+    install.dispose()
   } finally {
     h.clean()
   }

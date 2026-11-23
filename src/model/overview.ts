@@ -78,6 +78,10 @@
 import type { NodeReading } from './contract.ts'
 import type { SuperworkerNode } from './records.ts'
 import { asRecord, secondsBetween, text, toEpoch } from './fields.ts'
+import type { OverviewEvent, OverviewRow } from './overview-fold.ts'
+import { capped, dispatchAnchorsOf, foldRows, liveRowsOf } from './overview-fold.ts'
+import type { OverviewMainFrom } from './overview-main.ts'
+import { mainIdOf, pipelineOf } from './overview-main.ts'
 
 /**
  * The window cap: more than this many child windows, and the overview draws
@@ -118,53 +122,6 @@ export interface OverviewSnapshot {
   readonly ids?: unknown
   /** The list rows, keyed by session id. */
   readonly byId?: unknown
-}
-
-/** One event of a session's own log, as far as the fold reads it. */
-export interface OverviewEvent {
-  /** The log's own event name: `assistant/message`, `tool/call`, `tool/result`, … */
-  readonly type?: unknown
-  /** Epoch milliseconds. */
-  readonly time?: unknown
-  readonly data?: unknown
-}
-
-/**
- * What one drawn row is. The kind is the whole fact; the word and the mark it
- * is drawn with are the drawing half's business, so this set says only what
- * happened — a person's own words handed in, a reasoning step, a file read or
- * written, a command run, the model's own words, a task dispatched, a failure,
- * and the neutral `tool` for a call this fold does not know by name.
- *
- * `input` is the one row the conversation did not say: the prompt it was
- * handed. It is here because the feed is read as the conversation's own
- * transcript — DSH's own conversation half shows the same line — and a reply
- * with nothing above it is not a reading of what happened, it is a fragment.
- */
-export type OverviewRowKind = 'input' | 'think' | 'read' | 'write' | 'run' | 'output' | 'dispatch' | 'fail' | 'tool'
-
-/** One row a window draws. */
-export interface OverviewRow {
-  readonly kind: OverviewRowKind
-  /** The one-sentence body: the cut the row shows. */
-  readonly text: string
-  /** The complete content the body was cut from. */
-  readonly full: string
-  /** Which tool call this row folds: DSH's own `callId` carried out verbatim; a row that folds no call carries none. */
-  readonly callId?: string
-  /**
-   * The moment of the event this row folds, in epoch milliseconds: the row's
-   * identity across redraws, read the same way every beat, so a drawing that
-   * keys on it updates a row in place instead of remounting it. Absent on a
-   * live tail, which is a buffer's newest slice and not an event of its own.
-   */
-  readonly at?: number
-  /**
-   * The streaming step's own tail: this row is a live buffer's newest slice, cut anew as the step
-   * streams and redrawn at the animation frame, and it folds away when the step's message settles
-   * into the ordinary rows above it. Absent on a settled row.
-   */
-  readonly live?: boolean
 }
 
 /**
@@ -293,15 +250,6 @@ export interface OverviewLeg {
   /** Whether it owes work nobody is doing: the bar's break ink, carried the same way. */
   readonly alert?: boolean
 }
-
-/**
- * How the stage's subject was chosen, which is a different fact from which window it
- * is. A person's pick and a change of the conversation the panel stands in are asks:
- * the stage takes them at once. The line's own answer is a hand-over: the page the
- * reader was reading is a step that has finished and left, and the stage moves on to
- * where the line stands now — the drawing closes the old page and opens the new one.
- */
-export type OverviewMainFrom = 'pick' | 'seat' | 'line' | 'view'
 
 /** The overview's reading at this snapshot. */
 export interface OverviewReading {
@@ -559,34 +507,6 @@ export interface JudgementInput {
   readonly panelSession?: unknown
 }
 
-/** The drawn row each tool name folds into. A name outside the four sets is a tool this fold does not know, and folds as the neutral `tool`. */
-const READ_TOOLS: ReadonlySet<string> = new Set(['read', 'read_image'])
-const WRITE_TOOLS: ReadonlySet<string> = new Set(['write', 'edit', 'apply_patch', 'str_replace_editor'])
-const RUN_TOOLS: ReadonlySet<string> = new Set(['bash', 'pwsh'])
-const DISPATCH_TOOLS: ReadonlySet<string> = new Set(['subagent', 'subagent_fork', 'subagent_continue', 'ralph'])
-
-function callKindOf(name: string): OverviewRowKind {
-  if (READ_TOOLS.has(name)) return 'read'
-  if (WRITE_TOOLS.has(name)) return 'write'
-  if (RUN_TOOLS.has(name)) return 'run'
-  if (DISPATCH_TOOLS.has(name)) return 'dispatch'
-  return 'tool'
-}
-
-/**
- * The one thing a call's row names, read off the tool's own arguments: the
- * file a read or write touched, the command a run spelled, the task a dispatch
- * named. An argument that is not there leaves the tool's own name as the body;
- * nothing is invented in its place.
- */
-function subjectOf(kind: OverviewRowKind, name: string, args: Record<string, unknown> | undefined): string {
-  const path = text(args?.file_path) ?? text(args?.path)
-  if (kind === 'read' || kind === 'write') return path ?? name
-  if (kind === 'run') return text(args?.command) ?? name
-  if (kind === 'dispatch') return text(args?.description) ?? text(args?.name) ?? name
-  return text(args?.word) ?? text(args?.description) ?? name
-}
-
 function rowsOf(snapshot: OverviewSnapshot): Readonly<Record<string, OverviewSessionRow>> {
   return asRecord(snapshot.byId) as Readonly<Record<string, OverviewSessionRow>> | undefined ?? {}
 }
@@ -596,42 +516,6 @@ function listedIds(snapshot: OverviewSnapshot): readonly string[] {
   return snapshot.ids.filter((id): id is string => typeof id === 'string' && id.length > 0)
 }
 
-/**
- * DSH's own main-view marker: the row whose `retainedBy.mainView` is over zero.
- *
- * This is a browser-side count — who holds the session open right now — and
- * says nothing about which conversation belongs to this workspace's pipeline.
- * It is read in exactly one place: a caller that hands over no record side and
- * no session of its own (see {@link OverviewInput.pipelineSessions}).
- */
-function mainViewOf(rows: Readonly<Record<string, OverviewSessionRow>>): string | undefined {
-  for (const row of Object.values(rows)) {
-    const count = asRecord(row?.retainedBy)?.mainView
-    if (typeof count !== 'number' || count <= 0) continue
-    const id = row?.id
-    if (typeof id === 'string' && id.length > 0) return id
-  }
-  return undefined
-}
-
-/**
- * The sessions the pipeline record names, or `undefined` when the caller said
- * nothing at all (which is a different fact from "the record names none").
- */
-function pipelineOf(input: OverviewInput): ReadonlySet<string> | undefined {
-  if (!Array.isArray(input.pipelineSessions)) return undefined
-  const named = new Set<string>()
-  for (const id of input.pipelineSessions) {
-    if (typeof id === 'string' && id.length > 0) named.add(id)
-  }
-  return named
-}
-
-/** When the list last moved a row: epoch milliseconds, 0 when it says nothing readable. */
-function movedAtOf(row: OverviewSessionRow | undefined): number {
-  return toEpoch(row?.updatedAt) ?? 0
-}
-
 /** The moment a reading was taken at, read the same way a row's own moment is; absent says nothing. */
 function atOf(raw: unknown): Date | null {
   const ms = toEpoch(raw)
@@ -639,563 +523,109 @@ function atOf(raw: unknown): Date | null {
 }
 
 /**
- * The newest of these sessions: the one whose row the list moved last, ties
- * falling to the later arrival in the list's own order. Unwritten moments read
- * as 0, so a list that carries none still answers with an arrival-order pick.
+ * One session's four derived moments, off its own events: when the conversation
+ * started, when it last moved, when its last turn ended, and how that turn ended
+ * ({@link OverviewEnding}).
  */
-function latestOf(
-  ids: readonly string[],
-  rows: Readonly<Record<string, OverviewSessionRow>>,
-  order: readonly string[],
-): string | undefined {
-  let best: string | undefined
-  let bestMoment = Number.NEGATIVE_INFINITY
-  let bestAt = Number.NEGATIVE_INFINITY
-  for (const id of ids) {
-    const moment = movedAtOf(rows[id])
-    const at = order.indexOf(id)
-    if (best === undefined || moment > bestMoment || (moment === bestMoment && at > bestAt)) {
-      best = id
-      bestMoment = moment
-      bestAt = at
-    }
-  }
-  return best
+interface SessionDerived {
+  readonly startedAt: Date | null
+  readonly endedAt: Date | null
+  readonly turnedAt: number | null
+  readonly ending: OverviewEnding | undefined
 }
 
+/** What a session with no events at all derives to: no moment, no ending. */
+const NOTHING_DERIVED: SessionDerived = { startedAt: null, endedAt: null, turnedAt: null, ending: undefined }
+
 /**
- * Which conversation is the main window — the one rule, in the order it reads, and
- * the ask behind it:
+ * The per-session event index, built once as the reading opens (one
+ * {@link derivedOf} scan per session): when the conversation started (the
+ * earliest moment its events carry), when it last moved (the newest — the end of
+ * the span a window that stopped is measured to, the log's own last word, not the
+ * moment this reading was taken), when its last turn ended (the log's last
+ * `turn/end`), and how that turn ended. Every judgment below reads the index
+ * instead of walking the same table again, however many seats, bars and yields
+ * ask.
  *
- * 1. the leg the reader picked on the rail, while the list still holds it — a
- *    person's pick outranks every reading here;
- * 2. the conversation the panel stands in, when the seat says which one it is:
- *    the reader's own conversation, while it is still the line's to read. A seat
- *    the record has delivered — and no gate stands on it — has said its last word
- *    (its check), so it keeps the stage only while no other step of the line is
- *    **being worked**; with one running, the stage follows it. That is what lets a
- *    reader who stayed on a finished step's page watch the line go on, and what
- *    keeps the check when the line has really stopped. A seat that says nothing is
- *    not stood in for — the browser's open conversation is no reading of the line
- *    (see {@link OverviewInput.ownSession});
- * 3. else the step the record holds **and** whose conversation still runs: where
- *    the line is being worked this moment. It leads the held-but-stopped step on
- *    purpose — a step that has finished owes the stage its check, not its page,
- *    while a sibling is still being worked;
- * 4. else the step the record holds that has not left the line (a gate, or a debt
- *    nobody is working): that stop *is* where the line stands;
- * 5. else a named session the list still calls running (the newest of them when
- *    several are);
- * 6. else the one the record names that moved last;
- * 7. else nothing — no window at all, rather than a conversation the pipeline
- *    never mentioned.
- *
- * A named session the list does not hold is no window either, and it is never
- * stood in for by one the pipeline does not name: an unknown is unknown.
- *
- * Only a caller that says nothing about the pipeline — no named set, no session
- * of its own — falls back to DSH's `retainedBy.mainView` marker, which is the
- * browser's own "who has this open" count and no reading of the record.
+ * The log's stamps are epoch milliseconds and read as numbers alone — the
+ * row's and the reading's epoch-or-string convention (`toEpoch` in fields.ts)
+ * is not the events'; a stamp that is not a finite number is not a moment here.
+ * `turnedAt` is the conversation's own last word — the moment a window that
+ * yielded to work of its own is read against — and both ends of that comparison
+ * are the log's own, so nothing here is a guess about a clock.
  */
-function mainIdOf(
-  input: OverviewInput,
-  rows: Readonly<Record<string, OverviewSessionRow>>,
-  order: readonly string[],
-  held: ReadonlySet<string>,
-  left: (id: string) => boolean,
-): { readonly id: string; readonly from: OverviewMainFrom } | undefined {
-  /* The pick is asked of the same list as everything else: a leg that left the
-     list is no pick, and the fallback answers instead of a stale id. */
-  const shown = text(input.shownSession)
-  if (shown !== undefined && rows[shown] !== undefined) return { id: shown, from: 'pick' }
-  const named = pipelineOf(input)
-  if (named === undefined) {
-    const marker = mainViewOf(rows)
-    return marker === undefined ? undefined : { id: marker, from: 'view' }
-  }
-  const candidates = [...named].filter((id) => rows[id] !== undefined)
-  const self = text(input.ownSession)
-  if (self !== undefined && named.has(self)) {
-    if (rows[self] === undefined) return undefined
-    /* A seat that has left the line hands the stage over — but only to a step that is **being
-     * worked** right now, and only because that is the page the line has moved on to. Nothing of
-     * the line running means the check is the last word the stage has to say, and it stays where
-     * the reader is looking; a step that stopped owing work keeps its bar either way. */
-    const worked = candidates.some((id) => id !== self && rows[id]?.running === true)
-    if (!(left(self) && worked)) return { id: self, from: 'seat' }
-  }
-  /* The step being worked right now is the line's own subject: it is the one reading
-     that does not wait on the browser's liveness bit or its last-moved moment. A
-     held but stopped step is read after it, because a step that stopped with its
-     work owed is where the line stands only while nothing of the line still moves. */
-  const live = candidates.filter((id) => held.has(id) && rows[id]?.running === true)
-  const liveId = latestOf(live, rows, order)
-  if (liveId !== undefined) return { id: liveId, from: 'line' }
-  const stuck = candidates.filter((id) => held.has(id) && !left(id))
-  const stuckId = latestOf(stuck, rows, order)
-  if (stuckId !== undefined) return { id: stuckId, from: 'line' }
-  const running = candidates.filter((id) => rows[id]?.running === true)
-  const runningId = latestOf(running, rows, order)
-  if (runningId !== undefined) return { id: runningId, from: 'line' }
-  const last = latestOf(candidates, rows, order)
-  return last === undefined ? undefined : { id: last, from: 'line' }
+function derivedAll(
+  events: Readonly<Record<string, readonly OverviewEvent[]>> | undefined,
+): Readonly<Record<string, SessionDerived>> {
+  const derived: Record<string, SessionDerived> = {}
+  for (const [id, list] of Object.entries(events ?? {})) derived[id] = derivedOf(list)
+  return derived
 }
 
-/**
- * The one-sentence body: cut at the first sentence end, else at the first line
- * break, else not at all. A full stop inside a word — a path's `d.ts` — is no
- * boundary: only a terminator followed by whitespace ends a sentence, so a
- * body never cuts a file name or a route word in half.
- */
-function firstSentence(full: string): string {
-  for (let at = 0; at < full.length; at++) {
-    const mark = full[at]
-    if (mark === '\n' || mark === '\r') return full.slice(0, at)
-    if (mark === '。' || mark === '！' || mark === '？') return full.slice(0, at + 1)
-    if (mark === '.' || mark === '!' || mark === '?') {
-      const after = at + 1 < full.length ? full[at + 1] : ' '
-      if (after === ' ' || after === '\t') return full.slice(0, at + 1)
-    }
-  }
-  return full
-}
-
-/**
- * One row, only when there is something to say: no content, no row — and no
- * sentence, no row either. A body that opens with a line break cuts to an
- * empty sentence (a run result whose output opens with a blank line does:
- * PowerShell's tables all do), and a row with no sentence would draw as its
- * word and the separator alone. Its call's row already stands above it.
- */
-function pushRow(rows: OverviewRow[], kind: OverviewRowKind, full: string | undefined, at: number | undefined): void {
-  if (full === undefined || full.length === 0) return
-  const cut = firstSentence(full)
-  if (cut.length === 0) return
-  rows.push({ kind, text: cut, full, ...(at === undefined ? {} : { at }) })
-}
-
-/* ---- the live step's tails --------------------------------------------------
- *
- * A conversation streams its step out chunk by chunk, and the reader watching
- * from the overview reads "alive" off a row that moves with it: the newest
- * slice of what the step is writing now, shown at the line's end. DSH's own
- * conversation half does the same dance — live chunks as Client-only transient
- * events, redraws published at the animation frame, the step's settlement
- * retiring the chunks — and these tails are this panel's reading of those
- * entries, never a second stream of its own.
- */
-
-/**
- * How much of the live buffer a tail row keeps. The cut bounds the string the
- * row redraws every frame; what still does not fit the drawn row is the
- * drawing half's head crop, not this number's business.
- */
-const LIVE_TAIL_LIMIT = 120
-
-/**
- * The buffer's tail: its newest line, whitespace runs collapsed, cut to the
- * newest characters. A line break is where the newest content starts, so an
- * earlier finished line yields to the one being written — and a trailing break
- * (the newest line not yet begun) yields back to the line just finished, so
- * the row never goes blank between the two.
- */
-function tailOf(buffer: string, limit: number): string {
-  let cut = buffer.length
-  while (cut > 0) {
-    const start = buffer.lastIndexOf('\n', cut - 1) + 1
-    const line = buffer.slice(start, cut).replace(/\s+/gu, ' ').trim()
-    if (line.length > 0) {
-      if (line.length <= limit) return line
-      const tail = line.slice(-limit)
-      /* A cut through a surrogate pair would print half a glyph: an orphaned
-       * half at the slice's head is dropped, a whole pair kept. */
-      const head = tail.charCodeAt(0)
-      const next = tail.charCodeAt(1)
-      const orphaned = head >= 0xd800 && head <= 0xdbff
-        ? !(next >= 0xdc00 && next <= 0xdfff)
-        : head >= 0xdc00 && head <= 0xdfff
-      return orphaned ? tail.slice(1) : tail
-    }
-    cut = start === 0 ? 0 : start - 1
-  }
-  return ''
-}
-
-/**
- * The rows a window draws while its step streams: at most two, the thinking
- * tail and then the spoken tail, each the newest slice of that buffer. A
- * buffer that says nothing (whitespace, tool arguments, a chunk the fold does
- * not read) draws no row; a retry's chunks arrive under a new attempt id, and
- * the tails follow the newest attempt rather than mixing the two.
- */
-function liveRowsOf(events: readonly OverviewEvent[] | undefined): readonly OverviewRow[] {
-  let think = ''
-  let spoken = ''
-  let attempt: unknown
-  for (const event of events ?? []) {
-    if (text(event.type) !== 'assistant/live-chunk') continue
-    const data = asRecord(event.data)
-    if (data === undefined) continue
-    if (data.attemptId !== attempt) {
-      attempt = data.attemptId
-      think = ''
-      spoken = ''
-    }
-    const chunk = asRecord(data.chunk)
-    const kind = text(chunk?.type)
-    const delta = typeof chunk?.text === 'string' ? chunk.text : ''
-    if (delta.length === 0) continue
-    if (kind === 'reasoning-delta') think += delta
-    else if (kind === 'text-delta') spoken += delta
-  }
-  const rows: OverviewRow[] = []
-  const thinkTail = tailOf(think, LIVE_TAIL_LIMIT)
-  if (thinkTail.length > 0) rows.push({ kind: 'think', text: thinkTail, full: thinkTail, live: true })
-  const spokenTail = tailOf(spoken, LIVE_TAIL_LIMIT)
-  if (spokenTail.length > 0) rows.push({ kind: 'output', text: spokenTail, full: spokenTail, live: true })
-  return rows
-}
-
-/** The text a message's own content blocks carry, when it carries any. */
-function contentTextOf(message: Record<string, unknown> | undefined): string | undefined {
-  const content = message?.content
-  if (!Array.isArray(content)) return undefined
-  const parts: string[] = []
-  for (const block of content) {
-    const held = asRecord(block)
-    if (held?.type === 'text' && typeof held.text === 'string' && held.text.length > 0) parts.push(held.text)
-  }
-  return parts.length > 0 ? parts.join('\n') : undefined
-}
-
-/**
- * One assistant message folds into at most two rows: its reasoning into a
- * `think` row, its text into an `output` row. The tool calls an assistant
- * message carries make no rows here — the log writes each of them again as its
- * own `tool/call` event, and one call must not become two rows.
- */
-function foldAssistant(data: Record<string, unknown> | undefined, rows: OverviewRow[], at: number | undefined): void {
-  const message = asRecord(data?.message)
-  const content = message?.content
-  if (!Array.isArray(content)) return
-  const thinking: string[] = []
-  const spoken: string[] = []
-  for (const block of content) {
-    const held = asRecord(block)
-    const blockText = typeof held?.text === 'string' ? held.text : ''
-    if (held?.type === 'reasoning' && blockText.length > 0) thinking.push(blockText)
-    if (held?.type === 'text' && blockText.length > 0) spoken.push(blockText)
-  }
-  pushRow(rows, 'think', thinking.length > 0 ? thinking.join('\n') : undefined, at)
-  pushRow(rows, 'output', spoken.length > 0 ? spoken.join('\n') : undefined, at)
-}
-
-/**
- * One `user/message` folds into an `input` row — the conversation's prompt, the
- * one line above the reply that is not the conversation's own.
- *
- * The row is drawn for a **person's** words and for nothing else. DSH writes
- * every user-role message through this one event, and its `source` is what
- * tells the kinds apart: a direct human prompt (or a dispatch's prompt, or a
- * continued child's) carries `kind: 'user'`, while the context the harness
- * injects for itself (a runtime snapshot, a workspace instruction file, the
- * skill catalog, a settled-child notice, a hook's word) carries its own
- * producer's `kind`. Those are not what the conversation was asked; drawing
- * them would bury the prompt under the machinery that delivers it. A message
- * with no readable `source` is none of them either — the kind is required on
- * every one of these events, so an absent one is not read as a person speaking.
- *
- * The message's blocks are the event's own `data.content`, **not** a nested
- * `data.message` — this event type is the surface message already, where an
- * assistant's is wrapped. A dispatch prompt is `kind: 'user'` too, and it is
- * drawn as the row: for a child window the prompt it was handed *is* what
- * opened it, and a window whose first row is already its own answer says
- * nothing about what it was doing there.
- */
-function foldInput(data: Record<string, unknown> | undefined, rows: OverviewRow[], at: number | undefined): void {
-  if (text(asRecord(data?.source)?.kind) !== 'user') return
-  pushRow(rows, 'input', contentTextOf(data), at)
-}
-
-/** The call's own arguments, as an object; arguments that are not parsable text read as none. */
-function parseArguments(raw: unknown): Record<string, unknown> | undefined {
-  if (typeof raw !== 'string' || raw.length === 0) return undefined
-  try {
-    return asRecord(JSON.parse(raw))
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * One tool call folds into one row, named by the tool's own arguments. The
- * call's own id rides the row verbatim — a result or a child's dispatch anchor
- * answers by it — while a run's id is also kept aside, since only a run's
- * result is worth a row of its own. The id is kept before the sentence is cut,
- * so a call whose body cuts to nothing (a command opening on a line break)
- * still answers for its result without drawing its own wordless row.
- */
-function foldCall(
-  data: Record<string, unknown> | undefined,
-  rows: OverviewRow[],
-  runCalls: Set<string>,
-  at: number | undefined,
-): void {
-  const name = text(data?.name)
-  if (name === undefined) return
-  const kind = callKindOf(name)
-  const callId = text(data?.callId)
-  if (kind === 'run' && callId !== undefined) runCalls.add(callId)
-  const subject = subjectOf(kind, name, parseArguments(data?.arguments))
-  const cut = firstSentence(subject)
-  if (cut.length === 0) return
-  rows.push({
-    kind,
-    text: cut,
-    full: subject,
-    ...(callId === undefined ? {} : { callId }),
-    ...(at === undefined ? {} : { at }),
-  })
-}
-
-/**
- * One tool result folds into a row only when it says something on its own: a
- * failure, whose reason is user-facing words kept outside the model's content,
- * or a run's output answering the call before it. Every other result — a
- * file's contents, an edit's receipt — is material the feed does not repeat:
- * its call's row already says what happened.
- */
-function foldResult(
-  data: Record<string, unknown> | undefined,
-  rows: OverviewRow[],
-  runCalls: ReadonlySet<string>,
-  at: number | undefined,
-): void {
-  const message = asRecord(data?.message)
-  const error = asRecord(data?.error)
-  if (error !== undefined) {
-    pushRow(rows, 'fail', text(error.reason) ?? contentTextOf(message) ?? text(error.code) ?? text(error.name), at)
-    return
-  }
-  const callId = text(message?.toolCallId) ?? text(asRecord(message?.source)?.callId)
-  if (callId === undefined || !runCalls.has(callId)) return
-  pushRow(rows, 'run', contentTextOf(message), at)
-}
-
-/**
- * What a v0 dispatch result spells before the child's token: `started subagent
- * <token>` for a fresh child, `started continued subagent <token>` for one a
- * continuation opened. In v0 the token is the child session's id.
- */
-const ACTIVATION_MARKER = /^started (?:continued )?subagent (\S+)/
-
-/**
- * The token one dispatch result names its child by: v3 writes it as the
- * activation's own `name`, v0 writes it only into the sentence. Both are the
- * same word — the child's name in v3, the child's id in v0 — and a result that
- * spells neither names no child at all.
- */
-function activationTokenOf(data: Record<string, unknown> | undefined): string | undefined {
-  const named = text(asRecord(data?.meta)?.name)
-  if (named !== undefined) return named
-  const spelled = contentTextOf(asRecord(data?.message))
-  if (spelled === undefined) return undefined
-  return ACTIVATION_MARKER.exec(spelled)?.[1]
-}
-
-/**
- * Which call of the main session's own log dispatched which child window.
- *
- * The anchor is an identity, never an order. A dispatch call's result names the
- * child it started (v3 by the activation's `name`, v0 by the id its sentence
- * spells); the parent's own `subagent/catalog` carries that same token — `name`
- * in v3, the entry's own `childId` in v0 — beside the child session's id, and
- * that is the whole chain.
- *
- * `subagent_continue` is the one dispatch that also names a session in its own
- * arguments, and that id is the session it was asked to continue — the child the
- * call *opens* is a new one (a continuation writes a fresh `subagent/catalog` at
- * its own moment, under an id the arguments never carry). So the chain decides
- * first, and `arguments.sessionId` is read only when the answer names no child at
- * all: that is the one case where the arguments are the only identity there is.
- *
- * Unread on purpose: a catalog's `label` (a synthesized title, not an identity)
- * and any neighbour in the log (concurrent dispatches interleave their catalogs,
- * so the entry next to a call belongs to whichever dispatch settled first). A
- * dispatch still in flight, or one whose result failed, anchors nothing: an
- * unknown anchor stays unknown rather than borrowing the nearest row.
- *
- * The map is child → call, so a call that started more than one child — a loop
- * dispatch — anchors every child it named under its one call id.
- */
-function dispatchAnchorsOf(events: readonly OverviewEvent[] | undefined): ReadonlyMap<string, string> {
-  const dispatches = new Set<string>()
-  const continued = new Map<string, string>()
-  const byName = new Map<string, string[]>()
-  const catalogued = new Set<string>()
-
-  for (const event of events ?? []) {
-    const type = text(event.type)
-    const data = asRecord(event.data)
-    if (type === 'tool/call') {
-      const name = text(data?.name)
-      if (name === undefined || !DISPATCH_TOOLS.has(name)) continue
-      const callId = text(data?.callId)
-      if (callId === undefined) continue
-      dispatches.add(callId)
-      if (name !== 'subagent_continue') continue
-      const childId = text(parseArguments(data?.arguments)?.sessionId)
-      if (childId !== undefined) continued.set(callId, childId)
-      continue
-    }
-    if (type !== 'subagent/catalog') continue
-    const childId = text(data?.childId)
-    if (childId === undefined) continue
-    catalogued.add(childId)
-    const name = text(data?.name)
-    if (name === undefined) continue
-    const named = byName.get(name)
-    if (named === undefined) byName.set(name, [childId])
-    else named.push(childId)
-  }
-
-  const tokens = new Map<string, Set<string>>()
-  for (const event of events ?? []) {
-    if (text(event.type) !== 'tool/result') continue
-    const data = asRecord(event.data)
-    const message = asRecord(data?.message)
-    const callId = text(message?.toolCallId) ?? text(asRecord(message?.source)?.callId)
-    if (callId === undefined || !dispatches.has(callId)) continue
-    if (asRecord(data?.error) !== undefined || message?.isError === true) continue
-    const token = activationTokenOf(data)
-    if (token === undefined) continue
-    const held = tokens.get(callId)
-    if (held === undefined) tokens.set(callId, new Set([token]))
-    else held.add(token)
-  }
-
-  const anchors = new Map<string, string>()
-  const chained = new Set<string>()
-  for (const [callId, held] of tokens) {
-    for (const token of held) {
-      for (const childId of byName.get(token) ?? (catalogued.has(token) ? [token] : [])) {
-        if (!anchors.has(childId)) anchors.set(childId, callId)
-        chained.add(callId)
-      }
-    }
-  }
-  for (const [callId, childId] of continued) {
-    if (chained.has(callId) || anchors.has(childId)) continue
-    anchors.set(childId, callId)
-  }
-  return anchors
-}
-
-function foldRows(events: readonly OverviewEvent[] | undefined): readonly OverviewRow[] {
-  const rows: OverviewRow[] = []
-  const runCalls = new Set<string>()
-  for (const event of events ?? []) {
-    const type = text(event.type)
-    if (type === undefined) continue
-    const data = asRecord(event.data)
-    const at = typeof event.time === 'number' && Number.isFinite(event.time) ? event.time : undefined
-    if (type === 'user/message') foldInput(data, rows, at)
-    else if (type === 'assistant/message') foldAssistant(data, rows, at)
-    else if (type === 'tool/call') foldCall(data, rows, runCalls, at)
-    else if (type === 'tool/result') foldResult(data, rows, runCalls, at)
-  }
-  return rows
-}
-
-/**
- * The room cut: a window draws the most recent rows it has room for, in the
- * order they happened; what falls off the top is the fade the drawing half
- * puts there. No room stated, no cut.
- */
-function capped(rows: readonly OverviewRow[], capacity: unknown): readonly OverviewRow[] {
-  if (typeof capacity !== 'number' || !Number.isSafeInteger(capacity) || capacity <= 0) return rows
-  return rows.length > capacity ? rows.slice(rows.length - capacity) : rows
-}
-
-/**
- * One end of the conversation's own span: the earliest moment its events carry
- * when `latest` is false (when it started), the newest when true (when it last
- * moved). The log's stamps are epoch milliseconds and read as numbers alone —
- * the row's and the reading's epoch-or-string convention (`toEpoch` in
- * fields.ts) is not the events'; a stamp that is not a finite number is not a
- * moment here.
- */
-function extremeAtOf(events: readonly OverviewEvent[] | undefined, latest: boolean): Date | null {
-  let best: number | undefined
+/** One session's index entry: the four derived values, read in one walk of its own events. */
+function derivedOf(events: readonly OverviewEvent[] | undefined): SessionDerived {
+  let low: number | undefined
+  let high: number | undefined
+  let turnedAt: number | null = null
+  let ending: OverviewEnding | undefined
   for (const event of events ?? []) {
     const time = event.time
-    if (typeof time !== 'number' || !Number.isFinite(time)) continue
-    if (best === undefined || (latest ? time > best : time < best)) best = time
-  }
-  return best === undefined ? null : new Date(best)
-}
-
-/** When the conversation started: the earliest moment its own events carry. */
-function startedAtOf(events: readonly OverviewEvent[] | undefined): Date | null {
-  return extremeAtOf(events, false)
-}
-
-/**
- * When the conversation last moved: the newest moment its own events carry. It is
- * the end of the span a window that stopped is measured to — the log's own last
- * word, not the moment this reading was taken, which would keep a dead window's
- * number counting for as long as the panel stays open.
- */
-function endedAtOf(events: readonly OverviewEvent[] | undefined): Date | null {
-  return extremeAtOf(events, true)
-}
-
-/**
- * When the conversation's last turn ended: the moment of the log's last `turn/end`,
- * in epoch milliseconds, or nothing when it carries none. It is the conversation's
- * own last word — the moment a window that yielded to work of its own is read
- * against — and both ends of that comparison are the log's own, so nothing here is a
- * guess about a clock.
- */
-function turnedAtOf(events: readonly OverviewEvent[] | undefined): number | null {
-  let last: number | null = null
-  for (const event of events ?? []) {
+    if (typeof time === 'number' && Number.isFinite(time)) {
+      if (low === undefined || time < low) low = time
+      if (high === undefined || time > high) high = time
+    }
     if (text(event.type) !== 'turn/end') continue
-    if (typeof event.time !== 'number' || !Number.isFinite(event.time)) continue
-    last = event.time
+    if (typeof time === 'number' && Number.isFinite(time)) turnedAt = time
+    const reason = asRecord(asRecord(event.data)?.reason)
+    const kind = text(reason?.kind)
+    if (kind === undefined) continue
+    const cause = kind === 'aborted' ? text(asRecord(reason?.reason)?.kind) : undefined
+    ending = cause === undefined ? { kind } : { kind, cause }
   }
-  return last
+  return {
+    startedAt: low === undefined ? null : new Date(low),
+    endedAt: high === undefined ? null : new Date(high),
+    turnedAt,
+    ending,
+  }
+}
+
+/** The index's entry for a session; a session with no entry derives to nothing. */
+function derivedIn(derived: Readonly<Record<string, SessionDerived>>, id: string): SessionDerived {
+  return derived[id] ?? NOTHING_DERIVED
+}
+
+/**
+ * How the conversation's last turn ended: the **last** `turn/end` the events
+ * carry, folded to the two facts above. Absent when the window has no such
+ * event, which is not the same as "it ended well" — a conversation still
+ * running has none, and one whose log could not be read has none either.
+ */
+export function endingOf(events: readonly OverviewEvent[] | undefined): OverviewEnding | undefined {
+  return derivedOf(events).ending
 }
 
 /** Whether a conversation was cut off rather than closing its own turn: a readable ending that is not `completed`. */
-function cutShort(events: readonly OverviewEvent[] | undefined): boolean {
-  const ending = endingOf(events)
+function cutShortOf(ending: OverviewEnding | undefined): boolean {
   return ending !== undefined && ending.kind !== 'completed'
 }
 
 /**
- * The name the dispatching call gave a conversation, off DSH's own `subagent` projection of its log:
- * the `label` that call wrote for display — the sentence DSH's own subagent list prints as the
- * child's own line, and the one word every dispatch result names it by.
- *
- * A title is a name. The list's `displayTitle` is not one for a dispatched conversation: it is the
- * conversation's first prompt line, so a dispatch that opens with `读 <路径> ，照它做` is titled with
- * a path cut off mid-way — the one thing on the stage that says nothing about what the window is.
- * The dispatcher's label is the same fact the dispatch row itself carries, so the seat and the row
- * that opened it read as one.
- *
- * Absent for a conversation nobody dispatched — a step of the line is named by its node, and wins
- * ahead of this — and for one whose projections have not been read yet, which keeps the list's own
- * label rather than an invented one.
+ * The fold, once per session: the reader that folds a session's log into its
+ * rows, remembering each id's rows as it goes — a window's rows and its leg's
+ * row count read one folding, never two.
  */
-function dispatchLabelOf(row: OverviewSessionRow): string | null {
-  const subagent = asRecord(asRecord(row.projectionValues)?.subagent)
-  const label = text(subagent?.label)?.trim()
-  return label === undefined || label.length === 0 ? null : label
-}
-
-function titleOf(row: OverviewSessionRow, node: SuperworkerNode | undefined): string | null {
-  return text(node?.title) ?? dispatchLabelOf(row) ?? text(row.displayTitle) ?? null
+function foldsOnce(
+  events: Readonly<Record<string, readonly OverviewEvent[]>> | undefined,
+): (id: string) => readonly OverviewRow[] {
+  const memo = new Map<string, readonly OverviewRow[]>()
+  return (id) => {
+    const held = memo.get(id)
+    if (held !== undefined) return held
+    const rows = foldRows(events?.[id])
+    memo.set(id, rows)
+    return rows
+  }
 }
 
 /**
@@ -1226,16 +656,42 @@ function modeOf(node: SuperworkerNode | undefined): string | null {
   return text(node.mode) ?? MODE_UNWRITTEN
 }
 
+/**
+ * The name the dispatching call gave a conversation, off DSH's own `subagent` projection of its log:
+ * the `label` that call wrote for display — the sentence DSH's own subagent list prints as the
+ * child's own line, and the one word every dispatch result names it by.
+ *
+ * A title is a name. The list's `displayTitle` is not one for a dispatched conversation: it is the
+ * conversation's first prompt line, so a dispatch that opens with `读 <路径> ，照它做` is titled with
+ * a path cut off mid-way — the one thing on the stage that says nothing about what the window is.
+ * The dispatcher's label is the same fact the dispatch row itself carries, so the seat and the row
+ * that opened it read as one.
+ *
+ * Absent for a conversation nobody dispatched — a step of the line is named by its node, and wins
+ * ahead of this — and for one whose projections have not been read yet, which keeps the list's own
+ * label rather than an invented one.
+ */
+function dispatchLabelOf(row: OverviewSessionRow): string | null {
+  const subagent = asRecord(asRecord(row.projectionValues)?.subagent)
+  const label = text(subagent?.label)?.trim()
+  return label === undefined || label.length === 0 ? null : label
+}
+
+function titleOf(row: OverviewSessionRow, node: SuperworkerNode | undefined): string | null {
+  return text(node?.title) ?? dispatchLabelOf(row) ?? text(row.displayTitle) ?? null
+}
+
 function windowOf(
   id: string,
   row: OverviewSessionRow,
   node: SuperworkerNode | undefined,
-  events: readonly OverviewEvent[] | undefined,
+  derived: SessionDerived,
+  folded: readonly OverviewRow[],
   capacity: unknown,
   live: readonly OverviewEvent[] | undefined,
   at: Date | null,
 ): OverviewWindow {
-  const startedAt = startedAtOf(events)
+  const startedAt = derived.startedAt
   return {
     id,
     title: titleOf(row, node),
@@ -1245,12 +701,55 @@ function windowOf(
     /* A leg that is still moving is measured to the moment this reading was taken; one that stopped
        is measured to its own last word. Either way the number is a span this reading states, never a
        clock the drawing reads for itself. */
-    elapsedSeconds: secondsBetween(startedAt, row.running === true ? at : endedAtOf(events)),
+    elapsedSeconds: secondsBetween(startedAt, row.running === true ? at : derived.endedAt),
     /* The settled rows stand first in their existing shape; the streaming
        step's tails hang after them — at most two, and gone again once the
        step's message lands among the settled rows. */
-    rows: [...capped(foldRows(events), capacity), ...liveRowsOf(live)],
+    rows: [...capped(folded, capacity), ...liveRowsOf(live)],
   }
+}
+
+/**
+ * What one window's building reads this reading: the list's rows, the record's
+ * packet and the nodes' records verbatim, the room cut, the live chunks, the
+ * moment, the per-session event index, and the once-per-session fold.
+ */
+interface WindowContext {
+  readonly rows: Readonly<Record<string, OverviewSessionRow>>
+  readonly judgement: OverviewJudgement | undefined
+  readonly nodes: Readonly<Record<string, SuperworkerNode>> | undefined
+  readonly capacity: unknown
+  readonly live: Readonly<Record<string, readonly OverviewEvent[]>> | undefined
+  readonly at: Date | null
+  readonly derived: Readonly<Record<string, SessionDerived>>
+  readonly folded: (id: string) => readonly OverviewRow[]
+}
+
+/**
+ * The node a session works, read off this reading's own nodes: none, when the
+ * packet names no node for it.
+ */
+function nodeForOf(
+  id: string,
+  judgement: OverviewJudgement | undefined,
+  nodes: Readonly<Record<string, SuperworkerNode>> | undefined,
+): SuperworkerNode | undefined {
+  const node = nodeIdOf(judgement, id)
+  return node === undefined ? undefined : nodes?.[node]
+}
+
+/** One session's window, off this reading's stock: its row as the list holds it, its node, its derived moments, its fold. */
+function windowFor(id: string, stock: WindowContext): OverviewWindow {
+  return windowOf(
+    id,
+    stock.rows[id] ?? { id },
+    nodeForOf(id, stock.judgement, stock.nodes),
+    derivedIn(stock.derived, id),
+    stock.folded(id),
+    stock.capacity,
+    stock.live?.[id],
+    stock.at,
+  )
 }
 
 /**
@@ -1285,9 +784,9 @@ export function readJudgement(input: JudgementInput): OverviewJudgement {
   for (const id of ids) {
     const node = input.nodes[id]
     /* The gate's three kinds, read off the record's own gate reading. A manual node is a person
-       being owed only while nobody is working it: a cell a line holds is being worked, and a
-       conversation being quiet is not the same fact. `shelved` is a cell put out to wait, which is
-       the record asking for the person who has to decide it. */
+        being owed only while nobody is working it: a cell a line holds is being worked, and a
+        conversation being quiet is not the same fact. `shelved` is a cell put out to wait, which is
+        the record asking for the person who has to decide it. */
     const waiting = node?.gate?.kind === 'checkpoint' || node?.gate?.kind === 'shelved'
       || (node?.gate?.kind === 'manual' && node.running !== true)
     cells[id] = {
@@ -1299,8 +798,8 @@ export function readJudgement(input: JudgementInput): OverviewJudgement {
     }
   }
   /* The whole pipeline handing itself in is a verdict about the workspace, and the conversation this
-     panel reads it for carries that verdict even when it works no cell of its own. A conversation
-     whose own cell already says it delivered says nothing twice. */
+      panel reads it for carries that verdict even when it works no cell of its own. A conversation
+      whose own cell already says it delivered says nothing twice. */
   const panelSession = text(input.panelSession)
   const project = Object.values(input.nodes)
   const pipelineDeliveredOn = panelSession !== undefined && project.length > 0
@@ -1309,9 +808,9 @@ export function readJudgement(input: JudgementInput): OverviewJudgement {
     ? panelSession
     : null
   /* The work the record still owes, session by session: every session working a cell its own record has
-     not delivered, plus the sessions a caller knows owe work with no cell of their own. A session noted
-     for a cell the project no longer holds is owed too — a cell no reading can call delivered states no
-     delivery, and reading that absence as one would let the leg leave the stage owing its work. */
+      not delivered, plus the sessions a caller knows owe work with no cell of their own. A session noted
+      for a cell the project no longer holds is owed too — a cell no reading can call delivered states no
+      delivery, and reading that absence as one would let the leg leave the stage owing its work. */
   const owed: string[] = []
   for (const [session, nodeId] of Object.entries(nodeOf)) {
     if (cells[nodeId]?.delivered !== true) owed.push(session)
@@ -1386,25 +885,6 @@ function strandedOf(judgement: OverviewJudgement | undefined, id: string): boole
 }
 
 /**
- * How the conversation's last turn ended: the **last** `turn/end` the events
- * carry, folded to the two facts above. Absent when the window has no such
- * event, which is not the same as "it ended well" — a conversation still
- * running has none, and one whose log could not be read has none either.
- */
-export function endingOf(events: readonly OverviewEvent[] | undefined): OverviewEnding | undefined {
-  let ending: OverviewEnding | undefined
-  for (const event of events ?? []) {
-    if (text(event.type) !== 'turn/end') continue
-    const reason = asRecord(asRecord(event.data)?.reason)
-    const kind = text(reason?.kind)
-    if (kind === undefined) continue
-    const cause = kind === 'aborted' ? text(asRecord(reason?.reason)?.kind) : undefined
-    ending = cause === undefined ? { kind } : { kind, cause }
-  }
-  return ending
-}
-
-/**
  * The four facts a window's last state is read from, in the order the drawing
  * reads them — a person's gate first (a checkpoint is why its conversation
  * stopped, and nothing about it is broken), then the delivery the record names,
@@ -1455,21 +935,436 @@ function factsOf(input: {
   const settled = input.settled ? { settled: true } : {}
   if (input.gated) return { ...settled, ...ending, waiting: true }
   /* A delivery is a verdict about a piece of work that is over: while the conversation still runs, the
-     record naming the node completed is the *previous* round's word, and stamping a moving window with
-     a check would claim a run that has not ended. */
+      record naming the node completed is the *previous* round's word, and stamping a moving window with
+      a check would claim a run that has not ended. */
   if (input.delivered && input.settled) return { ...settled, ...ending, delivered: true }
   /* A debt is drawn only while this conversation stands still — `moving` is this window's own children,
-     never the line's other legs; `yielding` is the one that came back after the window's last word and
-     has not been read yet. A step that yielded to work of its own is a pipeline in motion; a step that
-     stopped while a parallel sibling happened to keep working is not rescued by it.
-     `handed` is the ticket: a cell whose work was handed in owes the record a settle, not the reader a
-     red frame — the engine settles a clean end in its own time, and a record running behind its own
-     session is a lag, not a fault. An unreadable ending accuses nobody either: a silence is not a debt
-     being dropped. */
+      never the line's other legs; `yielding` is the one that came back after the window's last word and
+      has not been read yet. A step that yielded to work of its own is a pipeline in motion; a step that
+      stopped while a parallel sibling happened to keep working is not rescued by it.
+      `handed` is the ticket: a cell whose work was handed in owes the record a settle, not the reader a
+      red frame — the engine settles a clean end in its own time, and a record running behind its own
+      session is a lag, not a fault. An unreadable ending accuses nobody either: a silence is not a debt
+      being dropped. */
   const stalled = input.settled && !input.moving && !input.yielding
   const cut = !input.handed && input.ending !== undefined
   if (input.owed && stalled && cut) return { ...settled, ...ending, alert: true }
   return { ...settled, ...ending }
+}
+
+/** A row's parent link: the session that dispatched it, when the row names one. */
+function parentOf(id: string, rows: Readonly<Record<string, OverviewSessionRow>>): string | undefined {
+  const parent = rows[id]?.parentId
+  return typeof parent === 'string' && parent.length > 0 ? parent : undefined
+}
+
+/* The rows the list knows without listing: DSH keeps a session's dispatched subagents in its own
+    `byId` map — each carrying the `parentId` of the session that dispatched it — while the ordered
+    list holds top-level sessions only. A row with no parent link is a top-level session and is drawn
+    only when the list lists it; the bond to a window is the only reason to look past the list. */
+function rowIdsOf(order: readonly string[], rows: Readonly<Record<string, OverviewSessionRow>>): readonly string[] {
+  return [...new Set([...order, ...Object.keys(rows).filter((id) => parentOf(id, rows) !== undefined)])]
+}
+
+/* Whether this session owes work somebody was on: the record holding its cell, or the record's
+   judgment that the claim outlived the session. */
+function debtOf(id: string, held: ReadonlySet<string>, judgement: OverviewJudgement | undefined): boolean {
+  return held.has(id) || strandedOf(judgement, id)
+}
+
+/* Whether a session is a step of the line rather than a subagent of one: the record
+    names it for a node. A step of the line is a **leg** — the rail's entries — and
+    never a child of the window that happened to dispatch it, which is what keeps a
+    pipeline's parallel nodes from standing beside each other on one stage. */
+function isLegOf(id: string, named: ReadonlySet<string> | undefined): boolean {
+  return named !== undefined && named.has(id)
+}
+
+/**
+ * The record's gate word, held at rest: the session owes a person a word and its
+ * conversation is not running — a gate is a stop, and a window still running is
+ * being worked.
+ */
+function atGateOf(id: string, waiting: ReadonlySet<string>, rows: Readonly<Record<string, OverviewSessionRow>>): boolean {
+  return waiting.has(id) && rows[id]?.running !== true
+}
+
+/* Whether this step has **left the line**: the record delivered its work and no gate stands
+   on it. Its check is the last thing it has to tell the reader, and once the line has
+   somewhere else to be, that is not the stage's subject any more — the page the reader was
+   reading is a finished step while the line it belongs to goes on. It is also the one
+   replacement the drawing hands over rather than swaps (`overview.tsx`). */
+function leftOf(
+  id: string,
+  delivered: ReadonlySet<string>,
+  waiting: ReadonlySet<string>,
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+): boolean {
+  return delivered.has(id) && !atGateOf(id, waiting, rows)
+}
+
+/* Whether this conversation is waiting on work of its own: a session it dispatched is still
+    running, or ended **after** this conversation's own last word — its result came home and the
+    conversation has not spoken since, so the notice that wakes it is still on its way. That is a
+    yield, and a yield is not a quit: reading one as a break painted the frame red for the beat
+    between a background subagent finishing and the turn it woke, which is the one beat nothing of
+    the window happens to be running. A subagent is never a leg of this comparison — the notice a
+    step's own dispatch leaves behind is the conductor's business, not a step's — and a child whose
+    log cannot place it in that order is not read as owed an answer either. */
+function yieldingOf(
+  id: string,
+  rowIds: readonly string[],
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+  named: ReadonlySet<string> | undefined,
+  derived: Readonly<Record<string, SessionDerived>>,
+): boolean {
+  const spoken = derivedIn(derived, id).turnedAt
+  for (const child of rowIds) {
+    if (child === id || isLegOf(child, named) || parentOf(child, rows) !== id) continue
+    if (rows[child]?.running === true) return true
+    const ended = derivedIn(derived, child).turnedAt
+    if (ended !== null && (spoken === null || ended >= spoken)) return true
+  }
+  return false
+}
+
+/* A conversation that began after another one took its place on the **stage**: the line is standing
+    where the newest of them stands. Only this line's own conversations count — the session list is
+    every workspace's, and a conversation opened afterwards in another one is no step of this
+    pipeline. A conversation with no readable word of its own cannot be placed in that order, and
+    stands. A dead **child** is held to one more judgment, the same one the stage has always kept:
+    it stands while the line stands still, because a step still running means that cut is history
+    rather than where the line is.
+
+    This is a judgment about *which page the stage draws*, never about *which steps the line still
+    has*. It is read in exactly one place — the seat a dead child keeps — and it compares against
+    `mainId`, which the reader's own pick decides. Reading it on the rail put the display in a
+    feedback loop with itself: the picked leg dropped out of the order, the leg after it lost its
+    bar, and pressing the last two bars took the whole rail off the stage (a rail of one step is no
+    switch). Which steps are on the table is the record's answer, read at `legIds` below. */
+function ofThisLineOf(
+  id: string,
+  mainId: string | undefined,
+  order: readonly string[],
+  named: ReadonlySet<string> | undefined,
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+): boolean {
+  return parentOf(id, rows) === mainId
+    || (named === undefined ? order.includes(id) : named.has(id))
+}
+
+function supersededByOf(
+  id: string,
+  mainId: string | undefined,
+  order: readonly string[],
+  named: ReadonlySet<string> | undefined,
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+  derived: Readonly<Record<string, SessionDerived>>,
+): boolean {
+  const end = derivedIn(derived, id).endedAt
+  if (end === null) return false
+  for (const other of order) {
+    if (other === id || other === mainId || !ofThisLineOf(other, mainId, order, named, rows)) continue
+    const start = derivedIn(derived, other).startedAt
+    if (start !== null && start.getTime() > end.getTime()) return true
+  }
+  return false
+}
+
+/* Whether anything of this line is still moving: a running leg, or — with no record side at all — a
+   session of the list the caller handed over. A pipeline with a leg still running has not stopped,
+   which is what keeps the red off every window of it. */
+function movingOf(
+  movingLegs: readonly string[],
+  kids: readonly string[],
+  named: ReadonlySet<string> | undefined,
+  order: readonly string[],
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+): boolean {
+  return movingLegs.length > 0 || kids.length > 0
+    || (named === undefined ? order : [...named]).some((id) => rows[id]?.running === true)
+}
+
+/* Whether **this** conversation has work of its own still running: the children it dispatched. That
+    is the only motion that keeps a debt from being drawn, and it is deliberately narrower than
+    {@link movingOf}: a parallel sibling leg still working says nothing about whether this step stopped
+    owing its work. A sibling's progress is the line's business, and the line's business is not what a
+    break on this window would be reporting. */
+function ownMovingOf(kids: readonly string[]): boolean {
+  return kids.length > 0
+}
+
+/**
+ * The seats the column can take, in two kinds. A **child**: a session the main
+ * conversation dispatched itself and the list still calls running — this one step's
+ * subagents, which is also the whole admission when the caller says nothing about the
+ * pipeline. A **ghost child**: one of those the main's own dispatch cut short while the
+ * main still owes that work, which keeps its seat so the cut is somewhere to be read.
+ * A **leg**: a record-named session still on the table. A running leg is a rail entry
+ * and not a seat at all, and so is a leg the record still owes (the packet's `owed`)
+ * whose conversation is not running — resting between rounds,
+ * dead, or gone from the list altogether. Nothing will settle such a leg next unless
+ * something prompts it, and the bar it keeps is the only place that debt can be read;
+ * letting it go with the conversation is how a broken leg becomes invisible. A stopped
+ * session whose node is delivered is no leg either: it left its work behind.
+ */
+function seatKindsOf(
+  mainId: string | undefined,
+  rowIds: readonly string[],
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+  named: ReadonlySet<string> | undefined,
+  undelivered: ReadonlySet<string>,
+  mainWindowDebt: boolean,
+  judgement: OverviewJudgement | undefined,
+  derived: Readonly<Record<string, SessionDerived>>,
+): { readonly kids: string[]; readonly movingLegs: string[]; readonly ghosts: string[] } {
+  const kids: string[] = []
+  const movingLegs: string[] = []
+  const ghosts: string[] = []
+  if (mainId !== undefined) {
+    for (const id of rowIds) {
+      if (id === mainId) continue
+      const row: OverviewSessionRow | undefined = rows[id]
+      if (row === undefined) continue
+      const parent = parentOf(id, rows)
+      /* A ghost needs no parent link and no running bit — that is exactly what the dead leg lost — only
+         the record's own word that the node is still on the table. */
+      if (row.running !== true) {
+        if (undelivered.has(id)) ghosts.push(id)
+        else if (parent === mainId && mainWindowDebt && cutShortOf(derivedIn(derived, id).ending)) ghosts.push(id)
+        continue
+      }
+      if (isLegOf(id, named)) {
+        movingLegs.push(id)
+        continue
+      }
+      if (parent === mainId) kids.push(id)
+    }
+  }
+  /* A leg the record has not delivered whose conversation the list no longer holds at all — deleted,
+      or disposed without ever reaching the roster. Its node's own title is enough to stand the seat, and
+      the window has no rows because there are none to draw: the debt is the whole of what is known. A
+      leg that went quiet while its conversation stayed on the list is the case above, not this one. */
+  for (const id of undelivered) {
+    if (id === mainId || rows[id] !== undefined) continue
+    if (nodeIdOf(judgement, id) === undefined) continue
+    ghosts.push(id)
+  }
+  return { kids, movingLegs, ghosts }
+}
+
+/**
+ * The ghosts that keep their seat: the ones no later conversation of the line has
+ * taken the place of, and — a child, not a leg — only while the line stands still.
+ */
+function standingOf(
+  ghosts: readonly string[],
+  mainId: string | undefined,
+  order: readonly string[],
+  named: ReadonlySet<string> | undefined,
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+  derived: Readonly<Record<string, SessionDerived>>,
+  moving: boolean,
+): readonly string[] {
+  return ghosts.filter((id) =>
+    !supersededByOf(id, mainId, order, named, rows, derived) && (isLegOf(id, named) || !moving)
+  )
+}
+
+/* Whether this conversation owes work nobody is doing — the one formula the ghost seat and
+    the rail bar share, so the two readers can never give one step two verdicts. The two words
+    it replaces were the same formula once each reader's own context is carried in:
+    - no readable ending: the record's stranded judgment is the only witness;
+    - a cell the record names: a ticket excuses (the cell's own `handed`), and a turn still
+      owed a wake (`yielding`) is a yield, not a quit. The bar reads this clause only after its
+      own three rescues below — the step standing still, no worker of its own moving, no yield —
+      so `yielding` is false there and the clause reduces to the bare `!handed` the bar has
+      always spelled;
+    - no cell of its own: a worker owes nobody a delivery, and only a turn the log cut short is
+      its break. A leg is record-named for a node — the notes name both — so the bar never reads
+      this word on this input; a caller that names a pipeline without its cell map does, and
+      keeps the leg's bare `!handed` there. */
+function alertOf(
+  id: string,
+  judgement: OverviewJudgement | undefined,
+  named: ReadonlySet<string> | undefined,
+  rowIds: readonly string[],
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+  derived: Readonly<Record<string, SessionDerived>>,
+): boolean {
+  const cell = nodeIdOf(judgement, id) ?? ''
+  const ending = derivedIn(derived, id).ending
+  if (ending === undefined) return strandedOf(judgement, id)
+  if (cell.length === 0) return isLegOf(id, named) ? !handedOf(judgement, id) : ending.kind !== 'completed'
+  return !handedOf(judgement, id) && (ending.kind !== 'completed' || !yieldingOf(id, rowIds, rows, named, derived))
+}
+
+/**
+ * A caller that hands over no packet has said nothing about the record's debts, and the
+ * rail then falls back to what the session list alone can prove — a step the list still
+ * calls running. There is no second witness in that branch: every verdict about a cell is
+ * read off the packet, so a reading with no packet knows no held cell either, and promising
+ * one here would promise a fact this branch cannot state. Silence is never read as "the
+ * line owes nothing": that would empty the rail of every leg the caller did not enumerate.
+ */
+function owesOf(
+  id: string,
+  judgement: OverviewJudgement | undefined,
+  undelivered: ReadonlySet<string>,
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+  waiting: ReadonlySet<string>,
+): boolean {
+  return judgement === undefined
+    ? rows[id]?.running === true
+    : undelivered.has(id) || rows[id]?.running === true || atGateOf(id, waiting, rows)
+}
+
+/**
+ * A **step** of the line is what the rail switches between, and nothing else is. A **seat** — a subagent
+ * conversation of the step being drawn, ghost or running — is already on the stage beside that step, and
+ * a bar for it would stand one conversation twice on one page, offering a switch to where the reader
+ * already is. The stage's seat keeps its window; the rail keeps the steps.
+ *
+ * A step is on the table while **the record still owes its work** — the sessions the
+ * judgement packet names as owed, which the record reads off each cell's own state. A step
+ * whose node is delivered has left the line and owes nobody a look: it drops off the
+ * rail with its check, and the map is where its history stays. A gate is no exception
+ * in the end: a finished checkpoint still owes a person a word, so `atGate` keeps its
+ * bar. The list's own running bit keeps it too — a step being worked this moment is on
+ * the table by definition, whatever the record has round to saying about its state yet.
+ *
+ * The stage's own page keeps its bar whatever the record owes, and so does the page this panel
+ * itself stands in: a bar that vanished from under the page being drawn would be a switch with no
+ * way back to it, and the reader who picked a finished step needs the door they came in by.
+ */
+function aStepOf(
+  id: string,
+  named: ReadonlySet<string> | undefined,
+  judgement: OverviewJudgement | undefined,
+  undelivered: ReadonlySet<string>,
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+  waiting: ReadonlySet<string>,
+  mainId: string | undefined,
+  self: string | undefined,
+): boolean {
+  return isLegOf(id, named)
+    && (owesOf(id, judgement, undelivered, rows, waiting) || id === mainId || id === self)
+}
+
+/**
+ * The legs the rail offers: the steps still on the table, in the reading's own order. The rail is
+ * the line's own list and **nothing else feeds it** — not which page the stage happens to draw, not
+ * the reader's pick, not one step's progress. That independence is the whole of what a switch is: a
+ * reader who presses a bar asks to look at that step, and a list that dropped the step it was asked
+ * about would be an answer to a question nobody asked. Reading `supersededBy` here — a judgment
+ * whose reference point is the stage's own page — put the display in a loop with itself and cost
+ * the rail its bars, one press at a time.
+ */
+function legIdsOf(
+  rowIds: readonly string[],
+  undelivered: ReadonlySet<string>,
+  named: ReadonlySet<string> | undefined,
+  judgement: OverviewJudgement | undefined,
+  rows: Readonly<Record<string, OverviewSessionRow>>,
+  waiting: ReadonlySet<string>,
+  mainId: string | undefined,
+  self: string | undefined,
+): readonly string[] {
+  const legIds: string[] = []
+  for (const id of rowIds) {
+    if (!aStepOf(id, named, judgement, undelivered, rows, waiting, mainId, self) || legIds.includes(id)) continue
+    legIds.push(id)
+  }
+  /* A step the list has let go of altogether keeps its bar while the record owes the work: the debt is
+      the whole of what is known about it, and the bar is the only place that debt can be read. */
+  for (const id of undelivered) {
+    if (legIds.includes(id) || !isLegOf(id, named)) continue
+    legIds.push(id)
+  }
+  return legIds
+}
+
+/* A window with nothing readable — no nameplate word and no row its own events fold into — is a
+   box, not a window, and the running bit alone never stands one up. Dropped here, it is also no
+   seat the cap could fold away, so the count keeps counting windows alone. */
+function childSeatsOf(
+  kids: readonly string[],
+  standing: readonly string[],
+  named: ReadonlySet<string> | undefined,
+  waiting: ReadonlySet<string>,
+  rowIds: readonly string[],
+  stock: WindowContext,
+): OverviewWindow[] {
+  const seats: OverviewWindow[] = []
+  for (const id of kids) {
+    const window = windowFor(id, stock)
+    if (window.title === null && window.rows.length === 0) continue
+    /* A seat that is still moving carries no state of its own: the gate, the delivery and the debt are
+       verdicts about work at rest, and the main window is where those are read. The ending rides along
+       all the same — it is a fact about the conversation, not about the work. */
+    const ending = derivedIn(stock.derived, id).ending
+    seats.push(ending === undefined ? window : { ...window, ending })
+  }
+  /* The dead children stand after the moving seats. What one says is the thing the reader has to act
+      on: the line stands here. It says "broken" only when the debt is proved — the record's stranded
+      judgment (the claim is on disk and the session is gone), a step's last turn that did not close
+      itself or closed it with no ticket behind it, or a **subagent's** last turn the log cut short —
+      unless a person is the one owed (a gate), which is a different debt and is drawn as the breath.
+      A step resting between rounds keeps its window quietly, which is the truth about it.
+      A **subagent** that closed its own turn is never a break: its work is not its own to deliver —
+      it hands the turn back to the conversation that dispatched it, and that conversation reads the
+      result. Only a worker whose turn was cut (aborted, errored, interrupted) died owing the work,
+      which is the one case its red seat exists for. */
+  for (const id of standing) {
+    if (isLegOf(id, named)) continue
+    const window = windowFor(id, stock)
+    if (window.title === null && window.rows.length === 0) continue
+    const ending = derivedIn(stock.derived, id).ending
+    const gated = atGateOf(id, waiting, stock.rows)
+    /* The proof is whichever witness spoke: a ticket the cell never handed in, or — when the log
+        carried no word at all — the record's stranded judgment (the claim is on disk and the session is
+        gone). A cell that did hand a ticket in is no break, whoever still holds it: the engine settles
+        a clean end in its own time, and a record running behind its own session is a lag, not a fault.
+        Whether a cell is owed at all is read off the record (`nodeOf`), not off the caller's naming:
+        a session working a node can owe a ticket even when the caller said nothing about a pipeline. */
+    const broken = !gated && alertOf(id, stock.judgement, named, rowIds, stock.rows, stock.derived)
+    seats.push({
+      ...window,
+      settled: true,
+      ...(gated ? { waiting: true } : broken ? { alert: true } : {}),
+      ...(ending === undefined ? {} : { ending }),
+    })
+  }
+  return seats
+}
+
+function legsOf(
+  legIds: readonly string[],
+  named: ReadonlySet<string> | undefined,
+  waiting: ReadonlySet<string>,
+  rowIds: readonly string[],
+  ownMoving: boolean,
+  stock: WindowContext,
+): OverviewLeg[] {
+  return legIds.map((id): OverviewLeg => {
+    const window = windowFor(id, stock)
+    const leg: OverviewLeg = { id, title: window.title, rows: window.rows.length }
+    const gated = atGateOf(id, waiting, stock.rows)
+    /* A bar says the two verdicts a step can stand in and nothing else: a person's gate in the warn
+        ink, a debt nobody is working in the break's. Both are read the way the window's own frame reads
+        them — one ink, one fact — and a debt is read off the ticket the cell never handed in, never off
+        a sibling leg's progress: a parallel step still working is the line's own motion, and this bar
+        reports this step. A bar still moving wears neither, and a gate is only ever worn at rest: a
+        running step is being worked. A worker of this step's own that came home after its last word is
+        no break either: the bar waits for the notice to land, the way the frame does. */
+    if (gated) return { ...leg, waiting: true }
+    /* The bar's own rescues come first — a step still running is being worked, the main's own
+        work moving is the line at work, a yield is the notice still crossing — and then the one
+        debt formula the seat reads too. After these rescues `yielding` is false, so the formula's
+        yield clause folds away and the bar reads the same `!handed` it always has. */
+    if (stock.rows[id]?.running === true || ownMoving || yieldingOf(id, rowIds, stock.rows, named, stock.derived)) return leg
+    return alertOf(id, stock.judgement, named, rowIds, stock.rows, stock.derived) ? { ...leg, alert: true } : leg
+  })
 }
 
 /**
@@ -1550,292 +1445,63 @@ export function readOverview(input: OverviewInput): OverviewReading {
      for, even one that works no cell of its own: that conversation carries the verdict. */
   const deliveredOn = judgement?.pipelineDeliveredOn
   if (deliveredOn !== null && deliveredOn !== undefined) delivered.add(deliveredOn)
-  const atGate = (id: string): boolean => waiting.has(id) && rows[id]?.running !== true
-  /* Whether this step has **left the line**: the record delivered its work and no gate stands
-     on it. Its check is the last thing it has to tell the reader, and once the line has
-     somewhere else to be, that is not the stage's subject any more — the page the reader was
-     reading is a finished step while the line it belongs to goes on. It is also the one
-     replacement the drawing hands over rather than swaps (`overview.tsx`). */
-  const left = (id: string): boolean => delivered.has(id) && !atGate(id)
+  /* Built once for the whole reading: the per-session event index the four derived
+     moments read, and the fold taken once per session and shared — a window's rows
+     and its leg's row count never fold the same log twice. */
+  const derived = derivedAll(input.events)
+  const folded = foldsOnce(input.events)
+  const stock: WindowContext = {
+    rows,
+    judgement,
+    nodes: input.nodes,
+    capacity: input.capacity,
+    live: input.live,
+    at,
+    derived,
+    folded,
+  }
+  /* The leaving test is {@link leftOf}'s; the choice asks it of this reading's own sets. */
+  const left = (id: string): boolean => leftOf(id, delivered, waiting, rows)
   const choice = mainIdOf(input, rows, order, held, left)
   const mainId = choice?.id
-  const nodeFor = (id: string): SuperworkerNode | undefined => {
-    const node = nodeIdOf(judgement, id)
-    return node === undefined ? undefined : input.nodes?.[node]
-  }
   const main = mainId === undefined ? undefined : rows[mainId]
   const undelivered = new Set(owedSessions(judgement))
-  /* The rows the list knows without listing: DSH keeps a session's dispatched subagents in its own
-     `byId` map — each carrying the `parentId` of the session that dispatched it — while the ordered
-     list holds top-level sessions only. A row with no parent link is a top-level session and is drawn
-     only when the list lists it; the bond to a window is the only reason to look past the list. */
-  const parentOf = (id: string): string | undefined => {
-    const parent = rows[id]?.parentId
-    return typeof parent === 'string' && parent.length > 0 ? parent : undefined
-  }
-  const rowIds = [...new Set([...order, ...Object.keys(rows).filter((id) => parentOf(id) !== undefined)])]
-  /* Whether this session owes work somebody was on: the record holding its cell, or the record's
-     judgment that the claim outlived the session. */
-  const debtOf = (id: string): boolean => held.has(id) || strandedOf(judgement, id)
-  const mainWindowDebt = mainId === undefined ? false : debtOf(mainId)
-  /* Whether a session is a step of the line rather than a subagent of one: the record
-     names it for a node. A step of the line is a **leg** — the rail's entries — and
-     never a child of the window that happened to dispatch it, which is what keeps a
-     pipeline's parallel nodes from standing beside each other on one stage. */
-  const isLeg = (id: string): boolean => named !== undefined && named.has(id)
-  /* Whether this conversation is waiting on work of its own: a session it dispatched is still
-     running, or ended **after** this conversation's own last word — its result came home and the
-     conversation has not spoken since, so the notice that wakes it is still on its way. That is a
-     yield, and a yield is not a quit: reading one as a break painted the frame red for the beat
-     between a background subagent finishing and the turn it woke, which is the one beat nothing of
-     the window happens to be running. A subagent is never a leg of this comparison — the notice a
-     step's own dispatch leaves behind is the conductor's business, not a step's — and a child whose
-     log cannot place it in that order is not read as owed an answer either. */
-  const yielding = (id: string): boolean => {
-    const spoken = turnedAtOf(input.events?.[id])
-    for (const child of rowIds) {
-      if (child === id || isLeg(child) || parentOf(child) !== id) continue
-      if (rows[child]?.running === true) return true
-      const ended = turnedAtOf(input.events?.[child])
-      if (ended !== null && (spoken === null || ended >= spoken)) return true
-    }
-    return false
-  }
-  /* The seats the column can take, in two kinds. A **child**: a session the main
-     conversation dispatched itself and the list still calls running — this one step's
-     subagents, which is also the whole admission when the caller says nothing about the
-     pipeline. A **ghost child**: one of those the main's own dispatch cut short while the
-     main still owes that work, which keeps its seat so the cut is somewhere to be read.
-     A **leg**: a record-named session still on the table. A running leg is a rail entry
-     and not a seat at all, and so is a leg the record still owes (the packet's `owed`)
-     whose conversation is not running — resting between rounds,
-     dead, or gone from the list altogether. Nothing will settle such a leg next unless
-     something prompts it, and the bar it keeps is the only place that debt can be read;
-     letting it go with the conversation is how a broken leg becomes invisible. A stopped
-     session whose node is delivered is no leg either: it left its work behind. */
-  const kids: string[] = []
-  const movingLegs: string[] = []
-  const ghosts: string[] = []
-  if (mainId !== undefined) {
-    for (const id of rowIds) {
-      if (id === mainId) continue
-      const row: OverviewSessionRow | undefined = rows[id]
-      if (row === undefined) continue
-      const parent = parentOf(id)
-      /* A ghost needs no parent link and no running bit — that is exactly what the dead leg lost — only
-         the record's own word that the node is still on the table. */
-      if (row.running !== true) {
-        if (undelivered.has(id)) ghosts.push(id)
-        else if (parent === mainId && mainWindowDebt && cutShort(input.events?.[id])) ghosts.push(id)
-        continue
-      }
-      if (isLeg(id)) {
-        movingLegs.push(id)
-        continue
-      }
-      if (parent === mainId) kids.push(id)
-    }
-  }
-  /* A leg the record has not delivered whose conversation the list no longer holds at all — deleted,
-     or disposed without ever reaching the roster. Its node's own title is enough to stand the seat, and
-     the window has no rows because there are none to draw: the debt is the whole of what is known. A
-     leg that went quiet while its conversation stayed on the list is the case above, not this one. */
-  for (const id of undelivered) {
-    if (id === mainId || rows[id] !== undefined) continue
-    if (nodeIdOf(judgement, id) === undefined) continue
-    ghosts.push(id)
-  }
-  /* A conversation that began after another one took its place on the **stage**: the line is standing
-     where the newest of them stands. Only this line's own conversations count — the session list is
-     every workspace's, and a conversation opened afterwards in another one is no step of this
-     pipeline. A conversation with no readable word of its own cannot be placed in that order, and
-     stands. A dead **child** is held to one more judgment, the same one the stage has always kept:
-     it stands while the line stands still, because a step still running means that cut is history
-     rather than where the line is.
-
-     This is a judgment about *which page the stage draws*, never about *which steps the line still
-     has*. It is read in exactly one place — the seat a dead child keeps — and it compares against
-     `mainId`, which the reader's own pick decides. Reading it on the rail put the display in a
-     feedback loop with itself: the picked leg dropped out of the order, the leg after it lost its
-     bar, and pressing the last two bars took the whole rail off the stage (a rail of one step is no
-     switch). Which steps are on the table is the record's answer, read at `legIds` below. */
-  const ofThisLine = (id: string): boolean => parentOf(id) === mainId
-    || (named === undefined ? order.includes(id) : named.has(id))
-  const supersededBy = (id: string): boolean => {
-    const end = endedAtOf(input.events?.[id])
-    if (end === null) return false
-    for (const other of order) {
-      if (other === id || other === mainId || !ofThisLine(other)) continue
-      const start = startedAtOf(input.events?.[other])
-      if (start !== null && start.getTime() > end.getTime()) return true
-    }
-    return false
-  }
-  /* Whether anything of this line is still moving: a running leg, or — with no record side at all — a
-     session of the list the caller handed over. A pipeline with a leg still running has not stopped,
-     which is what keeps the red off every window of it. */
-  const moving = movingLegs.length > 0 || kids.length > 0
-    || (named === undefined ? order : [...named]).some((id) => rows[id]?.running === true)
-  /* Whether **this** conversation has work of its own still running: the children it dispatched. That
-     is the only motion that keeps a debt from being drawn, and it is deliberately narrower than
-     {@link moving}: a parallel sibling leg still working says nothing about whether this step stopped
-     owing its work. A sibling's progress is the line's business, and the line's business is not what a
-     break on this window would be reporting. */
-  const ownMoving = kids.length > 0
-  const standing = ghosts.filter((id) => !supersededBy(id) && (isLeg(id) || !moving))
-  /* Whether this conversation owes work nobody is doing — the one formula the ghost seat and
-     the rail bar share, so the two readers can never give one step two verdicts. The two words
-     it replaces were the same formula once each reader's own context is carried in:
-     - no readable ending: the record's stranded judgment is the only witness;
-     - a cell the record names: a ticket excuses (the cell's own `handed`), and a turn still
-       owed a wake (`yielding`) is a yield, not a quit. The bar reads this clause only after its
-       own three rescues below — the step standing still, no worker of its own moving, no yield —
-       so `yielding` is false there and the clause reduces to the bare `!handed` the bar has
-       always spelled;
-     - no cell of its own: a worker owes nobody a delivery, and only a turn the log cut short is
-       its break. A leg is record-named for a node — the notes name both — so the bar never reads
-       this word on this input; a caller that names a pipeline without its cell map does, and
-       keeps the leg's bare `!handed` there. */
-  const alertOf = (id: string): boolean => {
-    const cell = nodeIdOf(judgement, id) ?? ''
-    const ending = endingOf(input.events?.[id])
-    if (ending === undefined) return strandedOf(judgement, id)
-    if (cell.length === 0) return isLeg(id) ? !handedOf(judgement, id) : ending.kind !== 'completed'
-    return !handedOf(judgement, id) && (ending.kind !== 'completed' || !yielding(id))
-  }
-  /* The legs the rail offers: the steps still on the table, in the reading's own order. The rail is
-     the line's own list and **nothing else feeds it** — not which page the stage happens to draw, not
-     the reader's pick, not one step's progress. That independence is the whole of what a switch is: a
-     reader who presses a bar asks to look at that step, and a list that dropped the step it was asked
-     about would be an answer to a question nobody asked. Reading `supersededBy` here — a judgment
-     whose reference point is the stage's own page — put the display in a loop with itself and cost
-     the rail its bars, one press at a time. */
-  const legIds: string[] = []
+  const rowIds = rowIdsOf(order, rows)
+  const mainWindowDebt = mainId === undefined ? false : debtOf(mainId, held, judgement)
+  const { kids, movingLegs, ghosts } = seatKindsOf(mainId, rowIds, rows, named, undelivered, mainWindowDebt, judgement, derived)
+  const moving = movingOf(movingLegs, kids, named, order, rows)
+  const ownMoving = ownMovingOf(kids)
+  const standing = standingOf(ghosts, mainId, order, named, rows, derived, moving)
   const self = text(input.ownSession)
-  /* A **step** of the line is what the rail switches between, and nothing else is. A **seat** — a subagent
-     conversation of the step being drawn, ghost or running — is already on the stage beside that step, and
-     a bar for it would stand one conversation twice on one page, offering a switch to where the reader
-     already is. The stage's seat keeps its window; the rail keeps the steps.
-
-     A step is on the table while **the record still owes its work** — the sessions the
-     judgement packet names as owed, which the record reads off each cell's own state. A step
-     whose node is delivered has left the line and owes nobody a look: it drops off the
-     rail with its check, and the map is where its history stays. A gate is no exception
-     in the end: a finished checkpoint still owes a person a word, so `atGate` keeps its
-     bar. The list's own running bit keeps it too — a step being worked this moment is on
-     the table by definition, whatever the record has round to saying about its state yet.
-
-     A caller that hands over no packet has said nothing about the record's debts, and the
-     rail then falls back to what the session list alone can prove — a step the list still
-     calls running. There is no second witness in that branch: every verdict about a cell is
-     read off the packet, so a reading with no packet knows no held cell either, and promising
-     one here would promise a fact this branch cannot state. Silence is never read as "the
-     line owes nothing": that would empty the rail of every leg the caller did not enumerate. */
-  const owes = judgement === undefined
-    ? (id: string): boolean => rows[id]?.running === true
-    : (id: string): boolean => undelivered.has(id) || rows[id]?.running === true || atGate(id)
-  /* The stage's own page keeps its bar whatever the record owes, and so does the page this panel
-     itself stands in: a bar that vanished from under the page being drawn would be a switch with no
-     way back to it, and the reader who picked a finished step needs the door they came in by. */
-  const aStep = (id: string): boolean => isLeg(id) && (owes(id) || id === mainId || id === self)
-  for (const id of rowIds) {
-    if (!aStep(id) || legIds.includes(id)) continue
-    legIds.push(id)
-  }
-  /* A step the list has let go of altogether keeps its bar while the record owes the work: the debt is
-     the whole of what is known about it, and the bar is the only place that debt can be read. */
-  for (const id of undelivered) {
-    if (legIds.includes(id) || !isLeg(id)) continue
-    legIds.push(id)
-  }
+  const legIds = legIdsOf(rowIds, undelivered, named, judgement, rows, waiting, mainId, self)
   const mainWindow = main === undefined || mainId === undefined
     ? null
     : {
-      ...windowOf(mainId, main, nodeFor(mainId), input.events?.[mainId], input.capacity, input.live?.[mainId], at),
+      ...windowFor(mainId, stock),
       ...factsOf({
         settled: main.running !== true,
-        gated: atGate(mainId),
+        gated: atGateOf(mainId, waiting, rows),
         delivered: delivered.has(mainId),
         owed: mainWindowDebt,
         moving: ownMoving,
-        yielding: yielding(mainId),
+        yielding: yieldingOf(mainId, rowIds, rows, named, derived),
         handed: handedOf(judgement, mainId),
-        ending: endingOf(input.events?.[mainId]),
+        ending: derivedIn(derived, mainId).ending,
       }),
     }
   const anchors = dispatchAnchorsOf(mainId === undefined ? undefined : input.events?.[mainId])
-  /* A window with nothing readable — no nameplate word and no row its own events fold into — is a
-     box, not a window, and the running bit alone never stands one up. Dropped here, it is also no
-     seat the cap could fold away, so the count keeps counting windows alone. */
-  const seats: OverviewWindow[] = []
-  for (const id of kids) {
-    const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id], at)
-    if (window.title === null && window.rows.length === 0) continue
-    /* A seat that is still moving carries no state of its own: the gate, the delivery and the debt are
-       verdicts about work at rest, and the main window is where those are read. The ending rides along
-       all the same — it is a fact about the conversation, not about the work. */
-    const ending = endingOf(input.events?.[id])
-    seats.push(ending === undefined ? window : { ...window, ending })
-  }
-  /* The dead children stand after the moving seats. What one says is the thing the reader has to act
-     on: the line stands here. It says "broken" only when the debt is proved — the record's stranded
-     judgment (the claim is on disk and the session is gone), a step's last turn that did not close
-     itself or closed it with no ticket behind it, or a **subagent's** last turn the log cut short —
-     unless a person is the one owed (a gate), which is a different debt and is drawn as the breath.
-     A step resting between rounds keeps its window quietly, which is the truth about it.
-     A **subagent** that closed its own turn is never a break: its work is not its own to deliver —
-     it hands the turn back to the conversation that dispatched it, and that conversation reads the
-     result. Only a worker whose turn was cut (aborted, errored, interrupted) died owing the work,
-     which is the one case its red seat exists for. */
-  for (const id of standing) {
-    if (isLeg(id)) continue
-    const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id], at)
-    if (window.title === null && window.rows.length === 0) continue
-    const ending = endingOf(input.events?.[id])
-    const gated = atGate(id)
-    /* The proof is whichever witness spoke: a ticket the cell never handed in, or — when the log
-       carried no word at all — the record's stranded judgment (the claim is on disk and the session is
-       gone). A cell that did hand a ticket in is no break, whoever still holds it: the engine settles
-       a clean end in its own time, and a record running behind its own session is a lag, not a fault.
-       Whether a cell is owed at all is read off the record (`nodeOf`), not off the caller's naming:
-       a session working a node can owe a ticket even when the caller said nothing about a pipeline. */
-    const broken = !gated && alertOf(id)
-    seats.push({
-      ...window,
-      settled: true,
-      ...(gated ? { waiting: true } : broken ? { alert: true } : {}),
-      ...(ending === undefined ? {} : { ending }),
-    })
-  }
+  const seats = childSeatsOf(kids, standing, named, waiting, rowIds, stock)
   const drawn = seats.slice(-WINDOW_CAP)
-  const legs = legIds.map((id): OverviewLeg => {
-    const window = windowOf(id, rows[id] ?? { id }, nodeFor(id), input.events?.[id], input.capacity, input.live?.[id], at)
-    const leg: OverviewLeg = { id, title: window.title, rows: window.rows.length }
-    const gated = atGate(id)
-    /* A bar says the two verdicts a step can stand in and nothing else: a person's gate in the warn
-       ink, a debt nobody is working in the break's. Both are read the way the window's own frame reads
-       them — one ink, one fact — and a debt is read off the ticket the cell never handed in, never off
-       a sibling leg's progress: a parallel step still working is the line's own motion, and this bar
-       reports this step. A bar still moving wears neither, and a gate is only ever worn at rest: a
-       running step is being worked. A worker of this step's own that came home after its last word is
-       no break either: the bar waits for the notice to land, the way the frame does. */
-    if (gated) return { ...leg, waiting: true }
-    /* The bar's own rescues come first — a step still running is being worked, the main's own
-       work moving is the line at work, a yield is the notice still crossing — and then the one
-       debt formula the seat reads too. After these rescues `yielding` is false, so the formula's
-       yield clause folds away and the bar reads the same `!handed` it always has. */
-    if (rows[id]?.running === true || ownMoving || yielding(id)) return leg
-    return alertOf(id) ? { ...leg, alert: true } : leg
-  })
+  const legs = legsOf(legIds, named, waiting, rowIds, ownMoving, stock)
   /* The main's parented children, untruncated: the set the panel holds event windows open
-     for. It is the raw admission universe — running seats, dead seats, ended children no seat
-     keeps — deliberately wider than the drawn `children` (the five the cap kept), because each
-     child's own log decides whether its seat stays and that log has to be open before the seat
-     exists. The snapshot's `byId` shape is read once, here, the model's own way; the ids come
-     out in the map's own key order, which the watch list reads as a set. */
+      for. It is the raw admission universe — running seats, dead seats, ended children no seat
+      keeps — deliberately wider than the drawn `children` (the five the cap kept), because each
+      child's own log decides whether its seat stays and that log has to be open before the seat
+      exists. The snapshot's `byId` shape is read once, here, the model's own way; the ids come
+      out in the map's own key order, which the watch list reads as a set. */
   const mainChildIds = mainId === undefined
     ? []
-    : Object.keys(rows).filter((id) => parentOf(id) === mainId)
+    : Object.keys(rows).filter((id) => parentOf(id, rows) === mainId)
   return {
     main: mainWindow,
     mainFrom: mainWindow === null || choice === undefined ? null : choice.from,
@@ -1846,7 +1512,7 @@ export function readOverview(input: OverviewInput): OverviewReading {
     mainChildIds,
     legs,
     /* Counted off the seats, never off the five the cap kept: what the cap folded away is the
-       windows it left out. */
+        windows it left out. */
     hiddenChildren: seats.length - drawn.length,
   }
 }

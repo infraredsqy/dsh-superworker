@@ -22,12 +22,13 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { executorOf, openConductSession, openNodeSession, openRouteSession } from '../src/host/executor.ts'
+import { executorOf, openConsultSession, openConductSession, openNodeSession, openRouteSession } from '../src/host/executor.ts'
+import { PER_ROOT_STATE_CAP } from '../src/host/bounded-map.ts'
 import { canonicalRootOf } from '../src/host/seams.ts'
 import { fakeAgents } from './helpers/agents-registry.mjs'
 import { pinHome } from './helpers/env.mjs'
 import { clearPlacement, placeOneSkill } from './helpers/skill-placement.mjs'
-import { until, flush } from './helpers/wait.mjs'
+import { until, flush, drainFor } from './helpers/wait.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
 import { fakeWorkspaceFiles } from './helpers/workspace-files-port.mjs'
 
@@ -481,6 +482,52 @@ test('One line per workspace: one rejection does not poison the next, and the se
   const outcome = await two
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
   assert.ok(existsSync(join(root, '.superworker', 'meta', 'sessions', 'n2.json')), 'the second note lands as usual')
+})
+
+/* The queue table is bounded ({@link PER_ROOT_STATE_CAP}), so a flood of other roots can reach the
+ * cap while one root's line is still running — the review's probe broke the per-root line exactly
+ * there, through the in-flight seat being the oldest one left. This case runs the flood through the
+ * real opener at the real cap: an in-flight seat must keep its place, so the same root's second
+ * open still queues behind it, whatever the other roots do meanwhile. */
+test('One line per workspace: an in-flight seat survives a flood of other roots at the cap, and the same root\'s second open still queues behind it', async () => {
+  let releaseFirst
+  const firstDoor = new Promise((resolve) => { releaseFirst = resolve })
+  const rigging = rig({
+    files: { [promptPath('c1', 'n2')]: '/sw-conduct n2 [pipeline]\n' },
+    /* Only the first open's create stops on the door — the flood's consult opens pass freely, and
+     * so does the second open of the same root once its turn comes. Which create is the first one
+     * is not presumed: the case waits for it before firing the flood. */
+    gate: (_record, index) => (index === 0 ? firstDoor : Promise.resolve()),
+  })
+  const first = openNodeSession(rigging.ctx, 's1', rigging.root, 'c1', 'n1')
+  await opened(rigging.agents.created, 1)
+  /* A full cap of other roots, each opening one consult session while the first line is in flight:
+   * every one of them seats its root at `inLine` on the way in, so the table hits the cap mid-flight. */
+  const flood = []
+  for (let at = 0; at < PER_ROOT_STATE_CAP; at += 1) {
+    flood.push(openConsultSession(rigging.ctx, 's1', join(tmpdir(), `superworker-executor-flood-${at}`)))
+  }
+  const floodOutcomes = await bounded(Promise.all(flood), 'the flood of consult opens settles')
+  await flush()
+  assert.equal(rigging.agents.created.length, PER_ROOT_STATE_CAP + 1, 'the flood is seated and settled; only the first open is held at its create')
+
+  const second = openNodeSession(rigging.ctx, 's1', rigging.root, 'c1', 'n2')
+  /* "Still queued" is a negative judgment: nothing should enter create, so the loop drains for a
+   * stretch — long enough for an overlapped create to have shown itself (the review's probe put it
+   * a millisecond out) — before the case asserts "still nothing". */
+  await drainFor()
+  assert.equal(
+    rigging.agents.created.length,
+    PER_ROOT_STATE_CAP + 1,
+    'the in-flight seat kept its place through the flood: the second open of the same root is still queued, not in create',
+  )
+  releaseFirst()
+  await opened(rigging.agents.created, PER_ROOT_STATE_CAP + 2)
+  const outcomes = await bounded(Promise.all([first, second]), 'both same-root opens settle')
+  for (const outcome of outcomes) assert.equal(outcome.ok, true, JSON.stringify(outcome))
+  for (const outcome of floodOutcomes) assert.equal(outcome.ok, true, JSON.stringify(outcome))
+  assert.ok(existsSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n1.json')), 'the first open\'s note lands as usual')
+  assert.ok(existsSync(join(rigging.root, '.superworker', 'meta', 'sessions', 'n2.json')), 'the second open\'s note lands after its turn on the line')
 })
 
 test('Different workspaces do not queue: each line runs on its own', async () => {

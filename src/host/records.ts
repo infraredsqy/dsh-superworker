@@ -174,14 +174,16 @@ function collect(key: keyof typeof COLLECTION_KEY, parsed: unknown): Collected |
   if (!isMapLike(value)) return undefined
   // The map slots walk separately so each builds its own entry type: the item copy lands through a judged write, not a claim.
   if (key === 'nodes') {
-    const entries: Record<string, SuperworkerNode> = {}
+    // No borrowed prototype: a JSON-parsed own key `__proto__` is a real key and must land as a data property, the way the engine builds its node table (`readNodeTable`).
+    const entries: Record<string, SuperworkerNode> = Object.create(null)
     for (const [id, item] of Object.entries(value)) {
-      if (!isMapLike(item)) return undefined
+      // The engine's one reading drops a cell that is not a node record and keeps the table; this layer judges the same way — one bad cell does not sink the whole source.
+      if (!isMapLike(item)) continue
       entries[id] = { ...item }
     }
     return { slot: 'nodes', value: entries }
   }
-  const entries: Record<string, SuperworkerIssue> = {}
+  const entries: Record<string, SuperworkerIssue> = Object.create(null)
   for (const [id, item] of Object.entries(value)) {
     if (!isMapLike(item)) return undefined
     entries[id] = { ...item }
@@ -282,11 +284,11 @@ export async function readReading(
     instructions: 'missing',
     issues: 'missing',
   }
-  /* The accumulators wear the reading's own field types: every fill below is judged against them. The reading itself is assembled only by the contextually typed literal in `finish`, at the legacy exit, at the no-records exit and at the end alike. */
-  const nodes: Record<string, SuperworkerNode> = {}
+  /* The accumulators wear the reading's own field types: every fill below is judged against them. The reading itself is assembled only by the contextually typed literal in `finish`, at the legacy exit, at the no-records exit and at the end alike. The map containers carry no borrowed prototype (`Object.create(null)`): a JSON-parsed own key `__proto__` is a real key and lands as a data property, and the merges below cannot set a node's or an issue's record as the container's prototype by accident. */
+  const nodes: Record<string, SuperworkerNode> = Object.create(null)
   const cycles: SuperworkerCycle[] = []
   const instructions: SuperworkerInstruction[] = []
-  const issues: Record<string, SuperworkerIssue> = {}
+  const issues: Record<string, SuperworkerIssue> = Object.create(null)
   const finish = (state: SuperworkerReadingState): SuperworkerReading => ({
     workspaceRoot: scope.workspaceRoot,
     recordPath: RECORD_DIR,

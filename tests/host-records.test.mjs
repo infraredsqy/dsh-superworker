@@ -44,6 +44,11 @@ function fakeWorkspace(files, { pageLines = 2, maxBytes = Infinity } = {}) {
 
 const json = (value) => JSON.stringify(value, null, 2) + '\n'
 
+/* The reading's map containers carry no borrowed prototype (records.ts builds them with
+ * Object.create(null)): the assertions pin the own key table, so `own` copies it onto a plain
+ * shell — deepStrictEqual would otherwise split hairs over the container's prototype. */
+const own = (map) => ({ ...map })
+
 const NODES = {
   n1: {
     title: 'first',
@@ -116,10 +121,10 @@ test('Every source was read, and the entries are the record\'s own (weight / dsh
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'read' })
   assert.equal(reading.recordPath, '.superworker')
   assert.equal(reading.workspaceRoot, scope.workspaceRoot)
-  assert.deepEqual(reading.nodes, NODES)
+  assert.deepEqual(own(reading.nodes), NODES)
   assert.deepEqual(reading.cycles, CYCLES)
   assert.deepEqual(reading.instructions, INSTRUCTIONS)
-  assert.deepEqual(reading.issues, ISSUES)
+  assert.deepEqual(own(reading.issues), ISSUES)
 })
 
 test('A record spanning several pages still comes back whole', async () => {
@@ -132,7 +137,7 @@ test('A record spanning several pages still comes back whole', async () => {
   const { port, calls } = fakeWorkspace(files, { pageLines: 3 })
   const reading = await readReading(port, scope, signal, null, null)
 
-  assert.deepEqual(reading.nodes, many)
+  assert.deepEqual(own(reading.nodes), many)
   assert.ok(calls.filter(([kind]) => kind === 'read').length > 3, 'this one takes several pages to read')
 })
 
@@ -141,10 +146,10 @@ test('No record in the workspace: an empty reading comes back without a sound', 
   const reading = await readReading(port, scope, signal, null, null)
 
   assert.deepEqual(reading.sources, { nodes: 'missing', cycles: 'missing', instructions: 'missing', issues: 'missing' })
-  assert.deepEqual(reading.nodes, {})
+  assert.deepEqual(own(reading.nodes), {})
   assert.deepEqual(reading.cycles, [])
   assert.deepEqual(reading.instructions, [])
-  assert.deepEqual(reading.issues, {})
+  assert.deepEqual(own(reading.issues), {})
 })
 
 test('Record present, one file short: only that one reports missing, the rest still read', async () => {
@@ -155,7 +160,7 @@ test('Record present, one file short: only that one reports missing, the rest st
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'missing', instructions: 'read', issues: 'read' })
   assert.deepEqual(reading.cycles, [])
-  assert.deepEqual(reading.nodes, NODES)
+  assert.deepEqual(own(reading.nodes), NODES)
 })
 
 test('The unreadable one reports unusable, the reading still comes back', async () => {
@@ -168,7 +173,7 @@ test('The unreadable one reports unusable, the reading still comes back', async 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'unusable', instructions: 'unusable', issues: 'read' })
   assert.deepEqual(reading.cycles, [])
   assert.deepEqual(reading.instructions, [])
-  assert.deepEqual(reading.nodes, NODES)
+  assert.deepEqual(own(reading.nodes), NODES)
 })
 
 test('A read uses only list and read, and leaves the file table it was handed untouched', async () => {
@@ -207,7 +212,7 @@ test('When a page breaches the byte cap it shrinks and retries: the whole record
   const reading = await readReading(port, scope, signal, null, null)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'read' })
-  assert.deepEqual(reading.nodes, many)
+  assert.deepEqual(own(reading.nodes), many)
 
   assert.ok(refusals.length > 0, 'this one must hit the port byte cap once first')
   assert.deepEqual([...new Set(refusals.map(({ code }) => code))], ['workspace-file/too-large'])
@@ -228,7 +233,7 @@ test('A requested line count above the port tier shrinks and retries too: the wh
   const reading = await readReading(port, scope, signal, null, null)
 
   assert.deepEqual(reading.sources, { nodes: 'read', cycles: 'read', instructions: 'read', issues: 'read' })
-  assert.deepEqual(reading.nodes, many)
+  assert.deepEqual(own(reading.nodes), many)
   assert.ok(
     refusals.some(({ code }) => code === 'gateway/bad-request'),
     'a shrunk tier above the port tier gets bad-request, and it must keep shrinking from there',
@@ -243,7 +248,54 @@ test('When one line alone breaches the cap, that one really is unreadable', asyn
 
   // That line cannot pass even as a page of its own; shrinking pages cannot save it.
   assert.deepEqual(reading.sources, { nodes: 'unusable', cycles: 'read', instructions: 'read', issues: 'read' })
-  assert.deepEqual(reading.nodes, {})
+  assert.deepEqual(own(reading.nodes), {})
+})
+
+/* The node-table judgement aligns with the engine's one reading (`readNodeTable` in
+ * superworker-core/src/graph.ts): a JSON-parsed own key `__proto__` is a real key that must land in
+ * the reading, and a cell that is not a node record drops itself instead of sinking the table. */
+test('A node whose own key is __proto__ itself still lands in the reading', async () => {
+  // An object literal would turn `__proto__` into the prototype; JSON.parse lays it down as a real
+  // own key — exactly what the reader's JSON.parse of ideas.json holds.
+  const nodes = JSON.parse(`{"n1": ${JSON.stringify(NODES.n1)}, "__proto__": ${JSON.stringify(NODES.n2)}}`)
+  const files = record()
+  files['.superworker/ideas.json'] = json({ nodes })
+  const { port } = fakeWorkspace(files, { pageLines: 500 })
+  const reading = await readReading(port, scope, signal, null, null)
+
+  assert.equal(reading.sources.nodes, 'read')
+  assert.ok(Object.hasOwn(reading.nodes, '__proto__'), "the cell sits in the reading's own key table, not on a borrowed prototype")
+  assert.deepEqual(own(reading.nodes), nodes)
+})
+
+test('A cell that is not a node record drops itself; the rest of the table still reads', async () => {
+  const files = record()
+  files['.superworker/ideas.json'] = json({
+    nodes: { n1: NODES.n1, junkWord: 'not a node', junkNull: null, junkList: [NODES.n2], n2: NODES.n2 },
+  })
+  const { port } = fakeWorkspace(files, { pageLines: 500 })
+  const reading = await readReading(port, scope, signal, null, null)
+
+  assert.equal(reading.sources.nodes, 'read', 'the table is not sunk by one bad cell')
+  assert.deepEqual(Object.keys(own(reading.nodes)).sort(), ['n1', 'n2'])
+})
+
+/* Same family as the nodes round above (accumulators wear no borrowed prototype): a JSON-parsed own
+ * key `__proto__` is a real key that must land in the reading's issue table, and the issue record
+ * must not sink into the accumulator's prototype. */
+test('An issue whose own key is __proto__ itself still lands in the reading', async () => {
+  // An object literal would turn `__proto__` into the prototype; JSON.parse lays it down as a real
+  // own key — exactly what the reader's JSON.parse of issues.json holds.
+  const proto = { ...ISSUES.p1, id: 'proto', title: 'proto issue' }
+  const issues = JSON.parse(`{"p1": ${JSON.stringify(ISSUES.p1)}, "__proto__": ${JSON.stringify(proto)}}`)
+  const files = record()
+  files['.superworker/issues/issues.json'] = json({ version: 1, issues })
+  const { port } = fakeWorkspace(files, { pageLines: 500 })
+  const reading = await readReading(port, scope, signal, null, null)
+
+  assert.equal(reading.sources.issues, 'read')
+  assert.ok(Object.hasOwn(reading.issues, '__proto__'), "the cell sits in the reading's own key table, not on a borrowed prototype")
+  assert.deepEqual(own(reading.issues), issues)
 })
 
 /* The one door instruction rows enter the reading through: a scope word the vocabulary retires stops

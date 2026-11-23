@@ -22,7 +22,7 @@
  */
 import * as React from 'react'
 import { WORD_TABLES, zh, type WordKey } from './locales/index.ts'
-import { createStore } from './store.ts'
+import { createStore, upstreamBinding } from './store.ts'
 
 /**
  * The namespace this panel's lookup tables register under in DSH's locale service.
@@ -148,7 +148,7 @@ function boundAt(bind: (key: string) => string, activeAt: () => string): Transla
  * It stands first on the bundled fallback and stays usable whether or not a service ever arrives.
  */
 export function createLocalePort(): LocalePort {
-  let off: (() => void) | null = null
+  const binding = upstreamBinding()
   let service: LocaleService | null = null
   let bound: Translate | null = null
   let active = FALLBACK_LOCALE
@@ -195,16 +195,10 @@ export function createLocalePort(): LocalePort {
   }
 
   const detach = (): void => {
-    const held = off
-    off = null
-    service = null
-    bound = null
-    if (held === null) return
-    try {
-      held()
-    } catch (error) {
-      /* If it cannot be detached, let it go: the reading falls back to the bundled copy anyway. */
-    }
+    binding.detach(() => {
+      service = null
+      bound = null
+    })
   }
 
   /** Take whatever the service now says: which language, and the translator that reads it live. */
@@ -253,17 +247,15 @@ export function createLocalePort(): LocalePort {
         /* A service that cannot bind is no better than none: the bundled table takes over. */
         bound = null
       }
-      try {
+      /* The subscription is the shared probe: a service that cannot be subscribed to, or one whose
+       * disposer is not a function, leaves the port on its own reading (the shared skeleton holds
+       * the disposer and swallows the throw). */
+      binding.bind(() => {
         const subscribe = next.subscribe
-        off = typeof subscribe === 'function'
-          ? (() => {
-            const held = subscribe.call(next, refresh)
-            return typeof held === 'function' ? (held as () => void) : () => undefined
-          })()
-          : null
-      } catch (error) {
-        off = null
-      }
+        if (typeof subscribe !== 'function') return null
+        const held = subscribe.call(next, refresh)
+        return typeof held === 'function' ? (held as () => void) : null
+      })
       /* A fresh attachment is news whatever it says: the previous reading belonged to another
        * service, so the comparison below starts from this one's state. */
       const fresh = stateOf(next)
