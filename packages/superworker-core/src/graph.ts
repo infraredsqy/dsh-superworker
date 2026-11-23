@@ -1,3 +1,4 @@
+import { RecordError } from './errors';
 import { readJsonFile } from './jsonio';
 import type { RecordPaths } from './paths';
 import type { NodeRecord } from './types';
@@ -9,27 +10,77 @@ import type { NodeRecord } from './types';
  * dependency does not count as in-degree, is skipped on unreachable paths, and counts as delivered
  * in the readiness decision.
  *
- * The one exception is `readGraphSnapshot`, which reads the node table off the record: the graph is
- * where the node table lives, so the reader of that record sits here, and a caller that wants a
- * snapshot hands it in to the plugin seam instead of the seam reading the record itself.
+ * The one exception is the reading of that record — `readNodeTable` and the snapshot derived from it —
+ * which lives here too: the graph is where the node table lives, so its one reader sits with it, and a
+ * caller that wants a snapshot hands it in to the plugin seam instead of the seam reading the record itself.
  */
 
 /** The node table: the `nodes` table of ideas.json, keyed by node id. */
 export type NodeMap = Record<string, NodeRecord>;
 
 /**
- * The node table as one snapshot: the records read once by the caller (absent or unreadable means an
- * empty graph). The plugin seam takes this shape and never reads ideas.json itself.
+ * The reading of ideas.json — the record tree's node table — for the whole engine: the graph verbs, the
+ * planner, the settings chain, the session book and the line verbs all ask it, so "where the table is,
+ * how an entry is recognised, what a bad shape reads as" is written here once.
+ *
+ * The whole document is handed back (the graph owns only the `nodes` table, every other top-level key is
+ * carried back as it was), and the table is normalized in place: a missing or non-table `nodes` is an
+ * empty table, and entries that are not node records are dropped. Those cells cannot be read as nodes,
+ * and the read side keeps that kind of silence everywhere else — dropping them here is what keeps a
+ * hand-edited table from crashing one reader while another looks past it.
+ *
+ * Two shapes are refused rather than normalized. A document whose top level is not a JSON object (an
+ * array, a bare word, a number, `null`) is not a record at all: reading it as an empty graph would hand
+ * every reader "there is no node on the graph" from a document that says nothing of the kind — and a
+ * verb that acts on that (a line start pinning nothing, a node write over the whole document) would
+ * report an absence it never established. So the gate is here, once: every reader meets the same answer,
+ * and no reader has a reason to judge the shape a second time.
+ *
+ * The table is built as a plain own-key table (no prototype to borrow from), so an inherited name
+ * (`toString`, `constructor`, `__proto__`) cannot answer as a node through any caller's plain lookup:
+ * the one membership test (`ownsKey`) and a bare `nodes[id]` now agree.
+ */
+export interface NodeTable {
+  /** The whole document object of ideas.json: the graph owns only the `nodes` table, and every other top-level key is carried back as it was. */
+  data: Record<string, unknown>;
+  /** The normalized node table (see the head of `readNodeTable`): own keys only, node records only. */
+  nodes: NodeMap;
+}
+
+/** Whether one cell of the `nodes` table is a node record: a JSON object (an array or a bare word is not). */
+function isNodeRecord(value: unknown): value is NodeRecord {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+export async function readNodeTable(paths: RecordPaths): Promise<NodeTable> {
+  const read = await readJsonFile(paths.ideasJson, 'ideas.json');
+  const document = read.kind === 'present' ? read.value : {};
+  if (document === null || typeof document !== 'object' || Array.isArray(document)) {
+    throw new RecordError(
+      'parse_failure',
+      paths.ideasJson,
+      'ideas.json is not an object with a nodes table; refusing to read it as a record',
+    );
+  }
+  const data = document as Record<string, unknown>;
+  const raw: unknown = data.nodes;
+  const nodes = Object.create(null) as NodeMap;
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [uid, record] of Object.entries(raw as Record<string, unknown>)) {
+      if (isNodeRecord(record)) nodes[uid] = record;
+    }
+  }
+  data.nodes = nodes;
+  return { data, nodes };
+}
+
+/**
+ * The node table as one snapshot: the records read once by the caller (absent means an empty graph).
+ * The plugin seam takes this shape and never reads ideas.json itself; the reading underneath is the one
+ * above, so the seam and the engine cannot disagree about what a bad table reads as.
  */
 export async function readGraphSnapshot(paths: RecordPaths): Promise<{ readonly nodes: Readonly<Record<string, NodeRecord>> }> {
-  const read = await readJsonFile(paths.ideasJson, 'ideas.json');
-  const data = read.kind === 'present' && read.value !== null && typeof read.value === 'object'
-    ? (read.value as Record<string, unknown>)
-    : {};
-  const nodes = data.nodes !== null && typeof data.nodes === 'object' && !Array.isArray(data.nodes)
-    ? (data.nodes as Record<string, NodeRecord>)
-    : {};
-  return { nodes };
+  return { nodes: (await readNodeTable(paths)).nodes };
 }
 
 // ── tags ─────────────────────────────────────────────────────────────────────
@@ -111,7 +162,9 @@ export function resolveNodeId(uid: string, nodes: Readonly<Record<string, unknow
 }
 
 export function adjacency(nodes: NodeMap): Adjacency {
-  const adj: Adjacency = {};
+  // Own-key table (like the one reading): a node whose id spells `__proto__` has a cell of its own here
+  // too, rather than silently setting this object's prototype.
+  const adj: Adjacency = Object.create(null) as Adjacency;
   for (const [uid, node] of Object.entries(nodes)) {
     adj[uid] = [...(node.dependencies ?? [])];
   }
@@ -120,7 +173,7 @@ export function adjacency(nodes: NodeMap): Adjacency {
 
 /** The reverse adjacency table: {node: [the nodes that depend on it, ...]}; edges pointing outside the adjacency table do not enter it. */
 export function reverseAdjacency(adj: Adjacency): Adjacency {
-  const rev: Adjacency = {};
+  const rev: Adjacency = Object.create(null) as Adjacency;
   for (const uid of Object.keys(adj)) rev[uid] = [];
   for (const [uid, deps] of Object.entries(adj)) {
     for (const dep of deps) {
@@ -151,7 +204,7 @@ export function canReach(
 /** Kahn topological order: dependencies first, dependents after; nodes left on a cycle are appended at the end in their original order. */
 export function topologicalOrder(adj: Adjacency): string[] {
   const rev = reverseAdjacency(adj);
-  const inDegree: Record<string, number> = {};
+  const inDegree: Record<string, number> = Object.create(null) as Record<string, number>;
   for (const [uid, deps] of Object.entries(adj)) {
     let count = 0;
     for (const dep of deps) {
@@ -184,7 +237,7 @@ export function topologicalOrder(adj: Adjacency): string[] {
  */
 export function urgencyScores(adj: Adjacency): Record<string, number> {
   const topo = topologicalOrder(adj);
-  const depSet: Record<string, Set<string>> = {};
+  const depSet: Record<string, Set<string>> = Object.create(null) as Record<string, Set<string>>;
   for (const uid of topo) {
     const set = new Set<string>([uid]);
     for (const dep of adj[uid] ?? []) {
@@ -195,12 +248,12 @@ export function urgencyScores(adj: Adjacency): Record<string, number> {
     }
     depSet[uid] = set;
   }
-  const raw: Record<string, number> = {};
+  const raw: Record<string, number> = Object.create(null) as Record<string, number>;
   for (const [uid, set] of Object.entries(depSet)) raw[uid] = -(set.size - 1);
   const values = Object.values(raw);
   if (values.length === 0) return raw;
   const offset = -Math.min(...values);
-  const scores: Record<string, number> = {};
+  const scores: Record<string, number> = Object.create(null) as Record<string, number>;
   for (const [uid, value] of Object.entries(raw)) scores[uid] = value + offset;
   return scores;
 }
@@ -209,7 +262,7 @@ export function urgencyScores(adj: Adjacency): Record<string, number> {
 export function importanceScores(adj: Adjacency): Record<string, number> {
   const topo = topologicalOrder(adj);
   const rev = reverseAdjacency(adj);
-  const dependentSet: Record<string, Set<string>> = {};
+  const dependentSet: Record<string, Set<string>> = Object.create(null) as Record<string, Set<string>>;
   for (const uid of [...topo].reverse()) {
     const set = new Set<string>([uid]);
     for (const dependent of rev[uid] ?? []) {
@@ -219,7 +272,7 @@ export function importanceScores(adj: Adjacency): Record<string, number> {
     }
     dependentSet[uid] = set;
   }
-  const scores: Record<string, number> = {};
+  const scores: Record<string, number> = Object.create(null) as Record<string, number>;
   for (const [uid, set] of Object.entries(dependentSet)) scores[uid] = set.size - 1;
   return scores;
 }
@@ -234,7 +287,7 @@ export interface RankScores {
 
 /** Read urgency and importance off the unfinished subgraph: the one place either score is computed. */
 export function rankScores(nodes: NodeMap): RankScores {
-  const notCompleted: NodeMap = {};
+  const notCompleted: NodeMap = Object.create(null) as NodeMap;
   for (const [uid, node] of Object.entries(nodes)) {
     if (node.status !== 'completed') notCompleted[uid] = node;
   }
@@ -296,9 +349,9 @@ export function detectCycle(adj: Adjacency): [boolean, string[]] {
   const WHITE = 0;
   const GRAY = 1;
   const BLACK = 2;
-  const colour: Record<string, number> = {};
+  const colour: Record<string, number> = Object.create(null) as Record<string, number>;
   for (const uid of Object.keys(adj)) colour[uid] = WHITE;
-  const parent: Record<string, string> = {};
+  const parent: Record<string, string> = Object.create(null) as Record<string, string>;
   const outPath: string[] = [];
 
   const visit = (uid: string): boolean => {

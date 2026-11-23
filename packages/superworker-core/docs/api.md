@@ -351,8 +351,10 @@ superworker 项目」，主树的设置一个字都漏不出来。相对路径�
 | `sessions.show` | `show(node)` | 一个节点的会话档；没写过时两个名单都是空的 |
 | `sessions.note` | `note(node, role, session)` | 往这个节点的会话档里记一条会话：新写交回 `true`，同一会话已经在那一档里就交回 `false` |
 
-`show` 交回 `SessionShow { node, title, v, discussion, run }`：节点 id 与图上的标题都在，标题从
-`ideas.json` 现读（记录没写标题时读空串）。`list` 每条是
+`show` 交回 `SessionShow { node, title, v, discussion, run }`：节点 id 与图上的标题都在，标题经节点表
+的唯一读（`readNodeTable`）从 `ideas.json` 取（记录没写标题时读空串；`ideas.json` 的顶层是一个数组、
+一个词、一个数或 `null` 时，这条路上当场拒绝，答 `parse_failure`——「读侧一律容忍」那一条讲的是
+下面会话档自己的读）。`list` 每条是
 `SessionNoteSummary { node, title, note }`，按节点 id 排；节点已经不在节点表上时标题读空串，那一页照给。
 
 会话档住 `.superworker/meta/sessions/<节点>.json`（会话 id 是本机的东西，不进记录）。读侧一律容忍：
@@ -538,7 +540,9 @@ stdout / stderr 是它在本进程里直接写的，调用方不必、也不能�
   只在 `src/words/out.ts` 一处），以及记录底座 `ctx.base`——插件自己的记录层从这一格取机制：记录在
   盘上的字节格式、读、原子落盘、跨进程记录锁（带进程内排队）、两种时刻拼写、平台行尾与命令面骨架；
   记录的落点、锁路径、词汇与命令词归插件自报，底座本体引擎只有一份（`src/plugins/base.ts`），插件
-  不经这一格够不到它，不读这一格的插件照常工作。命令面骨架吃的是插件自己那张表，另有几格
+  不经这一格够不到它，不读这一格的插件照常工作。读图也从这一格取表：`readGraph` 是图那张表
+  唯一的读（就是 `src/graph.ts` 的 `readNodeTable`），插件不自己读 `ideas.json`、也不自带
+  第二套容错。命令面骨架吃的是插件自己那张表，另有几格
   按词声明：`eol`（这个词的文本用哪个行尾）、`refusalHead`（拒绝只答句子，还是把用法页的头
   一行带在它前面）、`emptyArgv`（一行没点动词算求助还是算拒绝）、`lineChecks`（写动词的行在
   拿锁之前先过哪道自检，被它拒掉的一行在盘上不留一个字节）、`contextOf`（一行能点名别的项目
@@ -587,7 +591,7 @@ stdout / stderr 是它在本进程里直接写的，调用方不必、也不能�
 | 层 | 错误码 | 什么时候 |
 | --- | --- | --- |
 | 底座 | `invalid_utf8` | 读到的字节不是 UTF-8 |
-| 底座 | `parse_failure` | 字节是 UTF-8，但 JSON 解不动；顶层不是 JSON 对象的记录文档也答这个码（state.json 的那道形状门——把它读成空记录，会让读者把「什么都没握」当真） |
+| 底座 | `parse_failure` | 字节是 UTF-8，但 JSON 解不动；顶层不是 JSON 对象的记录文档也答这个码（`state.json` 与 `ideas.json` 各有一道形状门——把坏文档读成空记录，会让读者把「什么都没握」「图上没有节点」当真） |
 | 底座 | `lock_timeout` | 等锁到上限都没拿到，什么都没改 |
 | 设置 | `unknown_key` | 旋钮名不在清单上（拒绝里把可配的名全列出来） |
 | 设置 | `invalid_value` | 值不合种类：写侧拒绝，什么都没写 |

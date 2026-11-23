@@ -1,10 +1,11 @@
 import { readdirSync } from 'node:fs';
 import { nowSeconds } from './clock';
-import { resolveNodeId } from './graph';
+import { readNodeTable, resolveNodeId } from './graph';
 import { atomicWriteJson, jsonOptionsForRecord, readJsonFile } from './jsonio';
 import { withLedgerLock } from './ledgerlock';
 import { recordPaths, sessionNotePath, type RecordPaths } from './paths';
 import type {
+  NodeRecord,
   SessionHost,
   SessionNoteEntry,
   SessionNoteRecord,
@@ -196,26 +197,22 @@ export async function appendSessionNote(
   });
 }
 
-/** The node table on the graph: an unreadable graph counts as an empty graph (only borrowed for ids and titles here, the records are not judged). */
-async function graphNodes(paths: RecordPaths): Promise<Record<string, unknown>> {
-  try {
-    const read = await readJsonFile(paths.ideasJson, 'ideas.json');
-    if (read.kind !== 'present') return {};
-    const data = read.value;
-    if (data === null || typeof data !== 'object' || Array.isArray(data)) return {};
-    const nodes = (data as Record<string, unknown>).nodes;
-    if (nodes === null || typeof nodes !== 'object' || Array.isArray(nodes)) return {};
-    return nodes as Record<string, unknown>;
-  } catch {
-    return {};
-  }
+/**
+ * The node table on the graph, through the graph's one reading of ideas.json (`readNodeTable`): only
+ * ids and titles are borrowed here, so the records are not judged — and an absent graph reads as an
+ * empty one. What a *bad* table reads as is not this reader's business either: the one reader has
+ * already refused it (or normalized it), and this one forwards that same answer rather than keeping a
+ * second opinion behind a `try`.
+ */
+async function graphNodes(paths: RecordPaths): Promise<Record<string, NodeRecord>> {
+  return (await readNodeTable(paths)).nodes;
 }
 
 /** One node's title off the table `graphNodes` read; a node that is gone (or says nothing) gives an empty string. */
-function titleOn(nodes: Record<string, unknown>, nodeId: string): string {
+function titleOn(nodes: Readonly<Record<string, NodeRecord>>, nodeId: string): string {
   const node = nodes[nodeId];
-  if (node === null || typeof node !== 'object' || Array.isArray(node)) return '';
-  const title = (node as Record<string, unknown>).title;
+  if (node === undefined) return '';
+  const title = node.title;
   return typeof title === 'string' ? title : '';
 }
 
@@ -250,7 +247,7 @@ export function createSessionsNamespace(root: string): SessionsNamespace {
 
     async show(node: string): Promise<SessionShow> {
       const nodes = await graphNodes(paths);
-      const uid = resolveNodeId(node, nodes as Record<string, never>);
+      const uid = resolveNodeId(node, nodes);
       const note = await readSessionNote(root, uid);
       // The title is read off the same table the id was resolved against: a node that is gone gives
       // an empty title, and the note it left behind is still worth reading.

@@ -18,6 +18,7 @@
 
 - 记录归一个模块所有，谁拥有谁写：节点、线、交接单、会话档归引擎，问题池归问题池插件，指令清单归 `instruction` 插件（它的形状、落点与词汇都在那个文件夹里，引擎不读也不写）。记录的**底座**（字节格式、读、原子写、跨进程锁、时刻、命令面骨架）是引擎的一份（`src/jsonio.ts`、`src/ledgerlock.ts`、`src/clock.ts`、`src/plugins/verb-surface.ts`），插件的记录也走这一份——经 `ctx` 装配处交出的 `ctx.base` 取用；一个插件在自己的文件夹里解析命令行上点名的项目目录，同样只有引擎这一份答案（`src/words/out.ts` 的 `projectRootOf`），经同一处装配交出的 `ctx.projectRootOf` 取用。插件走了接缝，storage 就只剩自己记录的落点、锁路径、词汇与字段读写——底座与目录解析两样都在引擎那边，这一层一个字都不留；不读这两格的插件照常工作。可判定的错误码在 `src/errors.ts`。
 - 跨模块只守一条。**写者唯一**：同一个记录文件同一时刻只有一个写者，跨进程也一样——每种记录带自己的锁，池子的锁是 `.superworker/meta/issues.lock`、指令清单的是 `.superworker/meta/instructions.lock`，与项目锁不同名、也不共用一把。
+- **节点表只有一个读者**：引擎里 `ideas.json` 的 `nodes` 表只由 `src/graph.ts` 的 `readNodeTable` 一处读出并归一（缺席读空表、非节点记录的那格丢掉、顶层不是对象当场拒绝）——动词、推线、设置链、会话档与插件的图半端都问这一处，不各自再读一遍。
 - 任何一次操作不得同时持有两把锁（不嵌套）。
 - 节点目录 `.superworker/nodes/<id>/` 由 add 立起、remove 带走：add 只立目录、不立 spec.md（它的缺席就是「要求还没写」），run.md 由派发准备立起。
 - 并行档（`worktree_mode` 为 `fork`）：工作树 `.superworker/worktrees/<短 id>`、出口分支 `sw/<短 id>`；那几步 git 由 agent 自己敲，引擎不留那几步的记录、不做合回、也不替它写判决。

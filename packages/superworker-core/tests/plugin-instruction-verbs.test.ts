@@ -7,6 +7,8 @@ import { main as instruction } from '../plugins/instruction/tools/commands.mjs';
 import { UsageError } from '../src/plugins/verb-surface';
 import { pluginBase, type PluginBase } from '../src/plugins/base';
 import { atomicWriteJson, jsonBytes, jsonOptionsForRecord } from '../src/jsonio';
+import { readNodeTable } from '../src/graph';
+import { recordPaths } from '../src/paths';
 import { open } from '../src/open';
 import { projectRootOf } from '../src/words/out';
 import { git, makeRepo } from './helpers/git-runner';
@@ -127,12 +129,33 @@ function entries(): InstructionRecord[] {
   return (readInstructionFile().instructions ?? []) as InstructionRecord[];
 }
 
-async function plantInstructions(rows: unknown[]): Promise<void> {
+async function plantInstructions(rows: unknown[], at: string = root): Promise<void> {
   await atomicWriteJson(
-    join(root, '.superworker', 'instructions.json'),
+    join(at, '.superworker', 'instructions.json'),
     { instructions: rows },
     jsonOptionsForRecord('instructions'),
   );
+}
+
+/** Plant the whole ideas.json document as raw text: a hand edit or a hand merge is how a bad shape gets here. */
+function plantGraph(body: string): void {
+  plantGraphInto(root, body);
+}
+
+/** The same, into a named project root. */
+function plantGraphInto(at: string, body: string): void {
+  writeFileSync(join(at, '.superworker', 'ideas.json'), body, 'utf8');
+}
+
+/** The code of a refusal (the `RecordError` code), or a marker naming what came back instead of a refusal. */
+async function refusalCodeOf(call: () => Promise<unknown>): Promise<string> {
+  try {
+    await call();
+    return 'ANSWERED';
+  } catch (error) {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === 'string' ? code : `(no code: ${String((error as Error).message)})`;
+  }
 }
 
 const add = (text: string, rest: string[] = []): Promise<string> => out(['add', '--scope', 'global', ...rest, '--text', text]);
@@ -210,6 +233,22 @@ describe('add: registering one instruction', () => {
     expect(existsSync(join(root, '.superworker', 'instructions.json'))).toBe(false);
   });
 
+  it('a name only a prototype carries is refused exactly like a name the graph never had', async () => {
+    // Membership is ownership (`Object.hasOwn`, the question `graph.ownsKey` asks), not a spelling:
+    // a bare `in` reads `toString` / `constructor` off the prototype and binds an entry nobody can
+    // pin down — and the unbound entry would then be read as visible to everyone.
+    await superworker.ledger.dag.add({ title: 'A' }); // a non-empty graph, so the name is really checked
+    for (const name of ['toString', 'constructor', '__proto__']) {
+      const refusal = await err(['add', '--scope', 'node', '--node', name, '--text', 'x']);
+      expect(refusal, name).toContain(`node ${JSON.stringify(name)} is not in the DAG`);
+    }
+    // The same sentence `--node nope` gets, and not one byte of the account landed.
+    expect(await err(['add', '--scope', 'node', '--node', 'nope', '--text', 'x'])).toContain(
+      'node "nope" is not in the DAG',
+    );
+    expect(existsSync(join(root, '.superworker', 'instructions.json'))).toBe(false);
+  });
+
   it('an empty graph lets a named node through: no validation, the node lands as given', async () => {
     // The graph is not up yet (not one node): there is no graph to check against, so a named node is
     // written as given. The cycle side has no such pass-through branch.
@@ -246,6 +285,60 @@ describe('add: registering one instruction', () => {
     await out(['rm', 'i-0002']);
     await add('third entry');
     expect(entries().map((row) => row.id)).toEqual(['i-0001', 'i-0003']);
+  });
+});
+
+/**
+ * The graph this account binds against is read the engine's way, not by a second reader beside it:
+ * `readNodes` takes the table from `ctx.base.readGraph` (the engine's one reading of `ideas.json`),
+ * so what a bad document answers and which cells count as nodes are that reading's answers.
+ */
+describe('the graph this account binds against: the engine\u2019s one reading, no second tolerance', () => {
+  it('a cell that is not a node record is no node to bind to, and the rest of the table still binds', async () => {
+    plantGraph(JSON.stringify({
+      nodes: {
+        real: { title: 'the real one', status: 'todo', mode: 'auto', dependencies: [] },
+        worded: 'not a node',
+        nulled: null,
+        listed: ['not', 'a', 'node'],
+      },
+    }));
+    // A real node binds.
+    await out(['add', '--scope', 'node', '--node', 'real', '--text', 'this one is a node']);
+    expect(entries()[0]!.node).toBe('real');
+    // A cell that cannot be a node record is dropped by the one reading, so it is not a name to bind to.
+    for (const name of ['worded', 'nulled', 'listed']) {
+      expect(await err(['add', '--scope', 'node', '--node', name, '--text', 'x']), name).toContain(
+        `node ${JSON.stringify(name)} is not in the DAG`,
+      );
+    }
+    // Only the real one landed.
+    expect(entries().map((row) => row.node)).toEqual(['real']);
+  });
+
+  it.each(['[]', 'null', '123', '"x"'])(
+    'a document whose top level is not an object (%s) answers the engine\u2019s own code',
+    async (body) => {
+      plantGraph(body);
+      // The engine's reading answers `parse_failure` for this document…
+      expect(await refusalCodeOf(() => readNodeTable(recordPaths(root)))).toBe('parse_failure');
+      // …and the word answers the same code through the same reading, rather than reading an empty
+      // graph out of a document that says nothing of the kind.
+      expect(await refusalCodeOf(() => out(['add', '--scope', 'node', '--node', 'real', '--text', 'x']))).toBe(
+        'parse_failure',
+      );
+      expect(await refusalCodeOf(() => out(['list', '--json']))).toBe('parse_failure');
+      // The account stayed empty: a refused read writes nothing.
+      expect(existsSync(join(root, '.superworker', 'instructions.json'))).toBe(false);
+    },
+  );
+
+  it('a missing or non-table nodes cell reads as an empty graph, the way every engine verb reads it', async () => {
+    plantGraph('{"nodes": [{"title": "a"}]}');
+    expect((await readNodeTable(recordPaths(root))).nodes).toEqual({});
+    // An empty graph is the pass-through branch: the name is written as given (the graph is not up).
+    await out(['add', '--scope', 'node', '--node', 'not-in-dag', '--text', 'registration before the graph exists']);
+    expect(entries()[0]!.node).toBe('not-in-dag');
   });
 });
 
@@ -782,6 +875,45 @@ describe('list: position, order and the two views', () => {
         { root, base: watching, projectRootOf },
       );
       expect(locksTaken).toEqual([join(root, '.superworker', 'meta', 'instructions.lock')]);
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
+  });
+
+  it('a line naming another project binds against that project\u2019s graph, never the caller\u2019s snapshot', async () => {
+    // The word takes the graph from the context the host handed in (`ctx.dag`). A line that names
+    // another project moves the root, so the caller's snapshot is the wrong graph for it: the entry
+    // must be judged against the named project's nodes. Both graphs carry the same node id here, with
+    // opposite statuses, so a read against the caller's snapshot answers the opposite of the named
+    // project's own table.
+    const other = mkdtempSync(join(tmpdir(), 'superworker-ins-graph-other-'));
+    const node = (status: string): string =>
+      JSON.stringify({ nodes: { shared: { title: 'the shared node', status, mode: 'auto', dependencies: [] } } });
+    const row = (id: string, text: string, at: string): Record<string, unknown> => ({
+      id, text, scope: 'node', target: 'stage', state: 'live', cycle: null, node: 'shared',
+      said_by: 'user', at, resolved_at: null, note: null,
+    });
+    try {
+      await open(other).ledger.init();
+      // The same node id on both graphs: still open here, already delivered there.
+      plantGraphInto(root, node('todo'));
+      plantGraphInto(other, node('completed'));
+      await plantInstructions([row('i-0001', 'a node-scoped entry', '2026-01-01T00:00:00Z')]);
+      await plantInstructions([row('i-0001', 'a node-scoped entry', '2026-01-01T00:00:00Z')], other);
+      // A snapshot of *this* project's graph, exactly what a real context carries.
+      const callerSnapshot = { nodes: (await readNodeTable(recordPaths(root))).nodes };
+      const line = (argv: string[]): Promise<unknown> =>
+        (instruction as (argv: string[], ctx: unknown) => Promise<unknown>)(argv, {
+          root,
+          base: pluginBase(),
+          projectRootOf,
+          dag: callerSnapshot,
+        });
+      // Judged by the other project's graph the node is completed there, so its entry is not read.
+      expect(await line(['list', '--json', '--project', other])).toBe('[]');
+      // Judged by this project's own graph (no `--project`) the node is still open, so it is read — the
+      // caller's snapshot is used exactly where it belongs.
+      expect(JSON.parse(String(await line(['list', '--json']))).map((cell: { id: string }) => cell.id)).toEqual(['i-0001']);
     } finally {
       rmSync(other, { recursive: true, force: true });
     }

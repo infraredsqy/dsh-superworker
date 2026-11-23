@@ -7,7 +7,6 @@ import { messageOf } from './fs-helpers';
 import {
   atomicWriteJson,
   jsonOptionsForRecord,
-  readJsonFile,
 } from './jsonio';
 import { assertLedgerInitialized } from './initledger';
 import type {
@@ -42,11 +41,13 @@ import {
   normalizeTags,
   ownsKey,
   rankScores,
+  readNodeTable,
   resolveNodeId,
   resolveNodeKey,
   reverseAdjacency,
   tagsOf,
   type NodeMap,
+  type NodeTable,
   type RankScores,
 } from './graph';
 
@@ -91,14 +92,6 @@ function stringArrayCell(value: unknown, field: string, row: number): string[] {
     throw new Error(`row ${row}: ${field} must be an array of strings`);
   }
   return value as string[];
-}
-
-interface IdeasLedger {
-  /** The whole document object of ideas.json: the graph owns only the `nodes` table, and every other top-level
-   *  key (manual merges, foreign sections) is carried back as it was: missing keys are filled on read, the
-   *  whole document is written back on write. */
-  data: Record<string, unknown>;
-  nodes: NodeMap;
 }
 
 /** The weight reading of a node: only light ever landed on disk; everything else is standard. */
@@ -159,28 +152,17 @@ function specSnippetOf(pattern: RegExp, text: string): string {
 export function createDagNamespace(root: string): DagNamespace {
   const paths = recordPaths(root);
 
-  async function readIdeas(): Promise<IdeasLedger> {
-    const read = await readJsonFile(paths.ideasJson, 'ideas.json');
-    const data = read.kind === 'present' && read.value !== null && typeof read.value === 'object'
-      ? (read.value as Record<string, unknown>)
-      : {};
-    if (!('nodes' in data) || data.nodes === null || data.nodes === undefined) {
-      data.nodes = {};
-    }
-    return { data, nodes: data.nodes as NodeMap };
-  }
-
   /** Write ideas.json: the whole document is written back as it was (only the nodes table is changed), in the ideas writer's key order (sorted deeply). */
-  async function writeIdeas(ledger: IdeasLedger): Promise<void> {
+  async function writeIdeas(ledger: NodeTable): Promise<void> {
     mkdirSync(paths.nodesDir, { recursive: true });
     await atomicWriteJson(paths.ideasJson, ledger.data, jsonOptionsForRecord('ideas'));
   }
 
   /** The one gate the verbs that change the graph share: the init decision first (which creates no directory), then the lock and the read-change-write. */
-  function mutate<T>(body: (ledger: IdeasLedger) => Promise<T>): Promise<T> {
+  function mutate<T>(body: (ledger: NodeTable) => Promise<T>): Promise<T> {
     assertLedgerInitialized(paths);
     return withLedgerLock(paths, async () => {
-      const ledger = await readIdeas();
+      const ledger = await readNodeTable(paths);
       return body(ledger);
     });
   }
@@ -519,7 +501,7 @@ export function createDagNamespace(root: string): DagNamespace {
     },
 
     async get(id: string): Promise<NodeRecord | null> {
-      const { nodes } = await readIdeas();
+      const { nodes } = await readNodeTable(paths);
       // The one resolution of an id spelling (`resolveNodeKey` — the matching `resolveNodeId` itself
       // is built on), with the one difference `get` owes its callers: an absence answers `null`
       // instead of refusing; a spelling naming several nodes still refuses.
@@ -541,7 +523,7 @@ export function createDagNamespace(root: string): DagNamespace {
      */
     async info(id: string, options: DagInfoOptions = {}): Promise<DagInfo> {
       const verbose = options.verbose === true;
-      const { nodes } = await readIdeas();
+      const { nodes } = await readNodeTable(paths);
       const uid = resolveNodeId(id, nodes);
       const node = nodes[uid]!;
 
@@ -603,7 +585,7 @@ export function createDagNamespace(root: string): DagNamespace {
     },
 
     async context(id: string): Promise<NodeContext> {
-      const { nodes } = await readIdeas();
+      const { nodes } = await readNodeTable(paths);
       const uid = resolveNodeId(id, nodes);
       const node = nodes[uid]!;
       const rev = reverseAdjacency(adjacency(nodes));
@@ -651,7 +633,7 @@ export function createDagNamespace(root: string): DagNamespace {
     },
 
     async search(query: string, options: DagSearchOptions = {}): Promise<DagSearchHit[]> {
-      const { nodes } = await readIdeas();
+      const { nodes } = await readNodeTable(paths);
       const selected: NodeMap = options.activeOnly === true
         ? Object.fromEntries(
             Object.entries(nodes).filter(([, node]) => node.status !== 'completed'),
@@ -693,9 +675,13 @@ export function createDagNamespace(root: string): DagNamespace {
     },
 
     async list(filter: DagListFilter = {}): Promise<NodeSummary[]> {
-      const { nodes } = await readIdeas();
+      const { nodes } = await readNodeTable(paths);
 
-      const selected: NodeMap = {};
+      // The accumulator is an own-key table like the one reading's (`Object.create(null)`): a node
+      // whose id spells `__proto__` would otherwise be assigned onto this object's prototype instead
+      // of becoming an own key, and `Object.entries` below would leave that node out of the listing
+      // while every other verb on the graph reads it as a node.
+      const selected: NodeMap = Object.create(null) as NodeMap;
       for (const [uid, node] of Object.entries(nodes)) {
         if (filter.status === undefined || filter.status.includes(node.status)) {
           selected[uid] = node;
@@ -735,7 +721,10 @@ export function createDagNamespace(root: string): DagNamespace {
       // The Eisenhower reading: importance first, urgency after; the ones with no score (completed
       // and shelved) sink. The ordering itself is the graph layer's own; the cells it orders by are the
       // ones the rows carry, so a row that emits no score ties at 0 like it always did.
-      const orderScores: RankScores = { urgency: {}, importance: {} };
+      const orderScores: RankScores = {
+        urgency: Object.create(null) as Record<string, number>,
+        importance: Object.create(null) as Record<string, number>,
+      };
       for (const entry of filtered) {
         orderScores.urgency[entry.id] = entry.urgency_level ?? 0;
         orderScores.importance[entry.id] = entry.importance_score ?? 0;
@@ -750,16 +739,16 @@ export function createDagNamespace(root: string): DagNamespace {
     },
 
     async specPath(id: string): Promise<string> {
-      const { nodes } = await readIdeas();
+      const { nodes } = await readNodeTable(paths);
       const uid = resolveNodeId(id, nodes);
       return specPathOf(paths, uid);
     },
 
     async validate(): Promise<DagValidationReport> {
-      const { nodes } = await readIdeas();
+      const { nodes } = await readNodeTable(paths);
       const total = Object.keys(nodes).length;
 
-      const statusCounts: Record<string, number> = {};
+      const statusCounts: Record<string, number> = Object.create(null) as Record<string, number>;
       for (const node of Object.values(nodes)) {
         const status = node.status ?? 'unknown';
         statusCounts[status] = (statusCounts[status] ?? 0) + 1;

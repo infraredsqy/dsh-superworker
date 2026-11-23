@@ -870,7 +870,10 @@ export const sessionListVerb = run("session list", async (call) => {
   const { values, superworker } = call;
   const notes = await superworker.sessions.list();
   if (values.json === true) {
-    const table: Record<string, unknown> = {};
+    // Keyed by node id, so the table is an own-key table (`Object.create(null)`) like the reading's
+    // own: assigning a node whose id spells `__proto__` on a plain `{}` sets a prototype instead of
+    // minting a cell, and the machine view would come back without that node.
+    const table: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
     for (const row of notes) table[row.node] = { v: 1, discussion: row.note.discussion, run: row.note.run };
     // The machine view stays a JSON object in every state, the empty one included.
     return { stdout: pyIndented(table) };

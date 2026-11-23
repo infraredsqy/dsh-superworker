@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { nowSeconds } from './clock';
 import { cycleRecordOrRefuse, holdingCycles, readStateLedger, type StateLedger } from './cycles';
 import { RecordError } from './errors';
+import { readNodeTable } from './graph';
 import { atomicWriteJson, jsonOptionsForRecord, readJsonFile } from './jsonio';
 import { assertLedgerInitialized } from './initledger';
 import { withLedgerLock } from './ledgerlock';
@@ -589,20 +590,15 @@ async function cycleRecordOf(paths: RecordPaths, cycleId: string): Promise<Cycle
  * A node id that is not on this project's graph reports `node_not_found`: the node layer is never
  * created for the caller.
  *
- * On the graph means the node table *owns* the id: the table is a plain object, so a membership test
- * that walked the prototype would count `constructor`, `__proto__`, `toString` and the rest as nodes
- * that were never added — a write would mint a directory for one of them, and a read would answer from
- * a wider layer under a name the graph has never heard of.
+ * The table comes from the graph's one reading of ideas.json (`readNodeTable`), so this gate asks what
+ * that reading hands back and nothing more: a bad document is refused there (one answer for every
+ * caller), and the table it does hand back owns only its own keys — an inherited name
+ * (`constructor`, `__proto__`, `toString`) is not on the graph, so a write mints no directory for one of
+ * them and a read answers from no wider layer.
  */
 async function requireNode(paths: RecordPaths, nodeId: string): Promise<void> {
-  const read = await readJsonFile(paths.ideasJson, 'ideas.json');
-  const node: unknown = read.kind === 'present' && read.value !== null && typeof read.value === 'object' && !Array.isArray(read.value)
-    ? (read.value as Record<string, unknown>)['nodes']
-    : undefined;
-  const table = node !== null && typeof node === 'object' && !Array.isArray(node)
-    ? (node as Record<string, unknown>)
-    : {};
-  if (!Object.hasOwn(table, nodeId)) {
+  const { nodes } = await readNodeTable(paths);
+  if (!Object.hasOwn(nodes, nodeId)) {
     throw new RecordError('node_not_found', paths.ideasJson, `this project's graph has no node "${nodeId}"`);
   }
 }

@@ -32,6 +32,7 @@ import {
   nodeReady,
   normalizeTags,
   rankScores,
+  readNodeTable,
   short,
   tagsOf,
   type NodeMap,
@@ -479,14 +480,9 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
         }
         const cap = stated ?? (POLICY_DEFAULTS.parallel as number);
 
-        // Picking happens before the account is written (under the same lock): the nodes the starting line pins come from here.
-        const ideasRead = await readJsonFile(paths.ideasJson, 'ideas.json');
-        const nodes: NodeMap =
-          ideasRead.kind === 'present' &&
-          ideasRead.value !== null &&
-          typeof ideasRead.value === 'object'
-            ? (((ideasRead.value as Record<string, unknown>).nodes ?? {}) as NodeMap)
-            : {};
+        // Picking happens before the account is written (under the same lock): the nodes the starting line pins come from
+        // the graph's one reading of ideas.json, so a bad table is refused the same way here as on every other verb.
+        const { nodes } = await readNodeTable(paths);
         const busy = nodesHeldElsewhere(ledger, null);
         const ranked = rankedReadyNodes(nodes, busy, tags).slice(0, cap);
         if (ranked.length === 0) {

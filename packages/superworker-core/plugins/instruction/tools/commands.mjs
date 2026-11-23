@@ -194,6 +194,11 @@ function inScope(entry, nodes, activeCycleIds, readerCycle, readerNode) {
   const [kind, bound] = scopeBinding(entry)
   if (kind === 'node') {
     if (readerNode !== null) return bound === readerNode
+    // Ownership first, then the cell: the graph's own membership test (`Object.hasOwn`, the same
+    // question `graph.ownsKey` asks). A bare lookup would read an inherited name as a record — the
+    // function `toString` is — and `?.status` off it reads `undefined`, which is not `completed`,
+    // so an entry that named no node would be read as visible to everyone.
+    if (!Object.hasOwn(nodes, bound)) return true
     return nodes[bound]?.status !== 'completed'
   }
   if (kind === 'cycle') {
@@ -290,8 +295,10 @@ function bindingOf(options, cycles, nodes) {
   let nodeId = null
   if (options.node !== undefined) {
     // A non-empty graph is the precondition for checking the name: an empty graph has nothing to
-    // check against, so the name is written as given.
-    if (Object.keys(nodes).length > 0 && !(options.node in nodes)) {
+    // check against, so the name is written as given. On a graph that does have nodes, membership is
+    // the graph's own question (`Object.hasOwn`, the same test `graph.ownsKey` asks): an inherited
+    // name (`toString`, `constructor`) is not a node just because a plain lookup finds something.
+    if (Object.keys(nodes).length > 0 && !Object.hasOwn(nodes, options.node)) {
       throw new Error(`node ${JSON.stringify(options.node)} is not in the DAG`)
     }
     nodeId = options.node
@@ -438,7 +445,7 @@ async function cmdAdd(args, ctx) {
   // what this verb does is read the account, build the entry, and land it.
   const data = await readInstructions(ctx.root, ctx.base)
   const cycles = await readCycles(ctx.root, ctx.base)
-  const nodes = await readNodes(ctx.root, ctx.base)
+  const nodes = await readNodes(ctx)
   const binding = bindingOf({ ...args.options, scope, target }, cycles, nodes)
   const entry = {
     id: nextInstructionId(data),
@@ -479,7 +486,7 @@ async function cmdList(args, ctx) {
 
   if (!accountView) {
     const cycles = await readCycles(ctx.root, ctx.base)
-    const nodes = await readNodes(ctx.root, ctx.base)
+    const nodes = await readNodes(ctx)
     const position = positionOf(cycles, node ?? null)
     const active = new Set(
       cycles.filter((record) => record.status === 'active').map((record) => record.id).filter((id) => typeof id === 'string'),
@@ -604,8 +611,11 @@ const RUNNERS = { add: cmdAdd, list: cmdList, resolve: cmdResolve, rm: cmdRm, re
  */
 function contextOf(args, ctx) {
   const named = args.options.project
-  const root = named === undefined || named === '' ? ctx.root : seamOf(ctx)(named, ctx.root)
-  return { ...ctx, root }
+  if (named === undefined || named === '') return ctx
+  // The graph snapshot on the context was taken by the host at the root it handed in. A line that
+  // names another project asks a different graph, so the snapshot is dropped here and `readNodes`
+  // takes that project's table through the base — never this project's nodes under another root.
+  return { ...ctx, root: seamOf(ctx)(named, ctx.root), dag: undefined }
 }
 
 /**

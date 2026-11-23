@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createContext } from '../src/plugins/context';
-import { readGraphSnapshot } from '../src/graph';
+import { readGraphSnapshot, readNodeTable } from '../src/graph';
 import { loadPlugins } from '../src/plugins/registry';
 import { recordPaths } from '../src/paths';
 import { projectRootOf } from '../src/words/out';
@@ -194,14 +194,19 @@ describe('the record base on the context', () => {
         dag: { nodes: {} },
       });
       // The cells are the one foundation's: byte format, reader, atomic landing, record lock,
-      // moments, command-surface mechanics. A function on every cell, reachable no other way.
+      // moments, command-surface mechanics, and the graph's one reading for a word that acts on the
+      // graph. A function on every cell, reachable no other way.
       expect(typeof ctx.base.nowMicro).toBe('function');
       expect(typeof ctx.base.nowSeconds).toBe('function');
       expect(typeof ctx.base.readJson).toBe('function');
       expect(typeof ctx.base.writeJson).toBe('function');
       expect(typeof ctx.base.withLock).toBe('function');
       expect(typeof ctx.base.verbSurface).toBe('function');
+      expect(typeof ctx.base.readGraph).toBe('function');
       expect(ctx.base.nowMicro()).toMatch(/\.\d{6}Z$/);
+      // `readGraph` is the engine's one reading of the node table, not a second one: a project with
+      // no graph reads as an empty table, and its answer is what `graph.readNodeTable` answers.
+      expect(await ctx.base.readGraph(lab.root)).toEqual({ nodes: await (await readNodeTable(recordPaths(lab.root))).nodes });
     } finally {
       lab.cleanup();
     }

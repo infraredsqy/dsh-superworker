@@ -1,4 +1,5 @@
 import { nowMicro, nowSeconds } from '../clock.ts';
+import { readGraphSnapshot } from '../graph.ts';
 import {
   EOL,
   atomicWriteBytes,
@@ -9,6 +10,8 @@ import {
   type JsonRead,
 } from '../jsonio.ts';
 import { withRecordLock, type RecordLockOptions } from '../ledgerlock.ts';
+import { recordPaths } from '../paths.ts';
+import type { NodeRecord } from '../types.ts';
 import {
   createVerbSurface,
   type VerbSurface,
@@ -19,12 +22,14 @@ import {
  * The record base a plugin's own layer takes its mechanics from, handed in on the host context
  * (`ctx.base`): the byte format of a record on disk, the atomic landing, the reader with its three
  * readings, the cross-process record lock with its in-process queue, the two timestamp spellings,
- * and the one-copy mechanics of a command surface. The engine owns this foundation once —
- * `src/jsonio.ts`, `src/ledgerlock.ts`, `src/clock.ts`, `src/plugins/verb-surface.ts` — and a
- * plugin's storage keeps only what belongs to its own record: its landing path, its vocabulary,
- * and the read and write of its own fields. Nothing here is reachable by a plugin in any other
- * way: a plugin folder is loaded by path and imports nothing from the engine, so every one of
- * these capabilities travels through the context the host assembles (`src/plugins/context.ts`).
+ * the one-copy mechanics of a command surface, and — for a plugin whose word acts on the graph — the
+ * node table as the engine itself reads it. The engine owns this foundation once —
+ * `src/jsonio.ts`, `src/ledgerlock.ts`, `src/clock.ts`, `src/plugins/verb-surface.ts`, and the one
+ * reading of `ideas.json` in `src/graph.ts` — and a plugin's storage keeps only what belongs to its
+ * own record: its landing path, its vocabulary, and the read and write of its own fields. Nothing
+ * here is reachable by a plugin in any other way: a plugin folder is loaded by path and imports
+ * nothing from the engine, so every one of these capabilities travels through the context the host
+ * assembles (`src/plugins/context.ts`).
  *
  * The object is stateless — every cell is a plain function over the engine's own modules — so one
  * shared instance serves every context, real or rehearsal, without one round seeing another.
@@ -42,6 +47,13 @@ export interface PluginBase {
   jsonBytes(value: unknown, options?: JsonBytesOptions): Uint8Array;
   /** Read one record: present or missing; unparsable bytes throw a `RecordError` (`invalid_utf8` / `parse_failure`), never repaired automatically. */
   readJson(path: string, label?: string): Promise<JsonRead>;
+  /**
+   * The node table of the graph at one project root, as the engine reads it: the same reading every
+   * graph verb asks (`graph.readNodeTable`), so what a bad document answers and which cells count as
+   * nodes are not re-decided here. A plugin whose word acts on the graph takes the table from this
+   * cell; it never reads `ideas.json` itself and keeps no tolerance of its own.
+   */
+  readGraph(root: string): Promise<{ readonly nodes: Readonly<Record<string, NodeRecord>> }>;
   /** Land a block of bytes onto a path as a whole: a temp file in the target's own directory, fsynced, renamed into place. */
   atomicWrite(path: string, bytes: Uint8Array): Promise<void>;
   /** Land one JSON record: the bytes of `jsonBytes` through the atomic landing. */
@@ -65,6 +77,7 @@ export function pluginBase(): PluginBase {
     nowSeconds: () => nowSeconds(),
     jsonBytes: (value, options) => jsonBytes(value, options),
     readJson: (path, label) => readJsonFile(path, label),
+    readGraph: (root) => readGraphSnapshot(recordPaths(root)),
     atomicWrite: (path, bytes) => atomicWriteBytes(path, bytes),
     writeJson: (path, value, options) => atomicWriteJson(path, value, options),
     withLock: (lockPath, body, options) => withRecordLock(lockPath, body, options),

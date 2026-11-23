@@ -17,6 +17,7 @@ import {
   inTagScope,
   nodeReady,
   rankScores,
+  readNodeTable,
   short,
   tagsOf,
   type NodeMap,
@@ -71,14 +72,10 @@ async function readRecord(path: string, label: string): Promise<Record<string, u
   return read.kind === 'present' ? asObject(read.value) : null;
 }
 
-/** The node table: the `nodes` table of ideas.json, where a missing `mode` means `auto` (the same default as the graph side). */
+/** The node table the planner works on: the graph's one reading of ideas.json (`readNodeTable`), with the mode cell normalized — a missing `mode` reads `auto`, the same default the graph side gives it. */
 async function loadNodes(paths: RecordPaths): Promise<NodeMap> {
-  const data = await readRecord(paths.ideasJson, 'ideas.json');
-  const table = asObject(data?.nodes);
-  const nodes: NodeMap = table === null ? {} : (table as NodeMap);
-  for (const node of Object.values(nodes)) {
-    if (node !== null && typeof node === 'object') node.mode = normalizeMode(node.mode);
-  }
+  const { nodes } = await readNodeTable(paths);
+  for (const node of Object.values(nodes)) node.mode = normalizeMode(node.mode);
   return nodes;
 }
 

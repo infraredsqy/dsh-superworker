@@ -86,7 +86,11 @@ function sortDeep(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortDeep);
   if (value !== null && typeof value === 'object') {
     const source = value as Record<string, unknown>;
-    const sorted: Record<string, unknown> = {};
+    // The rebuilt table is an own-key table (`Object.create(null)`), like the one reading of the node
+    // table: a key spelling `__proto__` is an ordinary key here too, so assigning it creates a cell
+    // instead of setting a prototype — with a plain `{}` that cell never reaches `JSON.stringify` and
+    // the record lands without it.
+    const sorted: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
     for (const key of Object.keys(source).sort(compareCodePoints)) {
       sorted[key] = sortDeep(source[key]);
     }

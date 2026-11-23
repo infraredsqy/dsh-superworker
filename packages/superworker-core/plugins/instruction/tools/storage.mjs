@@ -115,11 +115,22 @@ export async function readCycles(root, base) {
   return Array.isArray(data.cycles) ? data.cycles.filter(isRecord) : []
 }
 
-/** The graph: `ideas.json`'s `nodes` table, read as id → record. */
-export async function readNodes(root, base) {
-  const data = await readJsonRecord(join(recordDir(root), 'ideas.json'), 'ideas.json', base)
-  const nodes = data.nodes
-  return isRecord(nodes) ? nodes : {}
+/**
+ * The graph this account is bound against: `ideas.json`'s `nodes` table, taken from the engine's one
+ * reading of it (`base.readGraph`, which is `src/graph.ts`'s `readNodeTable`) rather than read again
+ * here. What a bad document answers (`parse_failure` when the top level is not a JSON object), what a
+ * missing or non-table `nodes` reads as (an empty table), and which cells count as nodes (only node
+ * records) are therefore the engine's answers, not a second set kept beside them — a cell that cannot
+ * be a node record never becomes a node this account can bind to.
+ *
+ * When the context already carries the graph snapshot the host read for this round (`ctx.dag`, filled
+ * by `conductor.pluginContext` through `readGraphSnapshot`), that snapshot is the table — it is the
+ * same reading, taken once. Only a caller that hands in no snapshot (a test running the word with a
+ * bare `{ root, base }` context) asks the base for the same reading again.
+ */
+export async function readNodes(ctx) {
+  if (ctx.dag !== undefined && ctx.dag !== null && isRecord(ctx.dag.nodes)) return ctx.dag.nodes
+  return (await ctx.base.readGraph(ctx.root)).nodes
 }
 
 function isRecord(value) {
