@@ -286,10 +286,11 @@ function KindMark(props: { readonly kind: OverviewRowKind }): React.ReactElement
         </svg>
       )
     case 'run':
+      /* A solid play triangle, the only filled mark in the set: a filled shape keeps the command's
+       * row apart from `input`'s hollow caret, the near twin both read as at 12px. */
       return (
         <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-          <path d="M3.2 3.6 6 6 3.2 8.4" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M7.6 8.4h2" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+          <path d="M3.9 3.1 8.7 6 3.9 8.9Z" fill="currentColor" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
         </svg>
       )
     case 'output':
