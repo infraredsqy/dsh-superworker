@@ -153,6 +153,11 @@ const SETTLE_MARK = 'settle'
 /** The closing page's fold in its own registry: one page, one span. */
 const PAST_MARK = 'past'
 
+/** The stage before it has been measured: no box at all, which is what a pane behind another tab
+ *  has. State and guard start on the same object, so the first measurement of a hidden pane is the
+ *  no-change the guard is there to recognise. */
+const NO_STAGE: StageSize = { width: 0, height: 0 }
+
 /**
  * What one press on a window may do: the map's own two hands (`CardGo`), asked of a session instead
  * of a node — a window *is* a conversation, and whether this machine can open it is the panel's
@@ -618,15 +623,29 @@ export function OverviewPane(props: {
 }): React.ReactElement {
   const { reading } = props
   const bodyRef = React.useRef<HTMLDivElement | null>(null)
-  const [stage, setStage] = React.useState<StageSize>({ width: 0, height: 0 })
+  const [stage, setStage] = React.useState<StageSize>(NO_STAGE)
+  /** The box the stage's state was last fed — the same two numbers, held outside it, because they are
+   *  what decides whether a measurement may speak at all. */
+  const heldStage = React.useRef<StageSize>(NO_STAGE)
+  /**
+   * The stage's box, read off the pane.
+   *
+   * The comparison stands here, ahead of `setState`, and may not move back into its updater: an
+   * updater that answers with the state it was handed still has to be queued for React to learn
+   * that, and a commit ending with an update pending is exactly what React counts against its
+   * nested-update limit. Since this runs on every commit, an unguarded measure counts itself up once
+   * per commit on a stage that has not moved at all, and the fifty-first is a
+   * `Maximum update depth exceeded` (#185) which the slot boundary answers by retiring the whole
+   * panel — a blank cell, and no way back but a reload.
+   */
   const measure = React.useCallback((): void => {
     const el = bodyRef.current
     if (el === null) return
-    setStage((held) => {
-      const width = el.clientWidth
-      const height = el.clientHeight
-      return held.width === width && held.height === height ? held : { width, height }
-    })
+    const width = el.clientWidth
+    const height = el.clientHeight
+    if (heldStage.current.width === width && heldStage.current.height === height) return
+    heldStage.current = { width, height }
+    setStage(heldStage.current)
   }, [])
   /* Measured on every drawing: a pane shown for the first time, or a stage that moved between
    * beats, must not keep the previous beat's boxes. The observer below covers the sizes that move
