@@ -12,7 +12,7 @@
  * pane hands the row the line, and the row hands it back with the cell.
  */
 import * as React from 'react'
-import type { DetailGroupKey, GateReading, NodeReading, ProjectReading } from '../model/index.ts'
+import type { CycleReading, DetailGroupKey, GateReading, NodeBucket, NodeReading, ProjectReading } from '../model/index.ts'
 import { dispatchCycleOf, nodesOf, ownersOf } from '../model/index.ts'
 import { useT } from './locale.ts'
 import type { WordKey } from './locales/index.ts'
@@ -36,9 +36,13 @@ interface Group {
   /** Which word heads this section, looked up when the header is drawn so the table knows no language. */
   readonly word: WordKey
   readonly cls: string
+  /** The bucket this section collects, which is the mark its cells wear — and the mark its count wears in the band. */
+  readonly bucket: NodeBucket
   readonly deps: boolean
   /** The gate kinds this section's own head already states; a cell gated that way adds no badge. */
   readonly silences: readonly GateReading['kind'][]
+  /** Whether this section is work in hand: the band counts these three and says nothing of the two at rest. */
+  readonly held: boolean
 }
 
 /* The five sections always start expanded: the rows are what the reader came to see, and the folding
@@ -46,12 +50,22 @@ interface Group {
  * from the vocabulary layer's own table (`NODE_WORDS`); `run` and `ready` head line-level judgments,
  * which that table does not hold. */
 const GROUPS: readonly Group[] = [
-  { key: 'shelved', word: NODE_WORDS.shelved, cls: 'is-shelved', deps: false, silences: ['shelved'] },
-  { key: 'run', word: 'state.running', cls: 'is-running', deps: false, silences: [] },
-  { key: 'ready', word: 'state.ready', cls: 'is-todo', deps: false, silences: [] },
-  { key: 'wait', word: NODE_WORDS.todo, cls: 'is-todo', deps: true, silences: [] },
-  { key: 'done', word: NODE_WORDS.completed, cls: 'is-done', deps: false, silences: [] },
+  { key: 'shelved', word: NODE_WORDS.shelved, cls: 'is-shelved', bucket: 'shelved', deps: false, silences: ['shelved'], held: true },
+  { key: 'run', word: 'state.running', cls: 'is-running', bucket: 'run', deps: false, silences: [], held: true },
+  { key: 'ready', word: 'state.ready', cls: 'is-todo', bucket: 'todo', deps: false, silences: [], held: true },
+  { key: 'wait', word: NODE_WORDS.todo, cls: 'is-todo', bucket: 'todo', deps: true, silences: [], held: false },
+  { key: 'done', word: NODE_WORDS.completed, cls: 'is-done', bucket: 'done', deps: false, silences: [], held: false },
 ]
+
+/**
+ * The sections whose cells are in hand — waiting for a person, on a line, or ready to start — and so
+ * the three the board's band counts.
+ *
+ * The two sections at rest are the list's own business: how much was delivered and how much nobody
+ * is on yet are not numbers a reader deciding where to look needs at the top of the page, and a count
+ * of them would grow with the ledger instead of saying what is moving.
+ */
+export const HELD_GROUPS: readonly Group[] = GROUPS.filter((group) => group.held)
 
 /**
  * The list itself, without the frame it stands in: the pane shell, the band and the switch between
@@ -64,8 +78,8 @@ export function DetailBody(props: {
   readonly project: ProjectReading | null
   /** Whether this drawing is the one on screen; the other one is still mounted, and hidden. */
   readonly hidden: boolean
-  /** The cells in scope: a line's id, or `null` for the whole workspace. */
-  readonly scope: string | null
+  /** The cells in scope: the line they belong to, or `null` for the whole workspace. */
+  readonly cycle: CycleReading | null
   readonly go: NodeGo | null
   /** The stranded dispatches, by node id: the line each cell's claim belongs to. */
   readonly stranded: Readonly<Record<string, string>>
@@ -74,8 +88,7 @@ export function DetailBody(props: {
   readonly onOpenNode: (nodeId: string, cycle: string) => void
 }): React.ReactElement {
   const t = useT()
-  const { project, scope } = props
-  const cycle = project === null || scope === null ? null : (project.cycles.find((one) => one.id === scope) ?? null)
+  const { project, cycle } = props
   return (
     <div className="superworker-scroll" role="region" aria-label={t('view.nodes')} tabIndex={0} hidden={props.hidden}>
       {project === null ? null : GROUPS.map((group) => {
@@ -87,7 +100,7 @@ export function DetailBody(props: {
             group={group}
             nodes={list}
             at={project.at}
-            scope={scope}
+            cycle={cycle}
             go={props.go}
             stranded={props.stranded}
             openingNode={props.openingNode}
@@ -104,7 +117,7 @@ function DetailGroup(props: {
   readonly group: Group
   readonly nodes: readonly NodeReading[]
   readonly at: Date
-  readonly scope: string | null
+  readonly cycle: CycleReading | null
   readonly go: NodeGo | null
   readonly stranded: Readonly<Record<string, string>>
   readonly openingNode: string | null
@@ -132,7 +145,7 @@ function DetailGroup(props: {
           node={node}
           group={group}
           at={props.at}
-          scope={props.scope}
+          cycle={props.cycle}
           go={props.go}
           stranded={props.stranded}
           openingNode={props.openingNode}
@@ -155,7 +168,7 @@ function Row(props: {
   readonly node: NodeReading
   readonly group: Group
   readonly at: Date
-  readonly scope: string | null
+  readonly cycle: CycleReading | null
   readonly go: NodeGo | null
   readonly stranded: Readonly<Record<string, string>>
   readonly openingNode: string | null
@@ -167,7 +180,7 @@ function Row(props: {
   /* The line a fresh round opens under. Under one scope it is that line — every row on the page
    * belongs to it, the scope being a filter; over the whole workspace it is the last line that
    * walked the cell, and a cell no line has touched has none, so its row offers no action. */
-  const cycle = props.scope ?? dispatchCycleOf(node)
+  const cycle = props.cycle?.id ?? dispatchCycleOf(node)
   const owners = ownersOf(node)
   const moment = node.stampAt
   /* A gate this section's head already says adds no second word; every other one stands here. */
@@ -198,7 +211,7 @@ function Row(props: {
         {moment === null ? null : <span className="superworker-rowtime superworker-num">{timeOf(t, moment, at)}</span>}
         {/* Which lines the cell belongs to is printed only over the whole workspace: under one scope
             every row on the page would wear the same word. */}
-        {props.scope !== null || owners.length === 0 ? null : <span className="superworker-mtag">{owners.join('·')}</span>}
+        {props.cycle !== null || owners.length === 0 ? null : <span className="superworker-mtag">{owners.join('·')}</span>}
         {gate === null ? null : <span className={`superworker-gate${node.state === 'todo' ? ' is-quiet' : ''}`}>{gate}</span>}
         {group.deps ? <DepsChip node={node} /> : null}
         {/* The one cell a session can be opened for is a ready one: the other sections say their own

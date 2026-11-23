@@ -8,7 +8,7 @@
  * are spelled in `words.ts`.
  */
 import * as React from 'react'
-import type { NodeReading } from '../model/index.ts'
+import type { NodeBucket, NodeReading } from '../model/index.ts'
 import { bucketOf, readDeps } from '../model/index.ts'
 import type { Translate } from './locale.ts'
 import { useT } from './locale.ts'
@@ -58,6 +58,34 @@ export function FaultGlyph(props: { readonly stroke: number; readonly size?: num
   )
 }
 
+/** The class each bucket's mark wears. The five buckets draw four faces: the shelved verdict is its own wait, and wears the gate's pause. */
+const BUCKET_CLASSES: Readonly<Record<NodeBucket, string>> = {
+  gate: 'is-gate',
+  shelved: 'is-gate',
+  run: 'is-run',
+  todo: 'is-next',
+  done: 'is-done',
+}
+
+/**
+ * One bucket's mark, drawn without a cell: the pause for what a person has to move, the spinning
+ * ring for what a line is on, the dashed circle for what has not started, the check for what was
+ * delivered.
+ *
+ * The mark is asked for by bucket so that a caller holding a count instead of a cell — the board's
+ * band — says that reading with the same drawing a row and a card wear, rather than with a second
+ * vocabulary of its own. `title` is the one sentence the mark says by itself; a caller whose words
+ * stand beside it says none, and passes nothing.
+ */
+export function BucketMark(props: { readonly bucket: NodeBucket; readonly title?: string | undefined }): React.ReactElement {
+  return (
+    <span className={`superworker-state ${BUCKET_CLASSES[props.bucket]}`} title={props.title}>
+      {props.bucket === 'gate' || props.bucket === 'shelved' ? <PauseGlyph stroke={1.7} size={12} /> : null}
+      {props.bucket === 'done' ? <CheckGlyph stroke={1.6} size={12} /> : null}
+    </span>
+  )
+}
+
 /**
  * State mark: the model's one bucket, drawn. A row that wants a person (a gate, or the shelved
  * verdict, which is its own gate) takes the pause mark; the line's hold takes the spinner; the
@@ -67,31 +95,17 @@ export function FaultGlyph(props: { readonly stroke: number; readonly size?: num
  */
 export function StateMark(props: { readonly node: NodeReading; readonly at: Date; readonly dead?: string | null }): React.ReactElement {
   /* The mark's hover text is the only thing it says, so the translator is taken here, where the word
-   * is printed. */
+   * is printed; the drawing itself is the bucket's. */
   const t = useT()
   const { node } = props
   if (props.dead !== undefined && props.dead !== null && props.dead.length > 0) {
     return <StrandedMark cycleId={props.dead} nodeId={node.id} />
   }
   const bucket = bucketOf(node)
-  if (bucket === 'gate' || bucket === 'shelved') {
-    return (
-      <span className="superworker-state is-gate" title={gateTitle(t, node, props.at)}>
-        <PauseGlyph stroke={1.7} size={12} />
-      </span>
-    )
-  }
-  if (bucket === 'run') {
-    return <span className="superworker-state is-run" title={runningTitle(t, node)} />
-  }
-  if (bucket === 'todo') {
-    return <span className="superworker-state is-next" title={t('state.next')} />
-  }
-  return (
-    <span className="superworker-state is-done" title={t('state.done')}>
-      <CheckGlyph stroke={1.6} size={12} />
-    </span>
-  )
+  if (bucket === 'gate' || bucket === 'shelved') return <BucketMark bucket={bucket} title={gateTitle(t, node, props.at)} />
+  if (bucket === 'run') return <BucketMark bucket={bucket} title={runningTitle(t, node)} />
+  if (bucket === 'todo') return <BucketMark bucket={bucket} title={t('state.next')} />
+  return <BucketMark bucket={bucket} title={t('state.done')} />
 }
 
 /**

@@ -34,3 +34,12 @@
 .superworker-page .superworker-board .superworker-pick select:focus {
   outline-offset: -2px;
 }
+
+/* The band's right end: how much the scope holds. The count line is the panel's one arithmetic and
+ * is stated in `tokens.css` (the pill, the mark's cell, the monospace figure); standing in a band
+ * over the drawings instead of over a list, it takes no padding of its own, and it holds the band's
+ * right edge — the controls keep the left one. */
+.superworker-page .superworker-board .superworker-band .superworker-count {
+  margin-left: auto;
+  padding-top: 0;
+}

@@ -170,6 +170,15 @@ test('this build: the shell loads, the panel draws, every tab opens, cycle names
   await act(async () => { modeBtn('detail').dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
   await settle()
   assert.deepEqual(rows().sort(), ['n1', 'n2', 'n3'], 'over the whole workspace the list holds every cell')
+  /* The band's right end counts what is in hand — the same sections the list groups by, counted.
+   * The number is not a word, so it is the number this reads: one waiting for a person, one in a
+   * line's hand, and nothing ready, which is a zero and so stands no pill. The count is a reading
+   * and answers no press. */
+  const counted = () => [...container.querySelectorAll('#pane-nodes .superworker-count .superworker-pill .superworker-num')].map((num) => num.textContent)
+  assert.deepEqual(counted(), ['1', '1'], 'over the whole workspace the band counts the cells in hand')
+  assert.equal(container.querySelectorAll('#pane-nodes .superworker-count .superworker-state.is-gate').length, 1, 'the waiting count wears the pause mark its rows wear')
+  assert.equal(container.querySelectorAll('#pane-nodes .superworker-count .superworker-state.is-run').length, 1, 'the count of what a line holds wears the ring its rows wear')
+  assert.equal(container.querySelectorAll('#pane-nodes .superworker-count button').length, 0, 'the count answers no press')
   /* A cell walked by two lines says so on its row, and only over the whole workspace: a scoped list
    * would wear the scope control\'s own word on every row. */
   const rowTagsOf = (id) => [...container.querySelector(`#pane-nodes .superworker-row[data-id="${id}"]`).querySelectorAll('.superworker-mtag')].map((tag) => tag.textContent)
@@ -186,6 +195,9 @@ test('this build: the shell loads, the panel draws, every tab opens, cycle names
   await settle()
   assert.deepEqual(rows(), ['n1'], 'the list holds only the scoped line\'s cells')
   assert.deepEqual(rowTagsOf('n1'), [], 'under one scope the row wears no line tag')
+  /* The scope filters the count as it filters the drawings: this line holds nothing and waits on
+   * nothing, so the band counts nothing. */
+  assert.deepEqual(counted(), [], 'under a line with nothing in hand the band counts nothing')
   await act(async () => { modeBtn('map').dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
   await settle()
   assert.equal(scope.value, 'c2', 'switching the drawing keeps the scope')
