@@ -1,29 +1,32 @@
 /**
- * The second pane of the main panel: detail. A line sidebar on the left (one pick button per line),
- * and the body is the picked line's node list grouped into five sections; a movable split sits
- * between sidebar and body.
+ * The list: the cells the map draws, one row each, grouped by what each cell is doing.
  *
- * Picking a line and moving the split are both handed back to the shell (`onPickLine` /
- * `onSideWidth` / `onSideCommit`); writing back to the settings document is the shell's job. The
- * shell also says which cell's open-session write is in flight (`openingNode`): that cell's own
- * action stands disabled until the write settles.
+ * The five sections are the reading's own state-first split, and the scope arrives as a prop — the
+ * same answer the map is given, so the two drawings are two projections of one set of cells rather
+ * than two readings that could disagree. A row carries the cell's readings (its mark, its title,
+ * the moment it speaks of, the lines it belongs to, its gate, what it still owes) and the two
+ * presses it can answer: the session the cell was born in, and a fresh session for a cell that may
+ * start.
+ *
+ * Nothing here computes a reading, and nothing here decides which line a session opens under: the
+ * pane hands the row the line, and the row hands it back with the cell.
  */
 import * as React from 'react'
-import type { CycleReading, DetailGroupKey, GateReading, NodeReading, ProjectReading } from '../model/index.ts'
-import { nodesOf } from '../model/index.ts'
-import { clampSide, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN } from './prefs.ts'
+import type { DetailGroupKey, GateReading, NodeReading, ProjectReading } from '../model/index.ts'
+import { dispatchCycleOf, nodesOf, ownersOf } from '../model/index.ts'
 import { useT } from './locale.ts'
 import type { WordKey } from './locales/index.ts'
-import { gateTitle, gateWord, NODE_WORDS, stateWord, unit } from './words.ts'
+import { gateTitle, gateWord, NODE_WORDS, timeOf, unit } from './words.ts'
 import { nodeName, nodeHover } from './nodes.ts'
-import { FoldSection, Grip, PaneFrame } from './widgets.tsx'
-import { DepsChip, LineMark, StateMark } from './marks.tsx'
+import { FoldSection } from './widgets.tsx'
+import { DepsChip, StateMark } from './marks.tsx'
+import type { NodeGo } from './map.tsx'
 
 /**
- * The five detail sections, in the order readers meet them.
+ * The five sections, in the order readers meet them.
  *
  * `silences` names the gate kinds this section already says in its own head: the shelves section is
- * headed by the wait for a person, so a card parked there wears no second badge. It is stated as a
+ * headed by the wait for a person, so a cell parked there wears no second badge. It is stated as a
  * mapping rather than as a comparison against the section's key, which is another vocabulary
  * (`shelved` / `run` / `ready` / `wait` / `done`) that happens to share one word with the gate kinds
  * (`shelved` / `manual` / `checkpoint`) — sharing a word is not sharing a fact.
@@ -34,14 +37,14 @@ interface Group {
   readonly word: WordKey
   readonly cls: string
   readonly deps: boolean
-  /** The gate kinds this section's own head already states; a card gated that way adds no badge. */
+  /** The gate kinds this section's own head already states; a cell gated that way adds no badge. */
   readonly silences: readonly GateReading['kind'][]
 }
 
-/* The five sections always start expanded: this pane is called detail, and the rows are what the
- * reader came to see. The folding move survives, triggered by the reader. The three sections that
- * head a node state take their word from the vocabulary layer's own table (`NODE_WORDS`); `run` and
- * `ready` head line-level judgments, which that table does not hold. */
+/* The five sections always start expanded: the rows are what the reader came to see, and the folding
+ * move survives, triggered by the reader. The three sections that head a node state take their word
+ * from the vocabulary layer's own table (`NODE_WORDS`); `run` and `ready` head line-level judgments,
+ * which that table does not hold. */
 const GROUPS: readonly Group[] = [
   { key: 'shelved', word: NODE_WORDS.shelved, cls: 'is-shelved', deps: false, silences: ['shelved'] },
   { key: 'run', word: 'state.running', cls: 'is-running', deps: false, silences: [] },
@@ -50,110 +53,63 @@ const GROUPS: readonly Group[] = [
   { key: 'done', word: NODE_WORDS.completed, cls: 'is-done', deps: false, silences: [] },
 ]
 
-/** How far one keyboard move of the detail split travels; Shift takes two steps. */
-const SPLIT_STEP = 16
-
 /**
- * Which line is being shown: the one the reader picked, and the record's first line when nothing is
- * picked yet — or when the picked id no longer names a line, as happens when a re-read drops it.
- *
- * The resolution is written here once and read by both ends that need it: the pane that lists a
- * line's cells and the shell that opens a session for one of them. Two copies of this expression
- * would be free to name different lines, and the body would list one line while "open" reported
- * another.
+ * The list itself, without the frame it stands in: the pane shell, the band and the switch between
+ * the two drawings are the pane's (`board.tsx`).
+ * @param props - The reading, whether this drawing is the one on screen, the scope the rows are
+ *   filtered to, where a row's press goes, the stranded claims, the annotation of a row whose
+ *   open-session write is in flight, and where that write goes.
  */
-export function pickedCycleOf(cycles: readonly CycleReading[], lineId: string | null): CycleReading | null {
-  return cycles.find((cycle) => cycle.id === lineId) ?? cycles[0] ?? null
-}
-
-/**
- * The full layout of the detail pane: the line sidebar, the split, and the body.
- * @param props - Visibility, whether to collapse to one sentence, which line is picked (and the record's
- *   reading it is resolved in), the split width with its two write-backs, where the pick-line action
- *   goes, and where the open-a-session action on a ready cell goes.
- */
-export function DetailPane(props: {
-  readonly active: boolean
-  readonly noNodes: boolean
-  /** Which line the reader picked; `null` before anything is picked, read as the record's first line. */
-  readonly lineId: string | null
+export function DetailBody(props: {
   readonly project: ProjectReading | null
+  /** Whether this drawing is the one on screen; the other one is still mounted, and hidden. */
+  readonly hidden: boolean
+  /** The cells in scope: a line's id, or `null` for the whole workspace. */
+  readonly scope: string | null
+  readonly go: NodeGo | null
   /** The stranded dispatches, by node id: the line each cell's claim belongs to. */
   readonly stranded: Readonly<Record<string, string>>
-  readonly sideWidth: number
-  readonly onSideWidth: (px: number) => void
-  readonly onSideCommit: (px: number) => void
-  readonly onPickLine: (id: string) => void
-  readonly onOpenNode: (nodeId: string) => void
   /** The cell whose open-session write is in flight; its own action stands disabled meanwhile. */
   readonly openingNode: string | null
+  readonly onOpenNode: (nodeId: string, cycle: string) => void
 }): React.ReactElement {
   const t = useT()
-  /* The record's lines come from the reading itself, and which of them is picked is resolved by
-   * {@link pickedCycleOf} from the reading and the picked id: the pane holds one entry to the state
-   * it draws, so the sidebar and the body cannot be a frame apart, and no line object comes in
-   * beside the record. */
-  const cycles = props.project?.cycles ?? []
-  const picked = pickedCycleOf(cycles, props.lineId)
+  const { project, scope } = props
+  const cycle = project === null || scope === null ? null : (project.cycles.find((one) => one.id === scope) ?? null)
   return (
-    <PaneFrame id="detail" active={props.active} noNodes={props.noNodes} fill>
-      <div className="superworker-detail" style={{ ['--superworker-side-w' as string]: `${props.sideWidth}px` }}>
-        <div className="superworker-lineside" role="group" aria-label={t('detail.lines.aria')}>
-          {cycles.map((cycle) => (
-            <div className="superworker-lineitem" key={cycle.id}>
-              <button
-                type="button"
-                className="superworker-linepick"
-                aria-current={cycle.id === picked?.id}
-                aria-label={`${cycle.id} · ${stateWord(t, cycle)}`}
-                onClick={() => props.onPickLine(cycle.id)}
-              >
-                <LineMark cycle={cycle} />
-                <span className="superworker-cycle">{cycle.id}</span>
-              </button>
-            </div>
-          ))}
-        </div>
-        {/* The split between sidebar and body: one edge moving Δ measures this column's width. */}
-        <Grip
-          id="detail-split"
-          label={t('detail.side-grip.aria')}
-          value={props.sideWidth}
-          min={SIDE_MIN}
-          max={SIDE_MAX}
-          clamp={clampSide}
-          step={SPLIT_STEP}
-          onChange={props.onSideWidth}
-          onCommit={props.onSideCommit}
-          resetTo={SIDE_DEFAULT}
-        />
-        <div className="superworker-linemain">
-          <div className="superworker-scroll" role="region" aria-label={t('view.detail')} tabIndex={0}>
-            {picked === null || props.project === null ? null : <DetailList cycle={picked} project={props.project} stranded={props.stranded} onOpenNode={props.onOpenNode} openingNode={props.openingNode} />}
-          </div>
-        </div>
-      </div>
-    </PaneFrame>
-  )
-}
-
-/** Detail: the picked line's node list, grouped into five sections. */
-function DetailList(props: { readonly cycle: CycleReading; readonly project: ProjectReading; readonly stranded: Readonly<Record<string, string>>; readonly onOpenNode: (nodeId: string) => void; readonly openingNode: string | null }): React.ReactElement {
-  const { cycle, project } = props
-  const at = project.at
-  return (
-    <React.Fragment>
-      {GROUPS.map((group) => {
+    <div className="superworker-scroll" role="region" aria-label={t('view.nodes')} tabIndex={0} hidden={props.hidden}>
+      {project === null ? null : GROUPS.map((group) => {
         const list = nodesOf(group.key, cycle, project)
         if (list.length === 0) return null
-        return <DetailGroup key={group.key} group={group} nodes={list} at={at} stranded={props.stranded} onOpenNode={props.onOpenNode} openingNode={props.openingNode} />
+        return (
+          <DetailGroup
+            key={group.key}
+            group={group}
+            nodes={list}
+            at={project.at}
+            scope={scope}
+            go={props.go}
+            stranded={props.stranded}
+            openingNode={props.openingNode}
+            onOpenNode={props.onOpenNode}
+          />
+        )
       })}
-    </React.Fragment>
+    </div>
   )
 }
 
 /** A section's header and the rows under it. */
-function DetailGroup(props: { readonly group: Group; readonly nodes: readonly NodeReading[]; readonly at: Date; readonly stranded: Readonly<Record<string, string>>; readonly onOpenNode: (nodeId: string) => void; readonly openingNode: string | null }): React.ReactElement {
+function DetailGroup(props: {
+  readonly group: Group
+  readonly nodes: readonly NodeReading[]
+  readonly at: Date
+  readonly scope: string | null
+  readonly go: NodeGo | null
+  readonly stranded: Readonly<Record<string, string>>
+  readonly openingNode: string | null
+  readonly onOpenNode: (nodeId: string, cycle: string) => void
+}): React.ReactElement {
   const { group } = props
   const t = useT()
   const [folded, setFolded] = React.useState(false)
@@ -171,29 +127,98 @@ function DetailGroup(props: { readonly group: Group; readonly nodes: readonly No
       figsClass="superworker-rowcount"
     >
       {props.nodes.map((node) => (
-        <div className={`superworker-row ${group.cls}`} key={node.id} data-id={node.id} title={gateTitle(t, node, props.at)}>
-          <StateMark node={node} at={props.at} dead={props.stranded[node.id] ?? null} />
-          <span className="superworker-rowtitle" title={nodeHover(node)}>{nodeName(node)}</span>
-          <span className="superworker-rowfigs">
-            {group.deps ? <DepsChip node={node} /> : null}
-            {/* The one cell a session can be opened for is a ready one: the other sections say their
-                own states and carry no action. The figs column is the row's own room for it — ready
-                rows owe nothing, so the cell stands empty until this action fills it. While this
-                cell's own open is in flight the action stands disabled until the write settles
-                (settling takes the model minutes, and a second click would open a second session
-                on the same cell). */}
-            {group.key === 'ready' ? (
-              <button type="button" className="superworker-mini" disabled={props.openingNode === node.id} onClick={() => props.onOpenNode(node.id)}>{t('node.open')}</button>
-            ) : null}
-          </span>
-          {/* The section already says its own gate kind: a node gated that same way adds no second
-              badge here. Both sides are the structured kind — a gate's kind against the kinds this
-              section silences. */}
-          {node.gate !== null && !group.silences.includes(node.gate.kind)
-            ? <span className={`superworker-gate superworker-rowgate${node.state === 'todo' ? ' is-quiet' : ''}`}>{gateWord(t, node.gate)}</span>
-            : null}
-        </div>
+        <Row
+          key={node.id}
+          node={node}
+          group={group}
+          at={props.at}
+          scope={props.scope}
+          go={props.go}
+          stranded={props.stranded}
+          openingNode={props.openingNode}
+          onOpenNode={props.onOpenNode}
+        />
       ))}
     </FoldSection>
+  )
+}
+
+/**
+ * One row: what the cell is doing, what it is called, and — at the row's right end — the moment and
+ * every reading that qualifies it.
+ *
+ * The row is also the way into the cell's own conversation. A row whose cell has no session this
+ * machine holds is not pressable and does not pretend to be: it takes no pointer cursor, no focus
+ * and no role.
+ */
+function Row(props: {
+  readonly node: NodeReading
+  readonly group: Group
+  readonly at: Date
+  readonly scope: string | null
+  readonly go: NodeGo | null
+  readonly stranded: Readonly<Record<string, string>>
+  readonly openingNode: string | null
+  readonly onOpenNode: (nodeId: string, cycle: string) => void
+}): React.ReactElement {
+  const t = useT()
+  const { node, group, at } = props
+  const target = props.go === null ? null : props.go.targetOf(node)
+  /* The line a fresh round opens under. Under one scope it is that line — every row on the page
+   * belongs to it, the scope being a filter; over the whole workspace it is the last line that
+   * walked the cell, and a cell no line has touched has none, so its row offers no action. */
+  const cycle = props.scope ?? dispatchCycleOf(node)
+  const owners = ownersOf(node)
+  const moment = node.stampAt
+  /* A gate this section's head already says adds no second word; every other one stands here. */
+  const gate = node.gate !== null && !group.silences.includes(node.gate.kind) ? gateWord(t, node.gate) : null
+  const hover = [gateTitle(t, node, at), target === null ? '' : t('board.row.go')].filter((one) => one.length > 0).join(' · ')
+  const goTo = (): void => {
+    if (target !== null) props.go?.open(target)
+  }
+  return (
+    <div
+      className={`superworker-row ${group.cls}`}
+      data-id={node.id}
+      role={target === null ? undefined : 'button'}
+      tabIndex={target === null ? undefined : 0}
+      title={hover.length === 0 ? undefined : hover}
+      onClick={target === null ? undefined : goTo}
+      onKeyDown={target === null ? undefined : (event) => {
+        /* Only the row's own keys: a press on the action inside it is the action's. */
+        if (event.target !== event.currentTarget) return
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        goTo()
+      }}
+    >
+      <StateMark node={node} at={at} dead={props.stranded[node.id] ?? null} />
+      <span className="superworker-rowtitle" title={nodeHover(node)}>{nodeName(node)}</span>
+      <span className="superworker-rowfigs">
+        {moment === null ? null : <span className="superworker-rowtime superworker-num">{timeOf(t, moment, at)}</span>}
+        {/* Which lines the cell belongs to is printed only over the whole workspace: under one scope
+            every row on the page would wear the same word. */}
+        {props.scope !== null || owners.length === 0 ? null : <span className="superworker-mtag">{owners.join('·')}</span>}
+        {gate === null ? null : <span className={`superworker-gate${node.state === 'todo' ? ' is-quiet' : ''}`}>{gate}</span>}
+        {group.deps ? <DepsChip node={node} /> : null}
+        {/* The one cell a session can be opened for is a ready one: the other sections say their own
+            states and carry no action. While this cell's own open is in flight the action stands
+            disabled until the write settles (settling takes the model minutes, and a second click
+            would open a second session on the same cell). */}
+        {group.key === 'ready' && cycle !== null ? (
+          <button
+            type="button"
+            className="superworker-mini"
+            disabled={props.openingNode === node.id}
+            onClick={(event) => {
+              event.stopPropagation()
+              props.onOpenNode(node.id, cycle)
+            }}
+          >
+            {t('node.open')}
+          </button>
+        ) : null}
+      </span>
+    </div>
   )
 }

@@ -67,9 +67,10 @@ export const zh = {
   'issue.resolved': '已解决',
 
   /* ── The panel's own display controls ─────────────────────────────────────────────────────── */
-  'view.overview': '总览',
-  'view.map': '地图',
-  'view.detail': '明细',
+  /* 当前 is the session windows; 概览 is the record's own board — the map and the list drawn from
+   * one reading. Two pages, two words, and neither language may give them the one word. */
+  'view.overview': '当前',
+  'view.nodes': '概览',
   'view.notes': '指令',
   'view.issue': '问题',
   'view.config': '设置',
@@ -101,22 +102,27 @@ export const zh = {
   'common.global': '全局',
   'common.expand-more': '展开其余 {count} 条',
 
+  /* ── The node board: one reading, two drawings ────────────────────────────────────────────── */
+  /* The band over both drawings says which cells are in scope and which way they are drawn. The
+   * scope control carries a scope's own word and nothing else: a line is a line, and the control
+   * does not dress it up as a state. */
+  'board.scope.aria': '作用域',
+  'board.mode.aria': '这一页怎么画',
+  'board.mode.map': '地图',
+  'board.mode.detail': '明细',
+  /* The one thing a press on a row does, for a row that has no gate sentence to wear in its hover. */
+  'board.row.go': '去这条会话',
+
   /* ── The map ──────────────────────────────────────────────────────────────────────────────── */
-  'map.scope.aria': '命中范围',
   'map.region.aria': '整张图',
   'map.overview.aria': '全览 / 回到焦点',
   'map.refresh.aria': '重新读一遍',
   'map.card.aria': '{node} 的会话',
   'map.card.go': '再按一下去这条会话',
 
-  /* ── The detail view ──────────────────────────────────────────────────────────────────────── */
-  'detail.lines.aria': '线路',
-  'detail.side-grip.aria': '调整线路侧栏的宽度',
+  /* ── The list ─────────────────────────────────────────────────────────────────────────────── */
   'detail.folded.cells.one': ' 格',
   'detail.folded.cells.other': ' 格',
-  'cycle.blocked': '阻塞',
-  'cycle.running': '运行中',
-  'cycle.stopped': '停止',
   /* The one action a ready cell carries: the host opens the session itself, the plan's first
    * instruction goes in verbatim. */
   'node.open': '开会话',

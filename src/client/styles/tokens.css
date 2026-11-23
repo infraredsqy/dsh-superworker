@@ -132,107 +132,12 @@
   box-shadow: inset 0 0 0 1px var(--superworker-ink-2);
 }
 
-/* ---- one line row, two panes ----------------------------------------------
- * Both left columns list the record's lines, and a line is one row in each of them:
- * one height, one inset, one 14px cell, and the name standing right of it. Every
- * row holds that cell open, so the two panes' names fall on one edge; a name that
- * stands somewhere else in the other pane is a name the reader has to find twice.
- *
- * The map's rail row is a whole row and a whole button at once (nothing follows
- * the name there), so it wears both halves: the row's box, which the detail pane's
- * `.superworker-lineitem` shares, and the pressable line, which is `.superworker-linepick` there.
- * Both inks ride the name — the row is what gets pressed, the name is what
- * answers. */
-.superworker-page .superworker-lineitem,
-.superworker-page .superworker-rail-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: var(--superworker-row);
-  padding: 0 8px;
-  overflow: hidden;
-  background: none;
-  border: 0;
-  border-radius: var(--dsw-radius-xs);
-  text-align: left;
-}
-
-.superworker-page .superworker-linepick,
-.superworker-page .superworker-rail-item {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: none;
-  border: 0;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.superworker-page .superworker-lineitem:hover,
-.superworker-page .superworker-rail-item:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-/* The picked line: the row's ground brightens a tier (the value the settings list's
- * current item takes) and the name turns body-ink. The map's rail reads a pick off
- * its pressed row and says the same thing, so both panes answer a pick the same way. */
-.superworker-page .superworker-lineitem:has(.superworker-linepick[aria-current='true']),
-.superworker-page .superworker-rail-item[aria-pressed='true'] {
-  background: var(--dsw-alias-interactive-bg-active);
-}
-
-/* The name: the record's id. Both left columns print the same word, so it wears one
- * face — the reading face; the code face is what a column of figures is set in. */
-.superworker-page .superworker-cycle {
-  min-width: 0;
-  overflow: hidden;
-  font: var(--dsw-font-xs-13);
-  color: var(--dsw-alias-label-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.superworker-page .superworker-lineitem:has(.superworker-linepick[aria-current='true']) .superworker-cycle,
-.superworker-page .superworker-rail-item[aria-pressed='true'] .superworker-cycle {
-  color: var(--dsw-alias-label-primary);
-}
-
-/* The cell left of the name: this line's state at this moment. Running wears the
- * shared ring below, blocked carries an amber dot — this layout's colour reserved
- * for "waiting for a person". A line that has stopped draws nothing in the cell and
- * keeps it, which is what holds the two panes' names on one edge. */
-.superworker-page .superworker-linemark {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--superworker-mark);
-  height: var(--superworker-mark);
-}
-
-.superworker-page .superworker-linemark.is-blocked::before {
-  content: '';
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  corner-shape: round;
-  background: var(--dsw-alias-state-warn-primary);
-}
-
 /* ---- the state mark -------------------------------------------------------
- * The 14px drawing the boards put on a card, the detail list on a row, and the map
- * on the one card that is in hand: a spinning ring while a step is open, a glyph for
+ * The 14px drawing the list puts on a row and the map on a card — and the map stands
+ * it on the one card that is in hand: a spinning ring while a step is open, a glyph for
  * what it ended as, a pause for a gate, a dashed ring for work that has not
  * started. Two views, one drawing — a card and a row are two sizes of the same
  * reading.
- *
- * The spinning ring is one drawing shared a third time: the line column's cell
- * beside a line name (`.superworker-linemark`, declared above) wears the same ring while its
- * line is in service, so the rule below names both and the reduced-motion
- * fallback rides with it — one ring, one still form.
  *
  * The spinning ring's track is the one place a structure colour stands as a
  * graphic (DSH's own spinner draws its track the same way) and the head of the
@@ -250,8 +155,7 @@
   display: block;
 }
 
-.superworker-page .superworker-state.is-run,
-.superworker-page .superworker-linemark.is-run {
+.superworker-page .superworker-state.is-run {
   color: var(--dsw-alias-link);
   border: 1.5px solid var(--dsw-alias-border-l3);
   border-top-color: currentColor;
@@ -298,8 +202,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .superworker-page .superworker-state.is-run,
-  .superworker-page .superworker-linemark.is-run {
+  .superworker-page .superworker-state.is-run {
     animation: none;
     border-style: dashed;
   }
@@ -344,9 +247,9 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* The word on a gate. On a card it sits right of the pause glyph; in the detail
- * list it is the small line under the row. Loud where the reader can act, quiet
- * where the node is still on its way in. */
+/* The word on a gate. On a card it sits right of the pause glyph; in the list it stands
+ * in the row's figures — the same slot a moment stands in. Loud where the reader can act,
+ * quiet where the node is still on its way in. */
 .superworker-page .superworker-gate {
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-state-warn-primary);
@@ -379,6 +282,23 @@
 
 .superworker-page .superworker-deps.is-ready b {
   color: var(--dsw-alias-label-secondary);
+}
+
+/* ---- which lines a cell belongs to ---------------------------------------
+ * A cell may be walked by several lines (a re-run leaves a second walker) and held by one,
+ * and both drawings print that set once: on a card's foot, and at the list row's right end.
+ * It is a reading, not a label, so it wears the reading face in one quiet ink — and it
+ * stands only where the page holds every line, because under one scope every card and every
+ * row would wear the same word the scope control already says. */
+.superworker-page .superworker-mtag {
+  flex: none;
+  overflow: hidden;
+  font-family: var(--dsw-font-family);
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--dsw-alias-label-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---- tags ------------------------------------------------------------------
@@ -543,6 +463,14 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* A drawing that is mounted but not the one in front keeps its place — the map's camera, the
+ * list's folds and its scroll — and draws nothing. A box of its own (`display: flex`, a grid)
+ * out-ranks the browser's default `display: none` for the attribute, so the pane says it once
+ * for every drawing inside it. */
+.superworker-page .superworker-pane [hidden] {
+  display: none;
 }
 
 .superworker-page .superworker-sec {

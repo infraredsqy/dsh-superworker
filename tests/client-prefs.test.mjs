@@ -20,15 +20,12 @@ import assert from 'node:assert/strict'
 
 import { buildConfig } from '../src/host/config.ts'
 import {
+  NODE_MODES,
   PANEL_PREF_DEFAULTS,
   PANEL_PREF_FIELDS,
-  SIDE_DEFAULT,
-  SIDE_MAX,
-  SIDE_MIN,
   VIEW_IDS,
 } from '../src/host/settings-fields.ts'
 import {
-  clampSide,
   createPrefsSource,
   DEFAULT_PREFS,
   prefsFromSection,
@@ -58,19 +55,19 @@ test('the field table is exactly those keys, and the factory defaults line up it
 
   /* What the table holds is the KEY, not the word: the settings row and the tab row both render it
    * through the same translator, so the two cannot drift apart. */
-  assert.notEqual(VIEW_WORDS.map, t(VIEW_WORDS.map))
+  assert.notEqual(VIEW_WORDS.nodes, t(VIEW_WORDS.nodes))
 })
 
 test('a fully written settings document reads as those panel values', () => {
   const prefs = prefsFromSection({
-    sideWidth: 200,
-    lastTab: 'detail',
+    lastTab: 'nodes',
+    nodeMode: 'detail',
     showArchived: true,
     showOtherStates: true,
     autoRelay: false,
     injectInstructions: false,
   })
-  assert.deepEqual(prefs, { sideWidth: 200, tab: 'detail', archived: true, otherStates: true, autoRelay: false, injectInstructions: false })
+  assert.deepEqual(prefs, { tab: 'nodes', nodeMode: 'detail', archived: true, otherStates: true, autoRelay: false, injectInstructions: false })
 })
 
 test('sections that cannot be read fall back to the factory ones, the rest read through', () => {
@@ -81,7 +78,7 @@ test('sections that cannot be read fall back to the factory ones, the rest read 
   assert.deepEqual(prefsFromSection({}), DEFAULT_PREFS)
   assert.equal(prefsFromSection({}).tab, 'overview')
   /* A page recorded earlier reads back as itself, the overview among them. */
-  assert.equal(prefsFromSection({ lastTab: 'detail' }).tab, 'detail')
+  assert.equal(prefsFromSection({ lastTab: 'nodes' }).tab, 'nodes')
   assert.equal(prefsFromSection({ lastTab: 'overview' }).tab, 'overview')
   /* The downgrade road, guarded: a word no view answers to is unreadable and
    * the panel lands on the overview. The sample may be renamed; this
@@ -89,7 +86,7 @@ test('sections that cannot be read fall back to the factory ones, the rest read 
   assert.equal(prefsFromSection({ lastTab: 'nope' }).tab, 'overview')
   /* Stored records may still hold words written by older versions: unrecognized ones each fall back, the rest read through. */
   assert.deepEqual(
-    prefsFromSection({ lastTab: 'nope', showArchived: 'yes', sideWidth: 'wide' }),
+    prefsFromSection({ lastTab: 'nope', showArchived: 'yes', nodeMode: 'grid' }),
     DEFAULT_PREFS,
   )
   /* A key this version has no field for is dead weight in an old document: it
@@ -98,7 +95,7 @@ test('sections that cannot be read fall back to the factory ones, the rest read 
   assert.deepEqual(prefsFromSection({ defaultTab: 'map' }), DEFAULT_PREFS)
   assert.deepEqual(
     prefsFromSection({ lastTab: 'issue', showArchived: 1, showOtherStates: 0 }),
-    { sideWidth: DEFAULT_PREFS.sideWidth, tab: 'issue', archived: false, otherStates: false, autoRelay: true, injectInstructions: true },
+    { tab: 'issue', nodeMode: DEFAULT_PREFS.nodeMode, archived: false, otherStates: false, autoRelay: true, injectInstructions: true },
   )
   /* The relay switch reads `false` when the document says false; a value that is not a boolean
      (an older document, a hand edit) falls back to the factory default, which is on. */
@@ -113,27 +110,32 @@ test('sections that cannot be read fall back to the factory ones, the rest read 
   assert.deepEqual(prefsFromSection({ infoLevel: 'lean' }), DEFAULT_PREFS)
 })
 
-test('width clamps into its bounds: out of range comes back in, unmeasurable uses the factory one', () => {
-  assert.equal(clampSide(SIDE_MIN - 1), SIDE_MIN)
-  assert.equal(clampSide(SIDE_MAX + 1), SIDE_MAX)
-  assert.equal(clampSide(SIDE_DEFAULT), SIDE_DEFAULT)
-  assert.equal(clampSide(SIDE_DEFAULT + 0.4), SIDE_DEFAULT)
-  assert.equal(prefsFromSection({ sideWidth: SIDE_MAX + 500 }).sideWidth, SIDE_MAX)
-  assert.equal(prefsFromSection({ sideWidth: SIDE_MIN - 500 }).sideWidth, SIDE_MIN)
-  assert.equal(prefsFromSection({ sideWidth: Number.NaN }).sideWidth, SIDE_DEFAULT)
-  assert.equal(prefsFromSection({ sideWidth: Number.POSITIVE_INFINITY }).sideWidth, SIDE_DEFAULT)
+test('the two views that became one page: an old document still lands where the reader left off', () => {
+  /* The map and the list were tabs of their own before they were one page's two drawings. A
+   * document that remembers one of them as the tab it was left on reads as that page — and the
+   * drawing they were reading rides along, so nothing about the pick is lost. */
+  assert.equal(prefsFromSection({ lastTab: 'map' }).tab, 'nodes')
+  assert.equal(prefsFromSection({ lastTab: 'map' }).nodeMode, 'map')
+  assert.equal(prefsFromSection({ lastTab: 'detail' }).tab, 'nodes')
+  assert.equal(prefsFromSection({ lastTab: 'detail' }).nodeMode, 'detail')
+  /* The drawing the document states itself leads the old word: a document that names both was
+   * written by this version, and its own field is the newer fact. */
+  assert.equal(prefsFromSection({ lastTab: 'detail', nodeMode: 'map' }).nodeMode, 'map')
+  /* No such word anywhere: the page's own default, and the overview's. */
+  assert.equal(prefsFromSection({}).nodeMode, 'map')
+  assert.equal(prefsFromSection({ nodeMode: 'grid' }).nodeMode, 'map')
 })
 
 test('the write is one top-level set, its path the field table\'s own word', () => {
-  assert.deepEqual(prefsWriteOp(PANEL_PREF_FIELDS.lastTab, 'map'), {
+  assert.deepEqual(prefsWriteOp(PANEL_PREF_FIELDS.lastTab, 'nodes'), {
     op: 'set',
     path: ['lastTab'],
-    value: 'map',
+    value: 'nodes',
   })
-  assert.deepEqual(prefsWriteOp(PANEL_PREF_FIELDS.sideWidth, 216), {
+  assert.deepEqual(prefsWriteOp(PANEL_PREF_FIELDS.nodeMode, 'detail'), {
     op: 'set',
-    path: ['sideWidth'],
-    value: 216,
+    path: ['nodeMode'],
+    value: 'detail',
   })
   /* A fresh object per call: callers mutating it must not leak elsewhere. */
   assert.notEqual(prefsWriteOp(PANEL_PREF_FIELDS.showArchived, true), prefsWriteOp(PANEL_PREF_FIELDS.showArchived, true))
@@ -148,15 +150,15 @@ test('the settings service has not arrived: the factory values, and the write do
     writable: false,
     refused: false,
   })
-  assert.equal(await source.write(PANEL_PREF_FIELDS.lastTab, 'detail'), false)
+  assert.equal(await source.write(PANEL_PREF_FIELDS.lastTab, 'nodes'), false)
 })
 
 test('once the form is attached the reading is that section, revision and all', () => {
-  const form = fakeForm({ sideWidth: 300, lastTab: 'issue', showArchived: true })
+  const form = fakeForm({ nodeMode: 'detail', lastTab: 'issue', showArchived: true })
   const source = createPrefsSource()
   source.attach(form)
   const snapshot = source.getSnapshot()
-  assert.deepEqual(snapshot.prefs, { sideWidth: 300, tab: 'issue', archived: true, otherStates: false, autoRelay: true, injectInstructions: true })
+  assert.deepEqual(snapshot.prefs, { tab: 'issue', nodeMode: 'detail', archived: true, otherStates: false, autoRelay: true, injectInstructions: true })
   assert.equal(snapshot.status, 'ready')
   assert.equal(snapshot.revision, 1)
   assert.equal(snapshot.writable, true)
@@ -167,9 +169,9 @@ test('the write carries the revision it read; the second carries the latest one'
   const source = createPrefsSource()
   source.attach(form)
 
-  assert.equal(await source.write(PANEL_PREF_FIELDS.lastTab, 'detail'), true)
+  assert.equal(await source.write(PANEL_PREF_FIELDS.lastTab, 'nodes'), true)
   assert.deepEqual(form.writes[0], {
-    ops: [{ op: 'set', path: ['lastTab'], value: 'detail' }],
+    ops: [{ op: 'set', path: ['lastTab'], value: 'nodes' }],
     expected: 1,
   })
   assert.equal(source.getSnapshot().revision, 2)
@@ -246,11 +248,11 @@ test('a row flipped elsewhere: subscribers get the new reading at once', () => {
 })
 
 test('a form swapped or taken back: the reading follows, and taking it back returns to the factory values', () => {
-  const first = fakeForm({ lastTab: 'detail' })
+  const first = fakeForm({ lastTab: 'nodes' })
   const second = fakeForm({ lastTab: 'notes', showOtherStates: true })
   const source = createPrefsSource()
   const off = source.attach(first)
-  assert.equal(source.getSnapshot().prefs.tab, 'detail')
+  assert.equal(source.getSnapshot().prefs.tab, 'nodes')
 
   source.attach(second)
   assert.equal(source.getSnapshot().prefs.tab, 'notes')
@@ -309,15 +311,17 @@ test('the host schema: kinds, factory defaults and bounds are the field table\'s
     return { kind: node.kind, defaults: node.defaults, extra: node.extra }
   }
 
-  assert.deepEqual(read(PANEL_PREF_FIELDS.sideWidth), {
-    kind: 'number',
-    defaults: [PANEL_PREF_DEFAULTS.sideWidth],
-    extra: { min: SIDE_MIN, max: SIDE_MAX },
-  })
   assert.deepEqual(read(PANEL_PREF_FIELDS.lastTab), {
     kind: 'union',
     defaults: [PANEL_PREF_DEFAULTS.lastTab],
     extra: { values: [...VIEW_IDS] },
+  })
+  /* The node page's two drawings: the tab's own kind of memory, so the same shape — a union over
+   * the table's own list, and nothing about it in this file. */
+  assert.deepEqual(read(PANEL_PREF_FIELDS.nodeMode), {
+    kind: 'union',
+    defaults: [PANEL_PREF_DEFAULTS.nodeMode],
+    extra: { values: [...NODE_MODES] },
   })
   assert.deepEqual(read(PANEL_PREF_FIELDS.showArchived), {
     kind: 'boolean',

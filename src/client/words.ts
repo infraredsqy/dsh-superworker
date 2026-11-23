@@ -15,10 +15,8 @@
 import type { Translate } from './locale.ts'
 import type { Failure, FailureCode } from './failure.ts'
 import type { WordKey } from './locales/index.ts'
-import { clock, dayParts, elapsedParts, everySourceIs, lineStateOf } from '../model/index.ts'
+import { clock, dayParts, elapsedParts, everySourceIs } from '../model/index.ts'
 import type {
-  CycleReading,
-  CycleState,
   DayParts,
   DepsReading,
   ElapsedParts,
@@ -93,18 +91,6 @@ export function otherStatesWord(t: Translate, pool: PoolReading): string {
   return (['acknowledged', 'rejected', 'resolved'] as const)
     .map((key) => `${issueWord(t, key)} ${String(pool.census[key])}`)
     .join(' · ')
-}
-
-/** What each of the three line states reads as. */
-const LINE_WORDS: Readonly<Record<CycleState, WordKey>> = {
-  blocked: 'cycle.blocked',
-  run: 'cycle.running',
-  stopped: 'cycle.stopped',
-}
-
-/** A line's own state, in words: owing someone reads as blocked, then running or stopped. */
-export function stateWord(t: Translate, cycle: CycleReading): string {
-  return t(LINE_WORDS[lineStateOf(cycle)])
 }
 
 /**

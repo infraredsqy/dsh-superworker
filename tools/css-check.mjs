@@ -572,7 +572,6 @@ const MARKS = [
   { what: 'detail row mark · running', where: '.superworker-row .superworker-state.is-run', decl: '.superworker-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-base', tier: null },
   { what: 'map card · running', where: '.superworker-mnode .superworker-state.is-run', decl: '.superworker-state.is-run', property: 'color', ink: 'var(--dsw-alias-link)', ground: '--dsw-alias-bg-layer-2', tier: null },
   { what: 'issue pool mark · open', where: '.superworker-cell.is-open', property: 'box-shadow', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-base', tier: null },
-  { what: 'line mark · blocked node', where: '.superworker-linemark.is-blocked::before', property: 'background', ink: 'var(--dsw-alias-state-warn-primary)', ground: '--dsw-alias-bg-base', tier: null },
   /* The delete dialog's alert zone: the bar is the mark, and the layer the dialog
    * itself stands on is its ground — the amber tint under the sentence is 8%, so the
    * bar reads against that layer and the check can keep saying so. */

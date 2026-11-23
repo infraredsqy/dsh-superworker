@@ -72,6 +72,26 @@ export function belongsTo(node: NodeReading, cycleId: string): boolean {
 }
 
 /**
+ * Which line to name when a session is opened for this cell: the last line that walked it.
+ *
+ * The port's call carries a line and a cell, and for a cell that may start there is nothing else to
+ * read the line off: a ready cell is held by nobody (`heldBy` is empty by definition, which is
+ * one of its three conditions), and a dispatch prompt lands at `<launch>/<line>/<cell>/` — the record
+ * keeps no index pointing from a cell back to its lines. So the line that left this cell standing
+ * here is the one a fresh round belongs to.
+ *
+ * `null` when no line has ever touched the cell: there is no line to open the session under, and the
+ * panel draws no action rather than guessing one.
+ *
+ * Only this cell's own record is read. A line's `active` flag says whether the line is in service,
+ * which is a different question — the panel answers the one it was asked.
+ */
+export function dispatchCycleOf(node: NodeReading): string | null {
+  const last = node.cycleIds[node.cycleIds.length - 1]
+  return last ?? null
+}
+
+/**
  * A line's own state, in one word: owing a person (it parked a cell), in service, or stopped.
  *
  * Both the word the rail and the detail print and the class the line's mark wears come from this
@@ -98,15 +118,21 @@ export function everySourceIs(reading: SuperworkerReading, state: SuperworkerSou
 }
 
 /**
- * Which nodes a cycle's own detail section collects: those it walked through,
- * and those it is holding right now.
+ * Which nodes a scope's own detail section collects: those it walked through,
+ * and those it is holding right now — or, for the whole-workspace scope, every
+ * node in that section.
+ *
+ * The scope is a filter and nothing else, so the unfiltered case is the same
+ * expression with nothing taken out rather than a second list of its own: the
+ * map and the list answer "which cells are in scope" once, here.
  *
  * The completed section sorts newest completion first — reading top to
  * bottom, the reader goes from just-finished to finished long ago.
+ * @param cycle - The line to collect for; `null` for the whole workspace.
  */
-export function nodesOf(key: DetailGroupKey, cycle: CycleReading, project: ProjectReading): readonly NodeReading[] {
+export function nodesOf(key: DetailGroupKey, cycle: CycleReading | null, project: ProjectReading): readonly NodeReading[] {
   const mine = (list: readonly NodeReading[]): readonly NodeReading[] =>
-    list.filter((node) => belongsTo(node, cycle.id))
+    cycle === null ? list : list.filter((node) => belongsTo(node, cycle.id))
   if (key === 'shelved') return mine(project.columns.shelved)
   if (key === 'run') return mine(project.columns.running)
   if (key === 'ready') return mine(project.columns.ready)

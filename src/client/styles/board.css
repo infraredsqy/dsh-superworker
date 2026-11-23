@@ -1,0 +1,36 @@
+/* dsh-superworker · the node board — one reading, two drawings, and the band over both.
+ *
+ * The band is this page's own row: which cells are in scope, and which drawing stands in front. It
+ * takes the hairline the issue page's band also wears (that page's rule is its own, in
+ * `register.css`), so a page's body starts under one line. The two controls in it are the panel's
+ * own objects — the picker `tokens.css` states once, and the segmented control the issue page uses —
+ * so what stands here is only where they sit and how far apart. */
+
+.superworker-page .superworker-board {
+  overflow: hidden;
+}
+
+.superworker-page .superworker-board .superworker-band {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+/* The scope control is the workspace selector's own object; it takes a floor on its width so that a
+ * short line id does not leave the field narrower than the caret it wears. */
+.superworker-page .superworker-board .superworker-pick select {
+  min-width: 128px;
+}
+
+/* This control stands on the page's own left edge, and the stage around it clips what overflows
+ * (a box that scrolls one way has visible overflow on the other axis computed to auto). A ring
+ * drawn outside the control loses its left stroke against that edge and the field reads as cut —
+ * so the ring is drawn inside, which is how the segmented control beside it already draws its own.
+ * `:focus` rather than `:focus-visible`: which of the two carries the host's ring, the host decides,
+ * and an offset with no outline draws nothing. */
+.superworker-page .superworker-board .superworker-pick select:focus {
+  outline-offset: -2px;
+}

@@ -1,60 +1,34 @@
 /**
- * Reading widgets shared by the detail rows, the instruction book, the map's cards, and the two line
- * columns: a state mark, a line's own mark, and a dependency line.
+ * Reading widgets shared by the list's rows, the instruction book, and the map's cards: a state
+ * mark and a dependency line.
  *
- * These readings exist only once: the state mark on the map's cards and on detail rows is the same
- * one, a line's mark is the same cell in the map's rail and in the detail pane's column, and the
- * dependency line wears the same face — each cell just passes its own cell and moment. The words
- * themselves (a gate's hint, a moment's day, a line's state) are spelled in `words.ts`.
+ * These readings exist only once: the state mark on the map's cards and on the list's rows is the
+ * same one, and the dependency line wears the same face in both — each cell just passes its own
+ * cell and moment. The words themselves (a gate's hint, a moment's day, how long a step has run)
+ * are spelled in `words.ts`.
  */
 import * as React from 'react'
-import type { CycleReading, CycleState, NodeReading } from '../model/index.ts'
-import { bucketOf, lineStateOf, readDeps } from '../model/index.ts'
+import type { NodeReading } from '../model/index.ts'
+import { bucketOf, readDeps } from '../model/index.ts'
 import type { Translate } from './locale.ts'
 import { useT } from './locale.ts'
-import { depsSentence, elapsedOf, gateTitle, stateWord, strandedTitle } from './words.ts'
-
-/**
- * What each line state wears on the mark: the same answer that spells the hover sentence
- * ({@link stateWord}), so the spinner and the word cannot disagree.
- */
-const LINE_CLASSES: Readonly<Record<CycleState, string>> = {
-  blocked: 'is-blocked',
-  run: 'is-run',
-  stopped: '',
-}
+import { depsSentence, elapsedOf, gateTitle, strandedTitle } from './words.ts'
 
 /**
  * What the running ring says: how long this step has been open, or just "in hand" when the line
  * claimed a step that has not opened yet. One sentence, because the ring is one drawing — the
- * detail rows and the map's own card both stand it up.
+ * list's rows and the map's own card both stand it up.
  */
 export function runningTitle(t: Translate, node: NodeReading): string {
   return node.elapsedSeconds === null ? t('state.running') : t('marks.running.elapsed', { elapsed: elapsedOf(t, node.elapsedSeconds) })
 }
 
 /**
- * A line's own mark, the cell left of a line name: parked and idle when stopped, spinning while
- * running, drawn as blocked when it owes waiting nodes.
- *
- * The two left columns stand this one drawing up, so a line reads the same on the map's rail and in
- * the detail pane's column — whichever workspace the panel has open, this is the line's own state in
- * the record rather than a reading of the page.
- */
-export function LineMark(props: { readonly cycle: CycleReading }): React.ReactElement {
-  const t = useT()
-  const { cycle } = props
-  const cls = LINE_CLASSES[lineStateOf(cycle)]
-  return <span className={`superworker-linemark ${cls}`.trim()} title={stateWord(t, cycle)} />
-}
-
-/**
  * The three verdict glyphs, each path drawn once and shared: the check for work handed in, the two
  * bars for a word owed to a person, and the failed circle for a break. The stroke and the size are
- * the caller's — the detail rows stand them small and heavy ({@link StateMark}), the overview's
- * seal large and light, its fault lines light — so one module is what makes the detail rows'
- * mark and the overview's the same one, and what keeps the two files' drawings from drifting apart
- * again.
+ * the caller's — the list's rows stand them small and heavy ({@link StateMark}), the overview's
+ * seal large and light, its fault lines light — so one module is what makes the list's mark and
+ * the overview's the same one, and what keeps the two files' drawings from drifting apart again.
  */
 export function CheckGlyph(props: { readonly stroke: number; readonly size?: number | undefined }): React.ReactElement {
   return (
@@ -85,9 +59,9 @@ export function FaultGlyph(props: { readonly stroke: number; readonly size?: num
 }
 
 /**
- * State mark: the model's one bucket, drawn. A detail row that wants a person (a gate, or the
- * shelved verdict, which is its own gate) takes the pause mark; the line's hold takes the spinner;
- * the row's own state draws the rest. Nothing here judges the record again. A stranded dispatch
+ * State mark: the model's one bucket, drawn. A row that wants a person (a gate, or the shelved
+ * verdict, which is its own gate) takes the pause mark; the line's hold takes the spinner; the
+ * row's own state draws the rest. Nothing here judges the record again. A stranded dispatch
  * outranks the bucket — the round is out and nothing is moving it, which is a wait no other
  * reading can say.
  */

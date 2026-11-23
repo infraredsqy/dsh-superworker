@@ -1,17 +1,19 @@
 /**
- * The map: one page that answers "who owes whom" and "which card to look at now", on one drawing.
+ * The map: one drawing that answers "who owes whom" and "which card to look at now", on one drawing.
  *
- * The reading comes in from the shell; this file holds only what a reader does with it — which line
- * to search under (the rail), which card is in focus, and where the camera stands. The placement and
- * the camera arithmetic live in `map-layout.ts`, so what stands here is the interaction: a wheel —
- * or two fingers pinched — zooms, a drag pans, a press on a card moves the focus, and a press on the
- * card already in focus goes to that card's session.
+ * The reading comes in from the shell; this file holds only what a reader does with it — which card
+ * is in focus, and where the camera stands. Which cells are in scope is the pane's question and
+ * arrives as a prop: the scope is a filter, and the same answer is handed to the list, so the two
+ * drawings are two projections of one set of cells and never two readings. The placement and the
+ * camera arithmetic live in `map-layout.ts`, so what stands here is the interaction: a wheel — or two
+ * fingers pinched — zooms, a drag pans, a press on a card moves the focus, and a press on the card
+ * already in focus goes to that card's session.
  *
  * Nothing here computes a reading: a rank, a lit set and a gate word are all read from the model and
  * from `map-layout.ts`.
  */
 import * as React from 'react'
-import type { CycleReading, NodeReading, ProjectReading } from '../model/index.ts'
+import type { NodeReading, ProjectReading } from '../model/index.ts'
 import { belongsTo, bucketOf, ownersOf } from '../model/index.ts'
 import { useT } from './locale.ts'
 import type { Translate } from './locale.ts'
@@ -32,10 +34,9 @@ import {
   type Size,
   type View,
 } from './map-layout.ts'
-import { LineMark, runningTitle, StrandedMark } from './marks.tsx'
+import { runningTitle, StrandedMark } from './marks.tsx'
 import { nodeHover, nodeName } from './nodes.ts'
-import { gateWord, stateWord, timeOf } from './words.ts'
-import { PaneFrame } from './widgets.tsx'
+import { gateWord, timeOf } from './words.ts'
 
 /** The ruler used when the viewport cannot be measured: a hidden pane measures 0, and a reading never comes out as 0. */
 const FALLBACK: Size = { w: 1280, h: 720 }
@@ -56,23 +57,34 @@ function settleAt(t: number): number {
   return 1 + left * left * (2 * left + 1)
 }
 
-/** What one press on a card may do: `targetOf` says where it goes, `open` takes it there. */
-export interface CardGo {
+/** What one press on a cell may do: `targetOf` says where it goes, `open` takes it there. */
+export interface NodeGo {
   targetOf(node: NodeReading): string | null
   open(target: string): void
 }
 
 type Mode = 'fit' | 'focus' | 'free'
 
-export function MapPane(props: {
+/**
+ * The drawing itself, without the frame it stands in: the pane shell, the band and the switch
+ * between the two drawings are the pane's (`board.tsx`).
+ * @param props - Whether this drawing is the one on screen (a hidden pane measures nothing, and a
+ *   drawing measured at zero puts its whole canvas at the origin), whether it is mounted but behind
+ *   the other drawing, the reading, where a card's press goes, the stranded claims, the refresh, and
+ *   the scope the drawing is filtered to.
+ */
+export function MapBody(props: {
   readonly active: boolean
-  readonly noNodes: boolean
+  /** Mounted but not the drawing in front: it keeps its camera, and draws nothing. */
+  readonly hidden: boolean
   readonly project: ProjectReading | null
-  readonly go: CardGo | null
+  readonly go: NodeGo | null
   /** The stranded dispatches, by node id: the line each cell's claim belongs to. */
   readonly stranded: Readonly<Record<string, string>>
   /** Read the record again: the page's own reading is fixed until this lands. */
   readonly onRefresh: () => void
+  /** The cells in scope: a line's id, or `null` for the whole workspace. */
+  readonly scope: string | null
 }): React.ReactElement {
   const t = useT()
   const field = React.useRef<HTMLDivElement | null>(null)
@@ -106,30 +118,40 @@ export function MapPane(props: {
   /* Whether a drag is in flight: only the cursor changes, so the reader knows the page is moving
    * under the pointer rather than the drawing having jumped. */
   const [grabbing, setGrabbing] = React.useState(false)
-  const [scope, setScope] = React.useState<string | null>(null)
   const [focusId, setFocusId] = React.useState<string | null>(null)
 
-  const nodes = props.project?.nodes ?? []
+  const scope = props.scope
+  /* The drawn cells: the scope is a filter, so a scoped drawing is this one with the other lines'
+   * cards taken out — the same set the list is given, off the same reading. */
+  const nodes = React.useMemo(() => {
+    const all = props.project?.nodes ?? []
+    return scope === null ? all : all.filter((node) => belongsTo(node, scope))
+  }, [props.project, scope])
   const edges = props.project?.graph.edges ?? []
   const head = React.useMemo(() => rankedOf(nodes)[0]?.id ?? null, [nodes])
-  /* A scope the record no longer has (the line was deleted elsewhere) reads as the whole workspace
-     rather than as nothing: the rail simply no longer offers it. */
-  const liveScope = props.project !== null && props.project.cycles.some((cycle) => cycle.id === scope) ? scope : null
 
-  /* The focus follows the record: on the first read it lands on the head, and when the card in focus
-     is no longer in the record it lands there again. A refresh that still holds the focused card
-     leaves the camera exactly where the reader put it. */
+  /* The focus follows the drawing and the record: a card that is no longer drawn hands the focus to
+   * the first card of what is left, and a scope the reader picked in the band moves it there and
+   * stands the camera on it — the same answer a press on the old rail's row gave. A refresh that
+   * still holds the focused card leaves the camera exactly where the reader put it. */
+  const drawnScope = React.useRef<string | null>(scope)
   React.useLayoutEffect(() => {
+    const moved = drawnScope.current !== scope
+    drawnScope.current = scope
+    if (moved) {
+      setFocusId(head)
+      setMode('focus')
+      return
+    }
     if (focusId !== null && nodes.some((node) => node.id === focusId)) return
     setFocusId(head)
-    setScope(null)
-  }, [nodes, focusId, head])
+  }, [scope, nodes, focusId, head])
 
   const placement = React.useMemo(
     () => place({ nodes, edges, cap: CAP, focus: focusId }),
     [nodes, edges, focusId],
   )
-  const emphasis = React.useMemo(() => emphasisOf(placement, focusId, liveScope), [placement, focusId, liveScope])
+  const emphasis = React.useMemo(() => emphasisOf(placement, focusId, scope), [placement, focusId, scope])
 
   const commit = React.useCallback((next: View): void => {
     view.current = next
@@ -464,20 +486,6 @@ export function MapPane(props: {
     if (target !== null) props.go?.open(target)
   }
 
-  /* Pressing a row picks the scope to search under and, with it, the card to stand on: the row's own
-   * default — the card the triage puts first inside that scope. This is also the page's way back, so
-   * it sets the mode outright: a camera the reader had dragged or zoomed off the focus comes back to
-   * that scope's first card, and no reset button of its own is needed. */
-  const pickScope = (id: string | null): void => {
-    setScope(id)
-    /* Which cards belong to a line is the model's one answer (`belongsTo`), the same one the detail's
-     * sections and the ink are read from. */
-    const pool = id === null ? nodes : nodes.filter((node) => belongsTo(node, id))
-    const next = rankedOf(pool)[0]?.id ?? head
-    setFocusId(next)
-    setMode('focus')
-  }
-
   const lod = lodOf(camera.s)
   const canvasStyle: React.CSSProperties = {
     width: `${String(placement.width)}px`,
@@ -487,141 +495,100 @@ export function MapPane(props: {
   }
 
   return (
-    <PaneFrame id="map" active={props.active} noNodes={props.noNodes} className="superworker-map-pane">
+    <div
+      className="superworker-map"
+      hidden={props.hidden}
+      style={{ ['--card-w' as string]: `${String(CARD_W)}px`, ['--card-h' as string]: `${String(CARD_H)}px` }}
+    >
       <div
-        className="superworker-map"
-        style={{ ['--card-w' as string]: `${String(CARD_W)}px`, ['--card-h' as string]: `${String(CARD_H)}px` }}
+        className={`superworker-field is-lod-${lod}${grabbing ? ' is-panning' : ''}${scope === null ? '' : ' is-scoped'}`}
+        ref={field}
+        role="region"
+        aria-label={t('map.region.aria')}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
+        onPointerLeave={onPointerEnd}
       >
-        <aside className="superworker-rail" role="group" aria-label={t('map.scope.aria')}>
-          <RailItem label={t('common.global')} cycle={null} pressed={liveScope === null} onPress={() => pickScope(null)} />
-          {(props.project?.cycles ?? []).map((cycle) => (
-            <RailItem
-              key={cycle.id}
-              label={cycle.id}
-              cycle={cycle}
-              pressed={liveScope === cycle.id}
-              /* A line that has touched nothing in this workspace is greyed out and holds no press:
-                 the row itself is the reading — this line has done nothing here. */
-              disabled={!nodes.some((node) => belongsTo(node, cycle.id))}
-              onPress={() => pickScope(cycle.id)}
-            />
-          ))}
-        </aside>
-
-        <div
-          className={`superworker-field is-lod-${lod}${grabbing ? ' is-panning' : ''}${liveScope === null ? '' : ' is-scoped'}`}
-          ref={field}
-          role="region"
-          aria-label={t('map.region.aria')}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerEnd}
-          onPointerCancel={onPointerEnd}
-          onPointerLeave={onPointerEnd}
-        >
-          <div className="superworker-canvas" style={canvasStyle}>
-            <svg className="superworker-wires" width={placement.width} height={placement.height} aria-hidden="true">
-              <g>
-                {edges
-                  .filter((edge) => placement.pos[edge.from] !== undefined && placement.pos[edge.to] !== undefined)
-                  .map((edge) => (
-                    <path
-                      key={`${edge.from}:${edge.to}`}
-                      className={`superworker-mwire${emphasis.lit.has(edge.from) && emphasis.lit.has(edge.to) ? ' is-lit' : ''}`}
-                      data-from={edge.from}
-                      data-to={edge.to}
-                      d={wirePath(placement.pos[edge.from] as { x: number; y: number }, placement.pos[edge.to] as { x: number; y: number })}
-                    />
-                  ))}
-              </g>
-            </svg>
-            <div className="superworker-mnodes">
-              {placement.drawn.map((node) => {
-                const at = placement.pos[node.id]
-                /* A placed card is a card the record placed: `drawn` is empty when no record is
-                 * under the pane, so the reading's own moment is always in hand here — the render's
-                 * own clock is never a stand-in for it. */
-                const project = props.project
-                if (at === undefined || project === null) return null
-                return (
-                  <Card
-                    key={node.id}
-                    node={node}
-                    point={at}
-                    lit={emphasis.lit.has(node.id)}
-                    ahead={emphasis.ahead.has(node.id)}
-                    focused={node.id === focusId}
-                    go={props.go}
-                    at={project.at}
-                    t={t}
-                    dead={props.stranded[node.id] ?? null}
-                    onPress={() => press(node)}
+        <div className="superworker-canvas" style={canvasStyle}>
+          <svg className="superworker-wires" width={placement.width} height={placement.height} aria-hidden="true">
+            <g>
+              {edges
+                .filter((edge) => placement.pos[edge.from] !== undefined && placement.pos[edge.to] !== undefined)
+                .map((edge) => (
+                  <path
+                    key={`${edge.from}:${edge.to}`}
+                    className={`superworker-mwire${emphasis.lit.has(edge.from) && emphasis.lit.has(edge.to) ? ' is-lit' : ''}`}
+                    data-from={edge.from}
+                    data-to={edge.to}
+                    d={wirePath(placement.pos[edge.from] as { x: number; y: number }, placement.pos[edge.to] as { x: number; y: number })}
                   />
-                )
-              })}
-            </div>
-          </div>
-
-          <div className="superworker-tools">
-            <button
-              type="button"
-              className="superworker-tool"
-              id="map-fit"
-              aria-pressed={mode === 'fit'}
-              aria-label={t('map.overview.aria')}
-              title={t('map.overview.aria')}
-              onClick={() => setMode(mode === 'fit' ? 'focus' : 'fit')}
-            >
-              <svg viewBox="0 0 15 15" aria-hidden="true">
-                <circle cx="6.6" cy="6.6" r="4.1" />
-                <path d="M9.7 9.7 L13.2 13.2" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              className="superworker-tool"
-              id="map-refresh"
-              aria-label={t('map.refresh.aria')}
-              title={t('map.refresh.aria')}
-              onClick={props.onRefresh}
-            >
-              <svg viewBox="0 0 15 15" aria-hidden="true">
-                <path d="M2.8 7.6a4.8 4.8 0 1 1 1.5 3.4" />
-                <path d="M2.8 3.6v4h4" />
-              </svg>
-            </button>
+                ))}
+            </g>
+          </svg>
+          <div className="superworker-mnodes">
+            {placement.drawn.map((node) => {
+              const at = placement.pos[node.id]
+              /* A placed card is a card the record placed: `drawn` is empty when no record is
+               * under the pane, so the reading's own moment is always in hand here — the render's
+               * own clock is never a stand-in for it. */
+              const project = props.project
+              if (at === undefined || project === null) return null
+              return (
+                <Card
+                  key={node.id}
+                  node={node}
+                  point={at}
+                  lit={emphasis.lit.has(node.id)}
+                  ahead={emphasis.ahead.has(node.id)}
+                  focused={node.id === focusId}
+                  go={props.go}
+                  at={project.at}
+                  t={t}
+                  /* The line each card belongs to is printed only when the drawing holds every line:
+                   * under one scope it is the same word on every card — which the scope control has
+                   * already said. */
+                  tag={scope !== null}
+                  dead={props.stranded[node.id] ?? null}
+                  onPress={() => press(node)}
+                />
+              )
+            })}
           </div>
         </div>
-      </div>
-    </PaneFrame>
-  )
-}
 
-/** One row of the rail: a scope to search under, greyed out when this workspace holds nothing for it. */
-function RailItem(props: {
-  readonly label: string
-  /** The line this row stands for; the whole-workspace row has none, and draws no mark. */
-  readonly cycle: CycleReading | null
-  readonly pressed: boolean
-  readonly disabled?: boolean | undefined
-  readonly onPress: () => void
-}): React.ReactElement {
-  const t = useT()
-  return (
-    <button
-      type="button"
-      className="superworker-rail-item"
-      aria-pressed={props.pressed}
-      aria-label={props.cycle === null ? props.label : `${props.label} · ${stateWord(t, props.cycle)}`}
-      disabled={props.disabled === true}
-      onClick={props.onPress}
-    >
-      {/* Every row holds the mark's cell open, drawing in it or not: that is what puts this column's
-          names on the same edge as the detail pane's. The whole-workspace row reads no line, so its
-          cell stands empty. */}
-      {props.cycle === null ? <span className="superworker-linemark" /> : <LineMark cycle={props.cycle} />}
-      <span className="superworker-cycle">{props.label}</span>
-    </button>
+        <div className="superworker-tools">
+          <button
+            type="button"
+            className="superworker-tool"
+            id="map-fit"
+            aria-pressed={mode === 'fit'}
+            aria-label={t('map.overview.aria')}
+            title={t('map.overview.aria')}
+            onClick={() => setMode(mode === 'fit' ? 'focus' : 'fit')}
+          >
+            <svg viewBox="0 0 15 15" aria-hidden="true">
+              <circle cx="6.6" cy="6.6" r="4.1" />
+              <path d="M9.7 9.7 L13.2 13.2" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="superworker-tool"
+            id="map-refresh"
+            aria-label={t('map.refresh.aria')}
+            title={t('map.refresh.aria')}
+            onClick={props.onRefresh}
+          >
+            <svg viewBox="0 0 15 15" aria-hidden="true">
+              <path d="M2.8 7.6a4.8 4.8 0 1 1 1.5 3.4" />
+              <path d="M2.8 3.6v4h4" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -631,8 +598,9 @@ function RailItem(props: {
  *
  * A card carries two readings at once and they must not borrow each other's paint: the frame says
  * what state the cell is in, the ground and the title's ink say whether this is the card the reader
- * is looking at. Once a line is picked the frame leaves every card outside that line — so the rank
- * between "this line", "no line yet" and "another line" is carried by ground and ink alone.
+ * is looking at. Under one scope the frame leaves every card outside that line — which is a card
+ * the drawing no longer holds, the scope being a filter — so the rank between "in focus" and the
+ * rest is carried by ground and ink alone.
  */
 function Card(props: {
   readonly node: NodeReading
@@ -641,10 +609,12 @@ function Card(props: {
   /** A card in the picked line's future: one step below lit, and never framed. */
   readonly ahead: boolean
   readonly focused: boolean
-  readonly go: CardGo | null
+  readonly go: NodeGo | null
   /** The moment the reading was taken: every stamp on this page is read against it. */
   readonly at: Date
   readonly t: Translate
+  /** Whether this drawing holds every line: only then does a card say which lines it belongs to. */
+  readonly tag: boolean
   /** The line this card's stranded claim belongs to, when the round is out with nothing moving it. */
   readonly dead: string | null
   readonly onPress: () => void
@@ -675,13 +645,15 @@ function Card(props: {
             is happening to this cell right now). The lines' ids follow, in the order the model gives
             them (`ownersOf`: every line that walked this cell, then any line holding it), and a card
             no line has touched renders no id at all rather than an empty one — nothing is drawn for
-            what the record does not have. */}
+            what the record does not have. Under one scope the control beside the drawing has
+            already said which line every card on it belongs to, so the tag would be the same word
+            on every card and is left off. */}
         {node.running
           ? (dead
             ? <StrandedMark cycleId={props.dead} nodeId={node.id} />
             : <span className="superworker-state is-run" title={runningTitle(t, node)} />)
           : null}
-        {owners.length === 0 ? null : <span className="superworker-mtag">{owners.join('·')}</span>}
+        {props.tag || owners.length === 0 ? null : <span className="superworker-mtag">{owners.join('·')}</span>}
         {node.gate === null ? null : <span className="superworker-gate">{gateWord(t, node.gate)}</span>}
         <span className="superworker-mtime superworker-num">{moment === null ? '' : timeOf(t, moment, props.at)}</span>
       </span>

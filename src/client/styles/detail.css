@@ -1,10 +1,14 @@
-/* dsh-superworker · the selected line's node list in the detail pane: three tracks — state mark /
- * title / what this row still owes.
+/* dsh-superworker · the list — the board's second drawing: one row per cell, grouped by what the
+ * cell is doing.
  *
- * The column left of the line name has already said which line; this moment reads which cells are
- * still on the line, who owes prerequisites, and which cell wants a person. Rows and group heads
- * share these tracks; each group carries its own fold, and the number at the group head's right
- * prints only while folded. */
+ * A row is three tracks — the state mark, the title, and everything else the row still has to say —
+ * and the readings stand in one line at the right end: the moment the cell speaks of, the lines it
+ * belongs to, its gate, what it still owes, and the one action a ready cell carries. With the line
+ * column gone nothing stands beside the list, so the title takes the page's own width and those
+ * readings hold the right edge.
+ *
+ * A row whose cell has a conversation this machine holds is a press, and says so on hover and on
+ * focus; a row that has nowhere to go stays quiet and takes no pointer. */
 
 .superworker-page .superworker-row {
   display: grid;
@@ -14,6 +18,18 @@
   padding: 0 8px;
   border-radius: var(--dsw-radius-xs);
   height: var(--superworker-row);
+}
+
+.superworker-page .superworker-row[role='button'] {
+  cursor: pointer;
+}
+
+.superworker-page .superworker-row[role='button']:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.superworker-page .superworker-row:focus-visible {
+  outline-offset: -2px;
 }
 
 .superworker-page .superworker-sec.is-folded .superworker-row {
@@ -36,20 +52,22 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* Everything the row has to say beyond the title: one line, right end, in the order a reader checks
+ * them — the moment first, because it is the one reading every row has. */
 .superworker-page .superworker-rowfigs {
   min-width: 0;
-  text-align: right;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 13px;
   line-height: 20px;
   color: var(--dsw-alias-label-secondary);
   white-space: nowrap;
 }
 
-/* A gated row carries the gate's own word below the title's track: the mark says "this cell wants
-   a person", and the word says which gate. */
-.superworker-page .superworker-rowgate {
-  grid-column: 2 / -1;
-  grid-row: 2;
+.superworker-page .superworker-rowtime {
+  font-size: 11px;
+  color: var(--dsw-alias-label-caption);
 }
 
 /* The number at a group head's right prints only while the group is folded: folded, it is the one
@@ -61,22 +79,22 @@
 }
 
 /* ---- this list's own rhythm -------------------------------------------------
- * The list hands itself both ends: the pane's 8px under the tab rail is not a page's top margin, so
- * without the inset the first section head stands flush against the rail, and the last row would
- * run into the frame's bottom edge with nothing under it.
+ * The list hands itself both ends: the 8px under the band is not a page's top margin, so without the
+ * inset the first section head stands flush against the band, and the last row would run into the
+ * frame's bottom edge with nothing under it.
  *
  * Sections are readings, not rows of one table: each head bars a block of its own, and the air
  * between two of them is what says where one reading stops. Fourteen pixels let the heads run
  * together into a single wall; these numbers hold the blocks apart. */
-.superworker-page .superworker-detail .superworker-scroll {
+.superworker-page .superworker-board .superworker-scroll {
   padding: var(--superworker-detail-top) 0 var(--superworker-detail-foot);
 }
 
-.superworker-page .superworker-detail .superworker-sec + .superworker-sec {
+.superworker-page .superworker-board .superworker-sec + .superworker-sec {
   margin-top: 22px;
 }
 
-.superworker-page .superworker-detail .superworker-rowhead {
+.superworker-page .superworker-board .superworker-rowhead {
   height: 30px;
   margin-bottom: 8px;
 }

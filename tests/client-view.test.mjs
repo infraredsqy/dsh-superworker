@@ -4,11 +4,11 @@
  * pick is *remembered*, not a second authority that can move the screen back. The settings write is
  * a round trip, so its echo lands after the reader may have picked again; the case below holds the
  * round trip open (`deferred` form) and answers it in issue order, which is exactly the moment the
- * panel used to flash back to the view the reader had just left: pick 地图, pick 总览, then the
- * earlier write of 地图 lands — the screen must still be on 总览.
+ * panel used to flash back to the view the reader had just left: pick 概览, pick 当前, then the
+ * earlier write of 概览 lands — the screen must still be on 当前.
  *
- * The second case is the memory itself: after 地图's write lands, a fresh mount reads it back and
- * lands on 地图.
+ * The second case is the memory itself: after 概览's write lands, a fresh mount reads it back and
+ * lands on 概览.
  *
  * Needs `lib/client.js`; run `npm run bundle:client` first, or this file skips itself with the reason.
  *
@@ -72,19 +72,19 @@ test('a write whose echo lands after the reader picked again does not flash the 
   /* The panel comes up on the overview: nothing is recorded yet, and that is the factory landing. */
   assert.equal(shown(container), 'pane-overview', 'with nothing recorded the panel lands on the overview')
 
-  await press('pane-map')
-  assert.equal(shown(container), 'pane-map', 'pressing the map tab shows the map')
+  await press('pane-nodes')
+  assert.equal(shown(container), 'pane-nodes', 'pressing the board tab shows the board')
   assert.equal(form.queued(), 1, 'the pick went out as one write and it is still in flight')
 
   await press('pane-overview')
   assert.equal(shown(container), 'pane-overview', 'pressing the overview tab shows the overview')
   assert.equal(form.queued(), 2, 'the second pick is in flight behind the first')
 
-  /* The map write answers now — it is the echo of the view the reader has already left. */
+  /* The board write answers now — it is the echo of the view the reader has already left. */
   await land(act, form, 1)
   assert.equal(shown(container), 'pane-overview', 'the echo of an earlier pick must not move the view back')
 
-  /* The overview write is fenced on the revision the map write just moved: it is refused, and the
+  /* The overview write is fenced on the revision the board write just moved: it is refused, and the
    * panel answers that with a no-fence retry (the document read-back that follows the refusal is
    * the second place the old view used to come back from). */
   await land(act, form)
@@ -101,14 +101,14 @@ test('the memory still works: the view a reader left is the view a fresh mount l
   const form = fakeSettingsForm({}, { deferred: true })
   const first = await mountBuiltPanel({ record: record(), settingsForm: form })
   await first.act(async () => {
-    tabOf(first.container, 'pane-map').dispatchEvent(new first.window.MouseEvent('click', { bubbles: true }))
+    tabOf(first.container, 'pane-nodes').dispatchEvent(new first.window.MouseEvent('click', { bubbles: true }))
   })
   await land(first.act, form)
-  assert.equal(form.document().lastTab, 'map', 'the pick was written to the settings document')
+  assert.equal(form.document().lastTab, 'nodes', 'the pick was written to the settings document')
   await first.unmount()
 
   const second = await mountBuiltPanel({ record: record(), settingsForm: form })
-  assert.equal(shown(second.container), 'pane-map', 'a fresh mount lands on the view the reader left')
+  assert.equal(shown(second.container), 'pane-nodes', 'a fresh mount lands on the view the reader left')
   await second.unmount()
   assert.deepEqual(second.consoleErrors, [], 'there is an error in the console')
 })

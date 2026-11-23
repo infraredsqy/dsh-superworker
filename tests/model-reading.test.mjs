@@ -11,7 +11,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { belongsTo, bucketOf, everySourceIs, lineStateOf, nodesOf, ownersOf, rankOf, readProject } from '../src/model/index.ts'
+import { belongsTo, bucketOf, dispatchCycleOf, everySourceIs, lineStateOf, nodesOf, ownersOf, rankOf, readProject } from '../src/model/index.ts'
 import { cycle, node, record } from './helpers/record-fixtures.mjs'
 
 function readingWithSources(sources) {
@@ -53,6 +53,61 @@ test('the detail collects cells: ones it walked count, and the one it holds righ
   assert.deepEqual(idsOf('shelved'), [])
   assert.deepEqual(idsOf('ready'), [])
   assert.deepEqual(idsOf('wait'), [])
+})
+
+test('the whole workspace is the same filter with nothing taken out', () => {
+  const reading = readProject(record({
+    nodes: {
+      walked: node({ status: 'completed', completed_at: '2026-03-10T09:00:00.000Z' }),
+      held: node({ dependencies: [] }),
+      untouched: node({ dependencies: [] }),
+      parked: node({ status: 'shelved' }),
+    },
+    cycles: [
+      cycle({
+        holding: [{ id: 'held', since: '2026-03-10T11:00:00.000Z' }],
+        path: [{ node: 'walked', started_at: '2026-03-10T08:00:00.000Z', ended_at: '2026-03-10T09:00:00.000Z', result: 'completed' }],
+      }),
+    ],
+  }))
+  const idsOf = (key) => nodesOf(key, null, reading).map((one) => one.id)
+
+  /* A null scope is the whole workspace: the same sections, with no line's cells filtered out. The
+   * section a cell belongs to is the reading's own answer, not this function's. */
+  assert.deepEqual(idsOf('done'), ['walked'])
+  assert.deepEqual(idsOf('run'), ['held'])
+  assert.deepEqual(idsOf('shelved'), ['parked'])
+  assert.deepEqual(idsOf('ready'), ['untouched'], 'nothing holds this one and it owes nobody: ready')
+  assert.deepEqual(idsOf('wait'), [], 'no cell here is blocked on a prerequisite')
+  /* Every cell of the record stands in exactly one section, whatever the scope. */
+  const seen = ['shelved', 'run', 'ready', 'wait', 'done'].flatMap((key) => idsOf(key))
+  assert.deepEqual(seen.sort(), ['held', 'parked', 'untouched', 'walked'], 'the sections together are the record')
+})
+
+test('which line a session opens under: the last one that walked the cell, never a line flag', () => {
+  const reading = readProject(record({
+    nodes: {
+      walked: node({ status: 'completed', completed_at: '2026-03-10T09:00:00.000Z' }),
+      rerun: node({ status: 'todo', dependencies: [] }),
+      untouched: node({ status: 'todo', dependencies: [] }),
+    },
+    cycles: [
+      cycle({ path: [
+        { node: 'walked', started_at: '2026-03-10T08:00:00.000Z', ended_at: '2026-03-10T09:00:00.000Z', result: 'completed' },
+        { node: 'rerun', started_at: '2026-03-10T08:30:00.000Z', ended_at: '2026-03-10T08:45:00.000Z', result: 'completed' },
+      ] }),
+      /* The second line walked the second cell: it is the one that left the cell where it stands. */
+      cycle({ id: 'c2', path: [{ node: 'rerun', started_at: '2026-03-10T10:00:00.000Z', ended_at: '2026-03-10T10:30:00.000Z', result: 'completed' }] }),
+    ],
+  }))
+
+  assert.equal(dispatchCycleOf(reading.nodeById.walked), 'c1')
+  assert.deepEqual(reading.nodeById.rerun.cycleIds, ['c1', 'c2'], 'the walkers, in record order')
+  assert.equal(dispatchCycleOf(reading.nodeById.rerun), 'c2', 'the last walker, not the first')
+  assert.equal(dispatchCycleOf(reading.nodeById.untouched), null, 'no line has touched it: no line to open under')
+  /* A line's own `active` flag is a different question and is read nowhere here: a cell walked only
+   * by a stopped line still names that line. */
+  assert.equal(reading.nodeById.walked.cycleIds.includes('c2'), false)
 })
 
 test('the detail collects cells: the delivered section puts the newest completion first', () => {

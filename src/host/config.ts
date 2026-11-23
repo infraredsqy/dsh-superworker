@@ -7,10 +7,9 @@
  */
 import type { Schema, Schemastery } from '@deepseek-ai/schemastery'
 import {
+  NODE_MODES,
   PANEL_PREF_DEFAULTS,
   PANEL_PREF_FIELDS,
-  SIDE_MAX,
-  SIDE_MIN,
   VIEW_IDS,
 } from './settings-fields.ts'
 
@@ -40,11 +39,11 @@ export function buildConfig(z: Schemastery): Schema<Record<string, unknown>> {
     return typeof mark === 'function' ? (mark.call(field) as T) : field
   }
   return z.object({
-    [PANEL_PREF_FIELDS.sideWidth]: live(
-      z.number().min(SIDE_MIN).max(SIDE_MAX).default(PANEL_PREF_DEFAULTS.sideWidth),
-    ),
     [PANEL_PREF_FIELDS.lastTab]: live(
       z.union(VIEW_IDS).default(PANEL_PREF_DEFAULTS.lastTab),
+    ),
+    [PANEL_PREF_FIELDS.nodeMode]: live(
+      z.union(NODE_MODES).default(PANEL_PREF_DEFAULTS.nodeMode),
     ),
     [PANEL_PREF_FIELDS.showArchived]: live(
       z.boolean().default(PANEL_PREF_DEFAULTS.showArchived),

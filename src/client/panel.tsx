@@ -1,15 +1,15 @@
 /**
- * The main panel's shell: the six-pane tab row, switching between views, the fetch lines for
+ * The main panel's shell: the five-pane tab row, switching between views, the fetch lines for
  * readings and preferences, and the assembly of each pane.
  *
- * Each pane's own layout is its own document: the map `map.tsx` (with its layout engine in
- * `map-layout.ts`), the overview `overview.tsx` (with its layout in `overview-geom.ts`, the
+ * Each pane's own layout is its own document: the node page `board.tsx` (the band, and the two
+ * drawings it switches between — the map `map.tsx` with its layout engine in `map-layout.ts`, and
+ * the list `detail.tsx`), the overview `overview.tsx` (with its layout in `overview-geom.ts`, the
  * session-event windows in `session-events.ts`, its empty stage in `overview-empty.tsx`, and its
- * standing launch corner in `overview-launch.tsx`), detail
- * `detail.tsx`, instruction book `notes.tsx`, project settings `config.tsx`, and the issue pane
- * `pool.tsx`; the modal is `delete-confirm.tsx`; the legacy-directory notice that replaces the whole
- * stage is `legacy.tsx`; the reading widgets shared by the map, detail, and instruction book are in
- * `marks.tsx`.
+ * standing launch corner in `overview-launch.tsx`), instruction book `notes.tsx`, project settings
+ * `config.tsx`, and the issue pane `pool.tsx`; the modal is `delete-confirm.tsx`; the legacy-directory
+ * notice that replaces the whole stage is `legacy.tsx`; the reading widgets shared by the node page
+ * and the instruction book are in `marks.tsx`.
  *
  * Not a single reading is computed here: the four records arrive through the port, and the pure
  * functions in `src/model` read them into the reading for this moment; this layer only draws it. The
@@ -20,8 +20,8 @@ import * as React from 'react'
 import type { SuperworkerReading } from '../host/contract.ts'
 import type { InstructionReading, OverviewReading, OverviewSnapshot } from '../model/index.ts'
 import { everySourceIs, owedSessions, readBirthplaces, readJudgement, readOverview, readProject, readSessions, strandedCycleOf } from '../model/index.ts'
-import type { PrefField, PrefsSource, ViewId } from './prefs.ts'
-import { clampSide, DEFAULT_SOURCE, PANEL_PREF_FIELDS, VIEW_IDS, VIEW_WORDS } from './prefs.ts'
+import type { NodeMode, PrefField, PrefsSource, ViewId } from './prefs.ts'
+import { DEFAULT_SOURCE, PANEL_PREF_FIELDS, VIEW_IDS, VIEW_WORDS } from './prefs.ts'
 import { useT } from './locale.ts'
 import { failureWord, legacyNoticeWords, overviewEmptySaid, type OverviewEmpty } from './words.ts'
 import type { Outcome } from './failure.ts'
@@ -34,16 +34,16 @@ import { READING_CAPACITY } from './overview-geom.ts'
 import { OverviewPane, type WindowGo } from './overview.tsx'
 import { OverviewEmptyStage } from './overview-empty.tsx'
 import { OverviewLaunch } from './overview-launch.tsx'
-import { MapPane, type CardGo } from './map.tsx'
+import { BoardPane } from './board.tsx'
+import type { NodeGo } from './map.tsx'
 import { ConfigPane } from './config.tsx'
 import { DeleteConfirm } from './delete-confirm.tsx'
-import { DetailPane, pickedCycleOf } from './detail.tsx'
 import { LegacyNotice } from './legacy.tsx'
 import { NotesPane } from './notes.tsx'
 import { IssuePool } from './pool.tsx'
 import { PaneFrame } from './widgets.tsx'
 
-/* The six views, in tab order: the ids are the settings document's own list (VIEW_IDS). Every pane
+/* The five views, in tab order: the ids are the settings document's own list (VIEW_IDS). Every pane
  * fills the stage's footprint; the word on each tab is looked up when the tab row is drawn. */
 const VIEWS = VIEW_IDS
 
@@ -192,7 +192,9 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
    * leads it, and a write echo never moves it back (`useView`). The three below mirror settings
    * rows the settings page also flips, so the document leads those. */
   const [tab, setTab] = useView(stored.tab)
-  const [sideWidth, setSideWidth] = usePreference<number>(stored.sideWidth)
+  /* The node page's two drawings: the settings document leads, like the two switches below, because
+   * nothing but the pane's own control writes it and that control writes it back at once. */
+  const [nodeMode, setNodeMode] = usePreference<NodeMode>(stored.nodeMode)
   const [otherStates, setOtherStates] = usePreference<boolean>(stored.otherStates)
   /* This screen only reads the archived flag — the settings page is where it is flipped — but it
    * takes the same road as the three above: one hook is what every preference this pane reads goes
@@ -231,7 +233,6 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
   const [at, setAt] = React.useState<Date>(() => new Date())
   const [tick, setTick] = React.useState(0)
   const [note, setNote] = React.useState<Note | null>(null)
-  const [lineId, setLineId] = React.useState<string | null>(null)
   const [deleting, setDeleting] = React.useState<InstructionReading | null>(null)
   /* The cell whose open-session write is in flight: that cell's own action stands disabled until
    * the write settles, success or refusal alike — settling a round takes the model minutes, and a
@@ -294,12 +295,12 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     }
   }, [port, sessionId, workspaceRoot, tick, pickedNone])
 
-  /* The click on a card: only when the record's session is on this machine right now does the card
-   * click through. A card is a node, not a session — a node that was never dispatched has no working
-   * session to open, so a press lands on the conversation the node was **born in**, which is the one
+  /* The press on a cell: only when the record's session is on this machine right now does the press
+   * click through. A cell is a node, not a session — a node that was never dispatched has no working
+   * session to open, so the press lands on the conversation the node was **born in**, which is the one
    * place a reader can still see where it came from. Missing either the roster or the navigation
-   * gateway, every card on this screen sits quietly. */
-  const cardGo = React.useMemo<CardGo | null>(() => {
+   * gateway, every cell on this screen sits quietly. */
+  const cellGo = React.useMemo<NodeGo | null>(() => {
     if (openSession === undefined) return null
     const known = knownSessions ?? NO_SESSIONS
     return {
@@ -349,13 +350,6 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
       })),
     [reading, at],
   )
-
-  const cycles = project?.cycles ?? []
-  /* Which line the detail pane is showing, and therefore which line a card's "open" acts on: this
-   * shell keeps only the id — the one thing the port needs — and both ends ask the same one
-   * resolution (`pickedCycleOf`), so the line the body lists and the line reported to the port
-   * cannot be different ones. */
-  const pickedLine = pickedCycleOf(cycles, lineId)
 
   /* The stranded dispatches, judged once per reading: claim on disk, the cell still held, and the
      session its note names absent from this host's live agents. The judgment is the model's; the
@@ -604,6 +598,14 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
     keep(PANEL_PREF_FIELDS.showOtherStates, on)
   }, [keep])
 
+  /* The node page's drawing: the same two hands as the tab's pick — the screen leads, the document
+   * remembers — because it is the same kind of fact (where the reader was), not a switch the
+   * settings page flips. */
+  const pickNodeMode = React.useCallback((mode: NodeMode) => {
+    setNodeMode(mode)
+    keep(PANEL_PREF_FIELDS.nodeMode, mode)
+  }, [keep, setNodeMode])
+
   /* Whether this screen has anything to say. Picking "ungrouped" while this session has a home
    * means that pane has no record under it; none of the four sources listed means this workspace
    * has no such record; listed but none parseable means unreadable. In all three cases all five
@@ -689,30 +691,20 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
             <OverviewLaunch runnable={runnable} busy={consulting} onRoute={consultRoute} onConduct={consultConduct} />
           </PaneFrame>
 
-          <MapPane
-            active={tab === 'map'}
+          <BoardPane
+            active={tab === 'nodes'}
             noNodes={noNodes}
             project={project}
-            go={cardGo}
+            mode={nodeMode}
+            onMode={pickNodeMode}
+            go={cellGo}
             stranded={stranded}
             onRefresh={() => setTick((value) => value + 1)}
-          />
-
-          <DetailPane
-            active={tab === 'detail'}
-            noNodes={noNodes}
-            lineId={lineId}
-            project={project}
-            stranded={stranded}
-            sideWidth={sideWidth}
-            onSideWidth={setSideWidth}
-            onSideCommit={(px) => keep(PANEL_PREF_FIELDS.sideWidth, clampSide(px))}
-            onPickLine={setLineId}
             openingNode={openingNode}
-            onOpenNode={(nodeId) => {
-              if (pickedLine === null || openingNode === nodeId) return
+            onOpenNode={(nodeId, cycle) => {
+              if (openingNode === nodeId) return
               setOpeningNode(nodeId)
-              void onWrite(() => port.openNodeSession(sessionId ?? '', workspaceRoot, pickedLine.id, nodeId)).finally(() => setOpeningNode(null))
+              void onWrite(() => port.openNodeSession(sessionId ?? '', workspaceRoot, cycle, nodeId)).finally(() => setOpeningNode(null))
             }}
           />
 

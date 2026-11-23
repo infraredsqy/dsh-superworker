@@ -1,12 +1,11 @@
 /* dsh-superworker · main panel (f-main) —— this page's skeleton: the header's two-row grid, the tab
- * row, the box shared by the six panes, and the modal ("delete one"). Each pane's own layout lives
+ * row, the box shared by the five panes, and the modal ("delete one"). Each pane's own layout lives
  * in the module stylesheet beside it; the page never touches vh / vw (headless screenshots re-wrap
  * viewport-hooked sizes mid-shutter). */
 .superworker-page {
   --superworker-row: 34px;        /* one row = one node; the title's line sits in it with a breath above and below */
-  --superworker-mark: 14px;       /* the cell left of a line name: its state at this moment */
-  --superworker-line-w: 176px;    /* the width both left columns list their lines in; the detail pane's own width rides --superworker-side-w on top of it */
-  --superworker-detail-top: 12px; /* the rail and the list start on one line, this far under the tab rail */
+  --superworker-mark: 14px;       /* the cell left of a row's title: its state at this moment */
+  --superworker-detail-top: 12px; /* the list starts this far under the tab rail's band */
   --superworker-detail-foot: 20px;/* what the same list keeps under its last row, once it is scrolled to the end */
 }
 

@@ -63,12 +63,12 @@ function touchAt(window, type, fingers) {
   return event
 }
 
-/** The map's two surfaces, after pressing its tab: the pane the gestures land on, and the canvas they move. */
+/** The map's two surfaces, after opening the board: the field the gestures land on, and the canvas they move. */
 async function fieldAndCanvas(mounted) {
   const { window, act, container, settle } = mounted
-  const mapTab = mounted.tabs().find((tab) => tab.getAttribute('aria-controls') === 'pane-map')
-  assert.notEqual(mapTab, undefined, 'the map tab is not in the tab strip')
-  await act(async () => { mapTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
+  const boardTab = mounted.tabs().find((tab) => tab.getAttribute('aria-controls') === 'pane-nodes')
+  assert.notEqual(boardTab, undefined, 'the board tab is not in the tab strip')
+  await act(async () => { boardTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
   await settle()
   const field = container.querySelector('.superworker-field')
   const canvas = container.querySelector('.superworker-canvas')
@@ -101,8 +101,8 @@ test('a one-finger drag: the drawing follows and the move is prevented', { skip:
 
 /**
  * Lay the field out where a real page holds it. jsdom measures every element as a zero box, and this
- * pane is not at the page's corner: the rail stands to its left, so a field laid out here is the
- * everyday iPad case, and the one a pinch has to answer to.
+ * drawing is not at the page's corner: the page's own gutter stands to its left, so a field laid out
+ * here is the everyday iPad case, and the one a pinch has to answer to.
  */
 function laidOut(field, { left, top, width = 800, height = 600 }) {
   const box = { left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }
@@ -123,14 +123,15 @@ test('a pinch pivots on the fingers wherever the field stands on the page', { sk
    * which is the whole of "the zoom is not centred on my fingers". */
   const mounted = await mountBuiltPanel({ record: record() })
   try {
-    const mapTab = mounted.tabs().find((tab) => tab.getAttribute('aria-controls') === 'pane-map')
+    const boardTab = mounted.tabs().find((tab) => tab.getAttribute('aria-controls') === 'pane-nodes')
     const field = mounted.container.querySelector('.superworker-field')
     assert.notEqual(field, null, 'the map field is missing')
-    /* Laid out before the tab is pressed: the pane measures itself when it becomes the visible one.
-     * 194 is the rail's own width, its 176 and the 18 of ground beside it. */
-    const rail = { left: 176 + 18, top: 72 }
-    laidOut(field, rail)
-    await mounted.act(async () => { mapTab.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true })) })
+    /* Laid out before the tab is pressed: the drawing measures itself when it becomes the visible
+     * one. The 194 is the page's gutter plus the canvas's own inset; any non-zero left is the point,
+     * and this one is the everyday width. */
+    const fieldBox = { left: 194, top: 72 }
+    laidOut(field, fieldBox)
+    await mounted.act(async () => { boardTab.dispatchEvent(new mounted.window.MouseEvent('click', { bubbles: true })) })
     await mounted.settle()
     const canvas = mounted.container.querySelector('.superworker-canvas')
 
@@ -139,7 +140,7 @@ test('a pinch pivots on the fingers wherever the field stands on the page', { sk
     /* The fingers' midpoint, and the ground of the drawing that stands under it, both in the page's
      * coordinates — the one frame in which "under the fingers" means anything. */
     const mid = { x: 494, y: 372 }
-    const under = (mid.x - rail.left - before.tx) / before.s
+    const under = (mid.x - fieldBox.left - before.tx) / before.s
 
     await mounted.act(async () => {
       field.dispatchEvent(touchAt(mounted.window, 'touchstart', [[3, [394, 372]], [4, [594, 372]]]))
@@ -150,9 +151,10 @@ test('a pinch pivots on the fingers wherever the field stands on the page', { sk
     assert.ok(after.s > before.s, `the spread did not zoom in: ${String(before.s)} → ${String(after.s)}`)
 
     /* The same ground, where the camera puts it now: it must still be under the fingers. The axis
-     * pinned here is the horizontal one — the one the rail offsets, and the one every iPad session
-     * has — because at this drawing's size the camera's own bounds hold the vertical one still. */
-    const landed = rail.left + under * after.s + after.tx
+     * pinned here is the horizontal one — the one the field's own left edge offsets, and the one
+     * every iPad session has — because at this drawing's size the camera's own bounds hold the
+     * vertical one still. */
+    const landed = fieldBox.left + under * after.s + after.tx
     assert.ok(Math.abs(landed - mid.x) < 0.5, `the zoom pivoted ${(landed - mid.x).toFixed(1)}px off the fingers: the ground they pinched slid sideways`)
   } finally {
     await mounted.unmount()

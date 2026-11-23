@@ -6,8 +6,8 @@
  * layout are deliberately not measured here — they move far more often than the four things below,
  * and a test pinning them costs an edit per change; the readings that do need a record are walked by
  * hand. The one reading from a record that is measured here is which lines the panel names: the
- * record tells of one cell two lines walked and one cell only a line holds, and the detail and the
- * cards have to say both. The map's touch road has its own file (`client-map-gesture`): it is the
+ * record tells of one cell two lines walked and one cell only a line holds, and the board's two
+ * drawings have to say both. The map's touch road has its own file (`client-map-gesture`): it is the
  * map's wiring, not this artifact smoke test's business.
  *
  * Needs `lib/client.js`; `npm test` builds it first. Run `node --test tests/` without that build and
@@ -141,29 +141,13 @@ test('this build: the shell loads, the panel draws, every tab opens, cycle names
     assert.equal(tab.getAttribute('aria-selected'), 'true', `pressing "${tab.textContent}" did not select it`)
   }
 
-  /* Which line the detail is showing follows the pick, and it is not always the record's first line:
-   * two lines walked the same record, and pressing the second one has to move the sidebar's
-   * `aria-current` and the list of cells under it together. A detail that always resolves the
-   * record's first line leaves every assertion above green, so this one is what holds it. */
-  const detailTab = tabs.find((tab) => tab.getAttribute('aria-controls') === 'pane-detail')
-  assert.notEqual(detailTab, undefined, 'the detail tab is not in the tab strip')
-  await act(async () => { detailTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
-  await settle()
-  const picks = [...container.querySelectorAll('#pane-detail .superworker-linepick')]
-  assert.deepEqual(picks.map((one) => one.querySelector('.superworker-cycle')?.textContent), ['c1', 'c2'], 'one row per cycle in the sidebar')
-  const second = picks[1]
-  await act(async () => { second.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
-  await settle()
-  assert.equal(second.getAttribute('aria-current'), 'true', 'the second cycle was clicked: the sidebar marks it')
-  assert.equal(picks[0].getAttribute('aria-current'), 'false', 'the first cycle is no longer the selected one')
-  const rows = [...container.querySelectorAll('#pane-detail .superworker-row')].map((row) => row.getAttribute('data-id'))
-  assert.deepEqual(rows, ['n1'], 'the detail lists the cells this cycle walked: c2 walked only n1')
-
-  /* The drawing is read where the reader sees it: open the map, then read its cards. The map's touch
-   * road belongs to `client-map-gesture`; here the drawing is only read, never dragged. */
-  const mapTab = tabs.find((tab) => tab.getAttribute('aria-controls') === 'pane-map')
-  assert.notEqual(mapTab, undefined, 'the map tab is not in the tab strip')
-  await act(async () => { mapTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
+  /* The board draws one reading two ways, and the two have to agree about which cells they hold.
+   * The drawing is read where the reader sees it: open the board, read its cards, then switch it to
+   * the list and read its rows. The map's touch road belongs to `client-map-gesture`; here the
+   * drawing is only read, never dragged. */
+  const boardTab = tabs.find((tab) => tab.getAttribute('aria-controls') === 'pane-nodes')
+  assert.notEqual(boardTab, undefined, 'the board tab is not in the tab strip')
+  await act(async () => { boardTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
   await settle()
   /* A card's foot names every line the model says this cell belongs to, in the model's own order —
    * the lines that walked it first, then the one holding it — and a cell no line has touched wears
@@ -177,6 +161,36 @@ test('this build: the shell loads, the panel draws, every tab opens, cycle names
   assert.deepEqual(tagsOf('n1'), ['c1·c2'], 'a cell walked by two cycles: both are printed, in record order')
   assert.deepEqual(tagsOf('n2'), ['c1'], 'a cycle only holds it, has not walked it: that cycle still prints')
   assert.deepEqual(tagsOf('n3'), [], 'no cycle has touched it: no tag printed')
+
+  /* The other drawing of the same reading. The scope is the board's own control, and both drawings
+   * read it: over the whole workspace the list holds every cell the map draws. */
+  const modeBtn = (mode) => container.querySelector(`#node-mode-${mode}`)
+  const rows = () => [...container.querySelectorAll('#pane-nodes .superworker-row')].map((row) => row.getAttribute('data-id'))
+  assert.equal(modeBtn('map').getAttribute('aria-pressed'), 'true', 'the board opens on the map')
+  await act(async () => { modeBtn('detail').dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
+  await settle()
+  assert.deepEqual(rows().sort(), ['n1', 'n2', 'n3'], 'over the whole workspace the list holds every cell')
+  /* A cell walked by two lines says so on its row, and only over the whole workspace: a scoped list
+   * would wear the scope control\'s own word on every row. */
+  const rowTagsOf = (id) => [...container.querySelector(`#pane-nodes .superworker-row[data-id="${id}"]`).querySelectorAll('.superworker-mtag')].map((tag) => tag.textContent)
+  assert.deepEqual(rowTagsOf('n1'), ['c1·c2'], 'the row names both lines the cell belongs to')
+
+  /* The scope is a filter over both drawings, and it is the board\'s, not the drawing\'s: it
+   * survives the switch from one drawing to the other. */
+  const scope = container.querySelector('#node-scope')
+  assert.notEqual(scope, null, 'the scope control is missing')
+  await act(async () => {
+    scope.value = 'c2'
+    scope.dispatchEvent(new window.Event('change', { bubbles: true }))
+  })
+  await settle()
+  assert.deepEqual(rows(), ['n1'], 'the list holds only the scoped line\'s cells')
+  assert.deepEqual(rowTagsOf('n1'), [], 'under one scope the row wears no line tag')
+  await act(async () => { modeBtn('map').dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
+  await settle()
+  assert.equal(scope.value, 'c2', 'switching the drawing keeps the scope')
+  const cards = [...container.querySelectorAll('.superworker-mnode')].map((card) => card.getAttribute('data-id'))
+  assert.deepEqual(cards, ['n1'], 'the scoped map draws the cells the scoped list lists')
   await mounted.unmount()
 
   assert.deepEqual(consoleErrors, [], 'there is an error in the console')

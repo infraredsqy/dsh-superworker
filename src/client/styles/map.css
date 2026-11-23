@@ -10,56 +10,17 @@
  * the canvas, and `1px / --s` is what one pixel measures on screen. Wires take `vector-effect` for
  * the same reason. */
 
-/* ---- Across: the rail, then the drawing ---------------------------------- */
-
-.superworker-page .superworker-map-pane {
-  overflow: hidden;
-}
+/* ---- The drawing --------------------------------------------------------- */
 
 .superworker-page .superworker-map {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   /* One card's box is stated once, in `map-layout.ts` (`CARD_W` / `CARD_H`), and arrives written
-     on this element as `--card-w` / `--card-h`; the sheet only reads it. */
+     on this element as `--card-w` / `--card-h`; the sheet only reads it. The drawing fills the
+     page's footprint under the band on its own: the pane's shell, the band and the switch between
+     the two drawings are `board.css`'s. */
 }
-
-/* The hit scope: the whole workspace plus each line. It only says "search under here first" — the
- * whole drawing stays on screen, whichever row is pressed. A line that has touched nothing in this
- * workspace is greyed out and holds no press: the row itself is the reading. The row is the object
- * both left columns share (`tokens.css`); what stands here is the column the rows stand in. */
-.superworker-page .superworker-rail {
-  flex: none;
-  width: calc(var(--superworker-line-w) + 18px);
-  /* The 18px on the right is the ground between the list and the drawing: pressed any closer, the
-     list reads as a column of labels laid on top of the map. The 176px left of it is the column the
-     detail pane gives its lines. */
-  padding: var(--superworker-detail-top) 18px var(--superworker-detail-foot) 0;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-
-/* The rail's own two facts about a row: it is a flex item the scrolling column must not squeeze, and
- * it is a button with a platform dress to take off — the paint is the shared row's. */
-.superworker-page .superworker-rail-item {
-  flex: none;
-  appearance: none;
-}
-
-.superworker-page .superworker-rail-item:disabled {
-  cursor: default;
-}
-
-/* A line this workspace holds nothing for: the name drops to the dimmed ink. The cell keeps its own
- * colour — what the line is doing is the record's reading, and it reads the same whichever workspace
- * the panel has open. */
-.superworker-page .superworker-rail-item:disabled .superworker-cycle {
-  color: var(--dsw-alias-label-dimmed);
-}
-
-/* ---- The drawing --------------------------------------------------------- */
 
 .superworker-page .superworker-field {
   position: relative;
@@ -278,20 +239,6 @@
   margin-top: auto;
   font-size: 11px;
   line-height: 15px;
-  white-space: nowrap;
-}
-
-/* The line's own id on the card's foot: the word both left columns print, so it wears their face
- * too. Its 11px and 15px belong to this row's rhythm rather than to a type tier, and the moment
- * beside it is a figure, which keeps the code face (`.superworker-num`). */
-.superworker-page .superworker-mtag {
-  flex: none;
-  overflow: hidden;
-  font-family: var(--dsw-font-family);
-  font-size: 11px;
-  line-height: 15px;
-  color: var(--dsw-alias-label-caption);
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

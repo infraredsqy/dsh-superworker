@@ -54,9 +54,8 @@ export const en: Readonly<Record<WordKey, string>> = {
   'issue.resolved': 'Resolved',
 
   /* ── The panel's own display controls ─────────────────────────────────────────────────────── */
-  'view.overview': 'Overview',
-  'view.map': 'Map',
-  'view.detail': 'Detail',
+  'view.overview': 'Now',
+  'view.nodes': 'Board',
   'view.notes': 'Instructions',
   'view.issue': 'Issues',
   'view.config': 'Settings',
@@ -84,22 +83,23 @@ export const en: Readonly<Record<WordKey, string>> = {
   'common.global': 'Global',
   'common.expand-more': 'Show {count} more',
 
+  /* ── The node board: one reading, two drawings ────────────────────────────────────────────── */
+  'board.scope.aria': 'Scope',
+  'board.mode.aria': 'How this page draws',
+  'board.mode.map': 'Map',
+  'board.mode.detail': 'List',
+  'board.row.go': 'Go to this session',
+
   /* ── The map ──────────────────────────────────────────────────────────────────────────────── */
-  'map.scope.aria': 'Search under',
   'map.region.aria': 'The whole drawing',
   'map.overview.aria': 'Overview / back to the focus',
   'map.refresh.aria': 'Read the record again',
   'map.card.aria': 'Session for {node}',
   'map.card.go': 'press again to go to this session',
 
-  /* ── The detail view ──────────────────────────────────────────────────────────────────────── */
-  'detail.lines.aria': 'Lines',
-  'detail.side-grip.aria': 'Resize the line sidebar',
+  /* ── The list ─────────────────────────────────────────────────────────────────────────────── */
   'detail.folded.cells.one': ' cell',
   'detail.folded.cells.other': ' cells',
-  'cycle.blocked': 'Blocked',
-  'cycle.running': 'In service',
-  'cycle.stopped': 'Stopped',
   'node.open': 'Open session',
   /* The stranded dispatch: the claim is on disk, the session is gone. The sentence names the two
    * record words the remedy names, and the exact word line, so it can be followed as it is read. */

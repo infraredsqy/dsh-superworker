@@ -10,37 +10,47 @@
 import type { WordKey } from './locales/index.ts'
 import { createStore } from './store.ts'
 import {
+  NODE_MODES,
   PANEL_PREF_DEFAULTS,
   PANEL_PREF_FIELDS,
-  SIDE_DEFAULT,
-  SIDE_MAX,
-  SIDE_MIN,
   VIEW_IDS,
 } from '../host/settings-fields.ts'
-import type { ViewId } from '../host/settings-fields.ts'
+import type { NodeMode, ViewId } from '../host/settings-fields.ts'
 
-export type { ViewId }
-export { PANEL_PREF_DEFAULTS, PANEL_PREF_FIELDS, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, VIEW_IDS }
+export type { NodeMode, ViewId }
+export { NODE_MODES, PANEL_PREF_DEFAULTS, PANEL_PREF_FIELDS, VIEW_IDS }
 
 /** Which settings-document field the panel writes back to; the names are the document's keys. */
 export type PrefField = (typeof PANEL_PREF_FIELDS)[keyof typeof PANEL_PREF_FIELDS]
 
-/** What each of the six views is called, as a key rather than as a word: the tab row renders it
+/** What each of the five views is called, as a key rather than as a word: the tab row renders it
  * through the translator when it draws, so the word can change language without the row knowing. */
 export const VIEW_WORDS: Readonly<Record<ViewId, WordKey>> = {
   overview: 'view.overview',
-  map: 'view.map',
-  detail: 'view.detail',
+  nodes: 'view.nodes',
   notes: 'view.notes',
   issue: 'view.issue',
   config: 'view.config',
 }
 
+/**
+ * The views this panel used to offer as tabs of their own, and where each one lives now.
+ *
+ * The map and the list are one page's two drawings. An old settings document still names one of
+ * them as the tab it was left on, and reading that word as "no view at all" would land a reader on
+ * the overview for a pick they did make — so the word is mapped to the page, and its mode rides
+ * along: they land where they left off, drawn the way they were reading.
+ */
+const LEGACY_TABS: Readonly<Record<string, { readonly tab: ViewId; readonly mode: NodeMode }>> = {
+  map: { tab: 'nodes', mode: 'map' },
+  detail: { tab: 'nodes', mode: 'detail' },
+}
+
 export interface PanelPrefs {
-  /** Width of the line sidebar on the left of the detail view, in pixels. */
-  readonly sideWidth: number
   /** Which view the panel lands on when shown: the one it was last left on, or the overview when nothing is recorded yet. */
   readonly tab: ViewId
+  /** How the node page is drawn: the map, or the list. */
+  readonly nodeMode: NodeMode
   /** Whether the instructions view folds archived entries back into their sections. */
   readonly archived: boolean
   /** Whether the issues view also puts the three handled states back on the page. */
@@ -52,16 +62,12 @@ export interface PanelPrefs {
 }
 
 export const DEFAULT_PREFS: PanelPrefs = {
-  sideWidth: PANEL_PREF_DEFAULTS.sideWidth,
   tab: PANEL_PREF_DEFAULTS.lastTab,
+  nodeMode: PANEL_PREF_DEFAULTS.nodeMode,
   archived: PANEL_PREF_DEFAULTS.showArchived,
   otherStates: PANEL_PREF_DEFAULTS.showOtherStates,
   autoRelay: PANEL_PREF_DEFAULTS.autoRelay,
   injectInstructions: PANEL_PREF_DEFAULTS.injectInstructions,
-}
-
-export function clampSide(px: number): number {
-  return Math.round(Math.max(SIDE_MIN, Math.min(SIDE_MAX, px)))
 }
 
 /**
@@ -74,13 +80,14 @@ export function clampSide(px: number): number {
  */
 export function prefsFromSection(section: unknown): PanelPrefs {
   const held = (typeof section === 'object' && section !== null ? section : {}) as Readonly<Record<string, unknown>>
-  const width = held[PANEL_PREF_FIELDS.sideWidth]
-  const tab = held[PANEL_PREF_FIELDS.lastTab]
+  const rawTab = held[PANEL_PREF_FIELDS.lastTab]
+  const legacy = typeof rawTab === 'string' ? LEGACY_TABS[rawTab] : undefined
+  const mode = held[PANEL_PREF_FIELDS.nodeMode]
   const relay = held[PANEL_PREF_FIELDS.autoRelay]
   const inject = held[PANEL_PREF_FIELDS.injectInstructions]
   return {
-    sideWidth: typeof width === 'number' && Number.isFinite(width) ? clampSide(width) : DEFAULT_PREFS.sideWidth,
-    tab: VIEW_IDS.includes(tab as ViewId) ? (tab as ViewId) : DEFAULT_PREFS.tab,
+    tab: VIEW_IDS.includes(rawTab as ViewId) ? (rawTab as ViewId) : (legacy?.tab ?? DEFAULT_PREFS.tab),
+    nodeMode: NODE_MODES.includes(mode as NodeMode) ? (mode as NodeMode) : (legacy?.mode ?? DEFAULT_PREFS.nodeMode),
     archived: held[PANEL_PREF_FIELDS.showArchived] === true,
     otherStates: held[PANEL_PREF_FIELDS.showOtherStates] === true,
     autoRelay: typeof relay === 'boolean' ? relay : DEFAULT_PREFS.autoRelay,

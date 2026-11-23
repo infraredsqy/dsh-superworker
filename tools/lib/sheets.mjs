@@ -16,7 +16,7 @@ export const SHEETS = [
   { sheet: 'main.css', root: '.superworker-page' },
   { sheet: 'overview.css', root: '.superworker-page' },
   { sheet: 'map.css', root: '.superworker-page' },
-  { sheet: 'lines.css', root: '.superworker-page' },
+  { sheet: 'board.css', root: '.superworker-page' },
   { sheet: 'detail.css', root: '.superworker-page' },
   { sheet: 'notes.css', root: '.superworker-page' },
   { sheet: 'register.css', root: '.superworker-issue' },
