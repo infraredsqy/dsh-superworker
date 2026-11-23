@@ -1,7 +1,7 @@
-import { RecordError } from './errors';
-import { readJsonFile } from './jsonio';
-import type { RecordPaths } from './paths';
-import type { NodeRecord } from './types';
+import { RecordError } from './errors.ts';
+import { readJsonFile } from './jsonio.ts';
+import type { RecordPaths } from './paths.ts';
+import type { NodeRecord } from './types.ts';
 
 /**
  * Graph algorithms: adjacency, reverse adjacency, reachability, ordering, urgency and importance
