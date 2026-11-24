@@ -26,7 +26,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 import { answer, open, projectRootOf } from 'superworker-core'
 import { canonicalRootOf, workspaceRootOf } from '../src/host/seams.ts'
 import { executorOf, openConsultSession, openNodeSession } from '../src/host/executor.ts'
@@ -823,8 +823,9 @@ test('The wake door reads the step\'s own cwd before any service: two agents, on
  *   different ways (`NaN` and `0` are falsy and have no `.length`; `false` and `true` are falsy and
  *   truthy respectively);
  * - `whitespace` — `'   '`: a non-empty string that is not a path;
- * - `named-trailing-slash` / `named-dot` / `named-parent` — `'<real>\\'`, `'<real>\\.'` and
- *   `'<real>\\..\\<basename>'`: three spellings of the same real tree, which a length test cannot tell
+ * - `named-trailing-slash` / `named-dot` / `named-parent` — `'<real><sep>'`, `'<real><sep>.'` and
+ *   `'<real><sep>..<sep><basename>'` (on Windows spelled with `\`, on POSIX with `/`): three spellings
+ *   of the same real tree, which a length test cannot tell
  *   from a wrong path and a canonicaliser resolves — they are what pins "the door spells the root the
  *   caller used" at the boundary;
  * - `named-missing` — a real path that does not exist: there and not a directory, which is the last
@@ -890,9 +891,9 @@ test('Every root shape, at every handing door: one table, and each cell is the d
     false: () => false,
     true: () => true,
     whitespace: () => '   ',
-    'named-trailing-slash': (rigged) => `${rigged.named}\\`,
-    'named-dot': (rigged) => `${rigged.named}\\.`,
-    'named-parent': (rigged) => `${rigged.named}\\..\\${basename(rigged.named)}`,
+    'named-trailing-slash': (rigged) => `${rigged.named}${sep}`,
+    'named-dot': (rigged) => `${rigged.named}${sep}.`,
+    'named-parent': (rigged) => `${rigged.named}${sep}..${sep}${basename(rigged.named)}`,
     'named-missing': (rigged) => join(dirname(rigged.named), 'superworker-parity-does-not-exist'),
   }
   const DOORS = {
