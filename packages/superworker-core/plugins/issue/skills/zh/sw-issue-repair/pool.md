@@ -9,6 +9,7 @@ issue 池存放在项目的 `.superworker/issues/`，是统一的质量债清单
 操作前先通过 `superworker` 工具查看 `issue --help`（传 `word` 与 `args` 执行，加 `help` 看用法）。
 
 - **所有读写必须走 `issue` 命令**。**严禁直接读取 `.superworker/issues/issues.json`**：文件体量大、浪费上下文，且会绕过工具自身的统计口径。
+- **问什么用对动词**：要数量用 `issue status`（出计数、不出行）；要看按模块的分布用 `issue by-module`（每个模块几条、各带多少权重）；挑下一个动手用 `issue top`。`issue list` 是逐行读——默认只列未结的条目，已结的留在池里当去重记忆，`--all` 才把已结的也一起打出来。
 
 ## 批量操作
 

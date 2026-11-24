@@ -69,7 +69,13 @@ function surfaceOf(ctx) {
     surface = baseOf(ctx).verbSurface({
       name: 'issue',
       head: USAGE_HEAD,
-      blurb: [`the issue pool: one file per project, \`<root>/${RECORD_DIR_NAME}/issues/issues.json\`.`],
+      blurb: [
+        `the issue pool: one file per project, \`<root>/${RECORD_DIR_NAME}/issues/issues.json\`.`,
+        'A settled row stays in the pool: it is how a later scan knows the debt was already found. So `list` opens on',
+        'what is still owed -- `--all` puts every row back, `--status resolved` reads one state of it.',
+        'For a count ask `status` (it counts, it prints no rows); for the head of the work ask `top`; for how the owed',
+        'rows and their weight fall across modules ask `by-module`.',
+      ],
       flags: FLAGS,
       specs: SPECS,
       aliases: VERB_ALIASES,
@@ -216,6 +222,7 @@ const FLAGS = {
   limit: { long: '--limit', short: '-n', kind: 'int' },
   threshold: { long: '--threshold', short: '-t', kind: 'int' },
   brief: { long: '--brief', kind: 'flag' },
+  all: { long: '--all', kind: 'flag' },
   verbose: { long: '--verbose', short: '-v', kind: 'flag' },
 };
 
@@ -233,7 +240,7 @@ const UPDATE_FIELDS = ['severity', 'decision', 'status', 'module', 'title', 'des
  */
 const SPECS = {
   add: { options: ['id', 'from_file', 'auto_id', 'severity', 'decision', 'source', 'module', 'title', 'description', 'suggestion', 'reason', 'files', 'functions', 'plan_path'], positional: { min: 0, max: 0 } },
-  list: { options: ['status', 'severity', 'decision', 'source', 'module', 'limit', 'brief'], positional: { min: 0, max: 0 } },
+  list: { options: ['status', 'severity', 'decision', 'source', 'module', 'all', 'limit', 'brief'], positional: { min: 0, max: 0 } },
   update: { options: ['from_file', ...UPDATE_FIELDS], positional: { min: 1, max: Number.POSITIVE_INFINITY, suppliedBy: 'from_file', label: '<id…>' } },
   resolve: { options: ['reason', 'plan_path'], positional: { min: 1, max: Number.POSITIVE_INFINITY, label: '<id…>' } },
   reject: { options: ['reason'], positional: { min: 1, max: Number.POSITIVE_INFINITY, label: '<id…>' } },
@@ -301,6 +308,15 @@ function cellOf(issue, field) {
 function decisionOf(issue) {
   return issue.decision ?? 'unknown';
 }
+
+/**
+ * The rows still owed: what every default read answers. `list` opens on these, `status` counts them,
+ * `weight` sums them and `by-module` splits them. A settled row stays in the pool as memory of a debt
+ * already found (a later scan reads it back), not as work — `list --all` is the door to those rows.
+ */
+const OWED = new Set(['open', 'acknowledged', 'resolving']);
+/** Still pickable: `top` / `stale` read only these (`resolving` is already in someone's hands). */
+const PICKABLE = new Set(['open', 'acknowledged']);
 
 /** The filter set `list` and `search` share: each filter applies only when the caller spelled it. */
 function filterIssues(issues, options) {
@@ -417,8 +433,15 @@ async function cmdAddFromFile(args, ctx) {
   return `${out.join(EOL)}${EOL}`;
 }
 
+/**
+ * The pool's rows as `list` answers them: the default view is what is still owed, because a settled
+ * row is memory rather than work. `--all` puts the whole ledger back; `--status` narrows to one state
+ * as it always has, so a caller who names a state has said which view they want.
+ */
 async function cmdList(args, ctx) {
-  const issues = filterIssues(Object.values((await readPool(ctx.root, ctx.base)).issues), args.options);
+  const pool = Object.values((await readPool(ctx.root, ctx.base)).issues);
+  const view = args.options.all || args.options.status ? pool : pool.filter((issue) => OWED.has(issue.status));
+  const issues = filterIssues(view, args.options);
   const sevOrder = severityOrder();
   // A stable sort: newest discovery first, then by severity.
   const rows = stableSort(newestFirst(issues), (issue) => sevOrder[issue.severity] ?? 99);
@@ -658,11 +681,6 @@ async function cmdRemove(args, ctx) {
   return `${lines.join(EOL)}${EOL}`;
 }
 
-/** The pool's reading of "not settled yet": `weight` and `status` both count these. */
-const OWED = new Set(['open', 'acknowledged', 'resolving']);
-/** Still pickable: `top` / `by-module` / `stale` list only these (`resolving` is already in someone's hands). */
-const PICKABLE = new Set(['open', 'acknowledged']);
-
 async function cmdStatus(args, ctx) {
   const all = Object.values((await readPool(ctx.root, ctx.base)).issues);
   const issues = args.options.verbose ? all : all.filter((issue) => OWED.has(issue.status));
@@ -730,16 +748,29 @@ async function cmdTop(args, ctx) {
   });
 }
 
+/**
+ * How the owed rows and their weight fall across modules: per module, how many rows are still owed
+ * and how much of the pool's weighted sum they carry. The counts add up to the rows `status` counts
+ * and the weights to the number `weight` prints (a row judged `external` is held back there and is
+ * held back here too). Heaviest module first, and a count rather than the rows: a module owing forty
+ * rows would otherwise answer with forty records.
+ */
 async function cmdByModule(args, ctx) {
   const data = await readPool(ctx.root, ctx.base);
   const modules = {};
   for (const issue of Object.values(data.issues)) {
-    if (!PICKABLE.has(issue.status)) continue;
+    if (!OWED.has(issue.status)) continue;
     const module = cellOf(issue, 'module');
-    if (modules[module] === undefined) modules[module] = [];
-    modules[module].push(issue);
+    const cell = modules[module] ?? { count: 0, weight: 0 };
+    cell.count += 1;
+    if (decisionOf(issue) !== 'external') cell.weight += SEVERITY_WEIGHTS[issue.severity] ?? 0;
+    modules[module] = cell;
   }
-  return jsonText(modules);
+  const heaviestFirst = Object.entries(modules)
+    .sort((a, b) => b[1].weight - a[1].weight || b[1].count - a[1].count || compareText(a[0], b[0]));
+  const out = {};
+  for (const [module, cell] of heaviestFirst) out[module] = cell;
+  return jsonText(out);
 }
 
 async function cmdStale(args, ctx) {

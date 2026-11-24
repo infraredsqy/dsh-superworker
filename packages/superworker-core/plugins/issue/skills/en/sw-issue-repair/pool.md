@@ -9,6 +9,7 @@ The issue pool lives in `.superworker/issues/` as a unified quality-debt backlog
 Check `issue --help` via the `superworker` tool (pass `word` and `args`; pass `help` for usage) before operating on the pool.
 
 - **All reads and writes must go through the `issue` command**. **Never read `.superworker/issues/issues.json` directly**—it is large, wastes context, and bypasses the tool's counting conventions.
+- **Ask the verb that answers the question**: `issue status` for counts (it prints no rows), `issue by-module` for how the owed rows and their weight fall across modules, `issue top` for what to pick up next. `issue list` is the row-by-row read—it opens on unsettled entries, settled ones stay in the pool as dedup memory, and `--all` prints them all.
 
 ## Batching
 

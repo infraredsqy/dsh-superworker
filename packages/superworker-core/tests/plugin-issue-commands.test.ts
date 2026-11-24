@@ -316,12 +316,17 @@ describe('list / status / top / by_module / stale: the invariants of the read si
     });
   });
 
-  it('list: severity first (closed-set order), then discovery stamp newest first; filters, --limit and --brief', async () => {
+  it('list opens on what is still owed (severity first, then discovery stamp newest first), --all puts the settled rows back; filters, --limit and --brief', async () => {
     const listed = JSON.parse(await out(['list']));
-    expect(listed.map((r: { id: string }) => r.id)).toEqual(['freshP0', 'oldP0', 'doneP0', 'ackP1', 'other']);
+    expect(listed.map((r: { id: string }) => r.id)).toEqual(['freshP0', 'oldP0', 'ackP1', 'other']);
+    expect(JSON.parse(await out(['list', '--all'])).map((r: { id: string }) => r.id))
+      .toEqual(['freshP0', 'oldP0', 'doneP0', 'ackP1', 'other']);
+    // A named state is a view of its own: --all does not have to be spelled beside it.
     expect((await out(['list', '--status', 'acknowledged'])).match(/ackP1/)).toBeTruthy();
     expect(await out(['list', '--status', 'resolved'])).not.toContain('ackP1');
     expect(JSON.parse(await out(['list', '--severity', 'P0'])).map((r: { id: string }) => r.id))
+      .toEqual(['freshP0', 'oldP0']);
+    expect(JSON.parse(await out(['list', '--severity', 'P0', '--all'])).map((r: { id: string }) => r.id))
       .toEqual(['freshP0', 'oldP0', 'doneP0']);
     expect(JSON.parse(await out(['list', '--module', 'ops'])).map((r: { id: string }) => r.id))
       .toEqual(['other']);
@@ -348,15 +353,24 @@ describe('list / status / top / by_module / stale: the invariants of the read si
     expect(JSON.parse(await out(['top', '-n', '1'])).map((r: { id: string }) => r.id)).toEqual(['freshP0']);
   });
 
-  it('by_module lists pickable issues only, bucketed by the raw module value; only a record with no module key lands in unknown', async () => {
+  it('by_module answers a count and a payable weight per module, heaviest first; only a record with no module key lands in unknown', async () => {
     seedMore({
       noModuleKey: { ...row({ id: 'noModuleKey' }), module: undefined },
       emptyModule: row({ id: 'emptyModule', module: '' }),
     });
     const grouped = JSON.parse(await out(['by_module']));
-    expect(grouped.ops.map((r: { id: string }) => r.id)).toEqual(['other']);
-    expect(grouped.unknown.map((r: { id: string }) => r.id)).toEqual(['noModuleKey']);
-    expect(grouped[''].map((r: { id: string }) => r.id)).toContain('emptyModule');
+    // The owed rows of the seeded pool, per module: the two P0s, the acknowledged P1 and the
+    // empty-module P3 in ``, the P2 in ops, the module-less P3 in unknown; the settled P0 is not
+    // owed and does not count.
+    expect(grouped['']).toEqual({ count: 4, weight: 21 });
+    expect(grouped.ops).toEqual({ count: 1, weight: 2 });
+    expect(grouped.unknown).toEqual({ count: 1, weight: 1 });
+    expect(Object.keys(grouped)).toEqual(['', 'ops', 'unknown']);
+    // The two numbers are the two readings the pool already prints, split by module: the counts add
+    // up to the rows `status` counts, the weights to the number `weight` prints.
+    const cells = Object.values(grouped) as { count: number; weight: number }[];
+    expect(cells.reduce((sum, cell) => sum + cell.count, 0)).toBe(6);
+    expect(cells.reduce((sum, cell) => sum + cell.weight, 0)).toBe(Number((await out(['weight'])).trim()));
   });
 
   it('a record whose source cell is null or absent counts as scan everywhere the source is read: status, list and search judge it once', async () => {

@@ -17,7 +17,7 @@ disable-model-invocation: true
 
 ## 派发前输入
 
-派发 scan subagent 前，先理清项目模块划分、架构约定与代码范围，并通过 `issue status` 与 `issue list` 获取**在位条目清单**，供本轮存活核对使用。
+派发 scan subagent 前，先理清项目模块划分、架构约定与代码范围，并通过 `issue status` 拿计数、`issue list` 拿**在位条目清单**（默认只列未结的），供本轮存活核对使用。
 
 ## 派发扫描
 

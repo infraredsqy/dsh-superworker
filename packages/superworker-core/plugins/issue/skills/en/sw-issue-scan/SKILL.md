@@ -17,7 +17,7 @@ Pool commands and conventions live in [`../sw-issue-repair/pool.md`](../sw-issue
 
 ## Inputs before dispatch
 
-Before dispatching scan subagents, establish the project's module boundaries, architecture conventions, and code scope, and run `issue status` + `issue list` to collect the **active entry list** for liveness checks.
+Before dispatching scan subagents, establish the project's module boundaries, architecture conventions, and code scope, and run `issue status` for the counts plus `issue list` for the **active entry list** (unsettled entries only), for liveness checks.
 
 ## Dispatch scans
 
