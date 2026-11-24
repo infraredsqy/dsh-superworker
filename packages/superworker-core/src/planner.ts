@@ -11,7 +11,7 @@ import type {
   StopPlan,
   WaitPlan,
 } from './conductor';
-import { cycleHoldingIds, cyclePolicy, defaultActiveCycle, readStateLedger } from './cycles';
+import { cycleHoldingIds, cyclePolicy, defaultActiveCycle, deliveryApproved, readStateLedger } from './cycles';
 import {
   eisenhowerOrder,
   inTagScope,
@@ -338,6 +338,7 @@ export async function pinSlots(root: string, cycle: CycleRecord): Promise<ReadyR
   if (slots === 0) return [];
   const view = await readLedger(recordPaths(root));
   const line = view.cycles.find((row) => String(row.id) === String(cycle.id)) ?? cycle;
+  if (lineStopGate(line, view.nodes) !== null) return [];
   const tags = Array.isArray(line.tags) ? line.tags : [];
   return rankedReady(view.nodes, view.cycles, { limit: slots, tags });
 }
@@ -450,6 +451,78 @@ function nodeRow(nodes: NodeMap, nodeId: string): NodeRecord & { id: string } {
  * Closing this node's own run follows the same reading: `--continue` cannot pry it open, and `--stop` can only
  * tighten it further.
  */
+/**
+ * A derived stop gate read off the line's path, its policies and the graph: whether this line is
+ * blocked from picking any new node right now without human action.
+ *
+ * Three gates, checked in order (node-level human gates first, then line count):
+ * 1. Unapproved checkpoint: the most recent step on the path delivered a `mode=checkpoint` node
+ *    whose current graph status is still `completed` and whose `approved_at` does not cover that
+ *    delivery (`dag approve <node>` clears it).
+ * 2. Shelved stop: the most recent step on the path did not deliver (`result !== 'completed'`),
+ *    the line's `when_shelved` is not `continue`, and that node is still `shelved` on the graph
+ *    (`dag revive <node>` or marking it completed clears it).
+ * 3. `stop_after_nodes`: the path has already reached the configured node limit
+ *    (`config unset stop_after_nodes --cycle <id>` or raising the limit clears it).
+ */
+export interface LineStopGate {
+  readonly kind: 'checkpoint' | 'shelved' | 'stop_after_nodes';
+  readonly nodeId: string | null;
+  readonly reason: string;
+}
+
+export function lineStopGate(cycle: CycleRecord, nodes: NodeMap): LineStopGate | null {
+  const path = Array.isArray(cycle.path) ? cycle.path : [];
+  const last = path[path.length - 1];
+  const policy = cyclePolicy(cycle);
+
+  if (last !== undefined && typeof last.node === 'string' && last.node !== '') {
+    const node = nodes[last.node];
+    if (
+      last.result === 'completed' &&
+      node !== undefined &&
+      node.status === 'completed' &&
+      normalizeMode(node.mode) === 'checkpoint' &&
+      !deliveryApproved(node)
+    ) {
+      return {
+        kind: 'checkpoint',
+        nodeId: last.node,
+        reason:
+          `node mode=checkpoint (${short(last.node)}): this round is done, and the next node opens only once ` +
+          `you approve it; to carry on: dag approve ${last.node}, then advance --cycle ${cycle.id}`,
+      };
+    }
+    if (
+      last.result !== 'completed' &&
+      policy.when_shelved !== 'continue' &&
+      node !== undefined &&
+      node.status === 'shelved'
+    ) {
+      return {
+        kind: 'shelved',
+        nodeId: last.node,
+        reason:
+          `node ${short(last.node)} did not deliver (${last.result}) and is shelved; ` +
+          `to carry on: dag revive ${last.node}, then advance --cycle ${cycle.id}`,
+      };
+    }
+  }
+
+  const cap = policy.stop_after_nodes;
+  if (typeof cap === 'number' && path.length >= cap) {
+    return {
+      kind: 'stop_after_nodes',
+      nodeId: last?.node ?? null,
+      reason:
+        `stop_after_nodes=${cap}: stop after ${cap} nodes (ran ${path.length}); ` +
+        `to carry on: config unset stop_after_nodes --cycle ${cycle.id}`,
+    };
+  }
+
+  return null;
+}
+
 function stopCriterion(cycle: CycleRecord, node: { id: string; mode?: unknown } | null): [boolean, string] {
   const mode = normalizeMode(node?.mode);
   if (mode === 'checkpoint') {
@@ -759,6 +832,10 @@ async function readLedger(paths: RecordPaths): Promise<LedgerView> {
  * nodes kept out by the range and nodes another line holds each state their own reason (see `blockedReason`).
  */
 async function pickNext(cycle: CycleRecord, view: LedgerView): Promise<NextPlan> {
+  const gate = lineStopGate(cycle, view.nodes);
+  if (gate !== null) {
+    return stopAction(view.nodes, cycle, gate.reason, { nodeId: gate.nodeId });
+  }
   const tags = Array.isArray(cycle.tags) ? cycle.tags : [];
   const slots = cyclePolicy(cycle).parallel;
   const ready = rankedReady(view.nodes, view.cycles, { limit: slots, tags });
@@ -935,7 +1012,7 @@ async function settleAnswers(
       // "continue" would still have to be guessed at.
       if (normalizeMode(nodes[nodeId]?.mode) === 'checkpoint') {
         reason +=
-          `; to carry on: cycle status ${cycle.id} active, ` +
+          `; to carry on: dag approve ${nodeId}, ` +
           `then advance --cycle ${cycle.id}`;
       }
     } else if (filled.length === 0 && carryOn) {

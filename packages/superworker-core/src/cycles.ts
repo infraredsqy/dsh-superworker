@@ -1,6 +1,5 @@
-import { createDagNamespace } from './dag';
 import { acceptedLayers, BUILTIN_KNOBS, parseConfigValue } from './config';
-import { nowMicro, nowSeconds } from './clock';
+import { nowSeconds } from './clock';
 import { RecordError } from './errors';
 import { unlinkWithRetry } from './fs-helpers';
 import { atomicWriteJson, jsonOptionsForRecord, readJsonFile } from './jsonio';
@@ -340,7 +339,7 @@ function momentToUs(value: string): number | null {
 }
 
 /** Whether a person approved this batch of deliveries: the approval only counts when its timestamp is after the completion timestamp (one of the criteria for an approval holding). */
-function deliveryApproved(node: NodeRecord): boolean {
+export function deliveryApproved(node: NodeRecord): boolean {
   const { approved_at: approved, completed_at: completed } = node;
   if (!approved || !completed) return false;
   const approvedUs = momentToUs(approved);
@@ -352,7 +351,6 @@ function deliveryApproved(node: NodeRecord): boolean {
 /** Build the cycles namespace: one per project root. */
 export function createCyclesNamespace(root: string): CyclesNamespace {
   const paths = recordPaths(root);
-  const dag = createDagNamespace(root);
 
   /** The record's one reading (see `readStateLedger`), on this tree's paths. */
   async function readState(): Promise<StateLedger> {
@@ -401,26 +399,6 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
     entry.tags = tags;
     ledger.cycles.push(entry);
     return entry;
-  }
-
-  /**
-   * The acceptance gate of out of service → in service: when the most recent landing is a checkpoint node
-   * and a person has not approved this batch of deliveries yet, the approval is written (through dag's
-   * approve, landing in ideas.json). Not on the graph, not a checkpoint, already approved, or never
-   * delivered — not one byte is written in any of those cases.
-   */
-  async function approveGateDelivery(record: CycleRecord): Promise<void> {
-    const ended = (record.path ?? []).filter(
-      (step) => step.ended_at !== null && step.ended_at !== undefined && step.node,
-    );
-    const last = ended[ended.length - 1];
-    if (last === undefined) return;
-    const node = await dag.get(last.node);
-    if (node === null || node.mode !== 'checkpoint') return;
-    if (deliveryApproved(node)) return;
-    const delivered = node.status === 'completed' || node.completed_at !== undefined;
-    if (!delivered) return;
-    await dag.approve(last.node, nowMicro());
   }
 
   /**
@@ -546,11 +524,6 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
           throw new Error(
             `cycle status must be one of ${JSON.stringify([...VALID_CYCLE_STATUSES].sort())}`,
           );
-        }
-        const wasInService = record.status === 'active';
-        if (status === 'active' && !wasInService) {
-          // Bringing a line back into service is exactly the continue a person gives at the checkpoint gate; the approval is written first, then the line account moves.
-          await approveGateDelivery(record);
         }
         record.status = status;
         record.updated_at = nowSeconds();

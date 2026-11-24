@@ -355,6 +355,59 @@ describe('planning: when to stop', () => {
     expect(actionOf(carried)).toBe('open_node');
     if (carried.action === 'open_node') expect(carried.node_id).toBe(next.id);
   });
+
+  it('derived stop gates: pickNext and advance stop on unapproved checkpoint, shelved stop, and stop_after_nodes even when independent nodes are ready', async () => {
+    const root = freshRoot();
+    const superworker = open(root);
+    await superworker.ledger.init();
+    const gate = await superworker.ledger.dag.add({ title: 'checkpoint round', mode: 'checkpoint' });
+    const flaky = await superworker.ledger.dag.add({ title: 'flaky round' });
+    const extra = await superworker.ledger.dag.add({ title: 'independent ready node' });
+    await superworker.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
+
+    // 1. Unapproved checkpoint blocks pickNext & advance until dag.approve is called.
+    await superworker.ledger.cycles.hold('c1', gate.id);
+    putSignal(root, 'c1', gate.id, 'completed');
+    await superworker.conductor.settle({ cycle: 'c1', node: gate.id });
+    const blockedCp = await superworker.conductor.next({ cycle: 'c1' });
+    expect(actionOf(blockedCp)).toBe('stop_pipeline');
+    if (blockedCp.action === 'stop_pipeline') {
+      expect(blockedCp.reason).toContain('mode=checkpoint');
+      expect(blockedCp.reason).toContain(`dag approve ${gate.id}`);
+    }
+    const advCp = await superworker.conductor.advance({ cycle: 'c1' });
+    expect(advCp.pinned).toEqual([]);
+    await superworker.ledger.cycles.setStatus('c1', 'active');
+    await superworker.ledger.dag.approve(gate.id);
+    const afterApprove = await superworker.conductor.next({ cycle: 'c1' });
+    expect(actionOf(afterApprove)).toBe('open_node');
+
+    // 2. Shelved stop blocks pickNext & advance until dag.revive (or when_shelved=continue).
+    await superworker.ledger.cycles.hold('c1', flaky.id);
+    putSignal(root, 'c1', flaky.id, 'failed');
+    await superworker.conductor.settle({ cycle: 'c1', node: flaky.id });
+    const blockedShelved = await superworker.conductor.next({ cycle: 'c1' });
+    expect(actionOf(blockedShelved)).toBe('stop_pipeline');
+    if (blockedShelved.action === 'stop_pipeline') {
+      expect(blockedShelved.reason).toContain('shelved');
+      expect(blockedShelved.reason).toContain(`dag revive ${flaky.id}`);
+    }
+    await superworker.ledger.dag.revive(flaky.id);
+    const afterRevive = await superworker.conductor.next({ cycle: 'c1' });
+    expect(actionOf(afterRevive)).toBe('open_node');
+
+    // 3. stop_after_nodes blocks pickNext & advance until raised or cleared.
+    await superworker.ledger.cycles.setPolicy('c1', 'stop_after_nodes', 2);
+    const blockedCap = await superworker.conductor.next({ cycle: 'c1' });
+    expect(actionOf(blockedCap)).toBe('stop_pipeline');
+    if (blockedCap.action === 'stop_pipeline') {
+      expect(blockedCap.reason).toContain('stop_after_nodes=2');
+    }
+    await superworker.ledger.cycles.setPolicy('c1', 'stop_after_nodes', 'off');
+    const afterUnset = await superworker.conductor.next({ cycle: 'c1' });
+    expect(actionOf(afterUnset)).toBe('open_node');
+    expect(extra.id).toBeTruthy();
+  });
 });
 
 describe('planning: read only', () => {

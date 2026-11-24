@@ -163,38 +163,18 @@ describe('status: active and inactive', () => {
     await expect(superworker.ledger.cycles.current()).rejects.toThrow('several active cycles');
   });
 
-  it('pulling back into service is the continue that stands before the checkpoint gate: the approval is written onto the node', async () => {
+  it('setStatus does not mutate node approval: dag.approve is the sole approval writer', async () => {
     const gate = await addNode('the gated one', { mode: 'checkpoint', tags: ['coding'] });
     const line = await superworker.ledger.cycles.start({ id: 'main', tags: ['coding'] });
     await superworker.ledger.dag.setStatus(gate.id, 'completed');
     await superworker.ledger.cycles.close('main', { node: gate.id, result: 'completed' });
     await superworker.ledger.cycles.setStatus('main', 'inactive');
-    expect((await superworker.ledger.dag.get(gate.id))!.approved_at).toBeUndefined();
     await superworker.ledger.cycles.setStatus('main', 'active');
-    const approved = (await superworker.ledger.dag.get(gate.id))!;
+    expect((await superworker.ledger.dag.get(gate.id))!.approved_at).toBeUndefined();
+    const approved = await superworker.ledger.dag.approve(gate.id);
     expect(approved.approved_at).toBeDefined();
     expect(approved.approved_at! >= approved.completed_at!).toBe(true);
     expect(line.id).toBe('main');
-  });
-
-  it('a landing spot that is not a checkpoint, or one already approved: activation writes nothing (the approval stamp does not move)', async () => {
-    const plain = await addNode('plain item', { tags: ['coding'] });
-    await superworker.ledger.cycles.create({ id: 'main', tags: ['coding'] });
-    await superworker.ledger.dag.setStatus(plain.id, 'completed');
-    await superworker.ledger.cycles.hold('main', plain.id);
-    await superworker.ledger.cycles.close('main', { node: plain.id, result: 'completed' });
-    await superworker.ledger.cycles.setStatus('main', 'inactive');
-    await superworker.ledger.cycles.setStatus('main', 'active');
-    expect((await superworker.ledger.dag.get(plain.id))!.approved_at).toBeUndefined();
-
-    const gate = await addNode('the gated one', { mode: 'checkpoint', tags: ['coding'] });
-    await superworker.ledger.dag.setStatus(gate.id, 'completed');
-    await superworker.ledger.cycles.hold('main', gate.id);
-    await superworker.ledger.cycles.close('main', { node: gate.id, result: 'completed' });
-    const first = await superworker.ledger.dag.approve(gate.id);
-    await superworker.ledger.cycles.setStatus('main', 'inactive');
-    await superworker.ledger.cycles.setStatus('main', 'active');
-    expect((await superworker.ledger.dag.get(gate.id))!.approved_at).toBe(first.approved_at);
   });
 });
 
