@@ -267,6 +267,28 @@ test('a pane that fails to draw keeps the workshop up: the guard says so, the ca
   await mounted.unmount()
 })
 
+test('a workspace with no record keeps the tab strip: every tab still opens, and the one sentence stands under each', { skip: bundleSkip }, async () => {
+  const mounted = await mountBuiltPanel({ record: {} })
+  const { window, act, container, consoleErrors, settle } = mounted
+
+  /* All four sources missing is the one nothing-to-draw state that keeps its tabs: the sentence
+   * replaces each pane's body, and the strip stays so the reader can move between the views. */
+  const tabs = mounted.tabs()
+  assert.equal(tabs.length, 5, 'the tab strip is not drawn over an empty workspace')
+  for (const tab of tabs) {
+    await act(async () => { tab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
+    await settle()
+    assert.equal(tab.getAttribute('aria-selected'), 'true', `pressing "${tab.textContent}" did not select it`)
+    const sentence = container.querySelector('.superworker-none p')
+    assert.notEqual(sentence, null, `the "${tab.textContent}" tab has no sentence under it`)
+    assert.ok((sentence.textContent ?? '').length > 0, 'the sentence under the tab has no words')
+    assert.equal(container.querySelector('.superworker-stage'), null, 'an empty pane stage stands beside the sentence')
+  }
+
+  await mounted.unmount()
+  assert.deepEqual(consoleErrors, [], 'there is an error in the console')
+})
+
 test('SettingsSection forwards port to AnswerRow and reads/writes global answer without a session', { skip: bundleSkip }, async () => {
   const mounted = await mountBuiltPanel({ record: record() })
   const { window, React, act, client, settle } = mounted

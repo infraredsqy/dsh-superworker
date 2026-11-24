@@ -173,11 +173,13 @@
 }
 
 /* ---- This pane has nothing to say ------------------------------------------
- * The panel reads the record of one workspace. When that workspace has no such record, or none of
- * the four files parses, all six panes have nothing to say: a row of empty tabs over an empty
- * board would read as a broken panel. This pane therefore collapses to one sentence, pinned to
- * the middle of the footprint; the nameplate stays in the header — the reader must be able to
- * confirm what they are looking at. */
+ * The panel reads the record of one workspace. When this screen itself has no reading to stand on —
+ * the session missing, the reading refused, the record unreadable, ungrouped picked — every pane is
+ * speechless at once, and a row of tabs over a refusal would read as a broken panel: the pane
+ * collapses to one sentence, pinned to the middle of the footprint. The record's own absence — a
+ * workspace with no record — keeps the tabs instead, and that sentence is each view's whole content.
+ * The nameplate stays in the header either way: the reader must be able to confirm what they are
+ * looking at. */
 .superworker-page .superworker-none {
   flex: 1 1 auto;
   display: flex;

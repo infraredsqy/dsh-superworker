@@ -618,16 +618,20 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
 
   /* Whether this screen has anything to say. Picking "ungrouped" while this session has a home
    * means that pane has no record under it; none of the four sources listed means this workspace
-   * has no such record; listed but none parseable means unreadable. In all three cases all five
-   * panes are speechless, and the pane collapses to one sentence — the plaque and the workspace
-   * selector stay; tabs and body go together. */
+   * has no such record; listed but none parseable means unreadable. Each is one sentence in place
+   * of the body — the plaque and the workspace selector stay with it. The record's own absence
+   * (`noRecord`) is the one nothing that keeps the tabs: the five views stand wherever the panel
+   * stands, and that sentence is each of their whole content, so the row stays and every view says
+   * it. The rest are states of this screen itself, not of the record, and they still take the tabs
+   * away with the body. */
+  const noRecord = reading !== null && everySourceIs(reading, 'missing')
   const nothing = pickedNone
     ? t('panel.ungrouped-empty')
     : load.phase === 'no-session'
       ? t('panel.no-session')
       : load.phase === 'failed'
         ? failureWord(t, load.failure)
-        : reading !== null && everySourceIs(reading, 'missing')
+        : noRecord
           ? t('panel.no-record')
           : reading !== null && everySourceIs(reading, 'unusable')
             ? t('panel.unreadable')
@@ -660,7 +664,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
             )}
           </div>
         </div>
-        {nothing === null && legacy === null ? (
+        {(nothing === null || noRecord) && legacy === null ? (
           <div className="superworker-tabs" role="tablist">
             {VIEWS.map((id) => (
               <button
