@@ -63,23 +63,21 @@ Key design choices:
 
 `settle <node>` closes a single node; `plan` previews the next action; `advance` is a composite verb that sequentially pins (`hold`), materializes launch files, and opens sessions (`dispatch`). The standard flow can also run `plan` → `hold <node> --cycle <id>` → `dispatch <id>` step by step.
 
-The two entry points treat inactive cycles differently:
-
-- **`settle` ignores cycle status**: Each node already records its owning cycle; if an inactive cycle could not close its held node, that node would stay stuck forever. When the cycle is not `active`, `settle` **records only**—logging the step, updating node status, and running close-time plugins without pinning a next node, launching a session, or changing cycle status. Re-activating the cycle remains a human decision.
+- **`settle` records only**: It logs the step, updates node status, and runs close-time plugins without pinning a next node or opening a session.
 - **`worktree_mode` does not alter settlement's disk-only checks**: `worktree_mode` accepts `off` or `fork` (defaulting to `fork` in git repos and `off` elsewhere, overridable at project or global layer; see Section 8). `reuse` is rejected immediately (`worktree_mode_unsupported`). Sessions run git commands to create, merge, and remove worktrees; the engine owns only records and naming, so `settle` never inspects worktrees.
-- **`advance` never drives an inactive cycle**: It returns `ask_user` along with the command to reactivate the cycle.
+- **`advance` enforces derived stop gates**: If the last step is an unapproved `checkpoint`, a still-`shelved` node under `when_shelved=stop`, or `path.length >= stop_after_nodes`, `advance` pins nothing and returns `stop_pipeline` with the clearing command.
 
-**The engine never sets a cycle to `active` on its own**: A cycle starts `active` at creation; once stopped, only a human can reactivate it. Stop reasons live in the message emitted at stop time rather than in state fields. Having no ready work right now does not mean a cycle is dead—the graph grows over time, and resuming is always a human decision.
+**No writable cycle status bit**: Cycle records carry no `active / inactive` toggle and no persisted default-cycle pointer. Whether a cycle is `running` (holding nodes), `waiting` (stopped at an unapproved checkpoint or shelved stop), or `idle` is derived live from `holding`, `path`, and graph node states.
 
-When `sw-route` runs the reactivation command for the user, the same rule holds: the decision is the user's, `sw-route` merely executes it. Aligning cycles during `sw-route` ensures `/sw-conduct` starts against a settled cycle without guessing.
+Aligning the target cycle during `sw-route` ensures `/sw-conduct` starts against an explicit cycle without guessing.
 
 ## 5. Verdicts and Stop Conditions
 
 - **Delivery is decided by the ticket on disk**: The engine updates node status from the handoff ticket without consulting another session. The ticket holds the coarse verdict; detailed findings stay in session reports.
 - **Post-non-delivery behavior follows cycle policy**: `when_shelved` determines whether the cycle pauses for the user or advances past a shelved node. Under either setting, the undelivered node itself is shelved waiting for human attention.
-- **Stop points follow node `mode` first**: `auto` has no human gate; `manual` confirms within the session; `checkpoint` pauses immediately after close-out for the user to say "continue." Cycle `stop_after_nodes` can only add stricter stop points on top of `mode`, never relax it. Manual stop uses `cycle status <cycle> inactive`.
-- **Human approval is persisted per delivery**: Because a `checkpoint` gate pauses the cycle, reactivating the cycle simultaneously records human approval for **that delivery** (valid when approval timestamp ≥ delivery timestamp, both stored on the node). Approval is **per delivery, not per node**: a subsequent re-delivery moves the delivery timestamp past the old approval, invalidating it automatically with no manual revocation or secondary ledger. This cleanly separates "human approved, graph temporarily empty" from "cycle waiting for approval." Standalone node approval outside a cycle uses `dag approve`.
-- **Stopping has one status**: When the plan decides to stop, the cycle becomes `inactive`. There is no `paused` vs. `completed` split, since the DAG can grow at any time.
+- **Stop points follow node `mode` first**: `auto` has no human gate; `manual` confirms within the session; `checkpoint` pauses immediately after close-out for the user to approve. Cycle `stop_after_nodes` can only add stricter stop points on top of `mode`, never relax it.
+- **Human approval is persisted per delivery on the node**: `checkpoint` gates are evaluated live from `approved_at >= completed_at` on the node itself; `dag approve <node>` is the sole write entry point. Approval is **per delivery, not per node**: a subsequent re-delivery moves the delivery timestamp past the old approval, invalidating it automatically with no manual revocation or secondary ledger.
+- **Derived 3-state view, never stored**: A cycle reads as `running` (holding nodes), `waiting` (stopped at a human gate), or `idle` (everything else)—derived on read since the DAG can grow at any time.
 - **One canonical ranking**: The engine pulls full rankings from the DAG layer and filters rows by readiness and cycle tags without re-implementing scoring, preventing ranking drift.
 
 ## 6. Core Invariants

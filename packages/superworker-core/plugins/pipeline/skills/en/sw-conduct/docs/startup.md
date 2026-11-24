@@ -7,9 +7,9 @@ Run `cycle list` first, then route by input and state:
 | Input & State | Action |
 |---|---|
 | `/sw-conduct status` | Run `cycle list` + `cycle current`; report status only, do not advance |
-| `/sw-conduct`, exactly 1 `active` cycle | Run `advance --json` to continue |
-| `/sw-conduct`, multiple `active` cycles | Bare `advance` is refused with a candidate list; present candidates to the user and run `advance --cycle <cycle_id> --json` for their choice |
-| `/sw-conduct`, cycles exist but none `active` | List candidates for the user to choose (never pick for them), then run `cycle status <id> active` followed by `advance --cycle <id> --json`. Note: an inactive cycle cannot be driven with `advance` (returns `ask_user`), though a node it holds can still be settled (records only, no dispatch); to redo a `shelved` node, run `dag revive <node_id>` first |
+| `/sw-conduct`, exactly 1 `running` cycle | Run `advance --json` to continue |
+| `/sw-conduct`, multiple `running` cycles | Bare `advance` is refused with a candidate list; present candidates to the user and run `advance --cycle <cycle_id> --json` for their choice |
+| `/sw-conduct`, cycles exist but none `running` | List candidates for the user to choose (never pick for them), then run `advance --cycle <id> --json` directly (if stopped at a checkpoint, run `dag approve <node_id>` first; to redo a `shelved` node, run `dag revive <node_id>` first) |
 | `/sw-conduct`, no cycle yet | Follow "Start-up" below |
 | User states a task directly, no cycle yet | Follow "Start-up" below with `--title` set to the user's exact words |
 
@@ -22,7 +22,7 @@ cycle start <slug> --title "<user's exact words>" --tags coding,writing
 advance --json
 ```
 
-- If an active cycle already exists, `cycle start` is refused unless `--force` is passed (confirm parallel cycles are intended first).
+- Multiple cycles can be created concurrently without any status lock; bare `advance` requires `--cycle <id>` when more than one cycle is running.
 - `--tags` is **required** even when the graph has only one line. `--title` takes only the user's exact words (used as the cycle name, never injected into prompts).
 
 ## Stopping After `advance`
@@ -33,4 +33,4 @@ advance --json
 
 Before stopping, tell the user how far the cycle will run (for full auto: "Full auto is active; this cycle will keep running until no ready nodes remain or `stop_after_nodes` is reached.").
 
-> Stop boundaries are governed by node `mode` and `stop_after_nodes`. When a stop point is reached with no nodes held, `advance` marks the cycle `inactive`; a human must run `cycle status <cycle> active` to resume (see [`conduct-state.md`](conduct-state.md)).
+> Stop boundaries are derived live from node `mode` (e.g., `checkpoint`), `when_shelved`, and `stop_after_nodes`. When a stop gate applies, `advance` returns `stop_pipeline` without pinning new nodes; clear the gate and run `advance --cycle <cycle>` to resume (see [`conduct-state.md`](conduct-state.md)).

@@ -37,7 +37,7 @@ Write in a crisp, professional specification register rather than prose. Layerin
 1. Read `shared/superworker/philosophy.md`; communicate with the user following `shared/superworker/talking.md` (one question at a time, all four elements, terminology matched to `config get answer`).
 2. Read the project's `docs/` and relevant specifications.
 3. **When creating or modifying the graph** (skip for pure queries), check `config get test_tier` (`full` / `minimal`, default `full`). If unset on this project and this run needs `minimal`, ask once with a recommendation (demo/prototype → `minimal`; long-term product → `full`), then write the user's decision with `config set test_tier minimal` into `.superworker/config.json`. See "Test Tier and Verification" in [`../sw-conduct/SKILL.md`](../sw-conduct/SKILL.md). **Never write settings into root `AGENTS.md` or `CLAUDE.md`**; `worktree_mode` works the same way via `config set worktree_mode`.
-4. Read the DAG and cycles: run `dag --help` to confirm commands, then `dag list` for the skeleton (or `dag search` with a merged regex like `a|b|c` for a specific feature). For matching nodes, inspect `dag info` and direct dependencies, and read `spec.md` by path if needed. Run `cycle list` and `cycle current` to see active cycles and their `tags` coverage.
+4. Read the DAG and cycles: run `dag --help` to confirm commands, then `dag list` for the skeleton (or `dag search` with a merged regex like `a|b|c` for a specific feature). For matching nodes, inspect `dag info` and direct dependencies, and read `spec.md` by path if needed. Run `cycle list` and `cycle current` to see running/waiting cycles and their `tags` coverage.
 
 Active global/cycle constraints are already injected into context; follow them directly rather than guessing.
 
@@ -60,7 +60,7 @@ Check four things while splitting:
 - **Value**: whether the item is necessary and delivers the target experience.
 - **Relation to existing nodes**: check whether it shares a feature, has an ordering, shares a prerequisite, or is truly independent ("independent" requires verification).
 - **Dependencies**: infer prerequisites from the graph, docs, and code. **Two nodes that modify the same set of files must have a precedence edge** (parallel nodes run in separate worktrees; missing edges cause merge collisions). Judge overlap from actual implementation files (dispatch a subagent to inspect if unsure), not from impressions of the spec. **Edge vs `parallel` rule**: resolve file collisions with edges, never by lowering `parallel`; if pairwise collisions form a cycle, merge those nodes into one.
-- **Cycle assignment**: assign to an active cycle whose `tags` cover the new nodes. If none fits, offer the user two choices: reactivate a parked cycle (`cycle status <line> active`) or open a new cycle (`cycle start` / `cycle create`, see [`docs/cycle-launch.md`](docs/cycle-launch.md)). **Only the user can decide to reactivate a parked cycle.**
+- **Cycle assignment**: assign to a running cycle whose `tags` cover the new nodes. If none fits, offer the user two choices: reuse an existing cycle (run `advance --cycle <line>` or `hold <node> --cycle <line>` directly—no reactivation needed) or open a new cycle (`cycle start` / `cycle create`, see [`docs/cycle-launch.md`](docs/cycle-launch.md)). **Only the user can decide to reuse an existing cycle.**
 
 #### Choosing a Path per Item
 

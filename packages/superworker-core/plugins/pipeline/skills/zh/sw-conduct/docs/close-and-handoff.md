@@ -12,7 +12,7 @@ handoff <cycle> <node> completed -s "<一行总结>" -o '<按 --form 形状填�
 settle <node> --json
 ```
 
-- `handoff --form` 只印形状，不动状态；`handoff ... -o` 只写交接单，不关节点；`settle` 读取交接单判决，更新图状态为 `completed` / `shelved` 并运行收尾插件接缝（可能插入维护节点），但不钉新节点、不开会话、不停线。
+- `handoff --form` 只印形状，不动状态；`handoff ... -o` 只写交接单，不关节点；`settle` 读取交接单判决，更新图状态为 `completed` / `shelved` 并运行收尾插件接缝（可能插入维护节点），但不钉新节点、不开会话。
 - 想只读预演收尾去向，可跑 `plan --after <node> --json`。
 - **异常结单**：需求做不到或 spec 自相矛盾时将 `completed` 换为 `failed`；主动中止换为 `stopped`，并在 `-s` 写清原因。`settle` 会自动将节点标为 `shelved`（出局等人），无需手动标。
 
@@ -30,7 +30,7 @@ settle <node> --json
 |---|---|
 | `dispatch` | **交票即止**：交接单已落盘、节点已 `settle`，下一棒由宿主自动接力开出，本会话直接结束，不再跑派发命令。仅当接力关闭或下一棒未开出时，才由人补跑 `advance --cycle <cycle>` |
 | 插入了维护节点 | `settle` 返回新插入的维护节点及 spec 路径（挂在下一待跑节点之前，不占当前持有，且**可能不止一个**）。照常提交推送后跑 `advance --cycle <cycle> --json`，它们会按正常排名被挑出派发。每个维护节点 spec 自带 `method:` 行，接手会话按该技能执行并严守 spec 范围 |
-| `stop_pipeline` | 原样向用户转述 `reason`（若有 `attention` 一并念出）并停手。`advance` 已自动将线置为 `inactive`（线内仍有其他节点运行中时除外）。恢复命令：`cycle status <cycle> active` 后 `advance --cycle <cycle>` |
+| `stop_pipeline` | 原样向用户转述 `reason`（若有 `attention` 一并念出）并停手。停点由节点与履历实时推算，不写状态位：检查点停手用 `dag approve <node>`、搁置停手用 `dag revive <node>`、步数上限用 `config unset stop_after_nodes --cycle <cycle>`，然后 `advance --cycle <cycle>` 即可继续 |
 | `wait` | 按返回的 `note` / `close_with` 执行（收格命令即 `settle <node>`），**绝不轮询** |
 | `spawn_error` | 当前进程无原生 opener，不认领节点，输出会提示面板与 prompt 路径；照实汇报并将 prompt 路径与调用行交给用户 |
 
@@ -40,10 +40,10 @@ settle <node> --json
 
 ## 三、`checkpoint` 节点停手与续跑
 
-`checkpoint` 节点在 `settle` 与 push 后，`advance` 会返回 `stop_pipeline` 并将线置为 `inactive`。向用户汇报本轮交付与记录路径，等待确认。用户回复「继续」后按顺序执行：
+`checkpoint` 节点在 `settle` 与 push 后，`advance` 会按未批检查点判据返回 `stop_pipeline` 且不钉新节点。向用户汇报本轮交付与记录路径，等待确认。用户回复「继续」后按顺序执行：
 
 ```pwsh
-cycle status <cycle> active
+dag approve <node>
 advance --cycle <cycle> --json
 ```
 

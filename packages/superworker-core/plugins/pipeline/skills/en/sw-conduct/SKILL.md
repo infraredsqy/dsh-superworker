@@ -44,7 +44,7 @@ The `.superworker/` ledger mode is determined at Prepare step 0; read all other 
 | `auto` | Runs | Relays automatically; stop after settling and let the host open the next session. Escalate only on stuck loops or conflicting requirements |
 
 - **`checkpoint` and `auto` nodes must never call `ask_user_question`**: when uncertain, pick the option closest to intent and log the choice and rationale under "Autonomous decisions" in `run.md`. `manual` nodes have no such restriction.
-- See [`docs/conduct-state.md`](docs/conduct-state.md) for confirmation points, `stop_after_nodes`, and `inactive` transitions.
+- See [`docs/conduct-state.md`](docs/conduct-state.md) for confirmation points, `stop_after_nodes`, and derived stop gates.
 
 ### Weight (`weight`)
 

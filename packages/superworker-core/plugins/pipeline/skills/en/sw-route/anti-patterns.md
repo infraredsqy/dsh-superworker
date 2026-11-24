@@ -86,7 +86,7 @@ This specifies neither the target location nor a verifiable outcome. Proper form
 
 ## `route-reads-a-landed-line-as-a-started-node` — Treating a landed cycle as an actively running node
 
-**Symptom**: After running `cycle start` or `cycle status <id> active`, the agent reports "the cycle is running" or "the first node is ready," misreading the `Node:` line in `cycle current` as active execution. No execution session was actually launched, leaving the user's request to start work half-done.
+**Symptom**: After running `cycle start` or `hold`, the agent reports "the cycle is running" or "the first node is ready," misreading the `Node:` line in `cycle current` as active execution. No execution session was actually launched, leaving the user's request to start work half-done.
 
 **Correction signal**: The user asks "is it actually running?" or "which session is running it?"
 

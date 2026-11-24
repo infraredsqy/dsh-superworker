@@ -3,9 +3,9 @@
  *
  * The engine reads the ticket, puts the verdict into the line's path, lays the claim down, marks the graph
  * node and runs the close-time plugin seam. This word adds no second operation: it pins nothing, lands no
- * prompt, opens no session and does not park the line. What the line does next is printed underneath as the
- * plan, and the command that carries it out is `advance` (the host runs it by itself when it drives the
- * line). To stop the line a person runs `cycle status <id> inactive`; to name the next node, `hold`.
+ * prompt, and opens no session. What the line does next is printed underneath as the plan, and the command
+ * that carries it out is `advance` (the host runs it by itself when it drives the line). To name the next
+ * node a person runs `hold`; to approve a checkpoint gate, `dag approve`.
  *
  * `--dry-run` is the same gates and the same criteria with the effect shaped away: the engine answers
  * `settlePreview`, the close seam is asked its own previews, and not one record byte is written. It is a

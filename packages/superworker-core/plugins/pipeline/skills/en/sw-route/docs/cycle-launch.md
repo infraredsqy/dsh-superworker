@@ -2,14 +2,11 @@
 
 > When to read this: during Step 5 close-out when the user wants to **run immediately** (default unless they say "not yet"). Skip if only building/editing/querying the graph.
 
-Landing and launching are two distinct steps: **landing writes records without opening sessions; launching opens the `/sw-conduct` sessions**. Any decision to reactivate a parked cycle or create a new one must already be approved by the user in Step 3—here you only execute it.
+Landing and launching are two distinct steps: **landing writes records without opening sessions; launching opens the `/sw-conduct` sessions**. Any decision to reuse an existing cycle or create a new one must already be approved by the user in Step 3—here you only execute it.
 
 ## 1. Land the Cycle
 
-- **Reactivate a parked cycle**:
-  ```pwsh
-  cycle status <line> active
-  ```
+- **Reuse an existing cycle**: no reactivation command is needed—keep the cycle id and advance or hold directly in Step 4 (`advance --cycle <line>` or `hold <node> --cycle <line>` + `dispatch <line>`; if stopped on a checkpoint or shelved node, run `dag approve <node>` or `dag revive <node>` first).
 - **Open a new cycle (standard, auto-picking by rank)**:
   ```pwsh
   cycle start <slug> --title "<user's exact words>" --tags <tags>
@@ -33,7 +30,7 @@ Run:
 ```pwsh
 plan --cycle <line> --json
 ```
-(Omit `--cycle` when only one cycle is active.)
+(Omit `--cycle` when only one cycle is currently running.)
 
 - The output must point to a dispatchable node.
 - If no node is ready, go back and fix the graph; if blocked by tags or a gate, report the `reason` verbatim—**never hand over a command that cannot run**.
@@ -59,6 +56,6 @@ plan --cycle <line> --json
 
 End your report with a single copy-pasteable command:
 - For a specific node: `/sw-conduct <node_id> [pipeline]`
-- When the active cycle auto-picks next nodes: `/sw-conduct`
+- When the running cycle auto-picks next nodes: `/sw-conduct`
 
-**Never omit `[pipeline]`**—without it, the session runs only that single node and stops without close-out, commit/push, or advancing to the next node. If the cycle is still inactive, do not give a launch command; state the current status instead.
+**Never omit `[pipeline]`**—without it, the session runs only that single node and stops without close-out, commit/push, or advancing to the next node. If the cycle is waiting on a checkpoint or no ready node exists, do not give a launch command; state the current status instead.

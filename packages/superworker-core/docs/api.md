@@ -252,10 +252,9 @@ checkout、没给 `git` 或者 git 拒绝时静默跳过，不抛。
 | `ledger.cycles.create` | `create(input)` | 立一条线；拾取范围（`tags`）必须声明 |
 | `ledger.cycles.start` | `start(input)` | 立线并按规则钉住开线的节点 |
 | `ledger.cycles.rename` | `rename(id, title)` | 改线的标题 |
-| `ledger.cycles.setStatus` | `setStatus(id, status)` | `active` 该往前推 / `inactive` 不推 |
 | `ledger.cycles.setPolicy` | `setPolicy(id, key, value)` | 写线自己的策略，交回整个有效集 |
 | `ledger.cycles.list` | `list()` | 全部的线 |
-| `ledger.cycles.current` | `current()` | 现在该干活的线；多条在服务时拒绝点名；没有时为 `null` |
+| `ledger.cycles.current` | `current()` | 唯一手里握着节点的线；多条同时在跑时拒绝点名；没有时为 `null` |
 | `ledger.cycles.show` | `show(id)` | 一条线的完整记录 |
 | `ledger.cycles.policies` | `policies(id)` | 这条线的有效策略集：缺省在前，线自己写了的盖上去 |
 | `ledger.cycles.standing` | `standing(id, node)` | 一个节点在这条线里的站况：`holding` / `walked` / `nothing`，外加磁盘上那张票 |
@@ -382,10 +381,10 @@ id，写口认的是节点已有的那个目录。
 | 动作 | 签名 | 一句话语义 |
 | --- | --- | --- |
 | `conductor.next` | `next(input?)` | 读一份只读规划：下一步该干什么，不执行、不写记录；`after` 问的是收尾预演 |
-| `conductor.settle` | `settle(input?)` | 收这一单：判决进 path、认领放下、图落 `completed` / `shelved`、收尾插件缝跑完；不补槽、不停线、不落材料、不开会话 |
-| `conductor.settlePreview` | `settlePreview(input?)` | 收这一单的预演：同一对门槛、同一份收尾判据、收尾缝问各家自己的预演，写零字节；交回 `SettlePreview { action; dry_run; cycle; node_id; result; delivered; graph; target; filled; park_line; seam; warnings; plan }` |
-| `conductor.close` | `close(input?)` | `settle` 加应用步而不开会话：补满空槽，没得做了且手是空的就把线转 `inactive` |
-| `conductor.advance` | `advance(input?)` | 把线推一格：补满空槽（钉）→ 落每格的材料 → 一格开一个会话；停了的线转 `inactive`；交回 `AdvanceReceipt { cycle; pinned; dispatches; parked; plan }` |
+| `conductor.settle` | `settle(input?)` | 收这一单：判决进 path、认领放下、图落 `completed` / `shelved`、收尾插件缝跑完；不补槽、不落材料、不开会话 |
+| `conductor.settlePreview` | `settlePreview(input?)` | 收这一单的预演：同一对门槛、同一份收尾判据、收尾缝问各家自己的预演，写零字节；交回 `SettlePreview { action; dry_run; cycle; node_id; result; delivered; graph; target; filled; seam; warnings; plan }` |
+| `conductor.close` | `close(input?)` | `settle` 加应用步而不开会话：按图上顺序补满空槽 |
+| `conductor.advance` | `advance(input?)` | 把线推一格：补满空槽（钉）→ 落每格的材料 → 一格开一个会话；交回 `AdvanceReceipt { cycle; pinned; dispatches; plan }` |
 | `conductor.prepare` | `prepare(input?)` | 把一次派发的材料落下来、不开会话：提示词落到它的位置、运行稿立在节点目录、交接单模板随材料交回 `PreparedDispatch { cycle; nodes }`；只有规划交回 `dispatch` 时才有材料可落，别的计划当场拒绝、一个字节不写 |
 | `conductor.dispatch` | `dispatch(input?)` | 把一格交给一个会话，交回收据 `DispatchReceipt { action; cycle; node_id; node_title; prompt; prompt_text; session? }`；`action` 只有 `opened` / `already_open` 两个词 |
 | `conductor.dispatchPreview` | `dispatchPreview(input?)` | 派发的预演：这格会收到的请求（材料落点与是否已在盘上、`model`），拦下缝问各家自己的预演、理由当数据交回 `blocked`；不落材料、不落记号、不开会话 |
@@ -402,16 +401,15 @@ id，写口认的是节点已有的那个目录。
 后线与交接单各重读一次、结算按重读的这份算，动过的记录先留字节快照、中途失败按快照放回去。落地的
 是：判决进 `path`、认领放下、图落 `completed` / `shelved`，随后收尾插入缝把插件要的节点落图——
 插进来的节点挂在**这一单本该开的下一个节点之前**（结算判据挑中的那个是插入的目标，它被重挂到新
-节点之下），于是它按排序排在那件活的前面；结算自己不补槽、不停线、不落材料、不开会话。
+节点之下），于是它按排序排在那件活的前面；结算自己不补槽、不落材料、不开会话。
 
 `close` 与 `advance` 是同一个应用步的两种收尾：先补满空槽（线自己的 `parallel` 减手里的节点数，
-按图上的次序取，受这条线的选材范围与别的线的持有约束），再读一次计划——交回 `dispatch` 就把手里
-还没开过会话的格子交给执行者（每格一个赛跑着开，一格里一个会话），交回 `stop_pipeline` 且手是空
-的就把线转 `inactive`。`close` 不交执行者（工具在 `RecordOpenOptions.executor` 缺席时的那个档），
-`advance` 交；两者都不结算——节点结束这件事归 `settle`。线的决定不从这里进：想停线是
-`ledger.cycles.setStatus(<线>, 'inactive')`，想点名下一个节点是 `ledger.cycles.hold`，判定用的策略
-住在线自己的记录里（节点的 `mode`、线的 `when_shelved` 与 `stop_after_nodes`），结算只读
-它们。
+按图上的次序取，受这条线的选材范围、停点门槛与别的线的持有约束），再读一次计划——交回 `dispatch`
+就把手里还没开过会话的格子交给执行者（每格一个赛跑着开，一格里一个会话）。`close` 不交执行者
+（工具在 `RecordOpenOptions.executor` 缺席时的那个档），`advance` 交；两者都不结算——节点结束这件事
+归 `settle`。线自己没有可写开关：想点名下一个节点是 `ledger.cycles.hold`，审批检查点是
+`ledger.dag.approve`，判定用的策略住在线与节点自己的记录里（节点的 `mode`、线的 `when_shelved` 与
+`stop_after_nodes`），结算只读它们。
 
 `prepare` 是派发准备的写侧、单独一个入口——它读同一份规划、只接受交回 `dispatch` 的那一份，把
 提示词与运行稿按同样的落点落下（交接单模板随材料交回；线配了 `source: ticket` 的读数且门上有
@@ -451,9 +449,9 @@ id，写口认的是节点已有的那个目录。
 不当作在场，下一步该怎么办也一并说清，其余格子照常算完，不被这一格拖住）。
 没有 `.superworker/` 的新项目不算红，那一格只说该跑一次 `ledger.init`。
 
-**`close` 是 `settle` 加应用步，不开会话。** 用同一套收尾判据，落地多走一步：补满空槽，停了且
-手空的线转 `inactive`。开不开会话是 `close` 与 `advance` 的唯一区别；线接不接着走、下一个点谁，
-不在这里答——那是线的状态（`ledger.cycles.setStatus`）与认领（`ledger.cycles.hold`）的事。
+**`close` 是 `settle` 加应用步，不开会话。** 用同一套收尾判据，落地多走一步：按图上顺序补满空槽。
+开不开会话是 `close` 与 `advance` 的唯一区别；下一个点谁是认领（`ledger.cycles.hold`）的事，检查点
+放行是审批（`ledger.dag.approve`）的事。
 
 **`handoffForm` 交回 `HandoffForm { cycle; readings }`**：`readings` 是这条线要 worker 上报的读数格
 （`source: ticket` 的声明，且它的 `when_knob` 在链上有生效值），按声明次序，一格一个

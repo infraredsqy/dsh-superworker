@@ -1,7 +1,7 @@
 # conduct 节点标签（tag）与 cycle 分流
 
 > 本文件说明**节点 tag 与 cycle 分流**的设计依据：词表约定、过滤判据，以及为何过滤仅作用于选点阶段。
-> 状态与推进契约见 [`./conduct-state.md`](./conduct-state.md)；派发链见 [`./conduct-dsh-dispatch.md`](./conduct-dsh-dispatch.md)；多条 active cycle 并行时指令作用域的可见性规则，见状态契约中的上下文注入一节（指令仅分 `global` 与 `cycle` 两级）。
+> 状态与推进契约见 [`./conduct-state.md`](./conduct-state.md)；派发链见 [`./conduct-dsh-dispatch.md`](./conduct-dsh-dispatch.md)；多条 cycle 并行时指令作用域的可见性规则，见状态契约中的上下文注入一节（指令仅分 `global` 与 `cycle` 两级）。
 >
 > 核心规则一句话：**节点可以不带 tag；cycle 的 `tags` 是该执行线的固定选材范围（全生命周期沿用）；过滤只作用于「挑选下一个节点」这一步。**
 
@@ -45,7 +45,7 @@ tag 机制用于表达这一边界：节点通过 tag 声明任务类别，cycle
 
 此处停顿意在将决策权交还用户：本线任务已完成，另一类任务是否启动、何时启动应由人决定。工具能判断「本线无活、他线有活」，但无法判断「此刻是否应该开启第二条线」。
 
-停顿时会生成面向用户的一句话 `reason`，点明哪些节点已就绪、被哪些 tag 拦截，并附上可直接复制执行的新建 cycle 命令。同时将当前 cycle 置为 `inactive`；其他类别的任务原样留在图中，不加锁，也不标记失效。
+停顿时会生成面向用户的一句话 `reason`，点明哪些节点已就绪、被哪些 tag 拦截，并附上可直接复制执行的新建 cycle 命令；其他类别的任务原样留在图中，不加锁，也不标记失效。
 
 ## 6. `--node` 手动指定节点
 

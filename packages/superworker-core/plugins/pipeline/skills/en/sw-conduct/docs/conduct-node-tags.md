@@ -1,7 +1,7 @@
 # Conduct: Node Tags and Cycle Routing
 
 > Design reference for **node tags and cycle routing**: vocabulary, filter criterion, and why filtering applies exclusively to node selection.
-> For state and advancement contracts, see [`./conduct-state.md`](./conduct-state.md); for dispatch, see [`./conduct-dsh-dispatch.md`](./conduct-dsh-dispatch.md); for instruction scope visibility across concurrent active cycles, see the context-injection section in `conduct-state.md` (instructions exist at two levels only: `global` and `cycle`).
+> For state and advancement contracts, see [`./conduct-state.md`](./conduct-state.md); for dispatch, see [`./conduct-dsh-dispatch.md`](./conduct-dsh-dispatch.md); for instruction scope visibility across concurrent cycles, see the context-injection section in `conduct-state.md` (instructions exist at two levels only: `global` and `cycle`).
 >
 > Core rule in one sentence: **A node may have no tags; a cycle's `tags` define its permanent selection scope for its entire lifetime; filtering applies only when picking the next node.**
 
@@ -45,7 +45,7 @@ If the current cycle's filter set has ready nodes, it picks the top-ranked one; 
 
 Stopping returns the decision to the user: this line's work is done, and whether or when to launch another line is a human decision. The engine can determine that work exists elsewhere, not whether starting a second line right now is appropriate.
 
-On pause, the engine emits a human-readable `reason` naming which ready nodes were excluded by which tags, along with a ready-to-copy command to start a new cycle. The current cycle transitions to `inactive`; excluded nodes remain untouched in the graph with no locks or error flags.
+On pause, the engine emits a human-readable `reason` naming which ready nodes were excluded by which tags, along with a ready-to-copy command to start a new cycle; excluded nodes remain untouched in the graph with no locks or error flags.
 
 ## 6. Explicit `--node` Selection
 

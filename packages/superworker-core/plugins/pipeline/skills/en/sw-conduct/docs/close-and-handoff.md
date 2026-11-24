@@ -30,7 +30,7 @@ After Close Step 7 (commit) and Step 8 (push) succeed, run `advance --cycle <cyc
 |---|---|
 | `dispatch` | **Hand off and stop**: the slip is written and settled, and the host opens the next session automatically. End this session without running extra dispatch commands. Only if auto-relay is off or the next session never opens should someone run `advance --cycle <cycle>` manually |
 | Maintenance nodes inserted | `settle` lists newly inserted maintenance nodes and their spec paths (placed ahead of the next queued node, without changing current holdings; **may insert more than one**). Commit and push as usual, then run `advance --cycle <cycle> --json` so normal ranking dispatches them. Each carries a `method:` line—the next session runs that skill strictly within the inserted spec's scope |
-| `stop_pipeline` | Report `reason` verbatim to the user (plus `attention` if non-empty) and stop. `advance` has already set the cycle `inactive` (unless other nodes are still in flight). To resume: `cycle status <cycle> active`, then `advance --cycle <cycle>` |
+| `stop_pipeline` | Report `reason` verbatim to the user (plus `attention` if non-empty) and stop. Stop gates are derived from node/path facts (no persisted status bit): clear a checkpoint with `dag approve <node>`, a shelved stop with `dag revive <node>`, or a node cap with `config unset stop_after_nodes --cycle <cycle>`, then run `advance --cycle <cycle>` |
 | `wait` | Follow `note` / `close_with` (closing command is `settle <node>`); **never poll** |
 | `spawn_error` | This process has no native opener; nothing was claimed. Report honestly and hand the user the panel notice, prompt paths, and call lines |
 
@@ -40,10 +40,10 @@ After Close Step 7 (commit) and Step 8 (push) succeed, run `advance --cycle <cyc
 
 ## 3. `checkpoint` Pause and Resume
 
-After `settle` and push on a `checkpoint` node, `advance` returns `stop_pipeline` and marks the cycle `inactive`. Report the deliverables and record paths to the user and wait. When the user replies "continue", run in order:
+After `settle` and push on a `checkpoint` node, `advance` returns `stop_pipeline` without pinning new nodes because the checkpoint delivery is unapproved. Report the deliverables and record paths to the user and wait. When the user replies "continue", run in order:
 
 ```pwsh
-cycle status <cycle> active
+dag approve <node>
 advance --cycle <cycle> --json
 ```
 

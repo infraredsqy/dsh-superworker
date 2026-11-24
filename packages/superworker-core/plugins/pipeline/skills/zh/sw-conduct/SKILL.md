@@ -44,7 +44,7 @@ disable-model-invocation: true
 | `auto` | 跑 | 自动接力，交票即止；仅卡死或需求冲突时上报用户 |
 
 - **`checkpoint` / `auto` 节点全程禁止调用 `ask_user_question`**：遇拿不准处按最贴近意图的选项自主决策，并将选择与理由记入 `run.md` 的「自主决策清单」。`manual` 不受此限。
-- 三档确认点及 `stop_after_nodes` / `inactive` 机制详见 [`docs/conduct-state.md`](docs/conduct-state.md)。
+- 三档确认点及 `stop_after_nodes` / 推导态机制详见 [`docs/conduct-state.md`](docs/conduct-state.md)。
 
 ### 重量（`weight`）
 

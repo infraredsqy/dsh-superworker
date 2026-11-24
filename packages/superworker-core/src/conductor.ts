@@ -522,8 +522,8 @@ export function createConductorNamespace(
   const cycles = createCyclesNamespace(root);
 
   /**
-   * The reading of a line record: name an id and find that line; without a name the one active line is
-   * taken — the same criterion every unnamed line call reads by (`defaultActiveCycle`): none refuses,
+   * The reading of a line record: name an id and find that line; without a name the one running line is
+   * taken — the same criterion every unnamed line call reads by (`defaultRunningCycle`): none refuses,
    * several refuses naming the lines, one is taken. The named reading refuses with the engine's one
    * finding-and-refusing (`cycleRecordOrRefuse`). The table comes from the engine's one reading of
    * `state.json` (`readStateLedger`) — normalized once, so a hand-edited entry cannot crash this reader

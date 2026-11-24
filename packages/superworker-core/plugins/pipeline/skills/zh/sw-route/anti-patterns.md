@@ -86,7 +86,7 @@
 
 ## `route-reads-a-landed-line-as-a-started-node` · 将已落盘的 cycle 误报为节点已在运行
 
-**症状**：执行 `cycle start` 或 `cycle status <id> active` 后，Agent 报告「cycle 已开启」「第一枚节点已就绪」，把 `cycle current` 中的 `Node:` 行当成正在执行的信号；但实际并未拉起任何执行会话，用户「启动这个节点」的要求只完成了一半。
+**症状**：执行 `cycle start` 或 `hold` 后，Agent 报告「cycle 已开启」「第一枚节点已就绪」，把 `cycle current` 中的 `Node:` 行当成正在执行的信号；但实际并未拉起任何执行会话，用户「启动这个节点」的要求只完成了一半。
 
 **纠正信号**：用户追问「它跑起来了吗」「现在谁在跑」。
 

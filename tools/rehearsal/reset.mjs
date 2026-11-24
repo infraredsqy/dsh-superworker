@@ -17,7 +17,7 @@
 //   2. the ledger's own git and the execution record: `.git/`, `signals/`, `meta/`, `worktrees/`.
 //   3. each node: keep spec.md, drop everything a run produced (run/review/report/fix, temp/).
 //   4. ideas.json: every node back to status todo, completion timestamps dropped.
-//   5. state.json: path [], holding [], status inactive.
+//   5. state.json: path [], holding [], legacy status dropped.
 //   6. the two empty base repositories the pipeline needs (workspace root + ledger, one commit each).
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
@@ -98,11 +98,11 @@ const state = JSON.parse(readFileSync(join(SW, 'state.json'), 'utf8'))
 for (const cycle of state.cycles) {
   cycle.path = []
   cycle.holding = []
-  cycle.status = 'inactive'
+  delete cycle.status
 }
 writeFileSync(join(SW, 'state.json'), JSON.stringify(state, null, 2) + '\n', 'utf8')
 say('== state.json ==')
-say('  path [] , holding [] , status inactive')
+say('  path [] , holding []')
 
 /* ── 6. the two empty base repositories the pipeline needs ───────────────────────────────── */
 say('== git base ==')

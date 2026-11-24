@@ -861,12 +861,7 @@ async function pickNext(cycle: CycleRecord, view: LedgerView): Promise<NextPlan>
  * - `outcome` is the ticket's own verdict word (the word landing in path; a non-delivered node lands `shelved` on
  *   the graph, which is a different thing);
  * - `filled` are the nodes the slots opened by this close were filled with (the precondition for filling: it was
- *   delivered, or the line's `when_shelved=continue` lets the line carry on);
- * - `parkLine` is "whether this close should turn the line inactive": only a decided stop, with no other node in
- *   flight in hand, parks it — other nodes are still held, and the relay is on their own closes;
- * - when the line is not in service only the recording happens: `decision` tightens to stop, no slot is filled
- *   and `parkLine` is always false — not one character of the line's status is written, that is a person's
- *   business.
+ *   delivered, or the line's `when_shelved=continue` lets the line carry on, and no stop gate fired).
  */
 export interface CloseSettlement {
   readonly cycleId: string;

@@ -60,7 +60,7 @@ disable-model-invocation: true
 - **价值**：是否必要，能否带来目标体验。
 - **与已有节点的关系**：判断是否同属某特性、存在先后顺序、共享前置或完全独立；「独立」必须经过核查再下结论。
 - **依赖边**：基于图、文档与实际代码推断前后置。**改动同一批文件的两个节点必须连先后边**（并行节点各自开 worktree，缺边会导致合并冲突）。重叠判断以实现层实际文件集为准，不确定时派 subagent 查清，不凭 spec 印象猜。**分工原则**：文件冲突靠加边解决，不靠调低 `parallel` 规避；若多个节点两两冲突无法成无环图，说明应合并为一个节点。
-- **归线（cycle）**：若有活跃 cycle 且其 `tags` 覆盖新节点，直接归入；否则给出两个选项让用户选——恢复已有非活跃线（`cycle status <line> active`），或新开一条线（`cycle start` / `cycle create`，见 [`docs/cycle-launch.md`](docs/cycle-launch.md)）。**是否恢复旧线只能由用户决定**。
+- **归线（cycle）**：若有正在跑的 cycle 且其 `tags` 覆盖新节点，直接归入；否则给出两个选项让用户选——复用已有线（直接 `advance --cycle <line>` 或 `hold <node> --cycle <line>`，无需重新激活），或新开一条线（`cycle start` / `cycle create`，见 [`docs/cycle-launch.md`](docs/cycle-launch.md)）。**是否复用旧线只能由用户决定**。
 
 #### 为每项任务选路
 
