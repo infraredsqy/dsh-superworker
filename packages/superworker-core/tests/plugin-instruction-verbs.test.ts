@@ -223,8 +223,12 @@ describe('add: registering one instruction', () => {
   });
 
   it('with two lines side by side the cycle must be named; an empty body and a word outside the vocabulary are refused', async () => {
+    const n1 = (await superworker.ledger.dag.add({ title: 'one' })).id;
+    const n2 = (await superworker.ledger.dag.add({ title: 'two' })).id;
     await superworker.ledger.cycles.create({ id: 'one', tags: ['coding'] });
-    await superworker.ledger.cycles.create({ id: 'two', tags: ['writing'], force: true });
+    await superworker.ledger.cycles.create({ id: 'two', tags: ['writing'] });
+    await superworker.ledger.cycles.hold('one', n1);
+    await superworker.ledger.cycles.hold('two', n2);
     expect(await err(['add', '--scope', 'cycle', '--text', 'x'])).toContain('needs a line to bind to');
     await out(['add', '--scope', 'cycle', '--cycle', 'two', '--text', 'x']);
     expect(entries()[0]!.cycle).toBe('two');
@@ -278,9 +282,11 @@ describe('the visibility matrix: scope x binding state x position', () => {
     await superworker.ledger.cycles.create({ id: 'one', tags: ['coding'] });
     await superworker.ledger.cycles.hold('one', nodeA);
     await superworker.ledger.cycles.hold('one', nodeB);
-    await superworker.ledger.cycles.create({ id: 'two', tags: ['writing'], force: true });
+    await superworker.ledger.cycles.create({ id: 'two', tags: ['writing'] });
+    // Line `two` has already finished nodeC and holds nothing: idle (out of scope).
     await superworker.ledger.cycles.hold('two', nodeC);
-    await superworker.ledger.cycles.setStatus('two', 'inactive');
+    await superworker.ledger.dag.setStatus(nodeC, 'completed');
+    await superworker.ledger.cycles.close('two', { node: nodeC, result: 'completed' });
 
     const retired = (id: string, node: string, text: string): Record<string, unknown> => ({
       id, text, scope: 'node', target: 'stage', state: 'live', cycle: null, node,
@@ -351,15 +357,31 @@ describe('the visibility matrix: scope x binding state x position', () => {
       title: `${row.key} (${row.scope}/${row.binding}/${row.target}) from ${row.spot}: ${row.seen ? 'seen' : 'not seen'}`,
     })),
   )('$title', async ({ key, spot, seen }) => {
-    const { ids, nodeB } = await plantScenario();
+    const { ids, nodeA, nodeB } = await plantScenario();
     let rows: string[];
     if (spot === 'on node B') rows = await idsOf(['list', '--json', '--node', nodeB]);
     else if (spot === 'after the line leaves service') {
-      await superworker.ledger.cycles.setStatus('one', 'inactive');
+      await superworker.ledger.dag.setStatus(nodeA, 'completed');
+      await superworker.ledger.cycles.close('one', { node: nodeA, result: 'completed' });
+      await superworker.ledger.cycles.close('one', { node: nodeB, result: 'completed' });
       rows = await idsOf(['list', '--json']);
     } else if (spot === 'full book') rows = await idsOf(['list', '--all', '--json']);
     else rows = await idsOf(['list', '--json']);
     expect(rows.includes(ids[key]!)).toBe(seen);
+  });
+
+  it('a cycle waiting on an unapproved checkpoint keeps its cycle-scoped instruction in scope until approved', async () => {
+    const gate = (await superworker.ledger.dag.add({ title: 'gate', mode: 'checkpoint' })).id;
+    await superworker.ledger.cycles.create({ id: 'cp', tags: ['coding'] });
+    await superworker.ledger.cycles.hold('cp', gate);
+    await out(['add', '--scope', 'cycle', '--cycle', 'cp', '--text', 'keep checking cp']);
+    await superworker.ledger.dag.setStatus(gate, 'completed');
+    await superworker.ledger.cycles.close('cp', { node: gate, result: 'completed' });
+    // holding is empty, but last step is an unapproved checkpoint -> still in scope!
+    expect(await idsOf(['list', '--json'])).toEqual(['i-0001']);
+    await superworker.ledger.dag.approve(gate);
+    // approved -> now idle -> out of scope!
+    expect(await idsOf(['list', '--json'])).toEqual([]);
   });
 
   it('a retired row still counts as an issued number: the first add after it takes the next id', async () => {

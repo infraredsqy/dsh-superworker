@@ -51,6 +51,7 @@ import {
   VALID_TARGETS,
   readCycles,
   readInstructions,
+  readNodes,
   short,
   withInstructionsLock,
   writeInstructions,
@@ -254,23 +255,74 @@ function holdingIds(record) {
   return out
 }
 
+/** Parse both UTC timestamp spellings to epoch microseconds; null when unrecognised. */
+function momentToUs(value) {
+  if (typeof value !== 'string') return null
+  const seconds = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/.exec(value)
+  if (seconds !== null) {
+    const [, y, m, d, h, mi, s] = seconds
+    return Date.UTC(Number(y), Number(m) - 1, Number(d), Number(h), Number(mi), Number(s)) * 1000
+  }
+  const micro = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{6})Z$/.exec(value)
+  if (micro !== null) {
+    const [, y, m, d, h, mi, s, frac] = micro
+    return (
+      Date.UTC(Number(y), Number(m) - 1, Number(d), Number(h), Number(mi), Number(s)) * 1000 +
+      Number(frac)
+    )
+  }
+  return null
+}
+
+/** Whether a checkpoint delivery has been approved (`approved_at >= completed_at`). */
+function deliveryApproved(node) {
+  const approved = node?.approved_at
+  const completed = node?.completed_at
+  if (typeof approved !== 'string' || typeof completed !== 'string' || approved === '' || completed === '') return false
+  const a = momentToUs(approved)
+  const c = momentToUs(completed)
+  if (a !== null && c !== null) return a >= c
+  return approved >= completed
+}
+
 /**
- * Where the reader stands: `(line, node)`, both halves null when it cannot be given. With one line
- * active that line is it; with two active lines side by side the node named pins the line (only a
- * single active line that holds that node counts as pinned). The node half: a named node counts as
- * named; without a name the first node the line holds is taken.
+ * Whether a cycle is in scope for cycle-scoped instructions: either holding nodes (`running`),
+ * or paused at a human gate (`waiting`: unapproved completed checkpoint, or shelved stop).
+ */
+function isLineInScope(record, nodes) {
+  if (holdingIds(record).length > 0) return true
+  const path = Array.isArray(record.path) ? record.path : []
+  const last = path[path.length - 1]
+  if (last === undefined || last === null || typeof last !== 'object') return false
+  const nodeId = typeof last.node === 'string' ? last.node : ''
+  if (nodeId === '') return false
+  const node = nodes[nodeId]
+  if (node === undefined || node === null || typeof node !== 'object') return false
+  if (last.result === 'completed' && node.status === 'completed' && node.mode === 'checkpoint' && !deliveryApproved(node)) {
+    return true
+  }
+  const whenShelved = record.policies && typeof record.policies === 'object' ? record.policies.when_shelved : undefined
+  if (last.result !== 'completed' && whenShelved !== 'continue' && node.status === 'shelved') {
+    return true
+  }
+  return false
+}
+
+/**
+ * Where the reader stands: `(line, node)`, both halves null when it cannot be given.
+ * A named node pins the unique line holding it; without a named node, the unique line currently
+ * holding nodes pins the position.
  */
 function positionOf(cycles, namedNode) {
-  const active = cycles.filter((record) => record.status === 'active')
   let cycle
-  if (active.length === 1) {
-    cycle = active[0]
-  } else if (namedNode !== null) {
-    const hits = active.filter((record) => holdingIds(record).includes(namedNode))
+  if (namedNode !== null) {
+    const hits = cycles.filter((record) => holdingIds(record).includes(namedNode))
     if (hits.length !== 1) return { cycle: null, node: null }
     cycle = hits[0]
   } else {
-    return { cycle: null, node: null }
+    const running = cycles.filter((record) => holdingIds(record).length > 0)
+    if (running.length !== 1) return { cycle: null, node: null }
+    cycle = running[0]
   }
   const cycleId = typeof cycle.id === 'string' ? cycle.id : null
   if (cycleId === null) return { cycle: null, node: null }
@@ -279,9 +331,9 @@ function positionOf(cycles, namedNode) {
   return { cycle: cycleId, node: holding.length > 0 ? holding[0] : null }
 }
 
-/** The binding of a new entry: named first (and checked), then the single active line and the node it holds. */
+/** The binding of a new entry: named first (and checked), then the single running line and the node it holds. */
 function bindingOf(options, cycles) {
-  const active = cycles.filter((record) => record.status === 'active')
+  const running = cycles.filter((record) => holdingIds(record).length > 0)
   const known = cycles.map((record) => record.id).filter((id) => typeof id === 'string' && id !== '')
   let cycleId = null
   if (options.cycle !== undefined) {
@@ -292,8 +344,8 @@ function bindingOf(options, cycles) {
       )
     }
     cycleId = options.cycle
-  } else if (active.length === 1) {
-    const only = active[0].id
+  } else if (running.length === 1) {
+    const only = running[0].id
     cycleId = typeof only === 'string' ? only : null
   }
 
@@ -308,7 +360,7 @@ function bindingOf(options, cycles) {
 
   if (options.scope === 'cycle' && cycleId === null) {
     throw new Error(
-      'a cycle-scoped entry needs a line to bind to (no single active cycle in state.json). ' +
+      'a cycle-scoped entry needs a line to bind to (no single running cycle in state.json). ' +
         'Name it: cycle: <id>. Without a binding the entry would be read as visible to ' +
         'everyone, forever, so nothing was written.',
     )
@@ -489,13 +541,14 @@ async function cmdList(args, ctx) {
 
   if (!accountView) {
     const cycles = await readCycles(ctx.root, ctx.base)
+    const nodes = await readNodes(ctx.root, ctx.base)
     const position = positionOf(cycles, node ?? null)
-    const active = new Set(
-      cycles.filter((record) => record.status === 'active').map((record) => record.id).filter((id) => typeof id === 'string'),
+    const inScopeCycles = new Set(
+      cycles.filter((record) => isLineInScope(record, nodes)).map((record) => record.id).filter((id) => typeof id === 'string'),
     )
     const visible = rows
       .filter((entry) => isLive(entry))
-      .filter((entry) => inScope(entry, active, position.cycle))
+      .filter((entry) => inScope(entry, inScopeCycles, position.cycle))
       .map(readerRow)
     if (json === true) {
       // The machine's view carries the four structural cells and nothing else.

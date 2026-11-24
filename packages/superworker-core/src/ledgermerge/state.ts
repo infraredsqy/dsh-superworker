@@ -7,15 +7,13 @@
  * - `path` is append-only: when one side is a prefix of the other take the longer one, and two different tails are
  *   unioned by the order they were walked; the same node recorded twice with two different verdicts is a conflict
  *   (that rule is handed to `extendOrUnion`).
- * - `status` is `active` / `inactive`: both sides naming one word each really is a disagreement, judged by a person
- *   — never a coin toss.
+ * - legacy `status` keys left by older records are dropped on merge rather than conflicting.
  * - line entries are never deleted: neither side's engine has a command that deletes one, so an absent entry is
  *   "this side never had it" and it comes back (`propagateDelete` off).
  */
 
 import {
   MISSING,
-  UNDECIDED,
   type FieldResolver,
   type MergeReport,
   asRecord,
@@ -26,7 +24,6 @@ import {
   plainField,
   stampField,
   stampOf,
-  threeWay,
 } from './generic';
 
 /** The line account: the `cycles` list is walked entry by entry, the remaining fields follow the ordinary rules. */
@@ -53,7 +50,7 @@ function indexCycles(cycles: unknown): Map<string, unknown> {
   return indexBy(cycles, (cycle) => cycle['id']);
 }
 
-/** One line: field by field, with two rules of its own, for path and for status. */
+/** One line: field by field, with custom rules for path and legacy status cleanup. */
 function mergeCycle(
   label: string,
   base: unknown,
@@ -63,9 +60,7 @@ function mergeCycle(
 ): Record<string, unknown> {
   const resolve: FieldResolver = (key, baseValue, oursValue, theirsValue) => {
     if (key === 'path') return cyclePath(label, baseValue, oursValue, theirsValue, report);
-    if (key === 'status') {
-      return cycleStatus(label, baseValue, oursValue, theirsValue, report);
-    }
+    if (key === 'status') return MISSING;
     if (key === 'updated_at') {
       return stampField(label, key, baseValue, oursValue, theirsValue, report, 'max');
     }
@@ -75,31 +70,6 @@ function mergeCycle(
     return plainField(label, key, baseValue, oursValue, theirsValue, report);
   };
   return mergeMapping(asRecord(base), asRecord(ours), asRecord(theirs), resolve);
-}
-
-/**
- * `active` / `inactive`: this record writes only these two words.
- *
- * Both sides naming two different words really is a disagreement — a conflict for a person to judge, never a coin
- * toss.
- */
-function cycleStatus(
-  label: string,
-  baseValue: unknown,
-  oursValue: unknown,
-  theirsValue: unknown,
-  report: MergeReport,
-): unknown {
-  const got = threeWay(baseValue, oursValue, theirsValue);
-  if (got !== UNDECIDED) return got;
-  report.conflict(
-    label,
-    'status',
-    oursValue,
-    theirsValue,
-    'the two sides name two different words for the cycle status',
-  );
-  return MISSING;
 }
 
 /** `path` is append-only: one side being a prefix means taking the longer one, and the two tails are unioned by the order they were walked. */

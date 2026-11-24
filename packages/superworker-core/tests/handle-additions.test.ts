@@ -167,7 +167,7 @@ describe('conductor: the closing answers, the plugin words and the ticket shape'
     return node;
   }
 
-  it('settle records one end and stops nothing: the verdict lands, the hand is released, the line keeps its status', async () => {
+  it('settle records one end and stops nothing: the verdict lands, the hand is released', async () => {
     const lab = makeLab('superworker-add-settle-');
     try {
       const node = await heldWithTicket(lab);
@@ -175,7 +175,6 @@ describe('conductor: the closing answers, the plugin words and the ticket shape'
       const before = await lab.superworker.conductor.next({ cycle: 'c1', after: node.id });
       expect(before.action).toBe('stop_pipeline');
       const settled = await lab.superworker.conductor.settle({ cycle: 'c1', node: node.id });
-      expect(settled.status).toBe('active');
       expect(settled.holding).toEqual([]);
       expect((settled.path ?? []).map((step) => step.result)).toEqual(['completed']);
       expect((await lab.superworker.ledger.dag.get(node.id))?.status).toBe('completed');
@@ -184,19 +183,19 @@ describe('conductor: the closing answers, the plugin words and the ticket shape'
     }
   });
 
-  it('close is settle plus the applier: nothing is left to run, so the line is parked', async () => {
+  it('close is settle plus the applier: nothing is left to run, so nothing new is pinned', async () => {
     const lab = makeLab('superworker-add-close-');
     try {
       const node = await heldWithTicket(lab);
       const closed = await lab.superworker.conductor.close({ cycle: 'c1', node: node.id });
-      expect(closed.status).toBe('inactive');
+      expect(closed.holding).toEqual([]);
       expect((await lab.superworker.ledger.dag.get(node.id))?.status).toBe('completed');
     } finally {
       lab.cleanup();
     }
   });
 
-  it('advance parks an exhausted line too, and opens no session for it', async () => {
+  it('advance on an exhausted line pins nothing and opens no session', async () => {
     const lab = makeLab('superworker-add-advance-park-');
     try {
       const node = await heldWithTicket(lab);
@@ -205,12 +204,11 @@ describe('conductor: the closing answers, the plugin words and the ticket shape'
       await opened.conductor.settle({ cycle: 'c1', node: node.id });
       expect((await opened.conductor.next({ cycle: 'c1' })).action).toBe('stop_pipeline');
       const receipt = await opened.conductor.advance({ cycle: 'c1' });
-      expect(receipt.parked).toBe(true);
       expect(receipt.pinned).toEqual([]);
       expect(receipt.dispatches).toEqual([]);
-      expect(receipt.plan.action).toBe('ask_user');
+      expect(receipt.plan.action).toBe('stop_pipeline');
       expect(sim.dispatched).toEqual([]);
-      expect((await opened.ledger.cycles.show('c1')).status).toBe('inactive');
+      expect((await opened.ledger.cycles.show('c1')).holding).toEqual([]);
     } finally {
       lab.cleanup();
     }

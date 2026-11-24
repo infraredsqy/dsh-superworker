@@ -32,7 +32,6 @@ function receiptText(receipt: Record<string, any>, spawnError?: string): string 
   );
   if (skipped.length > 0) lines.push(`spawn_skipped: ${pyList(skipped.map((cell) => String(cell.node_id)))}`);
   if (spawnError !== undefined) lines.push(`spawn_error: ${spawnError}`);
-  lines.push(`parked: ${receipt.parked === true ? 'yes' : 'no'}`);
   if (receipt.plan !== undefined) lines.push('', actionText(receipt.plan as Record<string, any>));
   return lines.join('\n');
 }
@@ -65,7 +64,6 @@ export const advanceVerb = run('advance', async (call) => {
           pinned: receipt.pinned,
           spawned: [],
           spawn_error: sentence,
-          parked: receipt.parked,
           plan: receipt.plan,
         }),
       };
@@ -82,7 +80,6 @@ export const advanceVerb = run('advance', async (call) => {
         pinned: receipt.pinned,
         spawned: opened.map((cell) => cell.receipt.session?.sessionId ?? cell.node_id),
         spawn_skipped: skipped.map((cell) => cell.node_id),
-        parked: receipt.parked,
         plan: receipt.plan,
       }),
     };
@@ -127,13 +124,6 @@ export const dispatchVerb = run('dispatch', async (call) => {
   if (line === undefined) {
     return refuse(
       `no cycle named ${JSON.stringify(cycleId)} in ${root}; nothing to dispatch.`,
-      EXIT.refused,
-    );
-  }
-  if (line.status !== 'active') {
-    return refuse(
-      `cycle "${cycleId}" is '${line.status}', not active: a line that is not in service does not ` +
-        `dispatch. \`cycle status ${cycleId} active\` puts it back.`,
       EXIT.refused,
     );
   }

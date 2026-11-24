@@ -129,7 +129,7 @@ describe('the loop: a completed ticket end to end (the slot is refilled and the 
 });
 
 describe('the loop: failed / stopped tickets end to end (shelved, and the line stops until a person comes)', () => {
-  it.each(['failed', 'stopped'] as const)('%s: path records the result, the node lands on shelved, and the line turns inactive', async (status) => {
+  it.each(['failed', 'stopped'] as const)('%s: path records the result, the node lands on shelved, and no next node is pinned', async (status) => {
     const lab = freshLab('superworker-execute-');
     const a = await stageOneNodeLine(lab, 'slips');
     const superworker = open(lab.root, { executor: new SimulatedExecutor() });
@@ -139,7 +139,6 @@ describe('the loop: failed / stopped tickets end to end (shelved, and the line s
     const settled = await superworker.conductor.close({ cycle: 'c1' });
     expect(settled.path[0]).toMatchObject({ node: a, result: status });
     expect(settled.holding).toEqual([]);
-    expect(settled.status).toBe('inactive');
     expect((await superworker.ledger.dag.get(a))!.status).toBe('shelved');
     expect((await superworker.ledger.dag.get(a))!.completed_at).toBeUndefined();
   });
@@ -156,7 +155,6 @@ describe('the loop: failed / stopped tickets end to end (shelved, and the line s
     await superworker.conductor.dispatch({ cycle: 'c1' });
     await superworker.conductor.handoff({ cycle: 'c1', node: a, status: 'failed', summary: 'nothing', outputs: {} });
     const settled = await superworker.conductor.close({ cycle: 'c1' });
-    expect(settled.status).toBe('active');
     expect(settled.holding.map((item) => item.id)).toEqual([b]);
     expect((await superworker.ledger.dag.get(a))!.status).toBe('shelved');
     expect((await superworker.ledger.dag.get(b))!.status).toBe('todo');
@@ -233,9 +231,8 @@ describe('blockers and reruns: pending counts as a blocker, and the traces a rer
     await expect(superworker.conductor.close({ cycle: 'c1' })).rejects.toThrow(/nothing to settle/i);
     await superworker.conductor.handoff({ cycle: 'c1', node: a, status: 'completed', summary: 'the redo delivered', outputs: {} });
     const settled = await superworker.conductor.close({ cycle: 'c1' });
-    // A rerun on a stopped line only records: path keeps two results, and the line's state does not move unless a person moves it.
     expect(settled.path.map((step) => step.result)).toEqual(['failed', 'completed']);
-    expect(settled.status).toBe('inactive');
+    expect(settled.holding).toEqual([]);
     expect((await superworker.ledger.dag.get(a))!.status).toBe('completed');
   });
 });
@@ -373,14 +370,12 @@ describe('the two gates and naming', () => {
     ).rejects.toThrow(/status must be one of/);
   });
 
-  it('a line not in service: close only records (path and the graph settle, and the line state does not move unless a person moves it)', async () => {
+  it('close on a cycle holding its last node records and leaves holding empty', async () => {
     const lab = freshLab('superworker-execute-');
-    const a = await stageOneNodeLine(lab, 'on a parked line');
+    const a = await stageOneNodeLine(lab, 'last node');
     const superworker = open(lab.root);
-    await superworker.ledger.cycles.setStatus('c1', 'inactive');
     await superworker.conductor.handoff({ cycle: 'c1', node: a, status: 'completed', summary: 'done', outputs: {} });
     const settled = await superworker.conductor.close({ cycle: 'c1', node: a });
-    expect(settled.status).toBe('inactive');
     expect(settled.holding).toEqual([]);
     expect((await superworker.ledger.dag.get(a))!.status).toBe('completed');
   });
@@ -498,28 +493,28 @@ describe('retry and the claim: the ticket a rerun leaves, and what a dead sessio
   });
 });
 
-describe('the unnamed line with two active lines: a refusal that names them, never a silent first pick', () => {
-  it('two lines in service and no name: dispatch refuses with cycle_not_found naming both, and no session opens', async () => {
+describe('the unnamed line with two running lines: a refusal that names them, never a silent first pick', () => {
+  it('two lines holding nodes and no name: dispatch refuses with cycle_not_found naming both, and no session opens', async () => {
     const lab = freshLab('superworker-execute-');
     await lab.superworker.ledger.init();
-    const node = (await lab.superworker.ledger.dag.add({ title: 'work for one line' })).id;
+    const n1 = (await lab.superworker.ledger.dag.add({ title: 'work for first' })).id;
+    const n2 = (await lab.superworker.ledger.dag.add({ title: 'work for second' })).id;
     await lab.superworker.ledger.cycles.create({ id: 'first', tags: ['coding'] });
-    // The second active line is the `force` case `cycle create` allows explicitly; from here on an
-    // unnamed call has no default: the same criterion `cycles.current` reads by.
-    await lab.superworker.ledger.cycles.create({ id: 'second', tags: ['coding'], force: true });
+    await lab.superworker.ledger.cycles.create({ id: 'second', tags: ['coding'] });
+    await lab.superworker.ledger.cycles.hold('first', n1);
+    await lab.superworker.ledger.cycles.hold('second', n2);
     const sim = new SimulatedExecutor();
     const superworker = open(lab.root, { executor: sim });
 
     const refusal = await superworker.conductor.dispatch({}).catch((error: unknown) => error);
     expect(isRecordError(refusal, 'cycle_not_found')).toBe(true);
     if (isRecordError(refusal, 'cycle_not_found')) {
-      expect(refusal.message).toContain('several active cycles');
+      expect(refusal.message).toContain('several running cycles');
       expect(refusal.message).toContain('first');
       expect(refusal.message).toContain('second');
     }
-    // The refusal happened at the line reading, before any material or claim: not one byte of the dispatch papers exists.
     expect(sim.dispatched).toHaveLength(0);
-    expect(existsSync(join(lab.root, '.superworker', 'meta', 'launch', 'first', node, 'prompt.txt'))).toBe(false);
-    expect(existsSync(markerOf(lab.root, 'first', node))).toBe(false);
+    expect(existsSync(join(lab.root, '.superworker', 'meta', 'launch', 'first', n1, 'prompt.txt'))).toBe(false);
+    expect(existsSync(markerOf(lab.root, 'first', n1))).toBe(false);
   });
 });

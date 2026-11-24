@@ -798,26 +798,24 @@ describe('the side branches of the decision: each branch has a case of its own',
     expect(run1.oursBytes.equals(bytesOf(ours))).toBe(true);
   });
 
-  it('the line: each side says a word, and no coin is tossed', async () => {
-    const cycle = (status: string) => ({
+  it('the line: retired legacy status keys from older versions are dropped on merge without conflict', async () => {
+    const cycle = (status?: string) => ({
       id: 'superworker-core',
       title: 'main thread',
-      status,
+      ...(status === undefined ? {} : { status }),
       holding: [] as string[],
       path: [] as unknown[],
       created_at: '2026-02-01T00:00:00Z',
       updated_at: '2026-02-01T00:10:00Z',
     });
-    // The line book has only active / inactive, so two words cannot be ordered against each
-    // other; this branch is reachable only when one side carries a word outside the vocabulary (a
-    // hand edit, or a record that came from elsewhere), and then it must go to a person.
     const base = JSON.stringify({ cycles: [cycle('active')] }, null, 2);
     const ours = JSON.stringify({ cycles: [cycle('inactive')] }, null, 2);
-    const theirs = JSON.stringify({ cycles: [cycle('stalled')] }, null, 2);
+    const theirs = JSON.stringify({ cycles: [cycle()] }, null, 2);
     const run1 = await run({ base, ours, theirs, path: '.superworker/state.json' });
-    expect(run1.code).toBe(1);
-    expect(run1.stderr).toContain("cycle 'superworker-core' field status");
-    expect(run1.oursBytes.equals(bytesOf(ours))).toBe(true);
+    expect(run1.code).toBe(0);
+    const merged = JSON.parse(run1.oursBytes.toString('utf8')) as { cycles: Record<string, unknown>[] };
+    expect('status' in merged.cycles[0]!).toBe(false);
+    expect(merged.cycles[0]!.id).toBe('superworker-core');
   });
 });
 
@@ -923,24 +921,23 @@ describe('the tables: one reading of a list-or-mapping shape', () => {
   });
 
   it('a hand-written mapping is taken as it is: the line table merges by its key and lands as a list', async () => {
-    const cycle = (status: string) => ({
+    const cycle = (title: string) => ({
       id: 'superworker-core',
-      title: 'main thread',
-      status,
+      title,
       holding: [] as string[],
       path: [] as unknown[],
       created_at: '2026-02-01T00:00:00Z',
       updated_at: '2026-02-01T00:10:00Z',
     });
-    const base = JSON.stringify({ cycles: { 'superworker-core': cycle('active') } }, null, 2);
-    const ours = JSON.stringify({ cycles: { 'superworker-core': cycle('inactive') } }, null, 2);
-    const theirs = JSON.stringify({ cycles: { 'superworker-core': cycle('active') } }, null, 2);
+    const base = JSON.stringify({ cycles: { 'superworker-core': cycle('main thread') } }, null, 2);
+    const ours = JSON.stringify({ cycles: { 'superworker-core': cycle('renamed thread') } }, null, 2);
+    const theirs = JSON.stringify({ cycles: { 'superworker-core': cycle('main thread') } }, null, 2);
     const run1 = await run({ base, ours, theirs, path: '.superworker/state.json' });
     expect(run1.code).toBe(0);
     const merged = JSON.parse(run1.oursBytes.toString('utf8')) as {
-      cycles: { id: string; status: string }[];
+      cycles: { id: string; title: string }[];
     };
-    expect(merged.cycles).toEqual([{ ...cycle('inactive') }]);
+    expect(merged.cycles).toEqual([{ ...cycle('renamed thread') }]);
   });
 });
 

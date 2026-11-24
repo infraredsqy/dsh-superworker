@@ -57,7 +57,6 @@ const HANDLERS: Record<string, VerbHandler> = {
   'cycle create': verbs.cycleCreateVerb,
   'cycle start': verbs.cycleStartVerb,
   'cycle rename': verbs.cycleRenameVerb,
-  'cycle status': verbs.cycleStatusVerb,
   'cycle list': verbs.cycleListVerb,
   'cycle current': verbs.cycleCurrentVerb,
   'cycle show': verbs.cycleShowVerb,

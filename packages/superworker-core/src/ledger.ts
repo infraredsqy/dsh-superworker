@@ -9,7 +9,6 @@ import { cleanTemp } from './tempclean';
 import type { CleanTempOptions, CleanTempReport } from './tempclean';
 import type {
   CycleRecord,
-  CycleStatus,
   MicroTimestamp,
   NodeMode,
   NodeRecord,
@@ -245,8 +244,6 @@ export interface CycleCreateInput {
   title?: string;
   /** The filter range this line picks nodes by. */
   tags: string[];
-  /** Force another one even when another line is already running. */
-  force?: boolean;
 }
 
 /** Set up a line and pin the node that opens it: parallel lands in this line's policy-layer parallel slot. */
@@ -308,16 +305,15 @@ export interface CycleHolder {
   readonly lines: readonly CycleRecord[];
 }
 
-/** The cycles namespace: setting up, running, stopping and settling one work line, these fourteen verbs. */
+/** The cycles namespace: setting up, running and settling one work line, these thirteen verbs. */
 export interface CyclesNamespace {
   create(input: CycleCreateInput): Promise<CycleRecord>;
   start(input: CycleStartInput): Promise<CycleRecord>;
   rename(id: string, title: string): Promise<CycleRecord>;
-  setStatus(id: string, status: CycleStatus): Promise<CycleRecord>;
   /** Write one policy of a line's own and hand back the whole effective set. */
   setPolicy(id: string, key: string, value: CyclePolicyValue): Promise<CyclePolicySet>;
   list(): Promise<CycleRecord[]>;
-  /** The line that should be working now; null when there is none. */
+  /** The single line currently holding nodes; null when none holds any. */
   current(): Promise<CycleRecord | null>;
   show(id: string): Promise<CycleRecord>;
   /** Which line holds one node now: the claim read in one place, for whoever has to say it in words. */

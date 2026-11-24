@@ -53,7 +53,6 @@ export type {
   CyclePolicies,
   CyclePathStep,
   CycleRecord,
-  CycleStatus,
   NodeResult,
   IssueDecision,
   IssueLedger,

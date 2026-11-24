@@ -46,12 +46,12 @@ describe('create: making a cycle', () => {
     expect(cycle.tags).toEqual(['köching']);
   });
 
-  it('a duplicate name is refused, and so is a second cycle while another is active; force overrides it explicitly', async () => {
+  it('a duplicate name is refused; creating a second cycle succeeds directly without any status gate', async () => {
     await superworker.ledger.cycles.create({ id: 'main', tags: ['coding'] });
     await expect(superworker.ledger.cycles.create({ id: 'main', tags: ['coding'] })).rejects.toThrow('already exists');
-    await expect(superworker.ledger.cycles.create({ id: 'second', tags: ['coding'] })).rejects.toThrow('one cycle at a time');
-    const forced = await superworker.ledger.cycles.create({ id: 'second', tags: ['coding'], force: true });
-    expect(forced.status).toBe('active');
+    const second = await superworker.ledger.cycles.create({ id: 'second', tags: ['coding'] });
+    expect(second.id).toBe('second');
+    expect('status' in second).toBe(false);
   });
 });
 
@@ -83,7 +83,7 @@ describe('start: make a cycle and pin the nodes it opens with', () => {
     expect([first.id, secondNode.id]).toContain(started.holding[0]!.id);
     expect(started.policies).toBeUndefined();
     const spare = await addNode('the leftover item', { tags: ['coding'] });
-    const second = await superworker.ledger.cycles.start({ id: 'next', tags: ['coding'], force: true, parallel: 5 });
+    const second = await superworker.ledger.cycles.start({ id: 'next', tags: ['coding'], parallel: 5 });
     // What another cycle holds does not enter the ranking; everything else fills the slots (cap 5,
     // and with only two ready nodes two are pinned).
     const held = started.holding[0]!.id;
@@ -92,9 +92,9 @@ describe('start: make a cycle and pin the nodes it opens with', () => {
     expect(second.holding.map((item) => item.id)).toEqual(
       expect.arrayContaining([first.id === held ? secondNode.id : first.id, spare.id]),
     );
-    await expect(superworker.ledger.cycles.start({ id: 'bad', tags: ['coding'], parallel: 0, force: true }))
+    await expect(superworker.ledger.cycles.start({ id: 'bad', tags: ['coding'], parallel: 0 }))
       .rejects.toThrow('at least 1');
-    await expect(superworker.ledger.cycles.start({ id: 'worse', tags: ['coding'], parallel: 1.5, force: true }))
+    await expect(superworker.ledger.cycles.start({ id: 'worse', tags: ['coding'], parallel: 1.5 }))
       .rejects.toThrow('takes a positive integer');
   });
 
@@ -115,66 +115,47 @@ describe('start: make a cycle and pin the nodes it opens with', () => {
     const before = readFileSync(join(root, '.superworker', 'state.json'), 'utf8');
     // The reason this cycle cannot pick a node is the tag (the only ready node is art, the cycle
     // wants coding); another cycle's hold cannot turn that around.
-    await expect(superworker.ledger.cycles.start({ id: 'main', tags: ['coding'], force: true }))
+    await expect(superworker.ledger.cycles.start({ id: 'main', tags: ['coding'] }))
       .rejects.toThrow('kept out by tag');
     expect(readFileSync(join(root, '.superworker', 'state.json'), 'utf8')).toBe(before);
   });
 
-  it('a node another cycle is holding stays out of the ranking: a cycle that left service still holds the node it never delivered', async () => {
+  it('a node another cycle is holding stays out of the ranking', async () => {
     const held = await addNode('the claimed one', { tags: ['coding'] });
     const first = await superworker.ledger.cycles.start({ id: 'first', tags: ['coding'] });
     expect(first.holding.map((item) => item.id)).toEqual([held.id]);
-    await superworker.ledger.cycles.setStatus('first', 'inactive');
     const free = await addNode('the empty one', { tags: ['coding'] });
     const second = await superworker.ledger.cycles.create({ id: 'second', tags: ['coding'] });
-    expect(second.status).toBe('active');
+    expect(second.holding).toEqual([]);
     const claimed = await superworker.ledger.cycles.hold('second', free.id);
     expect(claimed.holding.map((item) => item.id)).toEqual([free.id]);
-    // The held node is not under the third cycle's name — and it does not come back into the
-    // selectable set just because the first cycle left service.
     const spare = await addNode('one more item', { tags: ['coding'] });
-    const startedThird = await superworker.ledger.cycles.start({ id: 'third', tags: ['coding'], force: true });
+    const startedThird = await superworker.ledger.cycles.start({ id: 'third', tags: ['coding'] });
     expect(startedThird.holding.map((item) => item.id)).toEqual([spare.id]);
-    await superworker.ledger.cycles.setStatus('third', 'inactive');
-    await superworker.ledger.cycles.setStatus('second', 'inactive');
     expect((await superworker.ledger.cycles.show('second')).holding.map((item) => item.id)).toEqual([free.id]);
   });
 });
 
-describe('status: active and inactive', () => {
-  it('any word other than active / inactive is refused', async () => {
-    await superworker.ledger.cycles.create({ id: 'main', tags: ['coding'] });
-    await expect(superworker.ledger.cycles.setStatus('main', 'paused' as 'active')).rejects.toThrow('must be one of');
-  });
-
-  it('current follows active: a cycle that left service is no longer picked, and pulling it back brings it in', async () => {
+describe('current: derived from holding (no persisted status or pointer)', () => {
+  it('current returns the single cycle holding nodes; empty cycles return null', async () => {
+    const n1 = await addNode('task one', { tags: ['coding'] });
     expect(await superworker.ledger.cycles.current()).toBeNull();
     await superworker.ledger.cycles.create({ id: 'main', tags: ['coding'] });
-    expect((await superworker.ledger.cycles.current())!.id).toBe('main');
-    await superworker.ledger.cycles.setStatus('main', 'inactive');
     expect(await superworker.ledger.cycles.current()).toBeNull();
-    await superworker.ledger.cycles.setStatus('main', 'active');
+    await superworker.ledger.cycles.hold('main', n1.id);
     expect((await superworker.ledger.cycles.current())!.id).toBe('main');
+    await superworker.ledger.cycles.close('main', { node: n1.id, result: 'completed' });
+    expect(await superworker.ledger.cycles.current()).toBeNull();
   });
 
-  it('two cycles active at once: current refuses to pick on the caller\'s behalf', async () => {
+  it('two cycles holding nodes at once: current refuses to pick on the caller\'s behalf', async () => {
+    const n1 = await addNode('one', { tags: ['coding'] });
+    const n2 = await addNode('two', { tags: ['coding'] });
     await superworker.ledger.cycles.create({ id: 'a', tags: ['coding'] });
-    await superworker.ledger.cycles.create({ id: 'b', tags: ['coding'], force: true });
-    await expect(superworker.ledger.cycles.current()).rejects.toThrow('several active cycles');
-  });
-
-  it('setStatus does not mutate node approval: dag.approve is the sole approval writer', async () => {
-    const gate = await addNode('the gated one', { mode: 'checkpoint', tags: ['coding'] });
-    const line = await superworker.ledger.cycles.start({ id: 'main', tags: ['coding'] });
-    await superworker.ledger.dag.setStatus(gate.id, 'completed');
-    await superworker.ledger.cycles.close('main', { node: gate.id, result: 'completed' });
-    await superworker.ledger.cycles.setStatus('main', 'inactive');
-    await superworker.ledger.cycles.setStatus('main', 'active');
-    expect((await superworker.ledger.dag.get(gate.id))!.approved_at).toBeUndefined();
-    const approved = await superworker.ledger.dag.approve(gate.id);
-    expect(approved.approved_at).toBeDefined();
-    expect(approved.approved_at! >= approved.completed_at!).toBe(true);
-    expect(line.id).toBe('main');
+    await superworker.ledger.cycles.create({ id: 'b', tags: ['coding'] });
+    await superworker.ledger.cycles.hold('a', n1.id);
+    await superworker.ledger.cycles.hold('b', n2.id);
+    await expect(superworker.ledger.cycles.current()).rejects.toThrow('several running cycles');
   });
 });
 
@@ -189,12 +170,11 @@ describe('hold: claiming', () => {
     expect(again.updated_at >= first.updated_at).toBe(true);
   });
 
-  it('claim exclusion holds across cycles: a node in someone else\'s hands cannot be taken, whether that cycle is active or not', async () => {
+  it('claim exclusion holds across cycles: a node in someone else\'s hands cannot be taken', async () => {
     const node = await addNode('the only one', { tags: ['coding'] });
     await superworker.ledger.cycles.create({ id: 'a', tags: ['coding'] });
     await superworker.ledger.cycles.hold('a', node.id);
-    await superworker.ledger.cycles.setStatus('a', 'inactive');
-    await superworker.ledger.cycles.create({ id: 'b', tags: ['coding'], force: true });
+    await superworker.ledger.cycles.create({ id: 'b', tags: ['coding'] });
     await expect(superworker.ledger.cycles.hold('b', node.id)).rejects.toThrow('already held by cycle "a"');
   });
 
@@ -376,7 +356,7 @@ describe('policy: the cycle\'s own policies', () => {
     writeFileSync(statePath, JSON.stringify(state, null, 2));
 
     expect(await superworker.ledger.cycles.policies('main')).toEqual({ when_shelved: 'stop', parallel: 2 });
-    expect((await superworker.ledger.cycles.current())!.policies).toEqual({ parallel: 2, spawner: 'zcode' });
+    expect((await superworker.ledger.cycles.show('main')).policies).toEqual({ parallel: 2, spawner: 'zcode' });
     // Writing one key of the effective set goes through the same tolerant read: the old word is not
     // carried into the set it echoes back, and it is still there on the record, untouched.
     expect(await superworker.ledger.cycles.setPolicy('main', 'parallel', 3)).toEqual({
@@ -411,7 +391,7 @@ describe('policy: the cycle\'s own policies', () => {
 describe('list / show / current: the read side', () => {
   it('list gives every cycle in on-disk order; show names one; a ledger never init-ed is an empty ledger', async () => {
     await superworker.ledger.cycles.create({ id: 'first', tags: ['coding'] });
-    await superworker.ledger.cycles.create({ id: 'second', tags: ['coding'], force: true });
+    await superworker.ledger.cycles.create({ id: 'second', tags: ['coding'] });
     const listed = await superworker.ledger.cycles.list();
     expect(listed.map((cycle) => cycle.id)).toEqual(['first', 'second']);
     expect((await superworker.ledger.cycles.show('second')).id).toBe('second');

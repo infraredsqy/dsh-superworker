@@ -45,7 +45,7 @@ async function station(io: WordsIO): Promise<string> {
   await call(io, ['init']);
   await call(io, ['dag', 'add', 'the first node']);
   await call(io, ['dag', 'add', 'the second node']);
-  await call(io, ['cycle', 'start', 'c1', '--force', '--tags', 'coding']);
+  await call(io, ['cycle', 'start', 'c1', '--tags', 'coding']);
   return JSON.parse(readFileSync(join(io.root, '.superworker', 'state.json'), 'utf8'))
     .cycles.find((cycle: { id: string }) => cycle.id === 'c1').holding[0].id as string;
 }

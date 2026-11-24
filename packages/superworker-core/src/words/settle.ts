@@ -43,7 +43,6 @@ export const settleVerb = run('settle', async (call) => {
           graph: preview.graph,
           target: preview.target,
           filled: preview.filled,
-          park_line: preview.park_line,
           seam: preview.seam,
           warnings: preview.warnings,
           plan: preview.plan,

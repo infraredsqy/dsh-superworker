@@ -34,7 +34,7 @@ import { launchPromptPath, nodeDir, recordPaths, sessionNotePath, signalPath, st
 import type { CycleRecord, HandoffRecord, NodeMode, NodeRecord, NodeResult } from './types';
 import type { PluginCommandEntry, PluginContext, PluginFolder } from './plugins/types';
 import { withLedgerLock } from './ledgerlock';
-import { createCyclesNamespace, cycleHoldingIds, cyclePolicy, cycleRecordOrRefuse, defaultActiveCycle, notHoldingError, readStateLedger } from './cycles';
+import { createCyclesNamespace, cycleHoldingIds, cyclePolicy, cycleRecordOrRefuse, defaultRunningCycle, notHoldingError, readStateLedger } from './cycles';
 
 /** The verdict words a handoff ticket takes: these three only (`pending` is the marker a re-run leaves, coming from the re-run verb, not from a session). */
 const HANDOFF_RESULTS: readonly NodeResult[] = ['completed', 'failed', 'stopped'];
@@ -91,12 +91,10 @@ export interface ConductorAdvanceInput extends ConductorTarget {
  */
 export interface AdvanceReceipt {
   readonly cycle: string;
-  /** The nodes this call pinned (empty when there was no free slot, or nothing in the picking range). */
+  /** The nodes this call pinned (empty when there was no free slot, a stop gate applies, or nothing in the picking range). */
   readonly pinned: readonly string[];
   /** The cells this call dispatched, in plan order; `receipt.action` says opened or already open. */
   readonly dispatches: ReadonlyArray<{ node_id: string; receipt: DispatchReceipt }>;
-  /** Whether this call parked the line (a stop with nothing left in hand). */
-  readonly parked: boolean;
   /** The plan read after these steps. */
   readonly plan: NextPlan;
 }
@@ -172,7 +170,6 @@ export interface SettlePreview {
   readonly target: string | null;
   /** The freed slots the criteria would fill. */
   readonly filled: readonly string[];
-  readonly park_line: boolean;
   readonly seam: readonly SettlePreviewSeam[];
   readonly warnings: readonly string[];
   readonly plan: NextPlan;
@@ -535,19 +532,19 @@ export function createConductorNamespace(
   async function resolveCycle(targetCycle: string | undefined): Promise<CycleRecord> {
     const ledger = await readStateLedger(paths);
     if (targetCycle !== undefined) return cycleRecordOrRefuse(paths, ledger, targetCycle);
-    const pick = defaultActiveCycle(ledger.cycles);
+    const pick = defaultRunningCycle(ledger.cycles);
     if (pick.kind === 'none') {
       throw new RecordError(
         'cycle_not_found',
         paths.stateJson,
-        'no active cycle to act on (name one with { cycle }); nothing was changed',
+        'no running cycle to act on (name one with { cycle }); nothing was changed',
       );
     }
     if (pick.kind === 'several') {
       throw new RecordError(
         'cycle_not_found',
         paths.stateJson,
-        `several active cycles: continue which one? ${JSON.stringify(pick.ids)} (name one with { cycle}); nothing was changed`,
+        `several running cycles: continue which one? ${JSON.stringify(pick.ids)} (name one with { cycle }); nothing was changed`,
       );
     }
     return pick.cycle;
@@ -839,29 +836,19 @@ export function createConductorNamespace(
   ): Promise<AdvanceReceipt> {
     const line = await resolveCycle(cycleId);
     const pinned: string[] = [];
-    if (line.status === 'active') {
-      for (const pick of await pinSlots(root, line)) {
-        await cycles.hold(cycleId, pick.id);
-        pinned.push(pick.id);
-      }
+    for (const pick of await pinSlots(root, line)) {
+      await cycles.hold(cycleId, pick.id);
+      pinned.push(pick.id);
     }
     const plan = await planNext(root, { cycle: cycleId });
     const dispatches: Array<{ node_id: string; receipt: DispatchReceipt }> = [];
-    let parked = false;
     if (plan.action === 'dispatch' && options.openSessions && options.dispatch !== undefined) {
       for (const cell of plan.nodes) {
         dispatches.push({ node_id: cell.node_id, receipt: await options.dispatch(cell.node_id) });
       }
-    } else if (plan.action === 'stop_pipeline') {
-      const current = await resolveCycle(cycleId);
-      const inHand = Array.isArray(current.holding) ? current.holding.length : 0;
-      if (current.status === 'active' && inHand === 0) {
-        await cycles.setStatus(cycleId, 'inactive');
-        parked = true;
-      }
     }
     const after = await planNext(root, { cycle: cycleId });
-    return { cycle: cycleId, pinned, dispatches, parked, plan: after };
+    return { cycle: cycleId, pinned, dispatches, plan: after };
   }
 
   const base: Omit<ConductorNamespace, 'advance'> = {
@@ -1102,7 +1089,6 @@ export function createConductorNamespace(
         graph: (settle.delivered ? 'completed' : 'shelved') as 'completed' | 'shelved',
         target,
         filled: settle.filled.map((row) => row.id),
-        park_line: settle.parkLine,
         seam: offers.map((offer) => ({
           plugin: offer.plugin,
           title: offer.title,

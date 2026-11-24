@@ -125,6 +125,12 @@ export async function readCycles(root, base) {
   return Array.isArray(data.cycles) ? data.cycles.filter(isRecord) : []
 }
 
+/** The graph account: `ideas.json`'s `nodes` table, read as records. */
+export async function readNodes(root, base) {
+  const data = await readJsonRecord(join(recordDir(root), 'ideas.json'), 'ideas.json', base)
+  return isRecord(data.nodes) ? data.nodes : {}
+}
+
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }

@@ -39,7 +39,7 @@ async function call(io: WordsIO, argv: readonly string[]): Promise<string> {
 async function stage(io: WordsIO): Promise<string> {
   await call(io, ['init']);
   await call(io, ['dag', 'add', 'a node one line holds']);
-  await call(io, ['cycle', 'start', 'c1', '--force', '--tags', 'coding']);
+  await call(io, ['cycle', 'start', 'c1', '--tags', 'coding']);
   return (JSON.parse(readFileSync(join(io.root, '.superworker', 'state.json'), 'utf8')) as {
     cycles: Array<{ id: string; holding: Array<{ id: string }> }>;
   }).cycles.find((cycle) => cycle.id === 'c1')!.holding[0]!.id;

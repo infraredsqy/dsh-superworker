@@ -20,7 +20,6 @@ import type {
   CycleHolding,
   CyclePolicies,
   CycleRecord,
-  CycleStatus,
   NodeRecord,
   NodeResult,
   SecondsTimestamp,
@@ -71,7 +70,6 @@ import {
  *   that continue.
  */
 
-const VALID_CYCLE_STATUSES: readonly CycleStatus[] = ['active', 'inactive'];
 const VALID_NODE_RESULTS: readonly NodeResult[] = ['completed', 'failed', 'stopped'];
 const CYCLE_TAGS_VOCABULARY = ['writing', 'coding', 'art'] as const;
 
@@ -190,22 +188,20 @@ export function cycleRecordOrRefuse(paths: RecordPaths, ledger: StateLedger, cyc
 }
 
 /**
- * The default line when the caller names none: exactly one active line is taken; none reads as "no
- * default"; several is a refusal that names the lines — never a silent pick. The one criterion behind
- * every unnamed line call: `cycles.current` throws and names the ids, the conductor's line reader
- * refuses the same way, and the plan folds both absences into its ask_user answer. The criterion
- * lives here, once; each caller spells its own face of the refusal.
+ * The default line when the caller names none: exactly one line currently holding nodes is taken;
+ * none reads as "no default"; several is a refusal that names the lines — never a silent pick.
+ * Stateless: no persisted pointer, no status bit.
  */
-export type DefaultActiveCycle =
+export type DefaultRunningCycle =
   | { readonly kind: 'one'; readonly cycle: CycleRecord }
   | { readonly kind: 'none' }
   | { readonly kind: 'several'; readonly ids: readonly string[] };
 
-export function defaultActiveCycle(cycles: readonly CycleRecord[]): DefaultActiveCycle {
-  const active = cycles.filter((record) => record.status === 'active');
-  if (active.length === 1) return { kind: 'one', cycle: active[0]! };
-  if (active.length === 0) return { kind: 'none' };
-  return { kind: 'several', ids: active.map((record) => String(record.id)) };
+export function defaultRunningCycle(cycles: readonly CycleRecord[]): DefaultRunningCycle {
+  const running = cycles.filter((record) => holdingIds(record).length > 0);
+  if (running.length === 1) return { kind: 'one', cycle: running[0]! };
+  if (running.length === 0) return { kind: 'none' };
+  return { kind: 'several', ids: running.map((record) => String(record.id)) };
 }
 
 /** The lines holding one node right now, read through the same claim reader: both on-disk shapes count. */
@@ -362,7 +358,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
     await atomicWriteJson(paths.stateJson, ledger.data, jsonOptionsForRecord('state'));
   }
 
-  /** The block both set-up verbs share: tags must be declared, the id must be unused, only one line may be active at a time (force overrides it explicitly). */
+  /** The block both set-up verbs share: tags must be declared and the id must be unused. */
   function createEntry(ledger: StateLedger, verb: string, input: CycleCreateInput, now: SecondsTimestamp): CycleRecord {
     const tags = parseCycleTags(input.tags ?? []);
     if (tags.length === 0) {
@@ -376,21 +372,11 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
     if (ledger.cycles.some((record) => record.id === input.id)) {
       throw new Error(`cycle "${input.id}" already exists`);
     }
-    const active = ledger.cycles
-      .filter((record) => record.status === 'active')
-      .map((record) => record.id);
-    if (active.length > 0 && input.force !== true) {
-      throw new Error(
-        `cycle(s) ${JSON.stringify(active)} still active -- one cycle at a time. Take them out ` +
-          'of service (status "inactive"), or pass force to run two anyway.',
-      );
-    }
     const entry: CycleRecord = {
       id: input.id,
       title: input.title !== undefined && input.title !== null && input.title !== ''
         ? input.title
         : `Cycle ${now.slice(0, 10)}`,
-      status: 'active',
       holding: [],
       path: [],
       created_at: now,
@@ -517,21 +503,6 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
       });
     },
 
-    async setStatus(id: string, status: CycleStatus): Promise<CycleRecord> {
-      return mutate(async (ledger) => {
-        const record = cycleRecordOrRefuse(paths, ledger, id);
-        if (!VALID_CYCLE_STATUSES.includes(status)) {
-          throw new Error(
-            `cycle status must be one of ${JSON.stringify([...VALID_CYCLE_STATUSES].sort())}`,
-          );
-        }
-        record.status = status;
-        record.updated_at = nowSeconds();
-        await writeState(ledger);
-        return record;
-      });
-    },
-
     async setPolicy(id: string, key: string, value: CyclePolicyValue): Promise<CyclePolicySet> {
       return mutate(async (ledger) => {
         const record = cycleRecordOrRefuse(paths, ledger, id);
@@ -554,10 +525,10 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
 
     async current(): Promise<CycleRecord | null> {
       const { cycles } = await readState();
-      const pick = defaultActiveCycle(cycles);
+      const pick = defaultRunningCycle(cycles);
       if (pick.kind === 'several') {
-        // A second active line set up with force: it has to be named, never picked for the caller.
-        throw new Error(`several active cycles: continue which one? ${JSON.stringify(pick.ids)}`);
+        // Several lines holding nodes at once: it has to be named, never picked for the caller.
+        throw new Error(`several running cycles: continue which one? ${JSON.stringify(pick.ids)}`);
       }
       if (pick.kind === 'none') return null;
       const record = pick.cycle;
@@ -654,8 +625,8 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
           );
           if (holder !== undefined) {
             throw new Error(
-              `node "${node}" is already held by cycle "${holder.id}" (status ${holder.status}). ` +
-                '-- one node belongs to one cycle at a time, whatever that line\'s status. ' +
+              `node "${node}" is already held by cycle "${holder.id}" ` +
+                '-- one node belongs to one cycle at a time. ' +
                 'Close it there first, or pick another node.',
             );
           }

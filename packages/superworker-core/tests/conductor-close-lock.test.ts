@@ -145,7 +145,7 @@ describe('the lock boundary of a close: the plugin half is asked outside the loc
       expect(JSON.parse(readFileSync(ticketPathOf(lab.root, 'c1', node), 'utf8')))
         .toMatchObject({ status: 'failed' });
       expect(settled.path[0]).toMatchObject({ node, result: 'failed' });
-      expect(settled.status).toBe('inactive');
+      expect(settled.holding).toEqual([]);
       expect((await lab.superworker.ledger.dag.get(node))!.status).toBe('shelved');
     } finally {
       lab.cleanup();
@@ -208,7 +208,7 @@ describe('the lock boundary of a close: the plugin half is asked outside the loc
       expect(titles).not.toContain('inserted by the liveness gate');
       // ...while the settle itself went through as usual.
       expect(settled.path[0]).toMatchObject({ node, result: 'completed' });
-      expect(settled.status).toBe('inactive');
+      expect(settled.holding).toEqual([]);
       expect((await lab.superworker.ledger.dag.get(node))!.status).toBe('completed');
     } finally {
       lab.cleanup();
@@ -269,7 +269,6 @@ describe('the lock boundary of a close: the plugin half is asked outside the loc
         // And nothing settled either: the node is still open and still on the line's claim list.
         expect((await lab.superworker.ledger.dag.get(node))!.status).toBe('todo');
         const line = await lab.superworker.ledger.cycles.show('c1');
-        expect(line.status).toBe('active');
         expect(line.holding.map((item) => item.id)).toEqual([node]);
       } finally {
         lab.cleanup();

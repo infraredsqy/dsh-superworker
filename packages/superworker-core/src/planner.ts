@@ -11,7 +11,7 @@ import type {
   StopPlan,
   WaitPlan,
 } from './conductor';
-import { cycleHoldingIds, cyclePolicy, defaultActiveCycle, deliveryApproved, readStateLedger } from './cycles';
+import { cycleHoldingIds, cyclePolicy, defaultRunningCycle, deliveryApproved, readStateLedger } from './cycles';
 import {
   eisenhowerOrder,
   inTagScope,
@@ -179,14 +179,11 @@ function normalizeMode(mode: unknown): NodeMode {
 }
 
 /**
- * The single active line by default; a named line that is not on the account hands back null. The
- * unnamed reading is the engine's one default-line reader (`defaultActiveCycle`): exactly one active
- * line is taken, and none and several both hand back null here — the plan answers ask_user below,
- * naming the candidates either way.
+ * The single running line by default; a named line that is not on the account hands back null.
  */
 function findCycle(cycles: CycleRecord[], cycleId: string | null): CycleRecord | null {
   if (cycleId !== null) return cycles.find((cycle) => cycle.id === cycleId) ?? null;
-  const pick = defaultActiveCycle(cycles);
+  const pick = defaultRunningCycle(cycles);
   return pick.kind === 'one' ? pick.cycle : null;
 }
 
@@ -226,13 +223,6 @@ function pyQuote(text: string): string {
 /** The spelling of a list of words (or an empty table): `['a', 'b']` / `[]`. The run doc quotes tags the same way. */
 export function pyList(items: readonly string[]): string {
   return `[${items.map(pyQuote).join(', ')}]`;
-}
-
-/** One cell in a sentence: a string as it is, an absent one spelled `None`. */
-function pyBare(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (value === undefined || value === null) return 'None';
-  return String(value);
 }
 
 /** The short spelling of a node id: the eight characters the plan and the run doc use to cite it (the graph layer's one spelling). */
@@ -523,6 +513,16 @@ export function lineStopGate(cycle: CycleRecord, nodes: NodeMap): LineStopGate |
   return null;
 }
 
+/** Derived 3-state view of a cycle: holding nodes (`running`), blocked on a human gate (`waiting`), or idle. */
+export type CycleDerivedState = 'running' | 'waiting' | 'idle';
+
+export function cycleDerivedState(cycle: CycleRecord, nodes: NodeMap): CycleDerivedState {
+  if (cycleHoldingIds(cycle).length > 0) return 'running';
+  const gate = lineStopGate(cycle, nodes);
+  if (gate !== null && (gate.kind === 'checkpoint' || gate.kind === 'shelved')) return 'waiting';
+  return 'idle';
+}
+
 function stopCriterion(cycle: CycleRecord, node: { id: string; mode?: unknown } | null): [boolean, string] {
   const mode = normalizeMode(node?.mode);
   if (mode === 'checkpoint') {
@@ -621,18 +621,18 @@ function askAction(question: string, extra: Partial<AskPlan> = {}): AskPlan {
   return { action: 'ask_user', cycle: null, question, ...extra };
 }
 
-/** The two lines of "no line to push": none at all, and lines that exist but are none of them in service — the two cases have to read differently. */
+/** The two lines of "no line to push": none at all, and lines that exist but none is currently holding a node. */
 function noLineAction(cycles: readonly CycleRecord[]): NextPlan {
-  const inService = cycles.filter((cycle) => cycle.status === 'active').map((cycle) => String(cycle.id));
-  if (inService.length > 1) {
-    return askAction('several active cycles: continue which one?', { candidates: inService });
+  const running = cycles.filter((cycle) => cycleHoldingIds(cycle).length > 0).map((cycle) => String(cycle.id));
+  if (running.length > 1) {
+    return askAction('several running cycles: continue which one?', { candidates: running });
   }
   if (cycles.length === 0) {
     return {
       action: 'no_cycle',
       cycle: null,
       note:
-        'no active cycle. Creating one needs human intent (which nodes, unattended or not); ' +
+        'no cycle yet. Creating one needs human intent (which nodes, unattended or not); ' +
         'this planner will not invent it.',
       known_cycles: [],
     } satisfies NoCyclePlan;
@@ -640,17 +640,17 @@ function noLineAction(cycles: readonly CycleRecord[]): NextPlan {
   const idle = cycles.map((cycle) => String(cycle.id));
   if (idle.length === 1) {
     const only = idle[0]!;
-    return askAction(`no cycle is active; ${pyQuote(only)} is out of service (inactive)`, {
+    return askAction(`no cycle is currently running; name ${pyQuote(only)} with --cycle to continue it`, {
       requested: only,
       candidates: idle,
       known_cycles: idle,
-      hint: `cycle status ${only} active`,
+      hint: `advance --cycle ${only}`,
     });
   }
-  return askAction(`no cycle is active right now; these lines are all out of service: ${pyList(idle)}`, {
+  return askAction(`no cycle is currently running; known cycles: ${pyList(idle)}`, {
     candidates: idle,
     known_cycles: idle,
-    hint: 'cycle status <cycle> active',
+    hint: 'advance --cycle <cycle>',
   });
 }
 
@@ -879,23 +879,10 @@ export interface CloseSettlement {
   readonly decision: 'continue' | 'stop';
   /** The slot-filling list: the nodes the ordering picked after this close opened its slots. */
   readonly filled: ReadonlyArray<{ id: string; title: string }>;
-  /** Whether the line should be turned out of service (inactive). */
-  readonly parkLine: boolean;
   /** The reason sentence for stopping (filled only in the stopping case). */
   readonly reason: string;
 }
 
-/**
- * The settlement criteria of one close: read the graph and the lines, and hand back "what the verdict
- * becomes, carry on or stop, who gets the slot, whether the line parks". The one set of criteria the read side
- * and the write side share (see `CloseSettlement`); not one byte is written here.
- *
- * `signal` is the ticket already read (a missing or still `pending` ticket never reaches here — that is the
- * caller's blocker: the plan answers wait and `conductor.settle` refuses). The criteria answer on their own:
- * what the close decides is the line's own state (`mode`, `when_shelved`, `stop_after_nodes`), never a flag a
- * caller carried in — a person who wants the line stopped stops it (the line's status), and one who wants a
- * particular node next claims it (`ledger.cycles.hold`).
- */
 export async function settleClose(
   root: string,
   cycle: CycleRecord,
@@ -903,7 +890,7 @@ export async function settleClose(
   signal: Record<string, unknown>,
 ): Promise<CloseSettlement> {
   const view = await readLedger(recordPaths(root));
-  return settleAnswers(cycle, nodeId, signal, cycle.status === 'active', view);
+  return settleAnswers(cycle, nodeId, signal, view);
 }
 
 /**
@@ -915,7 +902,6 @@ async function settleAnswers(
   cycle: CycleRecord,
   nodeId: string,
   signal: Record<string, unknown>,
-  lineActive: boolean,
   view: LedgerView,
 ): Promise<CloseSettlement> {
   const nodes = view.nodes;
@@ -924,9 +910,8 @@ async function settleAnswers(
   // A non-delivered node is always shelved; whether the line goes on is decided separately by the line's own
   // `when_shelved` (stop by default).
   const policyCarries = policy.when_shelved === 'continue';
-  let carryOn = delivered || policyCarries;
+  const carryOn = delivered || policyCarries;
   const others = cycleHoldingIds(cycle).filter((id) => id !== nodeId);
-  if (!lineActive) carryOn = false;
   let decision: 'continue' | 'stop' = carryOn ? 'continue' : 'stop';
   const tags = Array.isArray(cycle.tags) ? cycle.tags : [];
   // How many slots this close can open, and whether the line takes one at a time or several: the line's own
@@ -971,31 +956,7 @@ async function settleAnswers(
     ? 'completed'
     : (String(signal.status ?? 'failed') as CloseSettlement['outcome']);
 
-  if (!lineActive) {
-    let reason =
-      `cycle ${pyQuote(String(cycle.id))} is not active (${pyBare(cycle.status)}): a close on this ` +
-      `line only records -- it closes ${short(nodeId)} and marks the DAG, picks no next ` +
-      'node and dispatches nothing; the line keeps the status it was given.';
-    reason += ` To carry on: cycle status ${cycle.id} active`;
-    // The line is not in service: only the recording happens. Not one character of the line's status is written
-    // (parkLine=false) and no slot is filled either.
-    return {
-      cycleId: String(cycle.id),
-      nodeId,
-      outcome,
-      delivered,
-      decision: 'stop',
-      filled: [],
-      parkLine: false,
-      reason,
-    };
-  }
-
   if (decision === 'stop' || filled.length === 0) {
-    // A line with other nodes still in flight does not count as stopped: those nodes are still held and the relay
-    // is on their own closes — turning the line inactive would make their closes recording-only, and the work they
-    // release would have nobody to take it.
-    const parkLine = decision === 'stop' || others.length === 0;
     const openNotes =
       decision === 'stop' && others.length > 0
         ? ` (still holding ${others.map(short).join(', ')}, their notes are ` +
@@ -1007,26 +968,18 @@ async function settleAnswers(
       reason = `this node did not deliver (${outcome}): ${slipped}`;
     } else if (stopWhy !== '') {
       reason = stopWhy;
-      // The middle mode stops in order to wait for a person to say "continue": stopping turns the line out of
-      // service, so both commands are handed out together (put it back in service, then go on) — otherwise that
-      // "continue" would still have to be guessed at.
       if (normalizeMode(nodes[nodeId]?.mode) === 'checkpoint') {
         reason +=
           `; to carry on: dag approve ${nodeId}, ` +
           `then advance --cycle ${cycle.id}`;
       }
     } else if (filled.length === 0 && carryOn) {
-      // Not one slot filled: this line still has work (the relay is on those closes), or the graph really has
-      // nothing to pick — the two have to be told apart.
       if (others.length > 0) {
         reason =
           `${short(nodeId)} is closed; still holding ${others.map(short).join(', ')}, their ` +
           'notes are collected as they arrive (settle <node id>) -- ' +
-          'this line stays in service, and on its own close that slot fills and ' +
-          'advances.';
+          'the remaining held nodes carry this line on when their own closes run.';
       } else {
-        // On a single-node line the node delivered by this close is this node: the downstream it just unlocked is
-        // the work the reader is looking for. A multi-node close reads the graph as it is on disk at this moment.
         const assumedForBlocked = several ? [] : assumed;
         const tagged = tagBlockedReady(nodes, tags, {
           exclude: nodeId,
@@ -1055,7 +1008,6 @@ async function settleAnswers(
       delivered,
       decision: 'stop',
       filled: [],
-      parkLine,
       reason,
     };
   }
@@ -1068,33 +1020,25 @@ async function settleAnswers(
     delivered,
     decision: 'continue',
     filled: filled.map((row) => ({ id: row.id, title: row.title })),
-    parkLine: false,
     reason: '',
   };
 }
 
-/**
- * The plan of a session closing its own node: record this step and fill the released slots, or stop.
- *
- * The questions every close asks — was it delivered, can the line carry on, who gets the released slots, why it
- * stopped — all have their criteria in one place, `settleAnswers`; this only folds them into an action bag, and
- * the closing rehearsal (`next` with `after`) and the write side share the same answer, neither copying the other.
- */
 async function closeOwnNode(
   cycle: CycleRecord,
   nodeId: string,
   signal: Record<string, unknown>,
-  lineActive: boolean,
   view: LedgerView,
 ): Promise<NextPlan> {
-  const settle = await settleAnswers(cycle, nodeId, signal, lineActive, view);
+  const settle = await settleAnswers(cycle, nodeId, signal, view);
   const nodes = view.nodes;
   const several = cyclePolicy(cycle).parallel > 1;
+  const others = cycleHoldingIds(cycle).filter((id) => id !== nodeId);
   if (settle.decision === 'stop' || settle.filled.length === 0) {
     return stopAction(nodes, cycle, settle.reason, {
       nodeId,
       shelvedNodes: settle.delivered ? [] : [nodeId],
-      stopLine: lineActive ? settle.parkLine : undefined,
+      stopLine: others.length === 0,
     });
   }
   const head = settle.filled[0]!;
@@ -1149,17 +1093,6 @@ export async function planNext(root: string, query: NextQuery = {}): Promise<Nex
   }
 
   const selfVerified = query.after !== undefined && query.after !== null;
-  if (cycle.status !== 'active' && !selfVerified) {
-    return askAction(
-      `cycle ${pyQuote(String(cycle.id))} exists but is not active (${pyBare(cycle.status)})`,
-      {
-        requested: String(cycle.id),
-        candidates: [String(cycle.id)],
-        hint: `cycle status ${cycle.id} active`,
-      },
-    );
-  }
-
   const holding = cycleHoldingIds(cycle);
 
   // Nothing in hand: the line just opened, or everything it held is settled. Both cases ask the same question, and
@@ -1181,10 +1114,6 @@ export async function planNext(root: string, query: NextQuery = {}): Promise<Nex
       };
     }
     const cell = await cellState(root, String(cycle.id), closing);
-    // A session's own close **is** the "close me" request, so a ticket that already states a result is enough:
-    // `completed` and `failed` / `stopped` all have said their piece, and whichever it is does not stand in the way
-    // of settling. Only a missing or still `pending` ticket is left to wait — the same gate, and the same
-    // sentence, the write side refuses with.
     const gate = settleGate(String(cycle.id), closing, cell.ticket);
     if (!gate.ok) {
       return {
@@ -1194,7 +1123,7 @@ export async function planNext(root: string, query: NextQuery = {}): Promise<Nex
         note: `${gate.reason}.`,
       };
     }
-    return closeOwnNode(cycle, closing, gate.ticket, cycle.status === 'active', view);
+    return closeOwnNode(cycle, closing, gate.ticket, view);
   }
 
   // Every node in hand already has a ticket in a terminal state: this batch is over, and the close is what consumes

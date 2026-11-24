@@ -54,9 +54,6 @@ export interface NodeRecord {
 /** The verdict word of one step of work: completed / failed / stopped. */
 export type NodeResult = 'completed' | 'failed' | 'stopped';
 
-/** Line status: `active` should be pushed forward, `inactive` is not pushed. The reason it stopped is not written into the status. */
-export type CycleStatus = 'active' | 'inactive';
-
 /** One current claim of a line: one node appears on only one line's roster at a time. */
 export interface CycleHolding {
   id: string;
@@ -87,7 +84,6 @@ export interface CyclePolicies {
 export interface CycleRecord {
   id: string;
   title: string;
-  status: CycleStatus;
   /** The nodes it holds right now. */
   holding: CycleHolding[];
   /** Every step walked. */

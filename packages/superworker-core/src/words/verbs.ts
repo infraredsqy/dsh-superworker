@@ -12,9 +12,12 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ConfigLayer } from '../config';
+import { readNodeTable } from '../graph';
 import type { DagAddManyRow } from '../ledger';
 import { runMergeDriver } from '../ledgermerge/driver';
-import type { CycleStatus, NodeResult, NodeStatus } from '../types';
+import { recordPaths } from '../paths';
+import { cycleDerivedState } from '../planner';
+import type { NodeResult, NodeStatus } from '../types';
 import { usageError } from './argparse';
 import {
   EXIT,
@@ -322,7 +325,6 @@ export const cycleCreateVerb = run("cycle create", async (call) => {
     id,
     ...(values.title === undefined ? {} : { title: values.title }),
     tags: splitTags(values.tags),
-    ...(values.force === true ? { force: true } : {}),
   });
   return { stdout: createdLine(record) };
 });
@@ -338,7 +340,6 @@ export const cycleStartVerb = run("cycle start", async (call) => {
     id,
     ...(values.title === undefined ? {} : { title: values.title }),
     tags: splitTags(values.tags),
-    ...(values.force === true ? { force: true } : {}),
     ...(values.parallel === undefined ? {} : { parallel: readCount(values.parallel) as number }),
   });
   const holding = Array.isArray(record.holding) ? record.holding : [];
@@ -362,21 +363,14 @@ export const cycleRenameVerb = run("cycle rename", async (call) => {
   return { stdout: `RENAMED: "${record.id}" → "${record.title}"` };
 });
 
-/** `cycle status`. */
-export const cycleStatusVerb = run("cycle status", async (call) => {
-  const { positionals, superworker } = call;
-  const [id, status] = positionals.map((words) => words[0]);
-  const record = await superworker.ledger.cycles.setStatus(id, status as CycleStatus);
-  return { stdout: `CYCLE_STATUS: "${record.id}" → ${record.status}` };
-});
-
 /** `cycle list`. */
 export const cycleListVerb = run("cycle list", async (call) => {
-  const { superworker } = call;
+  const { superworker, root } = call;
   const cycles = await superworker.ledger.cycles.list();
   if (cycles.length === 0) return { stdout: 'No cycles found.' };
+  const { nodes } = await readNodeTable(recordPaths(root));
   const lines: string[] = [
-    `${'ID'.padEnd(22)} ${'Title'.padEnd(34)} ${'Status'.padEnd(12)} ${'Steps'.padEnd(6)} ${'Node'.padEnd(10)} ${'Tags'.padEnd(14)}`,
+    `${'ID'.padEnd(22)} ${'Title'.padEnd(34)} ${'State'.padEnd(12)} ${'Steps'.padEnd(6)} ${'Node'.padEnd(10)} ${'Tags'.padEnd(14)}`,
     '-'.repeat(108),
   ];
   for (const cycle of cycles) {
@@ -385,28 +379,30 @@ export const cycleListVerb = run("cycle list", async (call) => {
     if (holding.length > 1) node += `+${holding.length - 1}`;
     const tags = Array.isArray(cycle.tags) && cycle.tags.length > 0 ? cycle.tags.join(',') : '-';
     const steps = String((cycle.path ?? []).length);
+    const state = cycleDerivedState(cycle, nodes);
     lines.push(
       `${String(cycle.id).padEnd(22)} ${String(cycle.title ?? '?').padEnd(34)} ` +
-        `${String(cycle.status ?? '?').padEnd(12)} ${steps.padEnd(6)} ${node.padEnd(10)} ${tags.padEnd(14)}`,
+        `${state.padEnd(12)} ${steps.padEnd(6)} ${node.padEnd(10)} ${tags.padEnd(14)}`,
     );
   }
   return { stdout: lines.join('\n') };
 });
 
-/** `cycle current`: the lines in service, and every line still holding a node. */
+/** `cycle current`: every line currently running or waiting on a human gate. */
 export const cycleCurrentVerb = run("cycle current", async (call) => {
-  const { superworker } = call;
+  const { superworker, root } = call;
   const cycles = await superworker.ledger.cycles.list();
-  const lines = cycles.filter(
-    (cycle) => cycle.status === 'active' || (Array.isArray(cycle.holding) ? cycle.holding : []).length > 0,
-  );
-  if (lines.length === 0) return { stdout: 'No active cycles.' };
+  const { nodes } = await readNodeTable(recordPaths(root));
+  const entries = cycles
+    .map((cycle) => ({ cycle, state: cycleDerivedState(cycle, nodes) }))
+    .filter(({ state }) => state !== 'idle');
+  if (entries.length === 0) return { stdout: 'No running cycles.' };
   const out: string[] = [];
-  for (const cycle of lines) {
-    const mark = cycle.status === 'active' ? '●' : '○';
+  for (const { cycle, state } of entries) {
+    const mark = state === 'running' ? '●' : '○';
     const tags = Array.isArray(cycle.tags) && cycle.tags.length > 0 ? cycle.tags.join(',') : '(none)';
     const policy = await superworker.ledger.cycles.policies(String(cycle.id));
-    out.push(`${mark} ${cycle.id} — ${cycle.title ?? ''}  [${cycle.status ?? '?'}]  tags: ${tags}`);
+    out.push(`${mark} ${cycle.id} — ${cycle.title ?? ''}  [${state}]  tags: ${tags}`);
     out.push(
       `  Policy: ${policyLine(policy)}  ` +
         `Steps walked: ${(cycle.path ?? []).length}`,
@@ -462,7 +458,7 @@ export const holdVerb = run("hold", async (call) => {
     const line = await superworker.ledger.cycles.current();
     if (line === null) {
       return refuse(
-        `hold needs the line to put ${nodes.map(short).join(', ')} in hand, and no cycle is active. ` +
+        `hold needs the line to put ${nodes.map(short).join(', ')} in hand, and no cycle is currently running. ` +
           'Name one with `--cycle <id>`, or read them with `cycle list`.',
         EXIT.refused,
       );

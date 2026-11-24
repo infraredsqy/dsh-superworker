@@ -65,13 +65,13 @@ describe('planning: readiness criterion and picking', () => {
     expect(plan.note).toContain('needs human intent');
   });
 
-  it('cycle active, hands empty, one ready node in the graph: open_node names it', async () => {
+  it('cycle named, hands empty, one ready node in the graph: open_node names it', async () => {
     const root = freshRoot();
     const superworker = open(root);
     await superworker.ledger.init();
     const node = await superworker.ledger.dag.add({ title: 'write it' });
     await superworker.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
-    const plan = await open(root).conductor.next();
+    const plan = await open(root).conductor.next({ cycle: 'c1' });
     expect(actionOf(plan)).toBe('open_node');
     if (plan.action !== 'open_node') return;
     expect(plan.node_id).toBe(node.id);
@@ -86,7 +86,7 @@ describe('planning: readiness criterion and picking', () => {
     const busy = await superworker.ledger.dag.add({ title: 'busy elsewhere' });
     const mine = await superworker.ledger.dag.add({ title: 'mine', depends_on: [busy.id] });
     await superworker.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
-    await superworker.ledger.cycles.create({ id: 'c2', tags: ['writing'], force: true });
+    await superworker.ledger.cycles.create({ id: 'c2', tags: ['writing'] });
     await superworker.ledger.cycles.hold('c2', busy.id);
     const plan = await open(root).conductor.next({ cycle: 'c1' });
     expect(actionOf(plan)).toBe('stop_pipeline');
@@ -105,7 +105,7 @@ describe('planning: readiness criterion and picking', () => {
     const second = await superworker.ledger.dag.add({ title: 'second', depends_on: [first.id] });
     await superworker.ledger.dag.add({ title: 'third', depends_on: [second.id] });
     await superworker.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
-    const plan = await open(root).conductor.next();
+    const plan = await open(root).conductor.next({ cycle: 'c1' });
     expect(actionOf(plan)).toBe('open_node');
     if (plan.action !== 'open_node') return;
     expect(plan.node_id).toBe(first.id);
@@ -118,9 +118,6 @@ describe('planning: readiness criterion and picking', () => {
     await superworker.ledger.init();
     const node = await superworker.ledger.dag.add({ title: 'write it' });
     await superworker.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
-    // A null, a bare word and an array around the one real line: none of the three can be read as a
-    // line, and the table's one reading (`readStateLedger`) drops them. Every reader of that table —
-    // this plan included — therefore sees the same one line instead of a TypeError.
     const records = JSON.parse(readFileSync(join(root, '.superworker', 'state.json'), 'utf8')) as {
       cycles: unknown[];
     };
@@ -129,7 +126,7 @@ describe('planning: readiness criterion and picking', () => {
       JSON.stringify({ cycles: [null, 'junk', [], ...records.cycles] }, null, 2),
       'utf8',
     );
-    const plan = await open(root).conductor.next();
+    const plan = await open(root).conductor.next({ cycle: 'c1' });
     expect(actionOf(plan)).toBe('open_node');
     if (plan.action !== 'open_node') return;
     expect(plan.node_id).toBe(node.id);
@@ -143,10 +140,8 @@ describe('planning: readiness criterion and picking', () => {
     await superworker.ledger.dag.add({ title: 'alpha' });
     await superworker.ledger.dag.add({ title: 'gamma' });
     await superworker.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
-    // Three rows score alike (importance and urgency are both 0), so the order is entirely the
-    // graph's own sort; planning takes only its first row.
     const head = (await superworker.ledger.dag.list({ ready: true }))[0]!;
-    const plan = await open(root).conductor.next();
+    const plan = await open(root).conductor.next({ cycle: 'c1' });
     expect(actionOf(plan)).toBe('open_node');
     if (plan.action !== 'open_node') return;
     expect(plan.node_id).toBe(head.id);
@@ -158,7 +153,7 @@ describe('planning: readiness criterion and picking', () => {
     await superworker.ledger.init();
     await superworker.ledger.dag.add({ title: 'drawing', tags: ['art'] });
     await superworker.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
-    const plan = await open(root).conductor.next();
+    const plan = await open(root).conductor.next({ cycle: 'c1' });
     expect(actionOf(plan)).toBe('stop_pipeline');
     if (plan.action !== 'stop_pipeline') return;
     expect(plan.reason).toContain("filter set ['writing']");
@@ -175,7 +170,7 @@ describe('planning: readiness criterion and picking', () => {
     await superworker.ledger.cycles.create({ id: 'c1', tags: ['writing'] });
     await superworker.ledger.cycles.setPolicy('c1', 'parallel', 2);
     const order = (await superworker.ledger.dag.list({ ready: true })).map((row) => row.id);
-    const plan = await open(root).conductor.next();
+    const plan = await open(root).conductor.next({ cycle: 'c1' });
     expect(actionOf(plan)).toBe('open_node');
     if (plan.action !== 'open_node') return;
     expect(plan.nodes).toEqual(order.slice(0, 2));
@@ -377,7 +372,6 @@ describe('planning: when to stop', () => {
     }
     const advCp = await superworker.conductor.advance({ cycle: 'c1' });
     expect(advCp.pinned).toEqual([]);
-    await superworker.ledger.cycles.setStatus('c1', 'active');
     await superworker.ledger.dag.approve(gate.id);
     const afterApprove = await superworker.conductor.next({ cycle: 'c1' });
     expect(actionOf(afterApprove)).toBe('open_node');

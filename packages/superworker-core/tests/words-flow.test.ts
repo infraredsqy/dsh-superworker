@@ -42,7 +42,7 @@ async function station(io: WordsIO): Promise<string> {
   await call(io, ['init']);
   await call(io, ['dag', 'add', 'the first node']);
   await call(io, ['dag', 'add', 'the second node']);
-  await call(io, ['cycle', 'start', 'c1', '--force', '--tags', 'coding']);
+  await call(io, ['cycle', 'start', 'c1', '--tags', 'coding']);
   return JSON.parse(readFileSync(join(io.root, '.superworker', 'state.json'), 'utf8'))
     .cycles.find((cycle: { id: string }) => cycle.id === 'c1').holding[0].id as string;
 }
@@ -63,7 +63,7 @@ describe('hold: the claim step, a verb of its own', () => {
     await call(io, ['init']);
     for (const title of ['a', 'b', 'c']) await call(io, ['dag', 'add', title]);
     const [a, b, c] = graphIds(io);
-    await call(io, ['cycle', 'create', 'c1', '--force', '--tags', 'coding']);
+    await call(io, ['cycle', 'create', 'c1', '--tags', 'coding']);
     const batch = await call(io, ['hold', a!, b!, '--cycle', 'c1']);
     expect(batch.stdout).toContain(`CURRENT_NODE: c1 → ${a}`);
     expect(batch.stdout).toContain(`HOLDING   : c1 → ${b}`);
@@ -77,8 +77,8 @@ describe('hold: the claim step, a verb of its own', () => {
     await call(io, ['init']);
     for (const title of ['a', 'b']) await call(io, ['dag', 'add', title]);
     const [a, b] = graphIds(io);
-    await call(io, ['cycle', 'create', 'c1', '--force', '--tags', 'coding']);
-    await call(io, ['cycle', 'create', 'c2', '--force', '--tags', 'coding']);
+    await call(io, ['cycle', 'create', 'c1', '--tags', 'coding']);
+    await call(io, ['cycle', 'create', 'c2', '--tags', 'coding']);
     await call(io, ['hold', a!, '--cycle', 'c1']);
     const refused = await answer(['hold', a!, b!, '--cycle', 'c2'], io);
     expect(refused.code).toBe(1);
@@ -95,8 +95,8 @@ describe('hold: the claim step, a verb of its own', () => {
     const [only] = graphIds(io);
     const noLine = await answer(['hold', only!], io);
     expect(noLine.code).toBe(2);
-    expect(noLine.stderr).toContain('no cycle is active');
-    await call(io, ['cycle', 'start', 'c1', '--force', '--tags', 'coding']);
+    expect(noLine.stderr).toContain('no cycle is currently running');
+    await call(io, ['cycle', 'start', 'c1', '--tags', 'coding']);
     await call(io, ['hold', only!]);
     expect(state(io).holding.map((item: { id: string }) => item.id)).toEqual([only]);
   });

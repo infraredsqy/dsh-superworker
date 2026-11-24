@@ -217,8 +217,6 @@ describe("the issue pool's close-time insert", () => {
     const returned = await superworker.conductor.close({ cycle: 'c1', node: closed });
     expect(warningsOf(returned as object)).toEqual([]);
     expect((await graph()).some((rowNode) => String(rowNode.title).startsWith('Maintenance:'))).toBe(false);
-    // The main path carries on: settling lands and the line goes out of service.
-    expect(returned.status).toBe('inactive');
     expect(returned.holding).toEqual([]);
   });
 
@@ -237,8 +235,6 @@ describe("the issue pool's close-time insert", () => {
     // `ctx.capture`: the pool reader's refusal is what the host records, and the number stays unknown.
     expect(warnings[0]).toContain('failed to compute "issue_pool_weight"');
     expect((await graph()).some((rowNode) => String(rowNode.title).startsWith('Maintenance:'))).toBe(false);
-    // Settling and inserting do not hold each other up: the verdict enters path, the hold is released and the line packs up.
-    expect(returned.status).toBe('inactive');
     expect(returned.holding).toEqual([]);
     expect(returned.path[0]).toMatchObject({ node: closed, result: 'completed' });
   });

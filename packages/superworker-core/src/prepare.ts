@@ -246,7 +246,7 @@ function buildRunDoc(input: {
     `- node: ${short(nodeId)} (mode=${mode}, weight=${weight}, tags=${pyList(tags)})`,
     `- spec: ${specPath}`,
     ...(method === null ? [] : [`- method: ${method}`]),
-    `- cycle ${cycle.id}: ${cycle.status}, tags=${pyList(cycleTags)}, Policy: ${policyText}, ` +
+    `- cycle ${cycle.id}: tags=${pyList(cycleTags)}, Policy: ${policyText}, ` +
       `holding=${pyList(holding)}`,
     `- test_tier=${shown(knobs.test_tier)}`,
     `- worktree_mode=${shown(knobs.worktree_mode)}`,
