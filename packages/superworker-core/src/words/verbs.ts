@@ -12,7 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ConfigLayer } from '../config';
-import type { CyclePolicyValue, DagAddManyRow } from '../ledger';
+import type { DagAddManyRow } from '../ledger';
 import { runMergeDriver } from '../ledgermerge/driver';
 import type { CycleStatus, NodeResult, NodeStatus } from '../types';
 import { usageError } from './argparse';
@@ -25,7 +25,6 @@ import {
   pyList,
   pyScalar,
   readCount,
-  readPolicyValue,
   refuse,
   run,
   short,
@@ -369,16 +368,6 @@ export const cycleStatusVerb = run("cycle status", async (call) => {
   const [id, status] = positionals.map((words) => words[0]);
   const record = await superworker.ledger.cycles.setStatus(id, status as CycleStatus);
   return { stdout: `CYCLE_STATUS: "${record.id}" → ${record.status}` };
-});
-
-/** `cycle policy`. */
-export const cyclePolicyVerb = run("cycle policy", async (call) => {
-  const { positionals, superworker } = call;
-  const [id, key, value] = positionals.map((words) => words[0]);
-  const effective = await superworker.ledger.cycles.setPolicy(id, key, readPolicyValue(value) as CyclePolicyValue);
-  return {
-    stdout: `POLICY: "${id}" → ${policyLine(effective)}`,
-  };
 });
 
 /** `cycle list`. */
@@ -780,8 +769,9 @@ function targetLayer(values: Record<string, any>): { layer: string; at: ConfigLa
   return { layer: 'project', at: { project: true } };
 }
 
-/** The layer cells a read names, when the line names any: `undefined` reads the two wide layers. */
+/** The layer cells a read names, when the line names any: `undefined` reads the two wide layers, `--global` reads the machine layer alone (what the person's own default is, before any project states anything). */
 function readLayerOf(values: Record<string, any>): ConfigLayer | undefined {
+  if (values.global === true) return { global: true };
   const at: Record<string, string> = {
     ...(values.cycle === undefined ? {} : { cycle: values.cycle }),
     ...(values.node === undefined ? {} : { node: values.node }),

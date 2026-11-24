@@ -852,6 +852,63 @@ describe('where a write lands: one layer at a time', () => {
   });
 });
 
+describe('the line layer: the policies of a line are knobs', () => {
+  it('the four line policies ride the chain: `set --cycle` writes the slot `cyclePolicy` reads, so the planner and the word surface cannot drift', async () => {
+    const { root, config } = await makeProject();
+    try {
+      seedCycle(root, 'c1');
+      await config.set('when_shelved', 'continue', { cycle: 'c1' });
+      await config.set('parallel', 2, { cycle: 'c1' });
+      await config.set('stop_after_nodes', 3, { cycle: 'c1' });
+      await config.set('model', 'deepseek/deepseek-v4.1', { cycle: 'c1' });
+      expect(await config.get('when_shelved', { cycle: 'c1' })).toEqual({ value: 'continue', source: 'cycle' });
+      expect(await config.get('parallel', { cycle: 'c1' })).toEqual({ value: 2, source: 'cycle' });
+      // The planner's one read (`cyclePolicy`) folds the same slot the chain wrote: no second table.
+      const effective = await open(root).ledger.cycles.policies('c1');
+      expect(effective.when_shelved).toBe('continue');
+      expect(effective.parallel).toBe(2);
+      expect(effective.stop_after_nodes).toBe(3);
+      expect(effective.model).toBe('deepseek/deepseek-v4.1');
+
+      // Unset drops the line's entry and the factory cell shows: the count disappears for the planner.
+      await config.unset('stop_after_nodes', { cycle: 'c1' });
+      expect(await config.get('stop_after_nodes', { cycle: 'c1' })).toEqual({ value: null, source: 'builtin' });
+      expect((await open(root).ledger.cycles.policies('c1')).stop_after_nodes).toBeUndefined();
+    } finally {
+      cleanup(root);
+    }
+  });
+
+  it('the wide vocabulary does not carry the line policies, and naming the line widens `key` to them', async () => {
+    const { root, config } = await makeProject();
+    try {
+      seedCycle(root, 'c1');
+      for (const key of ['when_shelved', 'parallel', 'stop_after_nodes', 'model']) {
+        expect(await config.keys()).not.toContain(key);
+        expect(await config.keys({ cycle: 'c1' })).toContain(key);
+        await expect(config.set(key, key === 'parallel' ? 2 : key === 'when_shelved' ? 'continue' : 'x', { project: true }))
+          .rejects.toThrow('does not take the project layer');
+      }
+    } finally {
+      cleanup(root);
+    }
+  });
+
+  it('a line-layer value covers the project one, and the list behind `--cycle` says which layer spoke', async () => {
+    const { root, config } = await makeProject(DECLARED);
+    try {
+      seedCycle(root, 'c1');
+      await config.set('proj_depth', 4, { project: true });
+      await config.set('proj_depth', 8, { cycle: 'c1' });
+      expect(await config.get('proj_depth', { cycle: 'c1' })).toEqual({ value: 8, source: 'cycle' });
+      // The same chain without the line named still answers the project layer: naming the line is what reads it.
+      expect(await config.get('proj_depth')).toEqual({ value: 4, source: 'project' });
+    } finally {
+      cleanup(root);
+    }
+  });
+});
+
 describe('list: every setting with its value and source', () => {
   it('an untouched chain lists every declared setting with the factory value and the builtin source', async () => {
     const { root, config } = await makeProject(DECLARED);
@@ -861,8 +918,15 @@ describe('list: every setting with its value and source', () => {
       expect(listed['test_tier']).toEqual({ value: 'full', source: 'builtin' });
       expect(listed['worktree_mode']).toEqual({ value: 'off', source: 'builtin' });
       expect(listed['sandbox_number']).toEqual({ value: null, source: 'builtin' });
-      // One entry per key of the merged list, no more and no fewer.
-      expect(Object.keys(listed).sort()).toEqual(Object.keys(knobSpecs(DECLARED)).sort());
+      // One entry per key the wide chain can carry, no more and no fewer: a knob only a narrow layer
+      // takes (the line's own policies) is not here — the wide list is the project pane's vocabulary.
+      expect(Object.keys(listed).sort()).toEqual(
+        Object.entries(knobSpecs(DECLARED))
+          .filter(([, spec]) =>
+            acceptedLayers(spec).some((layer) => layer === 'project' || layer === 'global'))
+          .map(([name]) => name)
+          .sort(),
+      );
     } finally {
       cleanup(root);
     }
@@ -1230,10 +1294,17 @@ describe('the declared knobs of the project own plugin folder', () => {
         },
       }, null, 2), 'utf8');
 
-      // The list: the three built-ins plus the two declared knobs, each with its own factory default.
+      // The list: the built-ins that take a wide layer plus the two declared knobs, each with its own
+      // factory default. The line's own policies are built-ins too, but no wide layer carries them —
+      // they live behind `--cycle`.
       const listed = await superworker.config.list();
       expect(Object.keys(listed).sort())
-        .toEqual([...Object.keys(BUILTIN_KNOBS), 'pool_limit', 'pool_on'].sort());
+        .toEqual([
+          ...Object.keys(BUILTIN_KNOBS).filter((name) =>
+            acceptedLayers(BUILTIN_KNOBS[name]!).some((layer) => layer === 'project' || layer === 'global')),
+          'pool_limit',
+          'pool_on',
+        ].sort());
       expect(listed['pool_limit']).toEqual({ value: 5, source: 'builtin' });
       expect(listed['pool_on']).toEqual({ value: 'on', source: 'builtin' });
 

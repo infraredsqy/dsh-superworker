@@ -184,10 +184,14 @@ describe('DSH_CONDUCT_MODEL: the model route the next session opens with', () =>
     expect(simLine.dispatched[0]!.model).toBe('deepseek/deepseek-v4.1');
   });
 
-  it('a route is one word: a value with a blank in it is refused when the line policy is written', async () => {
+  it('a route is carried as typed, and `off` clears it', async () => {
     const { root: dir } = await station();
-    await expect(open(dir).ledger.cycles.setPolicy('main', 'model', 'deepseek flash')).rejects.toThrow();
-    await expect(open(dir).ledger.cycles.setPolicy('main', 'model', 'not a route')).rejects.toThrow();
+    // The chain's word kind is the one gate now: a route travels to the opener as the line states it,
+    // blanks included — an opener that cannot read it refuses on its own side.
+    await open(dir).ledger.cycles.setPolicy('main', 'model', 'deepseek flash');
+    expect((await open(dir).ledger.cycles.policies('main')).model).toBe('deepseek flash');
+    await open(dir).ledger.cycles.setPolicy('main', 'model', 'off');
+    expect((await open(dir).ledger.cycles.policies('main')).model).toBeUndefined();
   });
 
   it('with nothing said the request carries no model word at all', async () => {

@@ -66,25 +66,42 @@ describe('the handle names the shipped plugin folder', () => {
     expect(unnamed).not.toContain('test_seconds_limit');
   });
 
-  it('a knob narrowed to the machine layer is still a name the settings verbs take: it sets, it reads back, and the project layer still refuses it', async () => {
+  it('a person-level knob writes on both wide layers: the project layer overrides the machine one until it is unset', async () => {
     await handle(false).ledger.init();
     const superworker = handle(true);
-    // `answer` takes the machine layer alone. A list narrowed to the project layer would leave a knob
-    // doctor prints and `list` shows with no word able to name it, so it has to be here.
+    // `answer` takes both wide layers: the machine layer is the person's own default, the project layer
+    // the per-project override. It stays a name the settings verbs take either way.
     expect(await superworker.config.keys()).toContain('answer');
     expect(await superworker.config.get('answer')).toEqual({ value: 'plain', source: 'builtin' });
 
     await superworker.config.set('answer', 'technical', { global: true });
     expect(await superworker.config.get('answer')).toEqual({ value: 'technical', source: 'global' });
 
-    // The name is taken now; the layer it does not reach stays refused, and the refusal names the one it does.
-    await expect(superworker.config.set('answer', 'plain', { project: true })).rejects.toThrow(
-      'answer does not take the project layer (it takes: global); nothing was written',
-    );
+    // The project layer states its own: it covers the machine layer, and dropping it lets the machine
+    // layer show again.
+    await superworker.config.set('answer', 'plain', { project: true });
+    expect(await superworker.config.get('answer')).toEqual({ value: 'plain', source: 'project' });
+    await superworker.config.unset('answer', { project: true });
     expect(await superworker.config.get('answer')).toEqual({ value: 'technical', source: 'global' });
 
     await superworker.config.unset('answer', { global: true });
     expect(await superworker.config.get('answer')).toEqual({ value: 'plain', source: 'builtin' });
+  });
+
+  it('a knob narrowed to the line layer is a name the line layer takes, and the wide layers refuse it', async () => {
+    await handle(false).ledger.init();
+    const superworker = handle(true);
+    // The line's own policies take the line layer alone: the wide vocabulary does not carry them, and
+    // naming `--cycle` is what widens `key` to them.
+    expect(await superworker.config.keys()).not.toContain('parallel');
+    expect(await superworker.config.keys({ cycle: 'c1' })).toContain('parallel');
+
+    await expect(superworker.config.set('parallel', 2, { project: true })).rejects.toThrow(
+      'parallel does not take the project layer (it takes: cycle); nothing was written',
+    );
+    await expect(superworker.config.get('parallel')).rejects.toThrow(
+      'parallel takes only the cycle layer: name it to read it',
+    );
   });
 });
 

@@ -58,7 +58,6 @@ const HANDLERS: Record<string, VerbHandler> = {
   'cycle start': verbs.cycleStartVerb,
   'cycle rename': verbs.cycleRenameVerb,
   'cycle status': verbs.cycleStatusVerb,
-  'cycle policy': verbs.cyclePolicyVerb,
   'cycle list': verbs.cycleListVerb,
   'cycle current': verbs.cycleCurrentVerb,
   'cycle show': verbs.cycleShowVerb,
@@ -299,12 +298,28 @@ function pluginRefusal(plugin: string, error: string, code: number | null): stri
   return code === null ? `plugin '${plugin}': main failed: ${error}` : `plugin '${plugin}': ${error}`;
 }
 
-/** The knob names in force for this run: read once, before any settings page is built. */
-async function configKeysOf(io: WordsIO): Promise<string[]> {
+/**
+ * The knob names in force for this run: read once, before any settings page is built. A `--cycle` /
+ * `--node` spelling on the line widens the vocabulary to that layer's own knobs — the line's policies
+ * live behind it — so the usage line, the choices and the refusals carry the names the caller is
+ * really reaching for.
+ */
+async function configKeysOf(io: WordsIO, rest: readonly string[]): Promise<string[]> {
+  const named = (flag: string): string | undefined => {
+    const at = rest.indexOf(flag);
+    return at >= 0 ? (rest[at + 1] ?? '') : undefined;
+  };
+  const at = rest.includes('--cycle')
+    ? { cycle: named('--cycle') ?? '' }
+    : rest.includes('--node')
+      ? { node: named('--node') ?? '' }
+      : rest.includes('--global')
+        ? { global: true }
+        : undefined;
   try {
     const root = projectRootOf(undefined, io.root);
     const superworker = handleOf(root, io);
-    return await superworker.config.keys();
+    return await superworker.config.keys(at as Parameters<typeof superworker.config.keys>[0]);
   } catch {
     // A folder with no `.superworker` of its own still answers its help page, and with the names that folder
     // can really be asked for. The plugin knobs a table from another project carries are refused here, so they
@@ -333,7 +348,7 @@ export async function answer(argv: readonly string[], io: WordsIO): Promise<{ co
   // The settings verbs print the knob names the engine accepts here: the list is read before the row is
   // turned into a spec, so the help, the usage line and the refusal all carry this run's own names. It
   // travels with the call (never through module state): one long-lived process answers several projects.
-  const knobs = verb === 'config' ? await configKeysOf(io) : undefined;
+  const knobs = verb === 'config' ? await configKeysOf(io, rest) : undefined;
 
   const row: WordRow | undefined = rowFor(verb);
   if (row !== undefined) {

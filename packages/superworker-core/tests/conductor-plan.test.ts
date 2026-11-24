@@ -287,13 +287,13 @@ describe('planning: when to stop', () => {
     await superworker.ledger.dag.setStatus(first.id, 'completed');
     await superworker.ledger.cycles.hold('c1', second.id);
     putSignal(root, 'c1', second.id, 'completed');
-    // The count is the line's own policy key: writing it is `cycle policy`, and the planner reads it off the same record.
+    // The count is the line's own policy key: writing it is `config set --cycle`, and the planner reads it off the same record.
     const written = await superworker.ledger.cycles.setPolicy('c1', 'stop_after_nodes', 2);
     expect(written.stop_after_nodes).toBe(2);
     const stopped = await open(root).conductor.next({ after: second.id });
     expect(actionOf(stopped)).toBe('stop_pipeline');
     if (stopped.action === 'stop_pipeline') {
-      expect(stopped.reason).toBe('cycle policy stop_after_nodes=2: stop after 2 nodes');
+      expect(stopped.reason).toBe('stop_after_nodes=2: stop after 2 nodes');
     }
     // The same line asked for 3: the count has not been reached, so it picks the next one.
     await superworker.ledger.cycles.setPolicy('c1', 'stop_after_nodes', 3);

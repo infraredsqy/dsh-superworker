@@ -137,7 +137,7 @@ export type {
    name — the one table doctor reads: a caller that has the plugin folders (the host scans the folder
    it ships) folds them through `knobSpecs(declaredKnobSpecs(folders))` instead of walking a table of
    its own. */
-export { BUILTIN_KNOBS, knobSpecs } from './config';
+export { acceptedLayers, BUILTIN_KNOBS, knobSpecs } from './config';
 export { declaredKnobSpecs } from './plugins/registry';
 export type { SessionNoteRole, SessionNoteSummary, SessionShow, SessionsNamespace } from './sessions';
 export type { PreparedDispatch, PreparedNode } from './prepare';

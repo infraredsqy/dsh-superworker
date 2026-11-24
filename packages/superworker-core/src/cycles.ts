@@ -1,5 +1,5 @@
 import { createDagNamespace } from './dag';
-import { parseConfigValue } from './config';
+import { acceptedLayers, BUILTIN_KNOBS, parseConfigValue } from './config';
 import { nowMicro, nowSeconds } from './clock';
 import { RecordError } from './errors';
 import { unlinkWithRetry } from './fs-helpers';
@@ -76,35 +76,52 @@ const VALID_CYCLE_STATUSES: readonly CycleStatus[] = ['active', 'inactive'];
 const VALID_NODE_RESULTS: readonly NodeResult[] = ['completed', 'failed', 'stopped'];
 const CYCLE_TAGS_VOCABULARY = ['writing', 'coding', 'art'] as const;
 
-/** The line's own policy keys: they do not enter the settings list, and both reading and writing land only in the `policies` of the line record. */
-const LINE_POLICIES = {
-  when_shelved: { kind: 'word', values: ['stop', 'continue'], default: 'stop' },
-  parallel: { kind: 'integer', default: 1 },
-  /**
-   * The line's own stopping count: once this many of its nodes have closed, the plan stops. It has no
-   * default — an absent entry means "no count" — and it can only add a stop point on top of the node's
-   * own `mode`, never take one away.
-   */
-  stop_after_nodes: { kind: 'integer', default: null },
-  model: { kind: 'text', default: null },
-} as const;
-
-type PolicyKind = 'word' | 'integer' | 'text';
+/**
+ * The line's own policies, read off the settings list's one table: a line policy is exactly a knob the
+ * engine declares for the line layer (`when_shelved` / `parallel` / `stop_after_nodes` / `model`, in
+ * `config.ts`), so the kind, the vocabulary and the factory value are read from the knob cell and this
+ * module keeps no second copy — the word surface (`config set <key> <value> --cycle <id>`), the chain's
+ * own reading and this record-side writer cannot drift apart. A plugin knob that also takes the line
+ * layer is a chain knob: the chain reads it with its own fall-through to the project layer, and it is
+ * not folded here.
+ *
+ * The table is derived on first use rather than at import time: this module and `config.ts` import each
+ * other, so a module-scope read of the knob list would run before that cell exists.
+ */
+type PolicyKind = 'integer' | 'word';
 type PolicySpec = { kind: PolicyKind; values?: readonly string[]; default: string | number | null };
 type PolicyTable = Record<string, PolicySpec>;
 
-const POLICY_TABLE: PolicyTable = {
-  when_shelved: LINE_POLICIES.when_shelved,
-  parallel: LINE_POLICIES.parallel,
-  stop_after_nodes: LINE_POLICIES.stop_after_nodes,
-  model: LINE_POLICIES.model,
-};
+let policyTableCell: PolicyTable | undefined;
 
-/** The defaults of the two always-present policies: they go underneath when reading the effective set, and a value written on the line is parsed by kind and laid on top. */
-const POLICY_DEFAULTS: Record<string, string | number> = {
-  when_shelved: LINE_POLICIES.when_shelved.default as string,
-  parallel: LINE_POLICIES.parallel.default as number,
-};
+function policyTable(): PolicyTable {
+  policyTableCell ??= (() => {
+    const out: PolicyTable = {};
+    for (const [name, spec] of Object.entries(BUILTIN_KNOBS)) {
+      const layers = acceptedLayers(spec);
+      if (!layers.includes('cycle')) continue;
+      if (layers.some((layer) => layer === 'project' || layer === 'global')) continue;
+      // An engine cell's default is a literal or `null` (the worktree mode's per-project function takes
+      // wide layers, so it never reaches this fold).
+      out[name] = {
+        kind: spec.kind === 'integer' ? 'integer' : 'word',
+        ...(spec.values === undefined ? {} : { values: spec.values }),
+        default: spec.default as string | number | null,
+      };
+    }
+    return out;
+  })();
+  return policyTableCell;
+}
+
+/** The defaults of the always-present policies: they go underneath when reading the effective set. */
+function policyDefaults(): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  for (const [key, spec] of Object.entries(policyTable())) {
+    if (spec.default !== null) out[key] = spec.default;
+  }
+  return out;
+}
 
 /** The reading of state.json the whole engine shares: the whole document, and its `cycles` table normalized into line records. */
 export interface StateLedger {
@@ -202,20 +219,15 @@ function parseCycleTags(raw: Iterable<string>): string[] {
   return normalizeTags(raw);
 }
 
-/** Parse one policy value by kind: whether a value belongs to its kind, and what it reads as in the record's own domain — `undefined` when it does not. The one gate both sides of the line layer come through: the read side (`cyclePolicy`) takes a value that fails as never written, the write side (`policyValueForRecord`) refuses with its own sentence — one judgement, two faces. The integer and word branches are the settings chain's own gate (`parseConfigValue`), so the spellings a write takes are exactly the spellings a read takes; `text` (the model route) is this layer's refinement: one word without blanks. */
+/** Parse one policy value by kind: whether a value belongs to its kind, and what it reads as in the record's own domain — `undefined` when it does not. The one gate both sides of the line layer come through: the read side (`cyclePolicy`) takes a value that fails as never written, the write side (`policyValueForRecord`) refuses with its own sentence — one judgement, two faces. Both branches are the settings chain's own gate (`parseConfigValue`), so the spellings a write takes are exactly the spellings a read takes. */
 function parsePolicyValue(kind: PolicyKind, value: unknown, values?: readonly string[]): string | number | undefined {
   if (kind === 'integer') {
     // The integer branch of the gate only ever answers a number (a boolean never becomes one); the wide
     // ConfigValue union is the settings chain's, not what this branch hands back.
     return parseConfigValue('integer', value) as number | null ?? undefined;
   }
-  if (kind === 'word') {
-    // The word branch only ever answers a word of the vocabulary it was given.
-    return parseConfigValue('word', value, values) as string | null ?? undefined;
-  }
-  if (typeof value !== 'string') return undefined;
-  const text = value.trim();
-  return text === '' || /\s/u.test(text) ? undefined : text;
+  // The word branch only ever answers a word of the vocabulary it was given.
+  return parseConfigValue('word', value, values) as string | null ?? undefined;
 }
 
 /**
@@ -229,11 +241,11 @@ function parsePolicyValue(kind: PolicyKind, value: unknown, values?: readonly st
  * guards the kind a second time.
  */
 export function cyclePolicy(record: CycleRecord): CyclePolicySet & { parallel: number } {
-  const out: CyclePolicySet & { parallel: number } = { ...POLICY_DEFAULTS, parallel: LINE_POLICIES.parallel.default };
+  const out: CyclePolicySet & { parallel: number } = { ...policyDefaults(), parallel: 1 };
   const stated = record.policies;
   if (stated === undefined || stated === null || typeof stated !== 'object') return out;
   for (const [key, value] of Object.entries(stated as CyclePolicies)) {
-    const spec = POLICY_TABLE[key];
+    const spec = policyTable()[key];
     if (spec === undefined) continue;
     const parsed = parsePolicyValue(spec.kind, value, spec.values);
     if (parsed !== undefined) out[key] = parsed;
@@ -243,9 +255,9 @@ export function cyclePolicy(record: CycleRecord): CyclePolicySet & { parallel: n
 
 /** One policy value on the write side: `off` / null clears the entry; the value is judged by the one gate (`parsePolicyValue`), and a value that fails it is refused. */
 function policyValueForRecord(key: string, value: CyclePolicyValue): string | number | null {
-  const spec = POLICY_TABLE[key];
+  const spec = policyTable()[key];
   if (spec === undefined) {
-    throw new Error(`unknown policy ${JSON.stringify(key)}; valid keys: ${Object.keys(POLICY_TABLE)}`);
+    throw new Error(`unknown policy ${JSON.stringify(key)}; valid keys: ${Object.keys(policyTable()).join(', ')}`);
   }
   if (value === null) return null;
   if (typeof value === 'string' && value.trim().toLowerCase() === 'off') return null;
@@ -255,9 +267,6 @@ function policyValueForRecord(key: string, value: CyclePolicyValue): string | nu
       throw new Error(
         `policy ${key} takes a positive integer (at least 1) or \`off\`, got ${JSON.stringify(value)}`,
       );
-    }
-    if (spec.kind === 'text') {
-      throw new Error(`policy ${key} takes one word without blanks, got ${JSON.stringify(value)}`);
     }
     throw new Error(
       `policy ${key} must be one of ${JSON.stringify(spec.values ?? [])} or \`off\`, ` +
@@ -478,7 +487,7 @@ export function createCyclesNamespace(root: string): CyclesNamespace {
           const parsed = policyValueForRecord('parallel', input.parallel);
           stated = parsed === null ? null : (parsed as number);
         }
-        const cap = stated ?? (POLICY_DEFAULTS.parallel as number);
+        const cap = stated ?? (policyTable().parallel?.default as number);
 
         // Picking happens before the account is written (under the same lock): the nodes the starting line pins come from
         // the graph's one reading of ideas.json, so a bad table is refused the same way here as on every other verb.

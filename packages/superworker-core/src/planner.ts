@@ -443,7 +443,7 @@ function nodeRow(nodes: NodeMap, nodeId: string): NodeRecord & { id: string } {
  * itself (one round runs, then it stops once, and the next one opens only when a person says continue).
  *
  * Only then does the line's own `stop_after_nodes` get its word: once this many of its nodes have closed, the
- * line stops too. That count is the line policy's (`cycle policy <line> stop_after_nodes <n>`), it is read
+ * line stops too. That count is the line policy's (`config set stop_after_nodes <n> --cycle <line>`), it is read
  * after the mode, and it can therefore add a stop point but never take the checkpoint gate away; absent, it
  * adds nothing.
  *
@@ -464,7 +464,7 @@ function stopCriterion(cycle: CycleRecord, node: { id: string; mode?: unknown } 
     // "stop after N nodes": this close is the N-th — by now all N are delivered.
     const done = (Array.isArray(cycle.path) ? cycle.path.length : 0) + 1;
     if (done >= cap) {
-      return [true, `cycle policy stop_after_nodes=${cap}: stop after ${cap} nodes`];
+      return [true, `stop_after_nodes=${cap}: stop after ${cap} nodes`];
     }
   }
   return [false, ''];

@@ -129,14 +129,15 @@ export interface ConfigNamespace {
   /** Every setting with the value in force and its source, up to the named layer. */
   list(at?: ConfigLayer, dir?: string): Promise<Record<string, ConfigReading>>;
   /**
-   * The names the settings verbs accept here, sorted: the knob list in force — the core settings plus the
-   * knobs installed plugins declare — narrowed to the names that take one of the two wide layers, which is
-   * what a `get` / `set` / `unset` answer is about (those three verbs read and write the project layer and
-   * the machine layer, `--global` naming the second). A name narrowed to the machine layer alone is on this
-   * list too: refusing it here would leave a knob doctor lists and `list` prints with no word able to name
-   * it. A caller printing the vocabulary prints these names.
+   * The names the settings verbs accept here, sorted. No layer named: the knob list in force narrowed
+   * to the names that take one of the two wide layers, which is what a `get` / `set` / `unset` answer
+   * is about on the wide layers (the project pane's vocabulary). A layer named: every knob that layer
+   * takes — naming `--cycle <id>` widens `key` to the line's own policies, which no wide layer carries.
+   * A name narrowed to the machine layer alone is on the wide list too: refusing it here would leave a
+   * knob doctor lists and `list` prints with no word able to name it. A caller printing the vocabulary
+   * prints these names.
    */
-  keys(dir?: string): Promise<string[]>;
+  keys(at?: ConfigLayer, dir?: string): Promise<string[]>;
 }
 
 // ── the knob list: kind, layers, default ─────────────────────────────────────
@@ -159,10 +160,10 @@ export interface KnobSpec {
   /**
    * The factory value in force when nobody on the chain states anything: a literal, or a function of the
    * project root for a value worked out per project. A declaration that leaves the key out is refused
-   * when the list is merged, and so is one stating `null` — a default is required and may not be null.
-   * `null` is the one spelling for "this knob has no factory value at all", and only a plugin
-   * declaration may state it: the gate is the engine's own list, a plugin's missing default is how it
-   * says "this line was never set up", and the plugin knob reader keeps that meaning. A default that is
+   * when the list is merged, and so is one stating `null` — a default is required and may not be null,
+   * except on a knob that takes no wide layer: there no wide reader exists, so `null` is the honest
+   * spelling of "no factory value" for the engine's own cells too (the line's own stop count and model
+   * route state it), and the chain reads the absence as unset. A default that is
    * not of its own kind is a broken cell wherever it comes from: it keeps out of the merged list, so the
    * knob reads as unknown and doctor names the plugin and the knob.
    */
@@ -180,7 +181,7 @@ export const CHAIN_LAYERS: readonly ConfigLayerName[] = ['node', 'cycle', 'proje
 /** The layers a built-in setting accepts: a setting governs the whole project or the whole machine, and the two narrow layers have no reader. */
 export const SETTING_LAYERS: readonly ConfigLayerName[] = ['project', 'global'];
 
-/** The settings the core itself reads. Vocabulary and defaults are in the table below. */
+/** The settings the core itself reads. Vocabulary and defaults are in the table below. The four line policies live here too: a line policy is a knob that takes the line layer only, so `config set --cycle` is their one door. */
 export const BUILTIN_KNOBS: Readonly<Record<string, KnobSpec>> = {
   max_agents: {
     kind: 'integer',
@@ -202,6 +203,33 @@ export const BUILTIN_KNOBS: Readonly<Record<string, KnobSpec>> = {
     default: (root: string) => (existsSync(join(root, '.git')) ? 'fork' : 'off'),
     layers: SETTING_LAYERS,
     summary: 'whether a node gets a worktree of its own: fork by default in a git project, off otherwise',
+  },
+  when_shelved: {
+    kind: 'word',
+    values: ['stop', 'continue'],
+    default: 'stop',
+    layers: ['cycle'],
+    summary: 'what this line does when a node comes back not delivered: stop and wait for a person, or mark it shelved and carry on',
+  },
+  parallel: {
+    kind: 'integer',
+    default: 1,
+    layers: ['cycle'],
+    summary: "how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call)",
+  },
+  stop_after_nodes: {
+    kind: 'integer',
+    // No factory value: a line that states no count has none, and the planner reads the absence as "no count".
+    default: null,
+    layers: ['cycle'],
+    summary: "stop this line once this many of its nodes have closed (the line's own stop point, added on top of the node's own `mode`); unset means no count",
+  },
+  model: {
+    kind: 'word',
+    // No factory value: the call that opens the session decides when the line states no route.
+    default: null,
+    layers: ['cycle'],
+    summary: "which model the sessions this line opens use (`provider/model`, carried whole to the opener; a call's own --model wins over it); unset means the call decides",
   },
 };
 
@@ -239,8 +267,8 @@ function defaultFits(spec: KnobSpec): boolean {
  * The declaration gate: a setting the engine declares carries a factory value, written down or worked
  * out from the project root. A declaration that leaves it out is refused right here, at the moment the
  * list is merged, and the refusal names the setting; a literal that is not of its own kind is refused
- * the same way. A `null` default is refused too: a default is required of the engine's own cells and may
- * not be null, so no reading of a core setting can land on "no value".
+ * the same way. A `null` default is refused too — unless the knob takes no wide layer, where no wide
+ * reader exists and the absence reads as unset (see `KnobSpec.default`).
  *
  * A plugin declaration is not put through that gate, but its cells state a default too — `null` is its
  * spelling for "no factory value" (see `KnobSpec.default`), and a cell that leaves the key out is turned
@@ -261,6 +289,10 @@ export function assertDefault(
   }
   if (stated === null) {
     if (declaredBy === 'plugin') return;
+    // A knob that takes no wide layer has no wide reader: "no factory value" never reaches a wide
+    // reading, so the engine may state it for a narrow-only knob — the line's own stop count and
+    // model route have no factory number to fall back to, and the chain reads their absence as unset.
+    if (!acceptedLayers(spec).some((layer) => layer === 'project' || layer === 'global')) return;
     throw new TypeError(
       `the setting ${JSON.stringify(name)} has a default of null: a default is required and may not ` +
         'be null (a literal, or a function of the project root)',
@@ -461,7 +493,7 @@ function layerPointOf(at: ConfigLayer | undefined, verb: string): LayerPoint {
  * its own (the records stay out of every repository), so the answer an agent gets there has to be "this is
  * not a superworker project" — never the main tree's settings read quietly from a wider layer.
  */
-function rootOf(dir: string | undefined, fallback: string): string {
+function rootOf(dir: string | undefined, fallback: string, requireProject = true): string {
   let root: string;
   if (dir === undefined || dir === null) {
     root = fallback;
@@ -471,7 +503,7 @@ function rootOf(dir: string | undefined, fallback: string): string {
     }
     root = resolve(dir);
   }
-  if (!existsSync(join(root, RECORD_DIR_NAME))) {
+  if (requireProject && !existsSync(join(root, RECORD_DIR_NAME))) {
     throw new RecordError(
       'not_a_project',
       root,
@@ -642,8 +674,15 @@ async function chainValues(
 ): Promise<Record<string, ConfigReading>> {
   const paths = recordPaths(root);
   const specs = resolved ?? (await specsFor(root, options));
+  // A knob the chain being read cannot carry has no reading here: a wide reading never answers for a
+  // line-only knob (the wide `list` is the project pane's vocabulary — the line's own policies live
+  // behind `--cycle`), so it is left out rather than printed at its factory value.
+  const chainLayers: readonly string[] = [...wide, ...Object.keys(narrow)];
+  const carried = Object.entries(specs).filter(([, spec]) =>
+    acceptedLayers(spec).some((layer) => chainLayers.includes(layer)),
+  );
   const out: Record<string, ConfigReading> = {};
-  for (const [key, spec] of Object.entries(specs)) {
+  for (const [key, spec] of carried) {
     out[key] = { value: defaultOf(spec, root), source: 'builtin' };
   }
   const stated: Array<[ConfigLayerName, Record<string, ConfigValue>]> = [];
@@ -885,13 +924,13 @@ export function createConfigNamespace(
 
   return {
     get: async (key: string, at?: ConfigLayer, dir?: string) => {
-      const rootHere = rootOf(dir, root);
+      const point = at === undefined || at === null ? undefined : layerPointOf(at, 'get');
+      const rootHere = rootOf(dir, root, point?.layer !== 'global');
       const specs = await specsHere(rootHere);
       // The key side is an own-property question too: a name every object inherits is not a setting,
       // and answering it would hand back a function where `{ value, source }` belongs.
       const spec = knobOf(specs, key);
       if (spec === undefined) throw unknownKeyRefusal(recordPaths(rootHere).configJson, key, specs);
-      const point = at === undefined || at === null ? undefined : layerPointOf(at, 'get');
       if (point !== undefined && !acceptedLayers(spec).includes(point.layer)) {
         throw layerNotAllowedRefusal(
           recordPaths(rootHere).configJson,
@@ -901,6 +940,17 @@ export function createConfigNamespace(
           'nothing was read',
         );
       }
+      if (point === undefined && !acceptedLayers(spec).some((layer) => layer === 'project' || layer === 'global')) {
+        // A wide read of a knob that only a narrow layer carries has no answer: the value in force
+        // would always be the factory cell, and printing it would dress "not a wide setting" up as a
+        // reading. The refusal names the layer to name instead.
+        throw new RecordError(
+          'layer_not_allowed',
+          recordPaths(rootHere).configJson,
+          `${key} takes only the ${acceptedLayers(spec).join(' / ')} layer: name it to read it ` +
+            '(--cycle <id> names the line).',
+        );
+      }
       await resolveReadNode(point, rootHere);
       const chain = chainUpTo(point);
       const readings = await chainValues(rootHere, options, chain.narrow, chain.wide, specs);
@@ -908,37 +958,40 @@ export function createConfigNamespace(
     },
 
     set: async (key: string, value: ConfigValue, at: ConfigLayer, dir?: string) => {
-      const rootHere = rootOf(dir, root);
       const point = layerPointOf(at, 'set');
+      const rootHere = rootOf(dir, root, point.layer !== 'global');
       const specs = await specsHere(rootHere);
       const { stored } = await validated(rootHere, key, value, point, specs);
       await landWrite(recordPaths(rootHere), point, key, stored, options);
     },
 
     unset: async (key: string, at: ConfigLayer, dir?: string) => {
-      const rootHere = rootOf(dir, root);
       const point = layerPointOf(at, 'unset');
+      const rootHere = rootOf(dir, root, point.layer !== 'global');
       const specs = await specsHere(rootHere);
       await validated(rootHere, key, null, point, specs);
       await landWrite(recordPaths(rootHere), point, key, null, options);
     },
 
     list: async (at?: ConfigLayer, dir?: string) => {
-      const rootHere = rootOf(dir, root);
       const point = at === undefined || at === null ? undefined : layerPointOf(at, 'list');
+      const rootHere = rootOf(dir, root, point?.layer !== 'global');
       await resolveReadNode(point, rootHere);
       const chain = chainUpTo(point);
       return chainValues(rootHere, options, chain.narrow, chain.wide, await specsHere(rootHere));
     },
 
-    keys: async (dir?: string) => {
-      const specs = await specsHere(rootOf(dir, root));
-      // The settings a get / set / unset answers about: every knob that takes a wide layer (the project layer
+    keys: async (at?: ConfigLayer, dir?: string) => {
+      const point = at === undefined || at === null ? undefined : layerPointOf(at, 'keys');
+      const specs = await specsHere(rootOf(dir, root, point?.layer !== 'global'));
+      // No layer named: the settings a get / set / unset answers about on the wide two (the project layer
       // or the machine layer, the two the three verbs reach), in the order the help lists them (the names
-      // sorted). A machine-only knob belongs here too — `--global` is the word that names it.
-      const wide = ['project', 'global'] as const;
+      // sorted). A machine-only knob belongs here too — `--global` is the word that names it. A layer
+      // named: that layer's own vocabulary — the line's policies are read off it, so the settings verbs'
+      // `key` widens exactly when the line names one.
+      const wanted: readonly string[] = point === undefined ? ['project', 'global'] : [point.layer];
       return Object.keys(specs)
-        .filter((name) => acceptedLayers(specs[name]!).some((layer) => (wide as readonly string[]).includes(layer)))
+        .filter((name) => acceptedLayers(specs[name]!).some((layer) => wanted.includes(layer)))
         .sort();
     },
   };

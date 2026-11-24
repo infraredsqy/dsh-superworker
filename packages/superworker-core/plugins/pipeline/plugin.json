@@ -8,7 +8,7 @@
       "kind": "word",
       "values": ["technical", "plain"],
       "default": "plain",
-      "layers": ["global"],
+      "layers": ["project", "global"],
       "summary": "whether the concept name in a report to a person carries one sentence unfolding it"
     }
   }

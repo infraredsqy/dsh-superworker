@@ -647,7 +647,7 @@ const GROUPS = {
               "--parallel"
             ],
             "metavar": "PARALLEL",
-            "help": "How many nodes this line holds and runs at once: pin that many of the ready set right here, and write it down as the line's `parallel` policy (same slot `cycle policy <id> parallel <n>` writes). A positive integer, or `off` for the default 1",
+            "help": "How many nodes this line holds and runs at once: pin that many of the ready set right here, and write it down as the line's `parallel` knob (the line layer; `config set parallel <n> --cycle <id>` writes the same slot). A positive integer, or `off` for the default 1",
           },
           {
             "flags": [
@@ -723,52 +723,6 @@ const GROUPS = {
         ],
         "group": "cycle",
         "summary": "Put the line in or out of service: active | inactive"
-      },
-      {
-        "word": "policy",
-        "prog": "cycle policy",
-        "description": null,
-        "positionals": [
-          {
-            "name": "id",
-            "metavar": "id",
-            "required": true
-          },
-          {
-            "name": "{issue_pool,issue_pool_weight_limit,model,parallel,stop_after_nodes,test_audit,test_seconds_limit,when_shelved}",
-            "dest": "key",
-            "metavar": "{issue_pool,issue_pool_weight_limit,model,parallel,stop_after_nodes,test_audit,test_seconds_limit,when_shelved}",
-            "required": true,
-            "help": "",
-            "choices": [
-              "issue_pool",
-              "issue_pool_weight_limit",
-              "model",
-              "parallel",
-              "stop_after_nodes",
-              "test_audit",
-              "test_seconds_limit",
-              "when_shelved"
-            ]
-          },
-          {
-            "name": "value",
-            "metavar": "value",
-            "required": true,
-            "help": "The value, in the key's own kind -- when_shelved: stop | continue -- what this line does when a node comes back not delivered: stop and wait for a human, or mark it shelved and carry on (default: stop); parallel: a positive integer -- how many nodes this line holds and how many sessions it opens at once (a cap: whether they can run side by side is the graph's call) (default: 1); stop_after_nodes: a positive integer -- stop this line once this many of its nodes have closed (the line's own stop point, added on top of the node's own `mode`: it can only add a stop, never take one away; `off` means no count, and that is the default); issue_pool_weight_limit: a positive number -- the issue pool's weighted sum the next close must read below; test_seconds_limit: a positive number -- the project test suite's full wall clock (seconds) the next close must read below; model: a route word -- which model the sessions this line opens use (`provider/model`, carried whole to the opener; a call's own --model wins over it). Every knob a plugin declares rides on this line too. A core setting does not: it takes the project and global layers only, and `config set` is its door. `off` drops this line's entry for a number / integer / word, so the next layer of the chain shows through; on a switch it is a value -- a switch is turned off by writing `off`, and dropping its entry is `config unset --cycle`. Numbers and integers take a positive value only: a line of 0 fails every reading"
-          }
-        ],
-        "options": [
-          {
-            "flags": [
-              "-h",
-              "--help"
-            ],
-            "help": "show this help message and exit",
-          }
-        ],
-        "group": "cycle",
-        "summary": "Write one policy on this line's own record (the effective set is echoed back; a core setting is `config set`'s, not this line's)"
       },
       {
         "word": "list",
@@ -1468,7 +1422,7 @@ const GROUPS = {
     "word": "config",
     "prog": "config",
     "summary": "this machine's and this project's settings",
-    "description": "Every setting is a knob with a kind, and one chain: this node -> this line -> this project -> this machine -> factory default. Narrower layers cover wider ones, and the same name may be stated on several layers at once: the resolution is deterministic, and `list` / `get` always say which layer the value in force came from. The table is the built-in settings plus every knob the installed plugins declare -- `list` prints it, and a name nobody declares is refused. Not every knob takes every layer: a core setting takes the project and global layers, a plugin's knob takes all four (`set` names the layers a knob takes when it refuses one). The line's own policies -- `parallel`, `when_shelved`, `stop_after_nodes`, `model` -- are not settings and are not here: they live on the line record, written by `cycle policy`. The two file layers are `~/.superworker/config.json` (global: travels with the person and the machine, never generated for you) and `<project>/.superworker/config.json` (travels with the project; `init` puts an empty `{}` there); the two narrow ones ride on the cycle record and on one node's own `config.json`. `set` stores a value and `unset` drops that one layer's entry -- a switch is turned off by setting `off`, while dropping its entry is `unset` (the same split `cycle policy` explains). `set` / `unset` write exactly one layer: the project layer unless --global / --cycle / --node says otherwise.",
+    "description": "Every setting is a knob with a kind, and one chain: this node -> this line -> this project -> this machine -> factory default. Narrower layers cover wider ones, and the same name may be stated on several layers at once: the resolution is deterministic, and `list` / `get` always say which layer the value in force came from. The table is the built-in settings plus every knob the installed plugins declare -- `list` prints it, and a name nobody declares is refused. Not every knob takes every layer: the engine's cells take the layers they declare -- the line's own policies (`parallel`, `when_shelved`, `stop_after_nodes`, `model`) take the line layer only, so naming `--cycle <id>` is how they are read and written, and `key` widens to them exactly then -- and a plugin's knob takes all four by default. The two file layers are `~/.superworker/config.json` (global: travels with the person and the machine, never generated for you) and `<project>/.superworker/config.json` (travels with the project; `init` puts an empty `{}` there); the two narrow ones ride on the cycle record and on one node's own `config.json`. `set` stores a value and `unset` drops that one layer's entry -- a switch is turned off by setting `off`, while dropping its entry is `unset`; for a number / integer / word `off` is not a value, and `unset` is the only way off. `set` / `unset` write exactly one layer: the project layer unless --global / --cycle / --node says otherwise.",
     "dest": "config_command",
     "commands": [
       {
@@ -1496,7 +1450,7 @@ const GROUPS = {
               "--cycle"
             ],
             "metavar": "CYCLE",
-            "help": "Read this line's layer too (a cycle id): what that line sees",
+            "help": "Read this line's layer too (a cycle id): what that line sees, its own policies included",
           },
           {
             "flags": [
@@ -1504,6 +1458,12 @@ const GROUPS = {
             ],
             "metavar": "NODE",
             "help": "Read this node's layer too (a node id): what that node's run sees",
+          },
+          {
+            "flags": [
+              "--global"
+            ],
+            "help": "Read the machine layer alone (~/.superworker/config.json): the person's own default, before any project states anything",
           }
         ],
         "group": "config",
@@ -1559,6 +1519,12 @@ const GROUPS = {
             ],
             "metavar": "NODE",
             "help": "Read this node's layer too (a node id)",
+          },
+          {
+            "flags": [
+              "--global"
+            ],
+            "help": "Read the machine layer alone (~/.superworker/config.json)",
           }
         ],
         "group": "config",

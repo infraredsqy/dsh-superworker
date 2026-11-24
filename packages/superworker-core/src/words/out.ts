@@ -239,15 +239,6 @@ export function readCount(text: unknown): number | string {
   return Number.isFinite(value) ? value : String(text);
 }
 
-/** A policy value as the record takes it: `on` / `off` become booleans, numbers become numbers. */
-export function readPolicyValue(text: unknown): unknown {
-  if (text === 'on') return true;
-  if (text === 'off') return null;
-  const raw = String(text);
-  if (text !== '' && text !== undefined && text !== null && Number.isFinite(Number(raw))) return Number(raw);
-  return text;
-}
-
 // ── the long-answer contract ────────────────────────────────────────────────
 //
 // A tool answer is one message, and three words can outgrow it. The cap and the
