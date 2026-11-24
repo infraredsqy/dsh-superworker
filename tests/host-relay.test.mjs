@@ -54,7 +54,7 @@ function rigRecordRoot(holding) {
   }
   writeFileSync(join(root, '.superworker', 'ideas.json'), JSON.stringify({ nodes }))
   writeFileSync(join(root, '.superworker', 'state.json'), JSON.stringify({
-    cycles: [{ id: 'c-1', status: 'active', tags: [], holding: holding.map((id) => ({ id, since: '2026-10-18T00:00:00Z' })), path: [] }],
+    cycles: [{ id: 'c-1', tags: [], holding: holding.map((id) => ({ id, since: '2026-10-18T00:00:00Z' })), path: [] }],
   }))
   return root
 }
@@ -674,5 +674,47 @@ test('A dispatch through the alias opens as usual, and the engine reads the reco
   } finally {
     rmSync(alias, { recursive: true, force: true })
     assert.ok(existsSync(root), 'removing the alias does not take the root it points at')
+  }
+})
+
+test('Parallel cycles: two cycles running side by side relay independently by the cycle that opened the session', async () => {
+  const root = rigRecordRoot(['n-1', 'n-2', 'n-3'])
+  const statePath = join(root, '.superworker', 'state.json')
+  writeFileSync(statePath, JSON.stringify({
+    cycles: [
+      { id: 'c-1', tags: [], holding: [{ id: 'n-1', since: '2026-10-18T00:00:00Z' }], path: [] },
+      { id: 'c-2', tags: [], holding: [{ id: 'n-3', since: '2026-10-18T00:00:00Z' }], path: [] },
+    ],
+  }))
+  const agents = fakeAgents()
+  const { ctx, events, warnings } = context({ root, agents })
+  const installOff = installRelay(ctx)
+  try {
+    const leg1 = await dispatchCell(ctx, 'caller', root, 'c-1', 'n-1')
+    const leg2 = await dispatchCell(ctx, 'caller', root, 'c-2', 'n-3')
+    assert.equal(leg1.ok, true)
+    assert.equal(leg2.ok, true)
+    assert.equal(agents.created.length, 2)
+
+    /* c-1 finishes n-1 (holding now empty on c-1 while c-2 is still running n-3). */
+    const ideas = JSON.parse(await readFile(join(root, '.superworker', 'ideas.json'), 'utf8'))
+    ideas.nodes['n-1'].status = 'completed'
+    await writeFile(join(root, '.superworker', 'ideas.json'), JSON.stringify(ideas))
+    const state = JSON.parse(await readFile(statePath, 'utf8'))
+    state.cycles[0].holding = []
+    state.cycles[0].path = [{ node: 'n-1', started_at: '2026-10-18T00:00:00Z', ended_at: '2026-10-18T00:01:00Z', result: 'completed' }]
+    await writeFile(statePath, JSON.stringify(state))
+
+    /* turn/end on c-1's session relays c-1 onto n-2 directly without touching c-2 or failing on ambiguity. */
+    events.emit('session/event', { id: leg1.session }, { type: 'turn/end' })
+    await until(
+      () => agents.created.length >= 3 && existsSync(claimPath(root, 'c-1', 'n-2')),
+      'c-1 relays its next leg while c-2 runs alongside it',
+      warnings,
+    )
+    assert.ok(existsSync(claimPath(root, 'c-1', 'n-2')))
+  } finally {
+    installOff()
+    rmSync(root, { recursive: true, force: true })
   }
 })

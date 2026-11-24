@@ -81,28 +81,34 @@ test('a closed moment later than the reading moment: at that moment it still cou
   assert.equal(out[0].closedAt, null, 'not yet closed at that moment: the reading carries no such moment')
 })
 
-test('scope: a bound cycle not in service does not count; a binding nobody can measure still counts', () => {
+test('scope: a bound cycle that is idle does not count; running or waiting counts, and an unmeasurable binding still counts', () => {
   const out = read([
     instruction({ id: 'global', scope: 'global' }),
-    instruction({ id: 'in-service', scope: 'cycle', cycle: 'c1' }),
-    instruction({ id: 'out-of-service', scope: 'cycle', cycle: 'c2' }),
+    instruction({ id: 'running-line', scope: 'cycle', cycle: 'c1' }),
+    instruction({ id: 'waiting-line', scope: 'cycle', cycle: 'c3' }),
+    instruction({ id: 'idle-line', scope: 'cycle', cycle: 'c2' }),
     instruction({ id: 'gone-cycle', scope: 'cycle', cycle: 'c9' }),
     instruction({ id: 'no-binding', scope: 'cycle' }),
     instruction({ id: 'no-scope' }),
     instruction({ id: 'other-scope', scope: 'elsewhere' }),
   ], {
+    nodes: {
+      n1: { title: 'running', status: 'todo', mode: 'auto', dependencies: [] },
+      cp: { title: 'gate', status: 'completed', mode: 'checkpoint', completed_at: '2026-03-10T09:00:00.000Z', dependencies: [] },
+    },
     cycles: [
-      { id: 'c1', status: 'active', holding: [], path: [] },
-      { id: 'c2', status: 'inactive', holding: [], path: [] },
+      { id: 'c1', holding: [{ id: 'n1', since: '2026-03-10T09:00:00.000Z' }], path: [] },
+      { id: 'c2', holding: [], path: [] },
+      { id: 'c3', holding: [], path: [{ node: 'cp', started_at: '2026-03-10T08:00:00.000Z', ended_at: '2026-03-10T09:00:00.000Z', result: 'completed' }] },
     ],
   })
 
   assert.deepEqual(
     ids(out.filter((item) => item.inForce)),
-    ['global', 'in-service', 'gone-cycle', 'no-binding', 'no-scope', 'other-scope'],
-    'what cannot be measured counts: a bound cycle no longer in the record still reads',
+    ['global', 'running-line', 'waiting-line', 'gone-cycle', 'no-binding', 'no-scope', 'other-scope'],
+    'running, waiting, and unmeasurable bindings count; idle lines drop out of scope',
   )
-  assert.deepEqual(ids(out.filter((item) => !item.inScope)), ['out-of-service'])
+  assert.deepEqual(ids(out.filter((item) => !item.inScope)), ['idle-line'])
 })
 
 test('a field the record did not write stays empty, no default filled in', () => {

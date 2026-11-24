@@ -46,7 +46,7 @@ export function readInstructions(
     /* Still standing = the word says `live` and no already-reached moment has collected it. A different word in the record (legacy values included), or no readable word at all, counts as archived: anything but `live` is never in force. */
     const standing = recordState === 'live' && closedAt === null
     const inScope = scope === 'cycle' && cycleId !== null
-      ? (cycleById[cycleId]?.inService ?? true)
+      ? (cycleById[cycleId] === undefined ? true : cycleById[cycleId].state !== 'idle')
       : true
     const text_ = text(entry.text)
     const note = text(entry.note)

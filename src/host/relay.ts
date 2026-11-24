@@ -56,23 +56,25 @@ export type DispatchRefusalCode = RecordRefusalCode | 'dispatch-refused'
 export type DispatchOutcome = SessionOpenOutcome
 
 /**
- * The sessions this host dispatched, by id, with the workspace root the
- * dispatch named. This is the relay's own memory of "its" sessions: a
- * `turn/end` from an id that is not here is nobody's business. One process,
- * one table; a host restart empties it, which is correct — after a restart
- * no agent of ours is alive to fire the event.
+ * The sessions this host dispatched, by id, with the workspace root and cycle the
+ * dispatch named. Remembering the cycle alongside the root lets the relay judge and
+ * carry each line independently when several lines run side by side, without any
+ * persisted default-cycle pointer.
  */
-const tracked = new Map<string, string>()
+interface TrackedSession {
+  readonly root: string
+  readonly cycle: string
+}
+
+const tracked = new Map<string, TrackedSession>()
 
 /**
- * The one writer of that table: a session this relay opened, and the root it
- * opened it for. Both paths that learn of an open — the opener's `onOpened`, a
- * dispatch receipt, an advance receipt — come through here, so the table has a
- * single spelling of "one of mine".
+ * The one writer of that table: a session this relay opened, and the root + cycle it
+ * opened it for.
  */
-function remember(session: string | undefined, workspaceRoot: string): void {
-  if (session === undefined || session.length === 0) return
-  tracked.set(session, workspaceRoot)
+function remember(session: string | undefined, workspaceRoot: string, cycle: string): void {
+  if (session === undefined || session.length === 0 || cycle.length === 0) return
+  tracked.set(session, { root: workspaceRoot, cycle })
 }
 
 /**
@@ -116,7 +118,7 @@ function relayOn(): boolean {
  * the trigger — as one the panel's button opened.
  */
 export function trackedExecutorOf(ctx: Context, sessionId: SessionId, workspaceRoot: string): Executor {
-  return executorOf(ctx, sessionId, workspaceRoot, (session) => remember(session, workspaceRoot))
+  return executorOf(ctx, sessionId, workspaceRoot, (session, cycle) => remember(session, workspaceRoot, cycle))
 }
 
 /**
@@ -142,9 +144,9 @@ interface OpenedReceipt {
 }
 
 /** Remember whatever a receipt says was opened, the same way the opener's own callback does. */
-function rememberReceipt(receipt: OpenedReceipt, workspaceRoot: string): void {
+function rememberReceipt(receipt: OpenedReceipt, workspaceRoot: string, cycle: string): void {
   if (receipt.action !== 'opened') return
-  remember(receipt.session?.sessionId, workspaceRoot)
+  remember(receipt.session?.sessionId, workspaceRoot, cycle)
 }
 
 /** The dispatch itself, at the one canonical spelling the entry took off the seam. */
@@ -157,7 +159,7 @@ async function runDispatch(
 ): Promise<DispatchOutcome> {
   try {
     const receipt = await dispatchHandleOf(ctx, sessionId, root).conductor.dispatch({ cycle, node })
-    rememberReceipt(receipt, root)
+    rememberReceipt(receipt, root, cycle)
     return { ok: true, session: receipt.session?.sessionId ?? '' }
   } catch (error) {
     /* The engine's own words ride as the detail, verbatim: they name the cell,
@@ -247,7 +249,7 @@ async function carryLine(
 ): Promise<DispatchOutcome> {
   try {
     const receipt = await dispatchHandleOf(ctx, sessionId, root).conductor.advance({ cycle })
-    for (const cell of receipt.dispatches) rememberReceipt(cell.receipt, root)
+    for (const cell of receipt.dispatches) rememberReceipt(cell.receipt, root, cycle)
     const first = receipt.dispatches[0]?.receipt
     return { ok: true, session: first?.session?.sessionId ?? '' }
   } catch (error) {
@@ -275,13 +277,11 @@ async function carryLine(
  * answer here; it states the same door as the two entries above, and keeps this trigger from being
  * the one place in this file where an empty name would be read as "not named".
  */
-async function judge(ctx: Context, sessionId: SessionId, workspaceRoot: string): Promise<void> {
+async function judge(ctx: Context, sessionId: SessionId, workspaceRoot: string, cycle: string): Promise<void> {
   if (!relayOn()) return
   const root = await (await workspaceRootOf(ctx, { sessionId, named: workspaceRoot, emptyNamed: 'root' })).canonicalRoot()
-  const plan = await dispatchHandleOf(ctx, sessionId, root).conductor.next({})
-  if (plan.action !== 'dispatch' && plan.action !== 'open_node' && plan.action !== 'stop_pipeline') return
-  const cycle = typeof plan.cycle === 'string' ? plan.cycle : ''
-  if (cycle === '') return
+  const plan = await dispatchHandleOf(ctx, sessionId, root).conductor.next({ cycle })
+  if (plan.action !== 'dispatch' && plan.action !== 'open_node') return
   const outcome = await chained(() => carryLine(ctx, sessionId, root, cycle))
   if (!outcome.ok) {
     logLineOf(ctx, 'warn', `dispatch relay could not advance ${cycle}: ${outcome.detail ?? outcome.code}`)
@@ -311,8 +311,8 @@ export function installRelay(ctx: Context, config?: unknown): () => void {
   const keep = (off: unknown): void => {
     if (typeof off === 'function') offs.push(off as () => void)
   }
-  const judgeSoon = (id: string, root: string): void => {
-    void judge(ctx, id as SessionId, root).catch((error: unknown) => {
+  const judgeSoon = (id: string, entry: TrackedSession): void => {
+    void judge(ctx, id as SessionId, entry.root, entry.cycle).catch((error: unknown) => {
       /* A refused trigger is a log line, never a throw into the event bus:
        * the plan's own note (or the panel's button) is where a person acts. */
       logLineOf(ctx, 'warn', `dispatch relay judged and refused: ${messageOf(error)}`)
@@ -323,17 +323,17 @@ export function installRelay(ctx: Context, config?: unknown): () => void {
     const event = args[1] as { type?: unknown } | undefined
     if (event?.type !== 'turn/end') return
     const id = typeof session?.id === 'string' ? session.id : ''
-    const root = tracked.get(id)
-    if (root === undefined) return
-    judgeSoon(id, root)
+    const entry = tracked.get(id)
+    if (entry === undefined) return
+    judgeSoon(id, entry)
   }))
   keep(bus.on('session/disposed', (...args: never[]) => {
     const session = args[0] as { id?: unknown } | undefined
     const id = typeof session?.id === 'string' ? session.id : ''
-    const root = tracked.get(id)
-    if (root === undefined) return
+    const entry = tracked.get(id)
+    if (entry === undefined) return
     tracked.delete(id)
-    judgeSoon(id, root)
+    judgeSoon(id, entry)
   }))
   return () => {
     for (const off of offs) off()

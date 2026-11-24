@@ -155,7 +155,9 @@
   font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-caption);
 }.superworker-page .superworker-linehead-state.is-live{
-  color: var(--dsw-alias-link);
+  color: var(--superworker-state-run);
+}.superworker-page .superworker-linehead-state.is-waiting{
+  color: var(--superworker-state-gate);
 }/* The page cannot hold two columns any more: every row takes the whole measure, and the line
    between rows is re-stacked — the first row keeps the head's rule alone. */
 @container (max-width: 1000px){

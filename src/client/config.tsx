@@ -23,6 +23,7 @@
  */
 import * as React from 'react'
 import type { ConfigEntry, SuperworkerConfigReading } from '../host/project-config.ts'
+import type { CycleState } from '../model/contract.ts'
 import {
   configSectionsOf,
   GROUP_WORDS,
@@ -75,8 +76,8 @@ export interface ConfigPaneProps {
   readonly noNodes: boolean
   /** Whether this pane is visible right now: the read happens only on the pass it becomes visible. */
   readonly active: boolean
-  /** The record's lines: candidates for the line picker, the in-service one winning the default. */
-  readonly cycles: readonly { readonly id: string; readonly inService: boolean }[]
+  /** The record's lines: candidates for the line picker, running > waiting > newest winning the default. */
+  readonly cycles: readonly { readonly id: string; readonly state: CycleState }[]
   /**
    * The note line at the bottom of the panel: what this pane has to say. Taking a word back is
    * written in the updater form, and the update clears only when the line still holds exactly the
@@ -98,7 +99,11 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
   const [picked, setPicked] = React.useState<string | null>(null)
   const line = picked !== null && cycles.some((one) => one.id === picked)
     ? picked
-    : (cycles.find((one) => one.inService) ?? cycles[0])?.id ?? null
+    : (
+      cycles.find((one) => one.state === 'running')
+      ?? cycles.find((one) => one.state === 'waiting')
+      ?? cycles[cycles.length - 1]
+    )?.id ?? null
   /* Which category the index is pointing at. `null` until the reader picks one or scrolls: the
      first category is the answer then, so a reading arriving later does not have to be written to
      this state from an effect. */
@@ -560,7 +565,7 @@ function Toggle(props: {
  * line is in hand.
  */
 function LineSection(props: {
-  readonly cycles: readonly { readonly id: string; readonly inService: boolean }[]
+  readonly cycles: readonly { readonly id: string; readonly state: CycleState }[]
   readonly line: string | null
   readonly onPick: (id: string) => void
   readonly rows: readonly ConfigRow[]
@@ -570,6 +575,16 @@ function LineSection(props: {
 }): React.ReactElement {
   const t = useT()
   const held = props.cycles.find((one) => one.id === props.line) ?? null
+  const stateClass = held?.state === 'running'
+    ? ' is-live'
+    : held?.state === 'waiting'
+      ? ' is-waiting'
+      : ''
+  const stateWord: WordKey = held?.state === 'running'
+    ? 'config.line.state.running'
+    : held?.state === 'waiting'
+      ? 'config.line.state.waiting'
+      : 'config.line.state.idle'
   return (
     <section className="superworker-cfgsec" data-cat="line">
       <header className="superworker-cfgsechead">
@@ -585,8 +600,8 @@ function LineSection(props: {
           </select>
         </span>
         {held === null ? null : (
-          <span className={`superworker-linehead-state${held.inService ? ' is-live' : ''}`}>
-            {t(held.inService ? 'config.line.state.live' : 'config.line.state.rest')}
+          <span className={`superworker-linehead-state${stateClass}`}>
+            {t(stateWord)}
           </span>
         )}
         <span className="superworker-cfgserule" aria-hidden="true" />

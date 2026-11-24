@@ -337,7 +337,7 @@ test('the cycle: what it holds, what steps it walked, who under it waits on a pe
   }))
   const c1 = reading.cycleById.c1
 
-  assert.equal(c1.inService, true)
+  assert.equal(c1.state, 'running')
   assert.deepEqual(c1.holding, [{ nodeId: 'held', since: new Date('2026-03-10T11:00:00.000Z') }])
   assert.deepEqual(nodesOf(c1.path), ['walked'], 'a step not yet settled at that moment does not count as walked')
   assert.equal(c1.lastStep.node, 'walked')

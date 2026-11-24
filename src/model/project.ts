@@ -13,6 +13,7 @@ import type { SuperworkerCycle, SuperworkerNode, SuperworkerStep } from './recor
 import type {
   ColumnReadings,
   CycleReading,
+  CycleState,
   GateReading,
   HoldingReading,
   NodeReading,
@@ -30,10 +31,6 @@ import { belongsTo } from './reading.ts'
 /** The two verdicts that mean not completed: on a card, the node is shelved. */
 const PARKED_RESULTS = new Set(['failed', 'stopped'])
 
-/** In service / not in service: the record's own two words. */
-const ACTIVE = 'active'
-const INACTIVE = 'inactive'
-
 /** A step on a cycle, together with which node it walked (the step's own fields carry it too; a ready copy is kept here for piling nodes). */
 interface CutStep {
   readonly nodeId: string | null
@@ -46,12 +43,11 @@ interface CutHolding {
   readonly holding: HoldingReading
 }
 
-/** A cycle at that moment, with "its parked nodes" not yet filled in (that waits for the node readings). */
+/** A cycle at that moment, with its derived state and parked nodes filled in once the node readings exist. */
 interface CutCycle {
   readonly id: string
   readonly title: string | undefined
-  readonly recordStatus: string | undefined
-  readonly inService: boolean
+  readonly whenShelved: string | undefined
   readonly holding: readonly CutHolding[]
   readonly path: readonly StepReading[]
   readonly lastStep: StepReading | null
@@ -91,7 +87,7 @@ export function readProject(input: RecordsAtMoment): ProjectReading {
   const facts = readFacts(input.nodes, cut, at)
   const nodes = facts.map((item) => readNode(item, at))
   const nodeById = Object.fromEntries(nodes.map((node) => [node.id, node]))
-  const cycles = cut.map((item) => finishCycle(item, nodes))
+  const cycles = cut.map((item) => finishCycle(item, nodes, nodeById))
   const cycleById = Object.fromEntries(cycles.map((cycle) => [cycle.id, cycle]))
 
   return {
@@ -118,31 +114,17 @@ function cutCycle(cycle: SuperworkerCycle, at: Date): CutCycle {
     /* A step counts as walked only once it has come to rest. The step not yet at rest at that moment is "being walked" and stays out of the walked list. */
     if (cut.reading.endedAt !== null) path.push(cut.reading)
   }
-  const recordStatus = text(cycle.status)
   const holding = readHolding(cycle, at)
+  const whenShelved = text(cycle.policies?.when_shelved)
   return {
     id,
     title: text(cycle.title),
-    recordStatus,
-    inService: inServiceOf(cycle, recordStatus, holding, at),
+    whenShelved,
     holding,
     path,
     lastStep: path.length > 0 ? (path[path.length - 1] ?? null) : null,
     steps,
   }
-}
-
-/** Whether the cycle is in service: use the record's word when it has been written down; until then, read it by whom it currently holds. */
-function inServiceOf(
-  cycle: SuperworkerCycle,
-  recordStatus: string | undefined,
-  holding: readonly CutHolding[],
-  at: Date,
-): boolean {
-  const stated = recordStatus === ACTIVE || recordStatus === INACTIVE
-  if (stated && writtenBy(toMoment(cycle.updated_at), at)) return recordStatus === ACTIVE
-  /* At that moment the word was not yet written down (or the record has no such word): a cycle holding nothing reads as not in service. */
-  return holding.length > 0
 }
 
 /** Whom a cycle holds at that moment: both the list and the single-value spellings are read. */
@@ -411,17 +393,36 @@ function approvedDelivery(completedAt: Date | null, approvedAt: Date | null): bo
   return approvedAt.getTime() >= completedAt.getTime()
 }
 
-function finishCycle(cycle: CutCycle, nodes: readonly NodeReading[]): CycleReading {
+function cycleStateOf(
+  cycle: CutCycle,
+  nodeById: Readonly<Record<string, NodeReading>>,
+): CycleState {
+  if (cycle.holding.length > 0) return 'running'
+  const last = cycle.lastStep
+  if (last?.node !== undefined) {
+    const node = nodeById[last.node]
+    if (node !== undefined) {
+      if (last.result === 'completed' && node.gate?.kind === 'checkpoint') return 'waiting'
+      if (last.result !== 'completed' && cycle.whenShelved !== 'continue' && node.state === 'shelved') return 'waiting'
+    }
+  }
+  return 'idle'
+}
+
+function finishCycle(
+  cycle: CutCycle,
+  nodes: readonly NodeReading[],
+  nodeById: Readonly<Record<string, NodeReading>>,
+): CycleReading {
   const parked = nodes.filter((node) => node.state === 'shelved' && belongsTo(node, cycle.id)).map((node) => node.id)
   return {
     id: cycle.id,
-    inService: cycle.inService,
+    state: cycleStateOf(cycle, nodeById),
     holding: cycle.holding.map((item) => item.holding),
     path: cycle.path,
     lastStep: cycle.lastStep,
     parked,
     ...field('title', cycle.title),
-    ...field('recordStatus', cycle.recordStatus),
   }
 }
 

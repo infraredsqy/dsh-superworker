@@ -198,7 +198,7 @@ export function executorOf(
   ctx: Context,
   sessionId: SessionId,
   workspaceRoot: string,
-  onOpened?: (session: string) => void,
+  onOpened?: (session: string, cycle: string) => void,
 ): Executor {
   return {
     async dispatch(request) {
@@ -209,7 +209,7 @@ export function executorOf(
       }
       if (request.dryRun === true) return { host: 'drill' }
       const outcome = await openNodeSession(ctx, sessionId, workspaceRoot, cycle, node, {
-        ...(onOpened === undefined ? {} : { onOpened }),
+        ...(onOpened === undefined ? {} : { onOpened: (session) => onOpened(session, cycle) }),
         ...(request.model === undefined ? {} : { model: request.model }),
       })
       /* The refusal travels with its code, not only its detail: `prompt-missing` carries the cell

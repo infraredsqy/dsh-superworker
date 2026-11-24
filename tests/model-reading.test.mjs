@@ -271,21 +271,27 @@ test('a cell two cycles walked: both count as having touched it, the re-run one 
     'the detail groups and the inking read the same criterion: the re-run cycle gets this cell too')
 })
 
-test('a cycle\'s three states are judged once: a cell owed to a person is blocked, still in service is running, the rest are stopped', () => {
+test('a cycle\'s three derived states: running (holding), waiting (human gate on last step), idle (everything else, ignoring legacy status)', () => {
   const reading = readProject(record({
-    nodes: { parked: node({ status: undefined }), busy: node() },
+    nodes: {
+      parked: node({ status: undefined }),
+      busy: node(),
+      gate: node({ mode: 'checkpoint', status: 'completed', completed_at: '2026-03-10T09:00:00.000Z' }),
+    },
     cycles: [
-      /* c1 owes a person: its verdict parked a cell. */
+      /* c1: nothing in hand, last step failed & still shelved -> waiting. */
       cycle({ id: 'c1', path: [{ node: 'parked', started_at: '2026-03-10T08:00:00.000Z', ended_at: '2026-03-10T09:00:00.000Z', result: 'failed' }] }),
+      /* c2: holding a node -> running. */
       cycle({ id: 'c2', holding: [{ id: 'busy', since: '2026-03-10T10:00:00.000Z' }] }),
-      cycle({ id: 'c3', status: 'inactive' }),
-      /* c4: no word written on it and nothing in hand — not in service, so stopped. */
-      cycle({ id: 'c4', status: undefined }),
+      /* c3: nothing in hand, last step is an unapproved checkpoint -> waiting. */
+      cycle({ id: 'c3', path: [{ node: 'gate', started_at: '2026-03-10T08:00:00.000Z', ended_at: '2026-03-10T09:00:00.000Z', result: 'completed' }] }),
+      /* c4: legacy status="active" with empty holding & no gate -> idle (never fake-running). */
+      cycle({ id: 'c4', status: 'active' }),
     ],
   }))
 
-  assert.equal(lineStateOf(reading.cycleById.c1), 'blocked', 'one cell waiting on a person: the parking wins')
-  assert.equal(lineStateOf(reading.cycleById.c2), 'run', 'no status written but work in hand: in service')
-  assert.equal(lineStateOf(reading.cycleById.c3), 'stopped')
-  assert.equal(lineStateOf(reading.cycleById.c4), 'stopped', 'no status and nothing in hand: not read as running')
+  assert.equal(lineStateOf(reading.cycleById.c1), 'waiting', 'stopped on shelved last step -> waiting')
+  assert.equal(lineStateOf(reading.cycleById.c2), 'running', 'holding a node -> running')
+  assert.equal(lineStateOf(reading.cycleById.c3), 'waiting', 'stopped on unapproved checkpoint -> waiting')
+  assert.equal(lineStateOf(reading.cycleById.c4), 'idle', 'empty cycle with legacy status=active -> idle')
 })

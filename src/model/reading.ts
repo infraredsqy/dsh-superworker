@@ -8,9 +8,9 @@
  * pinned down here and nowhere else.
  */
 import type { SuperworkerReading, SuperworkerSourceState } from './records.ts'
-import type { CycleReading, NodeBucket, NodeRank, NodeReading, ProjectReading } from './contract.ts'
+import type { CycleReading, CycleState, NodeBucket, NodeRank, NodeReading, ProjectReading } from './contract.ts'
 
-export type { NodeBucket, NodeRank }
+export type { CycleState, NodeBucket, NodeRank }
 
 /** The keys of the detail's five groups: shelved, running, ready, not started, completed. */
 export type DetailGroupKey = 'shelved' | 'run' | 'ready' | 'wait' | 'done'
@@ -92,16 +92,11 @@ export function dispatchCycleOf(node: NodeReading): string | null {
 }
 
 /**
- * A line's own state, in one word: owing a person (it parked a cell), in service, or stopped.
- *
- * Both the word the rail and the detail print and the class the line's mark wears come from this
- * one answer, so the spinner and the sentence cannot disagree about the same line.
+ * A line's own state, in one word: `running` (holding nodes), `waiting` (stopped at a human gate),
+ * or `idle`. Computed once on `CycleReading.state`.
  */
-export type CycleState = 'blocked' | 'run' | 'stopped'
-
 export function lineStateOf(cycle: CycleReading): CycleState {
-  if (cycle.parked.length > 0) return 'blocked'
-  return cycle.inService ? 'run' : 'stopped'
+  return cycle.state
 }
 
 /**

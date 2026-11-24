@@ -175,14 +175,15 @@ export interface HoldingReading {
   readonly since: Date | null
 }
 
+/** Derived 3-state view of a cycle: holding nodes (`running`), blocked at a human gate (`waiting`), or idle. */
+export type CycleState = 'running' | 'waiting' | 'idle'
+
 /** One cycle's reading at that moment. */
 export interface CycleReading {
   readonly id: string
   readonly title?: string
-  /** The word the record itself wrote, verbatim; absent when not written. */
-  readonly recordStatus?: string
-  /** Whether it is in service at that moment. */
-  readonly inService: boolean
+  /** Derived state at that moment: running (holding nodes), waiting (human gate on last step), or idle. */
+  readonly state: CycleState
   readonly holding: readonly HoldingReading[]
   /** The steps it has walked by that moment (a step not yet ended in the records does not count as walked). */
   readonly path: readonly StepReading[]
