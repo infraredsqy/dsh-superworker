@@ -20,6 +20,8 @@ import {
   configSectionsOf,
   groupOfUnregistered,
   KNOWN_CONFIG_ROWS,
+  LAYER_WORDS,
+  lineRowsOf,
   pickState,
   rowWords,
 } from '../src/client/config-rows.ts'
@@ -87,18 +89,66 @@ test('registered keys render per the table: the table\'s description stands what
   assert.equal(fallback.group, KNOWN_CONFIG_ROWS['worktree_mode'].group)
 })
 
-test('a knob only the global layer accepts is in the table as read-only: no text-box fallback, no control kind, no candidates', () => {
-  /* `answer` declares layers: ['global'] and the pane writes the project layer only, so the old
-   * fallback drew it as an unregistered text row — a control the tool refuses every time. */
-  const rows = configRowsOf({ answer: entry('plain', 'default') })
+test('a knob the declaration lets both wide layers carry is an ordinary described row: the project pane writes its own layer', () => {
+  /* `answer` declares layers: ['project', 'global'] — the machine layer is the person's default, the
+   * project layer the override. The pane's write road lands on the project layer, so the row is an
+   * ordinary described row with a live control, not the read-only dead end it once was. */
+  const options = ['technical', 'plain']
+  const rows = configRowsOf({ answer: entry('plain', 'default', options) })
   assert.deepEqual(rows.map((row) => row.key), ['answer'])
   const row = rows[0]
-  assert.equal(row, KNOWN_CONFIG_ROWS['answer'], 'the global-only knob is described by the table, not drawn as an unregistered text box')
-  assert.equal(row.kind, 'readonly', 'the write road cannot reach its layer: the row stands read-only, no dead control')
-  assert.equal(row.options, undefined, 'a read-only row offers no candidates')
-  assert.equal(row.name, null, 'the knob\'s name is a record word, printed as it stands in every language')
-  assert.ok(rowWords(t, row).name.length > 0, 'the name cell still prints the key itself')
-  assert.ok(rowWords(t, row).caption.length > 0, 'the caption says who can change it')
+  assert.deepEqual(row, { ...KNOWN_CONFIG_ROWS['answer'], options }, 'the knob is described by the table, carrying the reading\'s candidates')
+  assert.equal(row.kind, 'pick', 'a live control: the pane writes the project layer, the engine judges')
+  assert.deepEqual(row.options, options, 'the candidates are the declaration\'s, riding on the reading')
+  assert.ok(rowWords(t, row).name.length > 0, 'the row has its own name in the reader\'s language')
+  assert.ok(rowWords(t, row).caption.length > 0, 'the caption says what the knob decides')
+})
+
+test('the line category\'s rows grow out of a line reading: the engine\'s four first, then the plugin knobs a line may carry', () => {
+  const lineEntry = (value, layer = 'cycle', extra) => ({ value, layer, ...extra })
+  const rows = lineRowsOf({
+    when_shelved: lineEntry('continue', 'cycle', { options: ['stop', 'continue'], layers: ['cycle'] }),
+    parallel: lineEntry('2', 'cycle', { layers: ['cycle'] }),
+    stop_after_nodes: lineEntry('-', 'default', { layers: ['cycle'] }),
+    model: lineEntry('-', 'default', { layers: ['cycle'] }),
+    issue_pool: lineEntry('on', 'project', { layers: ['node', 'cycle', 'project', 'global'] }),
+    issue_pool_weight_limit: lineEntry('20', 'project', { layers: ['node', 'cycle', 'project', 'global'] }),
+    test_audit: lineEntry('on', 'default', { layers: ['node', 'cycle', 'project', 'global'] }),
+    test_seconds_limit: lineEntry('-', 'default', { layers: ['node', 'cycle', 'project', 'global'] }),
+    max_agents: lineEntry('3', 'default', { layers: ['project', 'global'] }),
+    answer: lineEntry('plain', 'default', { options: ['technical', 'plain'], layers: ['project', 'global'] }),
+  })
+
+  /* The engine's four in their own order, then the plugin knobs the declaration lets a line carry;
+   * the wide-only knobs (max_agents, answer) are not line settings and get no row. */
+  assert.deepEqual(rows.map((row) => row.key), [
+    'when_shelved', 'parallel', 'stop_after_nodes', 'model',
+    'issue_pool', 'issue_pool_weight_limit', 'test_audit', 'test_seconds_limit',
+  ])
+  const whenShelved = rows[0]
+  assert.equal(whenShelved.kind, 'pick', 'when_shelved is a pick; its candidates are the reading\'s')
+  assert.deepEqual(whenShelved.options, ['stop', 'continue'])
+  assert.ok(rowWords(t, whenShelved).caption.includes('管线'), 'the line rows speak the line-flavored captions')
+  const poolOnLine = rows.find((row) => row.key === 'issue_pool')
+  assert.equal(poolOnLine.name, KNOWN_CONFIG_ROWS['issue_pool'].name, 'a plugin knob keeps the name the project rows use — the same knob, one name')
+  assert.notEqual(poolOnLine.caption, KNOWN_CONFIG_ROWS['issue_pool'].caption, 'its caption under the picker is the line-flavored one')
+  const stranger = rows.find((row) => row.key === 'spawner')
+  assert.equal(stranger, undefined, 'a key the declaration does not let a line carry gets no row here')
+})
+
+test('an unregistered key the declaration lets a line carry falls back to a text row in the line category', () => {
+  const rows = lineRowsOf({
+    spawner: { value: 'dsh', layer: 'cycle', layers: ['node', 'cycle', 'project', 'global'] },
+  })
+  assert.deepEqual(rows.map((row) => row.key), ['spawner'])
+  assert.equal(rows[0].kind, 'text')
+  assert.equal(rows[0].group, 'line')
+  assert.equal(rowWords(t, rows[0]).name, 'spawner')
+})
+
+test('the line layer reads as the category\'s own word, and the groups carry it in the index', () => {
+  assert.ok(CONFIG_GROUPS.includes('line'), 'the line category is one of the index groups')
+  assert.deepEqual(LAYER_WORDS.cycle, 'config.layer.cycle')
 })
 
 test('the table spells no candidates: the engine\'s declaration is the only vocabulary, the reading is where it arrives', () => {

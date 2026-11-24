@@ -18,7 +18,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { answer, open } from 'superworker-core'
 import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
-import { declaredOptions } from '../src/host/project-config.ts'
+import { declaredKnobs } from '../src/host/project-config.ts'
 import { readReading } from '../src/host/records.ts'
 import { shippedPluginsDir } from '../src/host/skill-paths.ts'
 import { pinHome } from './helpers/env.mjs'
@@ -249,7 +249,7 @@ test('Reading settings: every line the engine printed parses into the table, and
     assert.ok(reading.text.length > 0, 'the success branch carries the lines the engine printed')
     assert.equal(reading.entries['worktree_mode']?.value, 'fork', 'the value written to the project layer is here')
     assert.equal(reading.entries['worktree_mode']?.layer, 'project', 'the layer it was written to is the layer the tag reads')
-    assert.deepEqual(reading.entries['worktree_mode']?.options, (await declaredOptions())['worktree_mode'], 'the declaration\'s candidates ride along')
+    assert.deepEqual(reading.entries['worktree_mode']?.options, (await declaredKnobs())['worktree_mode']?.options, 'the declaration\'s candidates ride along')
     assert.equal(reading.entries['max_agents']?.layer, 'default', 'an unwritten key reads as the factory default')
   } finally {
     stage.done()
@@ -268,7 +268,9 @@ test('The global layer: a value written into the home copy reads as global, and 
     const reading = await gateway.readConfig('s1', '')
 
     assert.equal(reading.ok, true, reading.refusal?.detail)
-    assert.deepEqual(reading.entries['max_agents'], { value: '3', layer: 'global' }, 'the home copy outranks the factory default, the layer tag reads global')
+    assert.deepEqual(reading.entries['max_agents'], {
+      value: '3', layer: 'global', layers: (await declaredKnobs())['max_agents'].layers,
+    }, 'the home copy outranks the factory default, the layer tag reads global')
   } finally {
     rmSync(join(pinned.home, '.superworker'), { recursive: true, force: true })
     stage.done()

@@ -69,6 +69,16 @@ export interface PanelPort {
   readConfig(sessionId: string, workspaceRoot: string): Promise<SuperworkerConfigReading>
   /** Write one project setting; it always lands on this project's layer. */
   setConfig(sessionId: string, workspaceRoot: string, key: string, value: string): Promise<Outcome>
+  /** What one line can see: the chain named at that line, its own policies included. */
+  readLineConfig(sessionId: string, workspaceRoot: string, cycle: string): Promise<SuperworkerConfigReading>
+  /** Write one setting onto one line's layer. */
+  setLineConfig(sessionId: string, workspaceRoot: string, cycle: string, key: string, value: string): Promise<Outcome>
+  /** Take one setting off one line's layer, letting the next layer show through. */
+  unsetLineConfig(sessionId: string, workspaceRoot: string, cycle: string, key: string): Promise<Outcome>
+  /** The machine layer alone: the person's own defaults, before any project states anything. */
+  readGlobalConfig(sessionId: string, workspaceRoot: string): Promise<SuperworkerConfigReading>
+  /** Write one setting onto the machine layer. */
+  setGlobalConfig(sessionId: string, workspaceRoot: string, key: string, value: string): Promise<Outcome>
   /** Open, on the host, the session that works one node of one line: the plan's prompt goes in as the first instruction. */
   openNodeSession(sessionId: string, workspaceRoot: string, cycle: string, node: string): Promise<Outcome>
   /** Hand a legacy record directory's migration to an agent: the host opens the session that does it. */
@@ -248,6 +258,11 @@ export const REMOTE_PARAM_ORDER: Readonly<Record<string, readonly string[]>> = {
   removeInstruction: ['sessionId', 'workspaceRoot', 'id'],
   readConfig: ['sessionId', 'workspaceRoot'],
   setConfig: ['sessionId', 'workspaceRoot', 'key', 'value'],
+  readLineConfig: ['sessionId', 'workspaceRoot', 'cycle'],
+  setLineConfig: ['sessionId', 'workspaceRoot', 'cycle', 'key', 'value'],
+  unsetLineConfig: ['sessionId', 'workspaceRoot', 'cycle', 'key'],
+  readGlobalConfig: ['sessionId', 'workspaceRoot'],
+  setGlobalConfig: ['sessionId', 'workspaceRoot', 'key', 'value'],
   openNodeSession: ['sessionId', 'workspaceRoot', 'cycle', 'node'],
   consultMigration: ['sessionId', 'workspaceRoot'],
   consultRoute: ['sessionId', 'workspaceRoot'],
@@ -380,6 +395,31 @@ const PANEL_FACE = {
   },
   setConfig: {
     endpoint: 'setConfig',
+    unfold: 'refuse',
+    args: (sessionId: string, workspaceRoot: string, key: string, value: string) => ({ sessionId, workspaceRoot, key, value }),
+  },
+  readLineConfig: {
+    endpoint: 'readLineConfig',
+    unfold: 'reject',
+    args: (sessionId: string, workspaceRoot: string, cycle: string) => ({ sessionId, workspaceRoot, cycle }),
+  },
+  setLineConfig: {
+    endpoint: 'setLineConfig',
+    unfold: 'refuse',
+    args: (sessionId: string, workspaceRoot: string, cycle: string, key: string, value: string) => ({ sessionId, workspaceRoot, cycle, key, value }),
+  },
+  unsetLineConfig: {
+    endpoint: 'unsetLineConfig',
+    unfold: 'refuse',
+    args: (sessionId: string, workspaceRoot: string, cycle: string, key: string) => ({ sessionId, workspaceRoot, cycle, key }),
+  },
+  readGlobalConfig: {
+    endpoint: 'readGlobalConfig',
+    unfold: 'reject',
+    args: (sessionId: string, workspaceRoot: string) => ({ sessionId, workspaceRoot }),
+  },
+  setGlobalConfig: {
+    endpoint: 'setGlobalConfig',
     unfold: 'refuse',
     args: (sessionId: string, workspaceRoot: string, key: string, value: string) => ({ sessionId, workspaceRoot, key, value }),
   },
@@ -628,6 +668,7 @@ function failureIn(error: unknown): Failure {
  * One entry per `FailureCode`, so a code added to the vocabulary fails to compile until it lands here. */
 const KNOWN_CODES = {
   'arg-not-allowed': true,
+  'root-not-string': true,
   'tool-refused': true,
   'scope-unknown': true,
   'empty-text': true,

@@ -266,3 +266,61 @@ test('a pane that fails to draw keeps the workshop up: the guard says so, the ca
   holder.remove()
   await mounted.unmount()
 })
+
+test('SettingsSection forwards port to AnswerRow and reads/writes global answer without a session', { skip: bundleSkip }, async () => {
+  const mounted = await mountBuiltPanel({ record: record() })
+  const { window, React, act, client, settle } = mounted
+  const { SettingsSection } = client
+  const { createRoot } = await import('react-dom/client')
+
+  let current = 'plain'
+  const calls = []
+  const port = {
+    source: 'remote',
+    async readGlobalConfig(sessionId, workspaceRoot) {
+      calls.push(['readGlobalConfig', sessionId, workspaceRoot])
+      return {
+        workspaceRoot: '',
+        ok: true,
+        text: '',
+        refusal: null,
+        entries: {
+          answer: { value: current, layer: 'global', options: ['technical', 'plain'], layers: ['project', 'global'] },
+        },
+      }
+    },
+    async setGlobalConfig(sessionId, workspaceRoot, key, value) {
+      calls.push(['setGlobalConfig', sessionId, workspaceRoot, key, value])
+      current = value
+      return { ok: true, text: '' }
+    },
+  }
+
+  const holder = window.document.createElement('div')
+  window.document.body.appendChild(holder)
+  const root = createRoot(holder)
+  await act(async () => {
+    root.render(React.createElement(SettingsSection, { port }))
+  })
+  await settle()
+
+  const select = holder.querySelector('.superworker-settings-pick select')
+  assert.notEqual(select, null, 'AnswerRow renders a select dropdown when port is connected')
+  assert.equal(select.value, 'plain')
+  assert.deepEqual([...select.options].map((o) => o.value), ['technical', 'plain'])
+  assert.ok(calls.some((c) => c[0] === 'readGlobalConfig'), 'readGlobalConfig was called')
+
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set
+    setter.call(select, 'technical')
+    select.dispatchEvent(new window.Event('change', { bubbles: true }))
+  })
+  await settle()
+
+  assert.ok(calls.some((c) => c[0] === 'setGlobalConfig' && c[3] === 'answer' && c[4] === 'technical'), 'setGlobalConfig wrote technical')
+  assert.equal(select.value, 'technical')
+
+  await act(async () => { root.unmount() })
+  holder.remove()
+  await mounted.unmount()
+})

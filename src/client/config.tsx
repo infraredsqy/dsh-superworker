@@ -11,11 +11,15 @@
  * layer a value comes from" all come off the reading (the values are the engine's own declaration,
  * handed along by the host); row order and category follow this side's
  * table, and writes land on this project's layer. This layer makes no second set of judgments — the
- * tool says whether keys and values are valid. A key the tool holds only on the global layer draws
- * read-only: the write has that one road, so a control there would be drawn dead. No optimistic
+ * tool says whether keys and values are valid. No optimistic
  * updates on the page: controls always
  * show the most recently read-back reading; a change is written, then read again, and when the tool
  * refuses, the control returns to its place on its own.
+ *
+ * One category is the pane's own: 管线. The project pane's rows live on the wide layers, which no
+ * line can state; a line's own settings live behind a line id, so this category stands a picker at
+ * its head — one line at a time, its rows read off `config list --cycle` and written back to that
+ * one line's layer, never a page that grows with every line the record holds.
  */
 import * as React from 'react'
 import type { ConfigEntry, SuperworkerConfigReading } from '../host/project-config.ts'
@@ -23,6 +27,7 @@ import {
   configSectionsOf,
   GROUP_WORDS,
   LAYER_WORDS,
+  lineRowsOf,
   pickState,
   rowWords,
   type ConfigGroup,
@@ -70,6 +75,8 @@ export interface ConfigPaneProps {
   readonly noNodes: boolean
   /** Whether this pane is visible right now: the read happens only on the pass it becomes visible. */
   readonly active: boolean
+  /** The record's lines: candidates for the line picker, the in-service one winning the default. */
+  readonly cycles: readonly { readonly id: string; readonly inService: boolean }[]
   /**
    * The note line at the bottom of the panel: what this pane has to say. Taking a word back is
    * written in the updater form, and the update clears only when the line still holds exactly the
@@ -79,12 +86,19 @@ export interface ConfigPaneProps {
 }
 
 export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
-  const { port, sessionId, workspaceRoot, noNodes, active } = props
+  const { port, sessionId, workspaceRoot, noNodes, active, cycles } = props
   /* Every word this pane prints comes from here; the translator reads the active language at call
    * time, so a redraw after a language switch says the new one. */
   const t = useT()
   const [load, setLoad] = React.useState<Load>({ phase: 'loading' })
   const [tick, setTick] = React.useState(0)
+  /* The line the line category's picker is on: the reader's own pick. Derived beside the reading, not
+   * stored as truth: the in-service line wins until the reader picks, and a line the record no longer
+   * has falls back to the reading's own order instead of a stale id squatting in the state. */
+  const [picked, setPicked] = React.useState<string | null>(null)
+  const line = picked !== null && cycles.some((one) => one.id === picked)
+    ? picked
+    : (cycles.find((one) => one.inService) ?? cycles[0])?.id ?? null
   /* Which category the index is pointing at. `null` until the reader picks one or scrolls: the
      first category is the answer then, so a reading arriving later does not have to be written to
      this state from an effect. */
@@ -150,34 +164,90 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
     return () => { live = false }
   }, [noNodes, active, sessionId, workspaceRoot, port, tick, note])
 
+  /* The line category's own read: the same visibility discipline as the wide read, one road per
+   * picked line — the reading exists for the line in hand, and a record with no line is not read
+   * at all. A refusal says its word on the note line, the same said-ref the wide read keeps. */
+  const [lineLoad, setLineLoad] = React.useState<Load>({ phase: 'loading' })
+  React.useEffect(() => {
+    if (noNodes || !active || sessionId.length === 0 || line === null) return undefined
+    let live = true
+    port.readLineConfig(sessionId, workspaceRoot, line).then(
+      (reading) => {
+        if (!live) return
+        setLineLoad({ phase: 'ok', reading })
+        const held = said.current
+        if (reading.ok) {
+          if (held !== null && held.who === 'read') {
+            said.current = null
+            note((line) => (line === held.note ? null : line))
+          }
+        } else {
+          said.current = { who: 'read', note: { kind: 'failure', failure: reading.refusal ?? { code: 'config-unreadable' } } }
+          note(said.current.note)
+        }
+      },
+      (error: unknown) => {
+        if (!live) return
+        setLineLoad({ phase: 'failed', failure: failureOf(error) })
+      },
+    )
+    return () => { live = false }
+  }, [noNodes, active, sessionId, workspaceRoot, port, line, tick, note])
+
   /* One write: the tool's word is final, then read again — what controls show always follows the
      re-read copy. No key filtering: unregistered keys are passed through as well, and when the
      tool does not recognize one, its refusal lands on the note line. The loop is the shell's own
      (`writeToNote`); what is this pane's is who owns the note and that a re-read follows either
-     way. */
+     way. The two doors share the one note loop: the wide rows write the project layer, the line
+     category's rows write the picked line's layer — a `null` value meaning "take the entry off",
+     which only the line door can do. */
+  const afterWrite = React.useCallback((left: Note | null): void => {
+    /* A silent success takes the pane's own last word back — and only while the line still
+     * holds it, the same compare the read retraction makes. A word that arrived in the meantime
+     * is someone else's; this write has nothing to say over it. */
+    if (left === null) {
+      const held = said.current
+      said.current = null
+      if (held !== null) note((line) => (line === held.note ? null : line))
+      return
+    }
+    said.current = left.kind === 'failure' ? { who: 'write', note: left } : null
+    note(left)
+  }, [note])
+
   const send = React.useCallback((key: string, next: string): void => {
     void writeToNote(() => port.setConfig(sessionId, workspaceRoot, key, next), {
-      note: (left) => {
-        /* A silent success takes the pane's own last word back — and only while the line still
-         * holds it, the same compare the read retraction makes. A word that arrived in the meantime
-         * is someone else's; this write has nothing to say over it. */
-        if (left === null) {
-          const held = said.current
-          said.current = null
-          if (held !== null) note((line) => (line === held.note ? null : line))
-          return
-        }
-        said.current = left.kind === 'failure' ? { who: 'write', note: left } : null
-        note(left)
-      },
+      note: afterWrite,
       after: () => { setTick((round) => round + 1) },
     })
-  }, [port, sessionId, workspaceRoot, note])
+  }, [port, sessionId, workspaceRoot, afterWrite])
+
+  const sendLine = React.useCallback((key: string, value: string | null): void => {
+    if (line === null) return
+    void writeToNote(
+      () => value === null
+        ? port.unsetLineConfig(sessionId, workspaceRoot, line, key)
+        : port.setLineConfig(sessionId, workspaceRoot, line, key, value),
+      {
+        note: afterWrite,
+        after: () => { setTick((round) => round + 1) },
+      },
+    )
+  }, [port, sessionId, workspaceRoot, line, afterWrite])
 
   const reading = load.phase === 'ok' ? load.reading : null
   const sections = reading === null ? [] : configSectionsOf(reading.entries)
+  const lineReading = lineLoad.phase === 'ok' ? lineLoad.reading : null
+  const lineEntries: Readonly<Record<string, ConfigEntry>> = lineReading !== null && lineReading.ok ? lineReading.entries : {}
+  const lineRows = lineRowsOf(lineEntries)
+  /* The index: the wide categories off the wide reading, then the line category when the record
+   * holds a line at all — a category with nothing in it is no line in the index. */
+  const navItems: readonly { readonly group: ConfigGroup; readonly count: number }[] = [
+    ...sections.map((section) => ({ group: section.group, count: section.rows.length })),
+    ...(cycles.length > 0 ? [{ group: 'line' as ConfigGroup, count: lineRows.length }] : []),
+  ]
   /* The index points at the picked category while it still has rows; otherwise at the first one. */
-  const pointed = at === null ? sections[0]?.group : sections.find((section) => section.group === at)?.group
+  const pointed = at === null ? navItems[0]?.group : navItems.find((item) => item.group === at)?.group
 
   /* A line in the index: bring that category's head to the page's own top — the height the first
      head rests on with the page unscrolled — so the first category asks for nothing and the reader
@@ -237,23 +307,29 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
       <div className="superworker-cfg">
         <nav className="superworker-cfgnav" aria-label={t('config.categories.aria')}>
           <div className="superworker-cfglist">
-            {sections.map((section) => (
+            {navItems.map((item) => (
               <button
-                key={section.group}
+                key={item.group}
                 type="button"
                 className="superworker-cfgitem"
-                data-cat={section.group}
-                aria-current={pointed === section.group}
-                onClick={() => { jump(section.group); setAt(section.group) }}
+                data-cat={item.group}
+                aria-current={pointed === item.group}
+                onClick={() => { jump(item.group); setAt(item.group) }}
               >
-                <span className="superworker-cfgitem-name">{t(GROUP_WORDS[section.group])}</span>
-                <span className="superworker-cfgitem-count">{section.rows.length}</span>
+                <span className="superworker-cfgitem-name">{t(GROUP_WORDS[item.group])}</span>
+                <span className="superworker-cfgitem-count">{item.count}</span>
               </button>
             ))}
           </div>
           <div className="superworker-cfgnavfoot">
-            <span className="superworker-cfgnavfoot-term">{t('config.file.term')}</span>
+            <span className="superworker-cfgnavfoot-term">{t('config.file.project.term')}</span>
             <code className="superworker-cfgnavfoot-path">.superworker/config.json</code>
+            {cycles.length > 0 ? (
+              <React.Fragment>
+                <span className="superworker-cfgnavfoot-term">{t('config.file.line.term')}</span>
+                <code className="superworker-cfgnavfoot-path">state.json · policies</code>
+              </React.Fragment>
+            ) : null}
           </div>
         </nav>
         <div
@@ -273,6 +349,17 @@ export function ConfigPane(props: ConfigPaneProps): React.ReactElement {
               onWrite={send}
             />
           ))}
+          {cycles.length > 0 ? (
+            <LineSection
+              cycles={cycles}
+              line={line}
+              onPick={setPicked}
+              rows={lineRows}
+              entries={lineEntries}
+              revision={tick}
+              onWrite={sendLine}
+            />
+          ) : null}
           {tail > 0 ? (
             <div className="superworker-cfgtail" aria-hidden="true" style={{ ['--superworker-cfgtail' as string]: `${String(tail)}px` }} />
           ) : null}
@@ -335,9 +422,7 @@ function Row(props: {
           ? <NumberBox row={row} entry={entry} noteId={noteId} revision={props.revision} onWrite={props.onWrite} />
           : row.kind === 'toggle'
             ? <Toggle row={row} entry={entry} noteId={noteId} onWrite={props.onWrite} />
-            : row.kind === 'readonly'
-              ? <ReadonlyValue entry={entry} />
-              : <TextBox row={row} entry={entry} noteId={noteId} revision={props.revision} onWrite={props.onWrite} />}
+            : <TextBox row={row} entry={entry} noteId={noteId} revision={props.revision} onWrite={props.onWrite} />}
       {entry === undefined || entry.layer === null
         ? null
         : <span className="superworker-tag superworker-vlayer" data-layer={entry.layer}>{t(LAYER_WORDS[entry.layer])}</span>}
@@ -440,15 +525,8 @@ function TextBox(props: {
 }
 
 /**
- * The read-only value: a knob the tool only accepts on the global layer — the layer this pane's one
- * write road (the project layer) cannot reach — draws what the record holds and no control. A
- * control drawn here would stand there and never move; the row's caption says who can change it.
+ * The on / off control: two buttons, the pressed one being the current value; neither lights when the record does not carry the key.
  */
-function ReadonlyValue(props: { readonly entry: ConfigEntry | undefined }): React.ReactElement {
-  return <span className="superworker-cfgvalue">{props.entry?.value ?? ''}</span>
-}
-
-/** The on / off control: two buttons, the pressed one being the current value; neither lights when the record does not carry the key. */
 function Toggle(props: {
   readonly row: ConfigRow
   readonly entry: ConfigEntry | undefined
@@ -467,6 +545,192 @@ function Toggle(props: {
           aria-pressed={on === flag}
           aria-describedby={props.noteId}
           onClick={() => props.onWrite(flag ? 'on' : 'off')}
+        >
+          {t(word)}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * The line category's section: one line picked at the head, and only that line's rows under it —
+ * the page's length is the picked line's, never the record's. The picker carries the record's lines
+ * by their own ids; the in-service one wins the default, and the state word beside it says which
+ * line is in hand.
+ */
+function LineSection(props: {
+  readonly cycles: readonly { readonly id: string; readonly inService: boolean }[]
+  readonly line: string | null
+  readonly onPick: (id: string) => void
+  readonly rows: readonly ConfigRow[]
+  readonly entries: Readonly<Record<string, ConfigEntry>>
+  readonly revision: number
+  readonly onWrite: (key: string, value: string | null) => void
+}): React.ReactElement {
+  const t = useT()
+  const held = props.cycles.find((one) => one.id === props.line) ?? null
+  return (
+    <section className="superworker-cfgsec" data-cat="line">
+      <header className="superworker-cfgsechead">
+        <h2 className="superworker-cfgsecname">{t(GROUP_WORDS.line)}</h2>
+        <span className="superworker-pick">
+          <select
+            aria-label={t('config.line.pick.aria')}
+            value={props.line ?? ''}
+            onChange={(event) => props.onPick(event.target.value)}
+          >
+            {props.line === null ? <option value="" hidden /> : null}
+            {props.cycles.map((one) => <option key={one.id} value={one.id}>{one.id}</option>)}
+          </select>
+        </span>
+        {held === null ? null : (
+          <span className={`superworker-linehead-state${held.inService ? ' is-live' : ''}`}>
+            {t(held.inService ? 'config.line.state.live' : 'config.line.state.rest')}
+          </span>
+        )}
+        <span className="superworker-cfgserule" aria-hidden="true" />
+      </header>
+      <div className="superworker-cfgrows">
+        {props.rows.map((row) => (
+          <LineRow
+            key={row.key}
+            row={row}
+            entry={props.entries[row.key]}
+            revision={props.revision}
+            onWrite={(value) => props.onWrite(row.key, value)}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/**
+ * One of the line category's rows: the project row's shape, with the one difference the line layer
+ * earns — an empty commit takes the line's entry off (the door exists here), so the next layer of
+ * the chain shows through instead of the row pretending nothing happened.
+ */
+function LineRow(props: {
+  readonly row: ConfigRow
+  readonly entry: ConfigEntry | undefined
+  readonly revision: number
+  readonly onWrite: (value: string | null) => void
+}): React.ReactElement {
+  const t = useT()
+  const { row, entry } = props
+  const noteId = `cfg-line-${row.key}`
+  const words = rowWords(t, row)
+  return (
+    <div className="superworker-cfgrow" data-key={row.key}>
+      <div className="superworker-cfgrowname">
+        <span className="superworker-setlabel" title={row.name === null ? undefined : row.key}>{words.name}</span>
+        <span className="superworker-setcaption" id={noteId}>{words.caption}</span>
+      </div>
+      {row.kind === 'pick'
+        ? <Pick row={row} entry={entry} noteId={noteId} onWrite={props.onWrite} />
+        : row.kind === 'num'
+          ? <LineNumberBox row={row} entry={entry} noteId={noteId} revision={props.revision} onWrite={props.onWrite} />
+          : row.kind === 'toggle'
+            ? <LineToggle row={row} entry={entry} noteId={noteId} onWrite={props.onWrite} />
+            : <LineText row={row} entry={entry} noteId={noteId} revision={props.revision} onWrite={props.onWrite} />}
+      {entry === undefined || entry.layer === null
+        ? null
+        : <span className="superworker-tag superworker-vlayer" data-layer={entry.layer}>{t(LAYER_WORDS[entry.layer])}</span>}
+    </div>
+  )
+}
+
+/** The line's number box: an empty commit is the unset (the entry off), a value the write. */
+function LineNumberBox(props: {
+  readonly row: ConfigRow
+  readonly entry: ConfigEntry | undefined
+  readonly noteId: string
+  readonly revision: number
+  readonly onWrite: (value: string | null) => void
+}): React.ReactElement {
+  const t = useT()
+  const held = props.entry?.value ?? ''
+  const numeric = held.length > 0 && Number.isFinite(Number(held))
+  return (
+    <CommitNumberInput
+      held={held}
+      unset={!numeric}
+      label={rowWords(t, props.row).name}
+      describedBy={props.noteId}
+      revision={props.revision}
+      onCommit={(typed) => {
+        if (typed.length === 0) {
+          if (!numeric) return
+          props.onWrite(null)
+          return
+        }
+        if (typed === held) return
+        props.onWrite(typed)
+      }}
+    />
+  )
+}
+
+/**
+ * The line's text box (the model route): the number box's rules on the shared input — an empty
+ * commit is the unset, a word the write, and a refused word does not squat in the box.
+ */
+function LineText(props: {
+  readonly row: ConfigRow
+  readonly entry: ConfigEntry | undefined
+  readonly noteId: string
+  readonly revision: number
+  readonly onWrite: (value: string | null) => void
+}): React.ReactElement {
+  const t = useT()
+  const held = props.entry?.value ?? ''
+  const unset = held.length === 0 || held === '-'
+  return (
+    <CommitNumberInput
+      type="text"
+      spellCheck={false}
+      held={unset ? '' : held}
+      unset={unset}
+      label={rowWords(t, props.row).name}
+      describedBy={props.noteId}
+      revision={props.revision}
+      onCommit={(typed) => {
+        if (typed.length === 0) {
+          if (!unset) props.onWrite(null)
+          return
+        }
+        if (typed === held) return
+        props.onWrite(typed)
+      }}
+    />
+  )
+}
+
+/**
+ * The line's three-state switch: on / off written on the line's layer, neither lit when the line
+ * states nothing — the tag at the row's end then says which layer the value in force came from.
+ * Pressing the lit side takes the line's entry off; pressing the other writes it.
+ */
+function LineToggle(props: {
+  readonly row: ConfigRow
+  readonly entry: ConfigEntry | undefined
+  readonly noteId: string
+  readonly onWrite: (value: string | null) => void
+}): React.ReactElement {
+  const t = useT()
+  const value = props.entry?.value
+  const on = value === 'on' ? true : value === 'off' ? false : null
+  return (
+    <div className="superworker-seg" role="group" aria-label={rowWords(t, props.row).name}>
+      {SIDES.map(([word, flag]) => (
+        <button
+          key={word}
+          type="button"
+          className="superworker-segbtn"
+          aria-pressed={on === flag}
+          aria-describedby={props.noteId}
+          onClick={() => props.onWrite(on === flag ? null : flag ? 'on' : 'off')}
         >
           {t(word)}
         </button>

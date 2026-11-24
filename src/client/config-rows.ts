@@ -22,22 +22,22 @@ import type { Translate } from './locale.ts'
 import type { WordKey } from './locales/index.ts'
 
 /**
- * How a row's value is held. `readonly` is a knob the tool only accepts on a layer this pane cannot
- * write (the write side has one road, the project layer): the row stands and states the value, and
- * no control is drawn for it — what is drawn has to be usable.
+ * How a row's value is held. Every kind draws a control the tool can answer:
+ * the write road judges, and a refusal returns the control to its place.
  */
-export type ControlKind = 'pick' | 'num' | 'toggle' | 'readonly' | 'text'
+export type ControlKind = 'pick' | 'num' | 'toggle' | 'text'
 
-/** The categories the index names, in the order they stand there. */
-export type ConfigGroup = 'general' | 'issue' | 'test'
+/** The categories the index names, in the order they stand there. `line` is the pane's own category — one line picked at its head, not keys of the wide reading. */
+export type ConfigGroup = 'general' | 'issue' | 'test' | 'line'
 
-export const CONFIG_GROUPS: readonly ConfigGroup[] = ['general', 'issue', 'test']
+export const CONFIG_GROUPS: readonly ConfigGroup[] = ['general', 'issue', 'test', 'line']
 
 /** Each category's name, as a dictionary key. */
 export const GROUP_WORDS: Readonly<Record<ConfigGroup, WordKey>> = {
   general: 'config.group.general',
   issue: 'config.group.issue',
   test: 'config.group.test',
+  line: 'config.group.line',
 }
 
 export interface ConfigRow {
@@ -125,23 +125,95 @@ export const KNOWN_CONFIG_ROWS: Readonly<Record<string, ConfigRow>> = {
     kind: 'num',
     group: 'test',
   },
-  /**
-   * A knob whose plugin declares `layers: ['global']` only: the write side lands on the project
-   * layer and the tool refuses that, so a control here would be drawn dead. It keeps its table row
-   * — value and layer tag still read — and draws read-only; the caption says who can change it.
-   * The key name is a record's word, so `name` stays unset and prints as it stands.
-   */
   answer: {
     key: 'answer',
-    name: null,
-    caption: 'config.global-only.caption',
-    kind: 'readonly',
+    name: 'config.row.answer.name',
+    caption: 'config.row.answer.caption',
+    kind: 'pick',
     group: 'general',
   },
 }
 
 /** The caption under unregistered keys: the key name is already in the name cell, so this only says who judges the value. */
 const UNREGISTERED_CAPTION: WordKey = 'config.unregistered-caption'
+
+/**
+ * The line's own rows, in the order readers meet them: the engine's four line policies first (the
+ * order the engine declares them), then any plugin knob the declaration lets a line carry, in the
+ * reading's order. Names and captions are dictionary keys; the plugin knobs keep the names the
+ * project rows use — the same knob, one name — and speak line-flavored captions.
+ */
+const KNOWN_LINE_ROWS: Readonly<Record<string, ConfigRow>> = {
+  when_shelved: {
+    key: 'when_shelved',
+    name: 'config.line.row.when_shelved.name',
+    caption: 'config.line.row.when_shelved.caption',
+    kind: 'pick',
+    group: 'line',
+  },
+  parallel: {
+    key: 'parallel',
+    name: 'config.line.row.parallel.name',
+    caption: 'config.line.row.parallel.caption',
+    kind: 'num',
+    group: 'line',
+  },
+  stop_after_nodes: {
+    key: 'stop_after_nodes',
+    name: 'config.line.row.stop_after_nodes.name',
+    caption: 'config.line.row.stop_after_nodes.caption',
+    kind: 'num',
+    group: 'line',
+  },
+  model: {
+    key: 'model',
+    name: 'config.line.row.model.name',
+    caption: 'config.line.row.model.caption',
+    kind: 'text',
+    group: 'line',
+  },
+}
+
+/** The plugin knobs a line may carry, with the line-flavored caption each speaks under the line picker. */
+const KNOWN_LINE_PLUGIN_CAPTIONS: Readonly<Record<string, WordKey>> = {
+  issue_pool: 'config.line.row.issue_pool.caption',
+  issue_pool_weight_limit: 'config.line.row.issue_pool_weight_limit.caption',
+  test_audit: 'config.line.row.test_audit.caption',
+  test_seconds_limit: 'config.line.row.test_seconds_limit.caption',
+}
+
+/** Whether this key's declaration lets a line carry it: the reading hands the layers the engine declared. */
+function takesLineLayer(entry: ConfigEntry | undefined): boolean {
+  return entry?.layers?.includes('cycle') ?? false
+}
+
+/**
+ * Grow the line category's rows out of a line reading: only keys the declaration lets a line carry
+ * get rows, the engine's four in their own order first, the plugin knobs after, and a key this table
+ * does not know drawn last with a text box — the same fallback the project rows keep.
+ * @param entries - The key to "value + layer (+ candidates, layers)" table read out of `config list --cycle`.
+ */
+export function lineRowsOf(entries: Readonly<Record<string, ConfigEntry>>): readonly ConfigRow[] {
+  const rows: ConfigRow[] = []
+  for (const known of Object.values(KNOWN_LINE_ROWS)) {
+    const entry = entries[known.key]
+    if (!takesLineLayer(entry)) continue
+    rows.push(known.kind === 'pick' ? pickRowOf(known, entry?.options) : known)
+  }
+  for (const [key, entry] of Object.entries(entries)) {
+    if (!takesLineLayer(entry) || KNOWN_LINE_ROWS[key] !== undefined) continue
+    const known = KNOWN_CONFIG_ROWS[key]
+    if (known === undefined) {
+      rows.push({ key, name: null, caption: UNREGISTERED_CAPTION, kind: 'text', group: 'line' })
+      continue
+    }
+    // A plugin knob keeps the name the project rows use — the same knob, one name — and speaks the
+    // line-flavored caption.
+    const line: ConfigRow = { ...known, caption: KNOWN_LINE_PLUGIN_CAPTIONS[key] ?? known.caption, group: 'line' }
+    rows.push(known.kind === 'pick' ? pickRowOf(line, entry?.options) : line)
+  }
+  return rows
+}
 
 /**
  * Which category an unregistered key falls under: its prefix is the only thing this side knows
@@ -250,14 +322,17 @@ export function pickState(entry: ConfigEntry | undefined, options: readonly stri
 }
 
 /**
- * The three words for the layer tag at the end of a row, on the same terms as the panel's other word
+ * The four words for the layer tag at the end of a row, on the same terms as the panel's other word
  * tables: keys, not words.
  *
  * The default layer reads as "default": the factory copy nobody has changed. The global layer is
- * the instruction ledger's own "global" — one word for one fact, spelled once.
+ * the instruction ledger's own "global" — one word for one fact, spelled once. The line layer says
+ * the category's own word: the same word the index and the section head say, so a reader never
+ * learns two words for one place.
  */
 export const LAYER_WORDS: Readonly<Record<ConfigLayer, WordKey>> = {
   default: 'config.layer.default',
+  cycle: 'config.layer.cycle',
   project: 'config.layer.project',
   global: 'common.global',
 }

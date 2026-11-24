@@ -746,6 +746,7 @@ export function SuperworkerPanel(props: PanelProps): React.ReactElement {
             workspaceRoot={workspaceRoot}
             noNodes={noNodes}
             active={tab === 'config'}
+            cycles={project?.cycles ?? []}
             onNote={setNote}
           />
         </div>

@@ -18,12 +18,12 @@
  * without a client change. A key whose declaration states no vocabulary
  * carries no candidates, and the row drawn for it falls back to a text box.
  */
-import { declaredKnobSpecs, knobSpecs, loadPlugins } from 'superworker-core'
+import { acceptedLayers, declaredKnobSpecs, knobSpecs, loadPlugins } from 'superworker-core'
 import { shippedPluginsDir } from './skill-paths.ts'
 import type { RecordRefusal } from './failure.ts'
 
 /** Which layer a value actually lives on. */
-export type ConfigLayer = 'default' | 'project' | 'global'
+export type ConfigLayer = 'default' | 'cycle' | 'project' | 'global'
 
 /**
  * What a layer's overwrite tag looks like in the tool's printed line: recognized by the first two
@@ -38,6 +38,7 @@ export type ConfigLayer = 'default' | 'project' | 'global'
  */
 const LAYER_HEADS: readonly (readonly [ConfigLayer, string])[] = [
   ['default', '出厂默认'],
+  ['cycle', 'cycle '],
   ['project', '项目 '],
   ['global', '全局 '],
   ['default', 'factory default'],
@@ -73,6 +74,14 @@ export interface ConfigEntry {
    * options are invented for it.
    */
   readonly options?: readonly string[]
+  /**
+   * The layers this key's declaration takes, narrowest spelling as the engine spells them
+   * (`cycle` / `project` / `global` / `node`). The client reads it to place a row (a key that takes
+   * no project layer gets none in the project pane) and to offer the line's own knobs behind the
+   * line picker; absent when the declaration is unreadable, which the row then treats as "the wide
+   * layers only".
+   */
+  readonly layers?: readonly string[]
 }
 
 /**
@@ -125,42 +134,51 @@ export function parseConfigList(text: string): Record<string, ConfigEntry> {
 }
 
 /**
- * The candidate words the engine's declaration states, keyed by setting name: read off the engine's
- * own list — the built-ins plus the knobs the shipped plugins declare, folded through the engine's
- * one merge (`knobSpecs(declaredKnobSpecs(...))`, the same table doctor reads) — so the reading
- * carries the declaration itself rather than a copy of it. The plugin folder is the one this half
- * hands the engine on every words call (`shippedPluginsDir()`), so the candidates describe the same
- * declaration the printed lines were answered from. Only keys whose declaration states a vocabulary
- * are here; a key absent from this table draws a text box, never invented options. The table is a
- * plain copy, so no caller can reach back into the engine's cells through it.
+ * The declaration's own cells, keyed by setting name: read off the engine's one list — the built-ins
+ * plus the knobs the shipped plugins declare, folded through the engine's one merge
+ * (`knobSpecs(declaredKnobSpecs(...))`, the same table doctor reads) — so the reading carries the
+ * declaration itself rather than a copy of it. The plugin folder is the one this half hands the engine
+ * on every words call (`shippedPluginsDir()`), so the cells describe the same declaration the printed
+ * lines were answered from. A key absent from this table is one the tool never declared here; the row
+ * drawn for it invents nothing. The table is a plain copy, so no caller can reach back into the
+ * engine's cells through it.
  */
-export async function declaredOptions(): Promise<Record<string, readonly string[]>> {
+export async function declaredKnobs(): Promise<Record<string, DeclaredKnob>> {
   const scan = await loadPlugins(shippedPluginsDir())
-  const out: Record<string, readonly string[]> = {}
+  const out: Record<string, DeclaredKnob> = {}
   for (const [key, spec] of Object.entries(knobSpecs(declaredKnobSpecs(scan.folders)))) {
-    const values = spec.values
-    if (values !== undefined && values.length > 0) out[key] = [...values]
+    const cell: DeclaredKnob = { layers: [...acceptedLayers(spec)] }
+    out[key] = spec.values !== undefined && spec.values.length > 0 ? { ...cell, options: [...spec.values] } : cell
   }
   return out
 }
 
+/** One knob's declaration cells as the reading carries them: the candidate words and the layers it takes. */
+export interface DeclaredKnob {
+  /** The words the declaration accepts, in the engine's order; absent when it states no vocabulary. */
+  readonly options?: readonly string[]
+  /** The layers the declaration takes, in the engine's chain order. */
+  readonly layers: readonly string[]
+}
+
 /**
- * Lay the declaration's candidates onto the parsed entries: an entry keeps whatever its key declares,
+ * Lay the declaration's cells onto the parsed entries: an entry keeps whatever its key declares,
  * and a key the declaration says nothing about — or one the tool never printed — is left untouched,
- * since candidates ride on readings and are never fabricated for a key the reading does not hold.
+ * since candidates and layers ride on readings and are never fabricated for a key the reading does
+ * not hold.
  *
- * The candidates are handed in, not defaulted: a default would fall back to a partial declaration
+ * The cells are handed in, not defaulted: a default would fall back to a partial declaration
  * without a word said, which is exactly how the plugin vocabularies went missing once — the caller
  * that has the reading makes the one call that reads the whole declaration.
  */
-export function withDeclaredOptions(
+export function withDeclaredKnobs(
   entries: Record<string, ConfigEntry>,
-  candidates: Readonly<Record<string, readonly string[]>>,
+  knobs: Readonly<Record<string, DeclaredKnob>>,
 ): Record<string, ConfigEntry> {
   const out: Record<string, ConfigEntry> = {}
   for (const [key, entry] of Object.entries(entries)) {
-    const options = candidates[key]
-    out[key] = options === undefined ? entry : { ...entry, options }
+    const declared = knobs[key]
+    out[key] = declared === undefined ? entry : { ...entry, ...(declared.options === undefined ? {} : { options: declared.options }), layers: declared.layers }
   }
   return out
 }

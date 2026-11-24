@@ -148,6 +148,14 @@
   color: var(--dsw-alias-label-primary);
 }.superworker-page .superworker-vlayer{
   justify-self: end;
+}/* The state word beside the line picker: which line is in hand, and whether it is in service. In
+ * service wears the link hue — the same word the board's running state says — and a line at rest
+ * stays quiet: the picker is the control, this word only reads. */
+.superworker-page .superworker-linehead-state{
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-caption);
+}.superworker-page .superworker-linehead-state.is-live{
+  color: var(--dsw-alias-link);
 }/* The page cannot hold two columns any more: every row takes the whole measure, and the line
    between rows is re-stacked — the first row keeps the head's rule alone. */
 @container (max-width: 1000px){

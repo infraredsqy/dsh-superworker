@@ -16,6 +16,7 @@ import { currentSessionOf, knownSessionsOf, sessionsSnapshotOf } from './session
 import { registerSeats, SEAT_WORD } from './mount.ts'
 import { SuperworkerPanel } from './panel.tsx'
 import { createPrefsSource, type PrefsStore } from './prefs.ts'
+import { bridgeSessions } from './session-bridge.ts'
 import { dropSettingsStyle, registerSettingsSection } from './settings.tsx'
 import { dropStyle, ensureStyle } from './styles.ts'
 import type { WorkspaceSource } from './workspaces.ts'
@@ -146,7 +147,7 @@ export function apply(ctx: unknown): void {
   } catch (error) {
     report('the panel seat did not mount', error)
   }
-  registerSettingsSection(ctx, prefs, locale)
+  registerSettingsSection(ctx, prefs, locale, port)
   /* The two seats' unmount hangs on the `effect` in `mount.ts`: this line only registers them. */
   registerSeats(ctx, api, () => {
     dropStyle()
@@ -165,6 +166,10 @@ export function apply(ctx: unknown): void {
  */
 function Entry(props: PanelArgs & { readonly useSessions?: unknown }): React.ReactElement {
   ensureStyle()
+  /* The seat's session hook is bridged here for the settings page: that page is drawn in DSH's
+   * settings tree, where no slot hands a hook over, and the machine-layer row borrows the current
+   * session's workspace through it (see `session-bridge.ts`). */
+  bridgeSessions(props.useSessions)
   /* `useSessions` is a real hook: the snapshot is fetched unconditionally; only picking the session falls to `??`. */
   const snapshot = sessionsSnapshotOf(props.useSessions)
   const sessionId = props.sessionId ?? currentSessionOf(snapshot)

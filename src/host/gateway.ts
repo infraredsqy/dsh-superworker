@@ -7,6 +7,7 @@
  * (`node --test` reads `.ts` that way) and type stripping does not accept
  * `@Remote(...)`.
  */
+import { homedir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
 /* The declaration merges for the three services live on each package entry; importing only the `…/types` subpath misses that part. */
 import type {} from '@deepseek-ai/dsh-api-workspace-files'
@@ -29,7 +30,7 @@ import { openConsultSession, openConductSession, openRouteSession, type SessionO
 import type { RecordFailure, RecordOutcome, RecordRefusalCode } from './failure.ts'
 import { RecordsPump, stampOf } from './pump.ts'
 import { readPoolWeights, type PoolWeightsFolder } from './pool-weights.ts'
-import { declaredOptions, parseConfigList, withDeclaredOptions, type SuperworkerConfigReading } from './project-config.ts'
+import { declaredKnobs, parseConfigList, withDeclaredKnobs, type SuperworkerConfigReading } from './project-config.ts'
 import { dispatchCell } from './relay.ts'
 import { readReading } from './records.ts'
 import { aliveAgentIds, weightsFolderOf, workspaceRootOf } from './seams.ts'
@@ -52,6 +53,11 @@ const REMOTE_METHODS: readonly string[] = [
   'removeInstruction',
   'readConfig',
   'setConfig',
+  'readLineConfig',
+  'setLineConfig',
+  'unsetLineConfig',
+  'readGlobalConfig',
+  'setGlobalConfig',
   'readSessions',
   'openNodeSession',
   'consultMigration',
@@ -475,7 +481,7 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
       ok: true,
       text: outcome.text,
       refusal: null,
-      entries: withDeclaredOptions(parseConfigList(outcome.text), await declaredOptions()),
+      entries: withDeclaredKnobs(parseConfigList(outcome.text), await declaredKnobs()),
     }
   }
 
@@ -503,6 +509,134 @@ export class SuperworkerRecordsGateway implements SuperworkerRecords {
    */
   async setConfig(sessionId: SessionId, workspaceRoot: string, key: string, value: string): Promise<RecordOutcome> {
     return this.#superworker(sessionId, workspaceRoot, ['config', 'set', key, value], (root) => root)
+  }
+
+  /**
+   * Read what one line can see: the chain named at that line
+   * (`config list --cycle`), so the reading carries the line's own policies
+   * and every plugin knob that line may override, each with the layer its
+   * value in force came from. Which keys those are is the declaration's call
+   * and rides on the entries (`layers`); this side spells none of them.
+   *
+   * The line itself is the engine's to judge: an id that is not on the record
+   * comes back as the tool's refusal, on the same reading shape as a failed
+   * read here.
+   *
+   * The root is narrowed once at the boundary ({@link rootArgumentOf}); the
+   * read lands where {@link readConfig} lands.
+   * @param workspaceRoot - The workspace root to read; an empty string means this session's own root.
+   * @param cycle - Which line to read, by line id.
+   */
+  async readLineConfig(sessionId: SessionId, workspaceRoot: string, cycle: string): Promise<SuperworkerConfigReading> {
+    const argument = rootArgumentOf(workspaceRoot)
+    if (argument.verdict === 'refused') throw rootArgumentRefusedError(argument.detail)
+    const project = (await workspaceRootOf(this.ctx, { sessionId, named: argument.verdict === 'string' ? argument.root : '' })).root
+    const outcome = await runWords(project, ['config', 'list', '--cycle', cycle])
+    if (!outcome.ok) {
+      return {
+        workspaceRoot: project,
+        ok: false,
+        text: '',
+        refusal: { code: outcome.code, ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}) },
+        entries: {},
+      }
+    }
+    return {
+      workspaceRoot: project,
+      ok: true,
+      text: outcome.text,
+      refusal: null,
+      entries: withDeclaredKnobs(parseConfigList(outcome.text), await declaredKnobs()),
+    }
+  }
+
+  /**
+   * Write one setting onto one line's layer (`config set --cycle`): the line's
+   * own policies and the plugin knobs a line may override share this one door,
+   * and the words layer judges key, value and line. The write stays at the
+   * root the caller resolved, the way {@link setConfig} does.
+   * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
+   * @param cycle - Which line to write, by line id.
+   */
+  async setLineConfig(sessionId: SessionId, workspaceRoot: string, cycle: string, key: string, value: string): Promise<RecordOutcome> {
+    return this.#superworker(sessionId, workspaceRoot, ['config', 'set', key, value, '--cycle', cycle], (root) => root)
+  }
+
+  /**
+   * Take one setting off one line's layer (`config unset --cycle`): the entry
+   * is dropped, the next layer of the chain shows through. The one way off for
+   * a number / integer / word, and the way to clear a switch's line statement.
+   * @param workspaceRoot - The workspace root to write; an empty string means this session's own root.
+   * @param cycle - Which line to clear, by line id.
+   */
+  async unsetLineConfig(sessionId: SessionId, workspaceRoot: string, cycle: string, key: string): Promise<RecordOutcome> {
+    return this.#superworker(sessionId, workspaceRoot, ['config', 'unset', key, '--cycle', cycle], (root) => root)
+  }
+
+  /**
+   * Read the machine layer alone (`config list --global`): the person's own
+   * defaults, before any project states anything. This is what the settings
+   * page that lives outside any workspace draws — the row for a knob that
+   * travels with the person reads this, and writes with
+   * {@link setGlobalConfig}.
+   *
+   * The read still lands in a workspace: the words layer answers settings
+   * verbs only where a record directory holds the plugins and the lock, so the
+   * caller's session resolves the root, exactly as {@link readConfig} does.
+   * @param workspaceRoot - The workspace root to read; an empty string means this session's own root.
+   */
+  async readGlobalConfig(sessionId: SessionId, workspaceRoot: string): Promise<SuperworkerConfigReading> {
+    const argument = rootArgumentOf(workspaceRoot)
+    if (argument.verdict === 'refused') throw rootArgumentRefusedError(argument.detail)
+    const project = await this.#globalRoot(sessionId, argument.verdict === 'string' ? argument.root : '')
+    const outcome = await runWords(project, ['config', 'list', '--global'])
+    if (!outcome.ok) {
+      return {
+        workspaceRoot: project,
+        ok: false,
+        text: '',
+        refusal: { code: outcome.code, ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}) },
+        entries: {},
+      }
+    }
+    return {
+      workspaceRoot: project,
+      ok: true,
+      text: outcome.text,
+      refusal: null,
+      entries: withDeclaredKnobs(parseConfigList(outcome.text), await declaredKnobs()),
+    }
+  }
+
+  /**
+   * Write one setting onto the machine layer (`config set --global`): the
+   * layer that travels with the person and the machine. The landing spot is
+   * the home directory's own file, judged by the words layer; no project
+   * directory is required.
+   * @param workspaceRoot - The workspace root to resolve against; an empty string falls back to the session's root or home directory.
+   */
+  async setGlobalConfig(sessionId: SessionId, workspaceRoot: string, key: string, value: string): Promise<RecordOutcome> {
+    const argument = rootArgumentOf(workspaceRoot)
+    if (argument.verdict === 'refused') return rootArgumentRefusal(argument.detail)
+    const root = await this.#globalRoot(sessionId, argument.verdict === 'string' ? argument.root : '')
+    const outcome = await runWords(root, ['config', 'set', key, value, '--global'])
+    this.#pump.stir(root)
+    return outcome
+  }
+
+  /**
+   * Resolve a directory to hand to `runWords` for machine-layer (`--global`) config calls.
+   * Prefers the caller's workspace root when available (so `#pump.stir` wakes any panel watching it),
+   * and falls back to the user's home directory when no session or workspace is active.
+   */
+  async #globalRoot(sessionId: SessionId, named: string): Promise<string> {
+    try {
+      const resolved = (await workspaceRootOf(this.ctx, { sessionId, named })).root
+      if (typeof resolved === 'string' && resolved.length > 0) return resolved
+    } catch {
+      /* Global settings live under the user's home directory and do not require an active workspace. */
+    }
+    return homedir()
   }
 
   /**

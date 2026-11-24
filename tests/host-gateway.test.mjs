@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
 import { RecordsPump } from '../src/host/pump.ts'
-import { declaredOptions } from '../src/host/project-config.ts'
+import { declaredKnobs } from '../src/host/project-config.ts'
 import { fakeAgents } from './helpers/agents-registry.mjs'
 import { absentError, fakeWorkspaceFiles, readPage } from './helpers/workspace-files-port.mjs'
 import { flush, until } from './helpers/wait.mjs'
@@ -934,7 +934,7 @@ test('The three write endpoints and the two settings ones also answer through th
     assert.ok(Object.keys(listed.value.entries).length > 0, 'those lines parse into settings entries')
     assert.deepEqual(
       listed.value.entries['test_tier']?.options,
-      (await declaredOptions())['test_tier'],
+      (await declaredKnobs())['test_tier']?.options,
       'the declaration\'s candidates survive the wire: the panel reads them off this reading',
     )
     const written = await call('setConfig', { sessionId: 's1', workspaceRoot: '', key: 'test_tier', value: 'minimal' })

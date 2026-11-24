@@ -4,13 +4,21 @@
  * This section lives in DSH's own settings panel, not in the same tree as the main panel, so it
  * cannot reach the sheets bundled into `.superworker-page` at build time — it carries its own stylesheet,
  * class names all use the `superworker-settings-` prefix, and colors use only DSH's theme tokens. The page holds
- * only the panel's four switches -- archived, other states, auto relay, and the injection of the
- * instructions in force -- and it reads the same settings form as the panel, so flipping a switch
- * changes the panel (or that injection) on the spot.
+ * the panel's four switches -- archived, other states, auto relay, and the injection of the
+ * instructions in force -- and one machine-layer knob, the terminology level, which travels with
+ * the person: its read and write borrow the current session's workspace through the port, the one
+ * road the engine answers settings verbs on. It reads the same settings form as the panel, so
+ * flipping a switch changes the panel (or that injection) on the spot.
  */
 import * as React from 'react'
 import { DEFAULT_SOURCE, PANEL_PREF_FIELDS } from './prefs.ts'
 import type { PrefField, PrefsForm, PrefsSource, PrefsStore } from './prefs.ts'
+import type { PanelPort } from './data.ts'
+import { currentSessionOf, sessionsSnapshotOf } from './sessions-view.ts'
+import { bridgedSessions } from './session-bridge.ts'
+import type { SuperworkerConfigReading } from '../host/project-config.ts'
+import { failureOf } from './failure.ts'
+import type { Load as LoadOf } from './outcome.ts'
 import { serviceAt } from './data.ts'
 import { injectAt, report, serveOn, type SlotsService } from './context.ts'
 import { localeOf, LOCALE_NS, LocaleProvider, useT, type LocaleSource } from './locale.ts'
@@ -70,6 +78,11 @@ const CSS = `
 .superworker-settings-swthumb{width:16px;height:16px;border-radius:50%;corner-shape:round;background:var(--dsw-alias-label-primary);transition:transform 120ms ease}
 .superworker-settings-switch[aria-checked='true'] .superworker-settings-swthumb{transform:translateX(16px)}
 .superworker-settings-msg{margin:0;font-size:12.5px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}
+.superworker-settings-pick{position:relative;flex:none;display:inline-flex;align-items:center}
+.superworker-settings-pick::after{content:'\\25BE';position:absolute;right:9px;top:50%;transform:translateY(-50%);font-size:9px;line-height:1;color:var(--dsw-alias-label-caption);pointer-events:none}
+.superworker-settings-pick select{appearance:none;-webkit-appearance:none;margin:0;padding:5px 26px 5px 10px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);border:0.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-xs);font:var(--dsw-font-xxs-12);cursor:pointer}
+.superworker-settings-pick select:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.superworker-settings-pick select option{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
 `
 
 export function ensureSettingsStyle(): void {
@@ -85,6 +98,8 @@ export interface SettingsSectionProps {
   readonly source?: PrefsSource | undefined
   /** Which language to speak; the bundled fallback applies when absent. */
   readonly locale?: LocaleSource | undefined
+  /** The panel's record port: the machine-layer row reads and writes the engine through it. */
+  readonly port?: PanelPort | undefined
 }
 
 /** This section's stylesheet body, as the bundle carries it. */
@@ -152,7 +167,7 @@ export function SettingsSection(props: SettingsSectionProps): React.ReactElement
   return React.createElement(
     LocaleProvider,
     { source: props.locale },
-    React.createElement(SettingsPage, { source: props.source }),
+    React.createElement(SettingsPage, { source: props.source, port: props.port }),
   )
 }
 
@@ -195,6 +210,7 @@ function SettingsPage(props: SettingsSectionProps): React.ReactElement {
         value={prefs.injectInstructions}
         write={write}
       />
+      <AnswerRow port={props.port} />
       {snapshot.status === 'unavailable'
         ? (
           <p className="superworker-settings-msg">
@@ -211,6 +227,65 @@ function SettingsPage(props: SettingsSectionProps): React.ReactElement {
         : null}
     </div>
   )
+}
+
+/**
+ * The machine-layer row: the terminology level, which travels with the person and the machine.
+ *
+ * The read and the write borrow the current session's workspace through the panel's port — the one
+ * road the engine answers settings verbs on — and the row draws only what that road can answer: no
+ * session bridged (the panel never opened on this page load) draws the remedy sentence instead of a
+ * control that would stand there dead. The candidates are the declaration's own words, riding on the
+ * reading; no optimistic updates, the write is followed by a re-read.
+ */
+function AnswerRow(props: { readonly port?: PanelPort | undefined }): React.ReactElement {
+  const t = useT()
+  const port = props.port
+  const connected = port !== undefined && port.source !== 'none'
+  const sessionId = React.useMemo(() => {
+    const snapshot = sessionsSnapshotOf(bridgedSessions())
+    return currentSessionOf(snapshot) ?? ''
+  }, [])
+  const [load, setLoad] = React.useState<LoadOf<SuperworkerConfigReading> | null>(null)
+  const [tick, setTick] = React.useState(0)
+  React.useEffect(() => {
+    if (!connected) return undefined
+    let live = true
+    port.readGlobalConfig(sessionId, '').then(
+      (reading) => { if (live) setLoad({ phase: 'ok', reading }) },
+      (error: unknown) => { if (live) setLoad({ phase: 'failed', failure: failureOf(error) }) },
+    )
+    return () => { live = false }
+  }, [port, connected, sessionId, tick])
+  const entry = load?.phase === 'ok' && load.reading.ok ? load.reading.entries['answer'] : undefined
+  const candidates = entry?.options ?? []
+
+  const control = !connected
+    ? <p className="superworker-settings-msg">{t('settings.answer.no-session')}</p>
+    : load?.phase === 'failed'
+      ? <p className="superworker-settings-msg">{failureWord(t, load.failure)}</p>
+      : load?.phase === 'ok' && !load.reading.ok
+        ? <p className="superworker-settings-msg">{failureWord(t, load.reading.refusal ?? { code: 'config-unreadable' })}</p>
+        : (
+          <span className="superworker-settings-pick">
+            <select
+              aria-label={t('settings.answer.label')}
+              value={entry?.value ?? ''}
+              onChange={(event) => {
+                void port.setGlobalConfig(sessionId, '', 'answer', event.target.value)
+                  .then(() => setTick((round) => round + 1))
+              }}
+            >
+              {entry?.value === undefined || entry.value.length === 0 ? <option value="" hidden /> : null}
+              {candidates.map((option) => <option key={option} value={option}>{option}</option>)}
+              {/* A value the declaration does not name still shows: the record is the truth, not the table. */}
+              {entry !== undefined && entry.value.length > 0 && !candidates.includes(entry.value)
+                ? <option value={entry.value}>{entry.value}</option>
+                : null}
+            </select>
+          </span>
+        )
+  return <Row label={t('settings.answer.label')} desc={t('settings.answer.desc')} control={control} />
 }
 
 /**
@@ -234,8 +309,9 @@ function SettingsPage(props: SettingsSectionProps): React.ReactElement {
  * @param ctx - The browser-half plugin context.
  * @param store - The settings port read by both the panel and the settings page.
  * @param locale - The same language port the panel speaks through, handed to the page so the two do not drift.
+ * @param port - The panel's record port, handed to the page for the machine-layer row.
  */
-export function registerSettingsSection(ctx: unknown, store: PrefsStore, locale: LocaleSource): void {
+export function registerSettingsSection(ctx: unknown, store: PrefsStore, locale: LocaleSource, port?: PanelPort): void {
   injectAt(ctx, ['slots', 'configForms'], 'the settings page did not attach', (owner) => {
     /* The returned withdrawer hangs on its own `effect`: the settings form belongs to ui-settings'
      * service, which outlives this plugin — every attached subscriber must be given back, or each
@@ -269,7 +345,7 @@ export function registerSettingsSection(ctx: unknown, store: PrefsStore, locale:
           locale: LOCALE_NS,
           label: () => localeOf(locale).t(SECTION_WORD),
           /* The reading binds only when the slot actually renders: this layer does not read it early on the slot's behalf. */
-          inject: () => ({ source: store, locale }),
+          inject: () => ({ source: store, locale, port }),
         }, SettingsSection))
       } catch (error) {
         registration = null

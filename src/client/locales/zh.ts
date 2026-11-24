@@ -94,6 +94,9 @@ export const zh = {
   'settings.inject.label': '向会话上下文注入生效指令',
   'settings.inject.desc': '开启后，每轮对话自动附带当前工作区生效中的用户指令；关闭则不注入。',
   'settings.unavailable': 'DSH 还没把 {ns} 暴露成设置命名空间，这里的改动不会保存。',
+  'settings.answer.label': '术语解释级别',
+  'settings.answer.desc': '汇报时对专业术语的解释方式：plain 附带通俗说明，technical 仅用术语（可按项目覆盖）。',
+  'settings.answer.no-session': '未连接到超级工坊服务，暂无法读取或修改全局配置。',
 
   /* ── Words shared across the panes ────────────────────────────────────────────────────────── */
   'common.settings': '设置',
@@ -175,16 +178,24 @@ export const zh = {
 
   /* ── Project settings ─────────────────────────────────────────────────────────────────────── */
   'config.categories.aria': '设置分组',
-  'config.file.term': '设置文件',
+  'config.file.project.term': '项目层',
+  'config.file.line.term': '管线层',
   'config.group.general': '常规',
   'config.group.issue': '问题',
   'config.group.test': '测试',
+  'config.group.line': '管线',
+  'config.line.pick.aria': '选择要设置的管线',
+  'config.line.state.live': '进行中',
+  'config.line.state.rest': '停机',
+  'config.line.empty': '这个工作区还没有线。',
   'config.toggle.on': '开',
   'config.toggle.off': '关',
   'config.unregistered-caption': '暂无说明，输入值由引擎校验',
   'config.layer.default': '默认',
+  'config.layer.cycle': '管线',
   'config.layer.project': '本项目',
-  'config.global-only.caption': '只有全局层能改',
+  'config.row.answer.name': '术语解释级别',
+  'config.row.answer.caption': 'plain 附带通俗解释，technical 仅使用专业术语',
   'config.row.worktree_mode.name': 'Worktree 隔离模式',
   'config.row.worktree_mode.caption': '控制节点任务是否在独立的 Git worktree 中执行',
   'config.row.test_tier.name': '测试范围',
@@ -201,6 +212,20 @@ export const zh = {
   'config.row.test_audit.caption': '节点完成时若完整测试耗时超限，自动插入精简节点',
   'config.row.test_seconds_limit.name': '测试耗时上限（秒）',
   'config.row.test_seconds_limit.caption': '触发测试精简的完整套件耗时阈值，留空则不限制',
+  /* The line category's rows: the engine's four line policies, then the plugin knobs a line may
+   * carry — the knobs keep the names the project rows use, and speak these captions under the picker. */
+  'config.line.row.when_shelved.name': '节点未交付处理',
+  'config.line.row.when_shelved.caption': '节点未交付时，管线暂停等待（stop）或搁置后继续（continue）',
+  'config.line.row.parallel.name': '管线最大并发数',
+  'config.line.row.parallel.caption': '该管线同时执行的最大节点与会话数量',
+  'config.line.row.stop_after_nodes.name': '单次运行节点上限',
+  'config.line.row.stop_after_nodes.caption': '完成指定数量节点后自动停止管线，留空则不限制',
+  'config.line.row.model.name': '指定模型',
+  'config.line.row.model.caption': '管线会话使用的模型（provider/model），留空则沿用默认配置',
+  'config.line.row.issue_pool.caption': '该管线节点完成时是否检查问题池权重，设置后覆盖项目配置',
+  'config.line.row.issue_pool_weight_limit.caption': '该管线专属的问题池权重阈值，留空则继承项目配置',
+  'config.line.row.test_audit.caption': '该管线节点完成时是否检查测试耗时，设置后覆盖项目配置',
+  'config.line.row.test_seconds_limit.caption': '该管线专属的测试耗时阈值（秒），留空则继承项目配置',
 
   /* ── What a node is waiting on ────────────────────────────────────────────────────────────── */
   /* The owed-prerequisite sentence is asked for in two pieces, around the number: the panel styles
@@ -334,6 +359,7 @@ export const zh = {
    * table here owns those. They are carried out verbatim, which is also why the panel can show
    * them in a language it does not speak; `failure.unstated` stands in when they said nothing. */
   'failure.arg-not-allowed': '该参数不能进入记录：{detail}',
+  'failure.root-not-string': '这次调用交给它的工作区根不是一个名字：{detail}',
   'failure.tool-refused': '{detail}',
   'failure.scope-unknown': '无法识别的范围：{detail}',
   'failure.empty-text': '空话不落笔：先写一句原话。',

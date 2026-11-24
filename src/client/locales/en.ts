@@ -74,6 +74,9 @@ export const en: Readonly<Record<WordKey, string>> = {
   'settings.inject.label': 'Inject active instructions into session context',
   'settings.inject.desc': 'Include the workspace’s active instructions in every session turn; when off, nothing is injected.',
   'settings.unavailable': 'DSH does not expose {ns} as a settings namespace yet, so changes here are not saved.',
+  'settings.answer.label': 'Terminology level',
+  'settings.answer.desc': 'How technical terms are explained in reports: plain adds a brief explanation, technical uses terms directly (overridable per project).',
+  'settings.answer.no-session': 'Not connected to the Superworker service; global settings are unavailable.',
 
   /* ── Words shared across the panes ────────────────────────────────────────────────────────── */
   'common.settings': 'Settings',
@@ -149,16 +152,24 @@ export const en: Readonly<Record<WordKey, string>> = {
 
   /* ── Project settings ─────────────────────────────────────────────────────────────────────── */
   'config.categories.aria': 'Settings groups',
-  'config.file.term': 'Settings file',
+  'config.file.project.term': 'Project layer',
+  'config.file.line.term': 'Pipeline layer',
   'config.group.general': 'General',
   'config.group.issue': 'Issues',
   'config.group.test': 'Tests',
+  'config.group.line': 'Pipelines',
+  'config.line.pick.aria': 'Choose the pipeline to set',
+  'config.line.state.live': 'in service',
+  'config.line.state.rest': 'at rest',
+  'config.line.empty': 'No line in this workspace yet.',
   'config.toggle.on': 'On',
   'config.toggle.off': 'Off',
   'config.unregistered-caption': 'No description available; value is validated by the engine',
   'config.layer.default': 'Default',
+  'config.layer.cycle': 'Pipeline',
   'config.layer.project': 'This project',
-  'config.global-only.caption': 'Only the global layer can change this key',
+  'config.row.answer.name': 'Terminology level',
+  'config.row.answer.caption': 'Include plain explanations (plain) or use technical terms directly (technical)',
   'config.row.worktree_mode.name': 'Worktree mode',
   'config.row.worktree_mode.caption': 'Whether node tasks run in isolated Git worktrees',
   'config.row.test_tier.name': 'Test scope',
@@ -175,6 +186,20 @@ export const en: Readonly<Record<WordKey, string>> = {
   'config.row.test_audit.caption': 'Insert a test-trimming node at node close if full test runtime exceeds the limit',
   'config.row.test_seconds_limit.name': 'Test runtime limit (seconds)',
   'config.row.test_seconds_limit.caption': 'Maximum full-suite runtime before triggering a test audit; leave blank for no limit',
+  /* The line category's rows: the engine's four line policies, then the plugin knobs a line may
+   * carry — the knobs keep the names the project rows use, and speak these captions under the picker. */
+  'config.line.row.when_shelved.name': 'On undelivered node',
+  'config.line.row.when_shelved.caption': 'Pause the pipeline for review (stop) or shelve the node and continue (continue)',
+  'config.line.row.parallel.name': 'Pipeline concurrency',
+  'config.line.row.parallel.caption': 'Maximum number of nodes and sessions this pipeline runs concurrently',
+  'config.line.row.stop_after_nodes.name': 'Stop after nodes',
+  'config.line.row.stop_after_nodes.caption': 'Automatically pause the pipeline after completing this many nodes; leave blank for no limit',
+  'config.line.row.model.name': 'Session model',
+  'config.line.row.model.caption': 'Model route (provider/model) for sessions in this pipeline; leave blank to use default',
+  'config.line.row.issue_pool.caption': 'Whether to check issue pool weight at node close on this pipeline; overrides project setting',
+  'config.line.row.issue_pool_weight_limit.caption': 'Pipeline-specific issue pool weight threshold; leave blank to inherit project setting',
+  'config.line.row.test_audit.caption': 'Whether to check test runtime at node close on this pipeline; overrides project setting',
+  'config.line.row.test_seconds_limit.caption': 'Pipeline-specific test runtime threshold (seconds); leave blank to inherit project setting',
 
   /* ── What a node is waiting on ────────────────────────────────────────────────────────────── */
   /* The head is empty in English: the number leads, so nothing stands before it. */
@@ -297,6 +322,7 @@ export const en: Readonly<Record<WordKey, string>> = {
   /* The tool's own reason and the transport's own message are carried out verbatim: no lookup table
    * here owns another program's words. */
   'failure.arg-not-allowed': 'This argument cannot address a record: {detail}',
+  'failure.root-not-string': 'The workspace root this call handed over is not a name: {detail}',
   'failure.tool-refused': '{detail}',
   'failure.scope-unknown': 'Unrecognized scope: {detail}',
   'failure.empty-text': 'Nothing to record: write the sentence first.',
