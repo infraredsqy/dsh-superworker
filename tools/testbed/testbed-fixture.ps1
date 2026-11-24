@@ -96,8 +96,10 @@ function New-TestbedFixture {
       ',"cwd":' + (ConvertTo-JsonString $sessionCwd) +
       ',"isSeeded":false,"delegationDepth":0}'
     # Session body: one minimal pair of turn/start + turn/end. seq must match line order (from 0, no gaps).
+    # turn/end data is { turn, reason }: DSH 0.2.2-rc.5's projection fold reads event.data.reason.kind
+    # unguarded (the conversationContinuation unit), so a reason-less closer breaks session/projections.
     $event0 = '{"type":"turn/start","seq":0,"time":' + ($createdMs + 1) + ',"data":{"turn":1}}'
-    $event1 = '{"type":"turn/end","seq":1,"time":' + ($createdMs + 2) + ',"data":{"turn":1}}'
+    $event1 = '{"type":"turn/end","seq":1,"time":' + ($createdMs + 2) + ',"data":{"turn":1,"reason":{"kind":"completed"}}}'
     Write-TextFile -Path $logPath -Text ($header + "`n" + $event0 + "`n" + $event1 + "`n")
 
     $wsSessionIds.Add($sid)
