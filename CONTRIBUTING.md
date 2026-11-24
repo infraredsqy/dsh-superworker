@@ -23,5 +23,4 @@ lands by review, and an answer may take a while.
 
 ## The contract docs
 
-`docs/` carries the rules this repo runs under, and it is Chinese; the README pair is English and
-Chinese.
+`docs/` carries the rules this repo runs under in English; the README pair is English and Chinese.

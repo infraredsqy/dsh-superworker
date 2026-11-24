@@ -1,270 +1,236 @@
-# 发布与安装
+# Publishing and Installation
 
-> 这页只写**做法**与**已知限制**：这个包怎么发出去、别人怎么装进来、装完怎么核。
-> 它写的是**通用口径**，每次发版本都适用；某一次发布里的临时问题、清理残留的事项不进这页。
-> **这页不写版本号**：插件自己的号与 DSH 的号都不进这页。
-> **清单不抄第二份**：`files`、技能名单、命令串的写法以 `package.json`、各 `plugin.json` 与引擎的
-> [merge.md](../packages/superworker-core/docs/merge.md) 为准，这页只说它们是什么意思、什么次序不能动。
-> 包名与仓名都是 `dsh-superworker`，侧栏那一格叫「超级工坊」，DSH 设置里那一节叫「工坊配置」。
+> This document defines the **public package contract**, **installation routes**, **release policy**,
+> **pre-release verification pass**, and **known constraints** for `dsh-superworker`.
+>
+> - **No version numbers**: neither this package's version nor specific DSH versions are copied here.
+> - **No duplicate inventories**: exact `files`, plugin skill lists, and merge-driver command strings
+>   live in `package.json`, each `plugin.json`, and
+>   [packages/superworker-core/docs/merge.md](../packages/superworker-core/docs/merge.md).
+> - **Public contract vs. maintainer automation**: this document states *what* must hold and *why*;
+>   maintainer-side release choreography and local environment workarounds live in local automation,
+>   not here.
 
-## 交付形态：预构建产物随包走
+## Delivery Model & Package Surface
 
-用户端不跑构建。产物在本仓构建一次，链只有一条、正本放在一处：`package.json` 的 `build:products`
-（引擎产物 → 类型 → 宿主半身 → 浏览器半身，四步与它们的顺序都写在那条脚本里，这页不复述）。装好依赖
-之后跑它一次就够：
+End users never run build steps. All shipped artifacts are prebuilt once in this repository through a
+single authoritative chain in `package.json`: `build:products` (engine build -> types -> host half ->
+browser half). Both `prepack` and `npm test` invoke `build:products`.
 
 ```sh
 pnpm install --frozen-lockfile
 npm run build:products
 ```
 
-`prepack` 就是这一条，`npm pack` 与 `npm publish` 会自己跑一遍；`npm test` 也先跑同一条，再把两套
-单测接在后面。四份产物各自的落点见下面 `files` 那一段。
+The package manifest (`files`) ships only what runtime and downstream tooling require: both runtime
+entries, `lib/types/**/*.d.ts`, `locale/*.json`, `cordis.patch.yml`, the built engine artifacts under
+`packages/superworker-core/dist/**/*`, and the full plugin trees under
+`packages/superworker-core/plugins/**/*`. Plugin folders ship whole so bundled skills stay paired
+with their sibling reference files and match the exact engine build. Intermediate client build
+artifacts (such as `lib/client-body.js`) are removed after bundling and never enter the tarball.
 
-`package.json` 的 `files` 只收这几样：两个运行时入口、`lib/types/**/*.d.ts`、`locale/*.json`、
-`cordis.patch.yml`、`packages/superworker-core/dist/**/*`（引擎的产物：并入宿主半身的那份代码，加上 git 合并驱动要跑的入口），
-以及 `packages/superworker-core/plugins/**/*`——插件目录整个进包，随插件装与卸的那几套技能
-就在里面（一个技能指向同目录的兄弟文件，半个文件夹装出去就是引用的文件不在），技能文本与引擎因此落在
-同一份发布件里。于是 `npm pack` 出的那一个 `.tgz` 就是分发件本身（`lib/client-body.js` 是浏览器
-那一步的中间件，构建脚本用完当场删掉，不进包）。三个运行时口子：
+### Runtime Entrypoints
 
-| 口子 | 落点 | 谁用 |
+| Export | Target | Consumer |
 |---|---|---|
-| `.`（`main`） | `lib/host/index.js` | 宿主半身：装成 `ctx.superworker`，那几手端点经网关交出去 |
-| `./client` | `lib/client.js` | 浏览器半身：`dsh.client.platform` 是 `web`，外壳按启动名册去拉这一份 |
-| `./locale/*.json` | `locale/{zh,en}.json` | DSH 的插件清单读它来印这一行的名字与说明；与面板自己的对照表是两处（那份在浏览器包里，说面板上的词） |
+| `.` (`main`) | `lib/host/index.js` | Host half: registers `ctx.superworker` and exposes gateway endpoints |
+| `./client` | `lib/client.js` | Browser half (`dsh.client.platform: "web"`): loaded by the DSH web shell |
+| `./locale/*.json` | `locale/{zh,en}.json` | DSH plugin inventory metadata (separate from the panel's internal locale bundle) |
 
-`dsh.bundle.patch` 指着 `./cordis.patch.yml`（一条 `insert`，行 id `superworker`）。装进一个 profile 时
-`dsh plugin add` 会把这一层并进那个 profile 的 `dsh.profile.bundles`，profile 自己的
-`cordis.patch.yml` 照旧可以按 id 把这一行关掉。
+### Key Manifest Invariants
 
-`./client` 那一条还带两行加载依赖：
+All structural invariants below are enforced by `tests/package-surface.test.mjs` (`npm test`):
 
-```json
-"dsh": { "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-connection", "@deepseek-ai/dsh-client-locale"] } }
-```
+- **Profile mount (`dsh.bundle.patch`)**: points to `./cordis.patch.yml` (an `insert` entry with id
+  `superworker`). `dsh plugin add` merges this layer into the profile's `dsh.profile.bundles`, and a
+  profile's own `cordis.patch.yml` can still disable or override it by id.
+- **Client load dependencies (`dsh.client.inject`)**: declares both
+  `@deepseek-ai/dsh-client-connection` and `@deepseek-ai/dsh-client-locale`. **Neither may be
+  removed**: without `connection`, the panel mounts before the data seam is ready and cannot read
+  records (even while host endpoints work); without `locale`, the panel still renders with its
+  built-in fallback language, but stops following DSH's locale setting.
+- **Host compatibility (`engines.dsh`)**: the lower bound sits at the DSH version that introduced
+  per-step conditional tool visibility; the upper bound tracks DSH's breaking line as `<0.3.0-0`
+  rather than pinning an individual rc. The trailing `-0` is intentional: DSH evaluates ranges with
+  `semver.satisfies(runtime, range, { includePrerelease: true })`, so `<0.3.0` alone would mistakenly
+  admit `0.3.0-alpha.1`.
+- **No CLI binary; one spawned helper**: `package.json` declares no `bin` entry. Both agent tool
+  calls and panel actions execute in-process through the engine's `answer()` layer. The only file
+  spawned as a child process is the git merge driver at
+  `<install-dir>/packages/superworker-core/dist/merge-ledger.mjs`; its registration, arguments, and
+  exit codes are specified in
+  [packages/superworker-core/docs/merge.md](../packages/superworker-core/docs/merge.md).
 
-**这两行都不能摘**：外壳照启动名册先送达 `connection` 那条客户端插件，再应用本包的面板，浏览器半身
-那条取数口子才接得上。摘掉之后面板应用得早，中央栏那一格正文里没有记录的数，摆的是「该部署未连接
-记录服务，无法读取记录。」（宿主那一侧的端点 `superworker/read` 照旧是好的）。
-`locale` 那条管的是语言：不声明它，面板照样画得出来（语言端口会退回包里那份中文对照表），但跟随 DSH
-设置切换语言这一条就接不上了。
-
-`engines.dsh` 那段范围的出处是 `package.json`：宿主半身有一处**运行时的**外部依赖
-`@deepseek-ai/dsh-typert-protocol`（与 DSH 本体锁步同版本发布），只有换线才可能动它；而宿主半身
-**要有会问「这一步要不要它」的工具注册表**，那条下界因此落在这一机制的第一次出场处（具体那个号照
-`package.json`，这页不复述）。上界画在 DSH 的破坏边界上，不画在某个 rc 上——写成 `<0.3.0-0`：
-0.2.x 之内出到第几个 rc、第几个补丁号都放行，0.3 那条线连同它的 alpha 一起挡在外面。末尾那个
-`-0` 不是笔误：DSH 判范围用的是 `semver.satisfies(runtime, range, { includePrerelease: true })`，
-写成 `<0.3.0` 时 `0.3.0-alpha.1` 排在 `0.3.0` 前面，照样会放进来。
-
-包面那几条前提由 `tests/package-surface.test.mjs` 看着（`npm test` 跑）。改包面之后跑一遍。
-
-## 打一个包
+## Packing Locally
 
 ```sh
 npm pack --pack-destination .tmp/pack
 ```
 
-`npm pack` 不需要登录、不改仓；`.tmp/` 不进版本库。产物清单从 `.tgz` 自己列：`tar -tzf <路径>` 就
-够（在 `.tmp/pack` 里用叶子名也行）——Windows 上若跑的是 Git 带的那套 GNU tar，绝对路径要写成
-`tar --force-local -tzf <路径>`，且 `--force-local` 必须排在短选项前面。
+`npm pack` requires no authentication and leaves the repository clean (`.tmp/` is gitignored).
+Inspect tarball contents with `tar -tzf <path>` (on Windows with GNU tar, pass `--force-local`
+before short flags when using drive-letter paths).
 
-同一份内容打出来的 `.tgz`，sha256 是稳定的（`npm pack` 把归档里每个成员的 mtime 归一，产物因此
-可复现）；要核对手上那份出自哪份源码，跑 `Get-FileHash -Algorithm SHA256 <那份 .tgz>`，拿它与源码
-那一侧打出来的那份比。
+`npm pack` normalizes archive mtimes so identical inputs produce a stable SHA-256 hash. Note that
+incremental `tsc -b` does not remove stale `.d.ts` files left by deleted sources — delete `lib/` and
+re-pack before comparing a local tarball's hash against a clean CI build.
 
-## 发一个版本
+## Installation Routes
 
-> **发版本要人明确同意**：机制上办得到不等于该发，也不许为验证什么（比如刚配好的可信发布配置）专门发一版；
-> 验证只在下一次真发版时顺带完成。不进包的东西改了（`docs/`、注释、测试、CI 配置）不构成发版理由。
+All routes go through DSH's plugin installer (`dsh plugin --profile <name> add <target>`):
 
-作者侧走 **OIDC 可信发布**（npm 的 trusted publishing）：令牌只在发布那一刻由 CI 现换，**本仓与本机都不
-留任何长期秘密**。没有 token 可丢、可轮换，也不需要有人守着一次 2FA 提示。
-
-发布者是 `.github/workflows/publish.yml`，触发面只有两处：推 `v*` 标签，或手动 `gh workflow run publish.yml`。
-它的权限只有 `id-token: write` 与 `contents: read`——**不要往这个 workflow 里加任何 secret**，加了就把这套
-设计的意义抹掉了。
-
-### 一次性前置（只有包从没有到有的时候需要）
-
-1. **包得先在 registry 上存在**：可信发布是配在「包的设置页」上的，没有包就没有地方配。所以**首次必须由人
-   手动发一次**，两条走法（都得显式带官方 registry，见「已知限制」里镜像站那条）：
-   - `npm stage publish`：**这一步不要 2FA**，发完到 npmjs.com 的 Staged Packages 标签里批准（批准那一下要 2FA）。
-   - `npm publish`：当场要一次交互式 2FA，而**它必须在有终端的窗口里跑**——没有终端时 npm 只印 `***`、也不拉
-     浏览器，由自动化进程代跑只会拿到一条用不了的错误；有终端时它印出
-     `https://www.npmjs.com/auth/cli/<uuid>`，把那串拿到**配了 2FA 的那台设备**上完成即可。
-2. 在包设置页加 **Trusted Publisher**，并**同时允许 `npm publish`**（默认只给 `npm stage publish`，两个权限
-   相互独立）。**那几个字段的值不抄在这页**：owner/repo 照 `package.json` 的 `repository.url`，workflow 文件名
-   照 `.github/workflows/` 下现存的那些文件，逐字一致（大小写与 `.yml` 后缀都算）。
-3. **这个配置有寿命**：建好后 **2 天内**得有一次成功的 OIDC 发布，否则配置过期、不可编辑，只能删掉重建。
-
-### 日常发版（照这个顺序做）
+### 1. From npm (recommended)
 
 ```sh
-# 1. 改 package.json 里的 version
-# 2. 提交
-git add -A && git commit -m "<type>: <description>"
-# 3. 打标签（本仓的标签习惯是 v<version>）
-git tag v<version>
-# 4. 推分支与标签——推标签就是触发发布
-git push origin <分支> && git push origin v<version>
-# 5. 盯这次 run，别只看 push 成功
-gh run list --workflow publish.yml
-gh run watch
-# 6. 核 registry 上那个号，不是 exit code
-npm view dsh-superworker version --registry=https://registry.npmjs.org
+dsh plugin --profile <name> add dsh-superworker
 ```
 
-`prepack` 也在 CI 上现跑一遍 `build:products`，所以装出去的就是这份预构建产物。
-`tools/testbed/` 那条要一个真实 DSH 实例，留在本机手动跑。
+`package.json` sets `publishConfig.tag` to `latest` so prerelease versions (which npm refuses to
+publish without an explicit dist-tag) still resolve cleanly from the bare package name and transition
+naturally when stable versions ship.
 
-新包名第一次发布会先落一个**公开的占位版本** `0.0.0-stage`：它一直留在 `versions` 列表里，真版本随后就公开；
-它只是这个新名字落地时的一枚印记，`npm stage list` 列不到它属正常。`publishConfig.tag` 在的话 `latest` 会自己
-指到真版本。
+### 2. From a GitHub Release tarball (offline / fallback)
 
-### 发完要核（每一次）
-
-这条路上有几件事只有真跑一次才作数，别只看 `npm publish` 与 `git push` 的返回码：
-
-1. **workflow 真被触发了**：`gh run list --workflow publish.yml` 里有一条对得上这个标签的 run，再用
-   `gh run watch` 看它跑完。
-2. **runner 上的两道闸过了**：CI 里的 `npm test` 与 `node tools/css-check.mjs` 都绿。本地绿不等于那边绿——
-   runner 是 linux，node 与 pnpm 的版本照 `.github/workflows/publish.yml` 里那套。
-3. **OIDC 认得上**：这是可信发布配置**唯一的验证时机**（它只有跟着一次真发布才算验过）。报 `ENEEDAUTH` 就是
-   那三个字段与实情对不上；配置建好后 2 天不跑一次就过期，所以"建配置"与"发那一次"要挨着做。
-4. **registry 上真换了**：版本号、`dist-tags` 的 `latest`、`dist.shasum` 三项都对，才算发出去的是同一份产物。
-5. **provenance 在**：OIDC 发出去的那一版会在包页面带上 attestation（public 仓 + public 包才会生成）；看不到
-   它，说明这一趟没走 OIDC。
-6. **本机不留长期秘密**：首次手动发布留下的那条登录 token 与 `_authToken` 行，等 CI 这条路跑通之后按需撤掉。
-
-## 三条安装路子
-
-三条都走 DSH 自己那一条入口 `dsh plugin --profile <名字> add <目标>`（它自己跑 pnpm）。
-
-### 1. 从 npm 装（给所有人装的那一条）
+Download the `.tgz` attached to the GitHub Release and install it directly:
 
 ```sh
-dsh plugin --profile <名字> add dsh-superworker      # 用户侧
+dsh plugin --profile <name> add ./dsh-superworker-<version>.tgz
 ```
-作者侧怎么把这一版推上去，见「发一个版本」——那一条走 CI，这页不写登录与凭据。
 
-`package.json` 的 `publishConfig.tag` 写着 `latest`：这个号是预发布（`-rc.`），npm 对预发布号不带 `--tag`
-会直接拒发，声明了这一条才算显式指定。用户侧那条裸名解析的就是 `latest`，所以这一条在，上面那行命令才
-成立。将来发正式版本时，`latest` 会自己移过去。
+This installs the exact same prebuilt artifact as npm and runs no build scripts.
 
-### 2. 从 GitHub Release 的 `.tgz` 装（兜底的那一条）
-
-作者侧把 `npm pack` 出的那一个 `.tgz` 传成 Release 的附件；用户侧下载附件，然后
+### 3. From git (contributors / development)
 
 ```sh
-dsh plugin --profile <名字> add ./dsh-superworker-<版本>.tgz
+dsh plugin --profile <name> add github:<owner>/<repo>
 ```
 
-这条路与 npm 那一条装的是同一份预构建产物，不跑任何构建脚本。
-
-### 3. 从 git 装（开发者自用）
-
-```sh
-dsh plugin --profile <名字> add github:<owner>/<repo>
-```
-
-拿到的是**源码**：构建产物不在里面，而 pnpm ≥10 拒绝跑依赖包的构建脚本——第一次 `add` 会失败并印出
-要授权的那把键，照它印的写进那个 profile 的 `pnpm-workspace.yaml`：
+A git checkout contains source only, and pnpm >=10 blocks dependency build scripts by default. The
+first `add` fails and prints the key to authorize in that profile's `pnpm-workspace.yaml`:
 
 ```yaml
 allowBuilds:
   dsh-superworker: true
 ```
 
-再装一次。那条授权等于允许这个包在装的时候在你机器上执行代码 —— 只对可信来源这么做，并钉一个
-commit。本仓有的是 `prepack`，它管不到这条路（pnpm 为 git 依赖跑的是 `prepare`，而构建脚本还要
-用户先放行）：这条路要先把产物构建好，或者补一条自足的 `prepare`。
+Authorizing `allowBuilds` permits code execution during install — only enable it for trusted sources
+and pin a specific commit. Because this repo wires its build into `prepack` rather than `prepare`, a
+git install also requires either prebuilt artifacts or a self-contained `prepare` script.
 
-## 装完怎么核
-
-```sh
-dsh --profile <名字> --dump-config                     # 打印合成后的配置树，不起服务
-dsh plugin --profile <名字> remove dsh-superworker      # 撤销：依赖与那一层一起摘掉
-```
-
-在 `--dump-config` 的输出里找 `# == dsh-superworker` 那一节，它下面的头一个顶层行就是这一行
-（`- id: superworker`）；行里的 `name:` 指的就是这个包，宿主入口与浏览器半身两份都得在盘上。
-
-层顺序是 profile 的 `dsh.profile.bundles`（按清单次序）→ profile 自己的 `cordis.patch.yml` →
-`$DSH_HOME/cordis.patch.yml` → 命令行上每个 `--patch`，后一层按行 id 覆盖前一层；一条 patch 落到
-目标行上时，那一行的整个 `config` 一起换掉，逐键合并的写法在这里读不到。
-
-技能不在合成配置里，它落在 DSH 读技能的那个根：这一行装载时，插件文件夹里那几套技能被写进
-`$DSH_HOME/skills/<技能名>/SKILL.md`（缺省跟 DSH 那一家 provider 一样：`DSH_HOME`，否则 `~/.dsh`），
-清单记在 `$DSH_HOME/superworker/skills.json`（升级时先按上一次的清单摘掉旧的一份，再写新的）；这一行
-被卸下来时按那份清单摘净，别人的技能一个不碰。那个根里已经有别人的同名副本时，这一行的技能就不装
-（面板照常起来），拒绝里点名两处——这一行的那份与占名的那份——一个字节都不写。
-
-## 发布件里没有命令，只有一个可执行入口
-
-装插件装的是面板。这个包里没有一条要给人在 shell 里敲的命令：每个词都在进程内作答——会话里是
-`superworker` 工具，面板里是那几手端点，两边走同一份 `answer()`。字段上也看得出来：`package.json`
-没有 `bin`，`files` 里没有 `bin/`。
-
-唯一会被别的进程启动的文件是 git 的合并驱动，它在引擎产物里
-（`<装机目录>/packages/superworker-core/dist/merge-ledger.mjs`）。git 按 `merge.superworker.driver` 那条
-字符串起进程；登记只有绝对形一种写法，`init` 顺带写、`register` 重写，`doctor` 的 `merge-driver` 那一格
-判断它在这台机器上跑不跑得起来。命令串、参数与判据的正本在
-[引擎的 merge.md](../packages/superworker-core/docs/merge.md)，这里不抄第二份。
-
-卸掉插件：
+## Verifying and Removing an Install
 
 ```sh
-dsh plugin --profile <名> remove dsh-superworker
+dsh --profile <name> --dump-config                  # print merged config tree without booting
+dsh plugin --profile <name> remove dsh-superworker  # uninstall plugin and remove its bundle layer
 ```
 
-面板那一行从 profile 的 `dsh.profile.bundles` 里消失；再装上同一个 `.tgz` 就回到新的这份。技能那一半也由发布件供给：四个插件各自带的技能（名单以各自的 `plugin.json` 为准）都落在 `$DSH_HOME/skills`（真目录，`SKILL.md` 与该产物里的同哈希，根序 rank 400）。派发的第一行 `/sw-conduct <节点 id>` 因此在干净机器上也读得到；DSH 自己的 `~\.agents\skills` 是 rank 500 的那一根，同一个名字在它面前读的是 `$DSH_HOME/skills` 这一份。
+In `--dump-config`, locate the `# == dsh-superworker` section: its first top-level entry is
+`- id: superworker`, pointing to this package with both host and client artifacts present on disk.
 
-## 发版前走一遍
+Config layer precedence is: profile `dsh.profile.bundles` (in manifest order) -> profile
+`cordis.patch.yml` -> `$DSH_HOME/cordis.patch.yml` -> CLI `--patch` flags. Later layers override
+earlier ones by entry `id`, replacing the entry's entire `config` object rather than merging keys.
 
-自动的那三样，各跑一次：
+**Bundled skills**: when the plugin loads, it installs its bundled plugin skills into
+`$DSH_HOME/skills/<skill>/SKILL.md` (falling back to `~/.dsh` when `DSH_HOME` is unset) and records
+ownership in `$DSH_HOME/superworker/skills.json`. Upgrades remove previously tracked skills before
+writing the new set; uninstalling cleans up tracked skills without touching third-party skills. If a
+foreign skill already occupies the same name under `$DSH_HOME/skills`, installation refuses to
+overwrite it — naming both paths in the diagnostic — while the panel itself continues loading
+normally.
 
-- `npm test` —— 本插件与引擎包两套单测都过；浏览器半身把那几态挂到内存记录上逐格画一遍，控制台里出现
-  一条 error 就算失败。面板**说什么**故意不在这里量。
-- `node tools/css-check.mjs` —— 样式层的规矩。
-- `tools/testbed/testbed.ps1 up|check|down` —— 真实例：这一行装得上、启动清单里列了它、宿主半身答得上话。
+## Release Policy & OIDC Publishing
 
-**验的是打包出来的那一份。** `npm pack --pack-destination .tmp/pack` 打出 `.tgz`，再用
-`tools/testbed/testbed.ps1 up -Plugin <.tgz>` 装它：`prepack` 会把四份产物现构建一次，装到的才是发出去的
-内容。隔离实例不带 `-Plugin` 时装的是本仓目录（pnpm 的 `link:`），读到的是盘上现成的那两份——而
-`npm test` 走的就是同一条 `build:products`，四份产物一起重建，所以刚跑过它、且没改过源码时，盘上那两份
-与包里的同源。
+> **Explicit maintainer approval is required before every release.** Being able to publish is not
+> permission to publish. Never cut a release just to test CI or OIDC configuration; verify config
+> changes on the next genuine release. Changes that do not affect the shipped package (`docs/`,
+> comments, tests, CI config) are not a reason to release.
 
-下面这些只有手动看。合成的隔离工作区里没有 `.superworker`，正好是「没有记录」那一态；要看真记录下的读数，就把这一
-行装进你自己那个 profile，在一个有 `.superworker` 的工作区里开面板——本仓自己就有一份：
+Releases use **npm OIDC Trusted Publishing** via `.github/workflows/publish.yml`:
 
-- 一份真记录：五格都画得出来——总览的窗与行、概览那一页的卡与线、问题池的读数、指令那一栏的两种作用域（全局、各条线；下拉里没有「这一格」这一项）；
-- 概览那一页的带子：右脚那串计数（等待处理 / 进行中 / 可开工）与明细的分段数目对得上，换作用域时跟着变，空着的那一段不画零；
-- 总览的窗：主窗的名plate 向左探出窗框、整截露出来不裁，子窗的题名收在窗内一行；行装不下时顶上淡出、不出滚动条；窗进入、窗离开、新行到达、等待中边框呼吸四种动效各在正确时机发生；
-- 一个新旧记录目录都没有的工作区：面板说这个工作区没有记录，五格不画；
-- 一个 `.superworker` 在、四份文件读不动的工作区：面板说记录读不动；
-- 只有问题池、或只有管线的工作区：相应那两格各退化成一行话；
-- 手上的动作：切概览的两种画法、换作用域、在图上拖与缩放、切五个标签、切语言、加一条指令再归档再删掉、改一个配置值看它落盘；
-- 当前页那枚**完整／简洁**开关：切过去之后每一窗按行数缩成一行一步、未结束的那一步说「正在…」、标题不比它下面的步骤行小；切回来与刷新页面后都记得住（这个选择存在设置文档的 `overviewMode` 里，设置页没有它的行）。
+- **Triggers**: pushing a `v*` tag (from the release branch) or manual `workflow_dispatch`.
+- **Permissions**: strictly `id-token: write` and `contents: read`. **Never add long-lived npm
+  tokens or secrets to the workflow** — eliminating stored credentials is the entire point of OIDC.
+- **CI build**: the workflow runs `npm test` and `node tools/css-check.mjs` on Linux before
+  `npm publish` (which runs `prepack` -> `build:products` in a clean environment).
 
-没有记录、四份文件读不动、四个读数都空这几态在宿主层与模型层各有用例；**画出来那一层没有**——文案与布局
-改得勤，钉进测试就是每次改词交两份代码，所以留在这里当单子。
+### Post-Release Verification Criteria
 
-## 已知限制
+Do not stop at a zero exit code from `git push`. Every release is complete only when all of the
+following are verified:
 
-- **发布要显式打到官方 registry**：本机 `~/.npmrc` 的 `registry` 指向一个镜像站，镜像站只收下载、不收
-  发布——登录与发布两处都得带 `--registry=https://registry.npmjs.org`。
-- **别把自动化建在 bypass-2FA token 上**：这类令牌的**直接发布**在 2027-01 取消（身份与治理类动作 2026-08
-  已经取消），之后它只剩"读私有包 + stage 一次发布、由 maintainer 用 2FA 批准"这一面。自动化一律走 OIDC。
-- **CI 里不许用缓存**：发布构建不用依赖缓存（官方口径），`publish.yml` 里写死 `package-manager-cache: false`。
-- **GitHub Release 那条腿多一步手工**：把 `npm pack` 出的那一个 `.tgz` 传成 Release 的附件；远端与那个
-  release 都得先有。
-- **`engines.dsh` 按 DSH 的破坏边界划，不按某一个 rc 划**：0.2.x 之内 DSH 换 rc 不需要本包跟一版；0.3
-  换线时重量一遍再改这一行。被范围挡下是预期行为——DSH 报 `incompatible-version` 并印出 `allow-version`
-  那条命令，豁免记在 profile 的 `compatibility.json` 里，插件升版与 DSH 升版都不继承。
-- **git 那条路要用户在 profile 里授权跑构建脚本**（就是让这个包在装的时候执行代码）；预构建产物
-  （npm 与 `.tgz` 两条）绕开这件事，所以那两条是主路径。
-- **项目根的技能副本压过插件这份**：`<项目>/.dsh/skills` 与 `<项目>/.agents/skills` 是 DSH 自己的
-  per-workspace 覆盖，比插件写进的 `$DSH_HOME/skills` 更近；同一个名字在那个工作区里读的是项目里
-  那份，宿主只在日志里留一行诊断，不改盘。
+1. **Workflow succeeded on CI**: the triggered `publish.yml` run passes both `npm test` and
+   `node tools/css-check.mjs` on the Linux runner.
+2. **OIDC authentication succeeded**: if CI fails with `ENEEDAUTH`, verify that the npmjs.com Trusted
+   Publisher entry matches `package.json`'s `repository.url` and workflow filename verbatim, and
+   explicitly permits `npm publish` (not just `npm stage publish`). Note that a newly created,
+   unverified Trusted Publisher configuration expires after 48 hours if unused.
+3. **Registry metadata matches**: the new version appears on `https://registry.npmjs.org` (npm may
+   briefly return 404 while processing — wait and retry rather than re-publishing), `dist-tags.latest`
+   points to it, and `dist.shasum` matches the CI publish log.
+4. **Provenance attestation is present**: the published version carries npm provenance attestation
+   (generated automatically for public repos + public packages published via OIDC).
+
+## Pre-Release Verification
+
+### Automated Checks
+
+Run all three before cutting a release:
+
+- `npm test` — builds all artifacts and runs both the plugin and engine unit suites (including
+  rendering the browser half against in-memory records with zero console errors).
+- `node tools/css-check.mjs` — validates stylesheet scoping, token usage, and theme contrast floors.
+- `tools/testbed/testbed.ps1` (`up` / `check` / `down`) — boots an isolated DSH instance and verifies
+  installation, startup manifest registration, and host gateway responses.
+
+**Always verify the packed `.tgz`, not just a linked checkout**: pack with
+`npm pack --pack-destination .tmp/pack` and pass `-Plugin <.tgz>` to `testbed.ps1 up`. Without
+`-Plugin`, the testbed links the working directory directly instead of testing the packaged artifact.
+
+### Manual UI Pass
+
+Unit tests deliberately avoid pinning panel copy and fine-grained layout because they iterate
+frequently; the real-record visual checks below are verified by hand in a profile pointed at a
+workspace with a live `.superworker/` record (this repository has one):
+
+- **Live record across all views**: every view renders cleanly — Overview windows and rows, Map/Graph
+  cards and edges, Issue Pool readings, and Instructions scopes (global and per-line only; no
+  per-node option in the scope selector).
+- **Overview summary bar**: footer counts (`waiting` / `running` / `ready`) match the detail
+  segments, update when switching scopes, and omit empty segments rather than printing zeros.
+- **Overview windows**: primary nameplate extends cleanly to the left without clipping; child window
+  titles stay on one line inside the frame; overflowing rows fade at the top with no scrollbar; all
+  four animations fire at the right moments (window enter, window exit, new row arrival, waiting
+  border pulse).
+- **No-record workspace**: with neither current nor legacy record directories present, the panel
+  states there is no record and renders no views.
+- **Unreadable record**: with `.superworker/` present but files unreadable, the panel reports that
+  the record cannot be read.
+- **Partial workspace**: with only an issue pool or only a pipeline present, the absent view
+  collapses to a single-line notice.
+- **Interactive actions**: switch map layouts, change scope, pan and zoom the graph, cycle through
+  all tabs, switch locale, add/archive/delete an instruction, and modify a setting to confirm disk
+  persistence.
+- **Overview Full / Compact toggle**: switching to Compact collapses each window to one row per step
+  with active-step phrasing and a title no smaller than its step rows; the selection survives
+  toggling back and reloading the page (persisted as `overviewMode`, not duplicated on the Settings
+  view).
+
+## Known Constraints
+
+- **Official registry required for publishing**: if a local `~/.npmrc` points at a read-only mirror,
+  any direct npm registry query or manual publish must pass `--registry=https://registry.npmjs.org`.
+- **No bypass-2FA token automation**: direct publishing via bypass-2FA tokens is being phased out in
+  favor of OIDC trusted publishing and staged 2FA approval. All automated releases must use OIDC.
+- **No package-manager cache in CI**: `publish.yml` sets `package-manager-cache: false` to follow
+  official clean release-build guidance.
+- **Manual GitHub Release attachment**: uploading the `.tgz` from `npm pack` to a GitHub Release is a
+  separate manual step alongside the npm release.
+- **`engines.dsh` compatibility gates**: hosts outside the declared range receive
+  `incompatible-version` along with an opt-in `allow-version` command stored in the profile's
+  `compatibility.json` (exemptions do not carry across plugin or DSH upgrades).
+- **Git installs require script opt-in**: installing from git requires `allowBuilds` in the profile;
+  prefer the prebuilt npm or `.tgz` routes.
+- **Per-workspace skills shadow plugin skills**: `<project>/.dsh/skills` and
+  `<project>/.agents/skills` take precedence over `$DSH_HOME/skills`. When shadowed, the host logs a
+  diagnostic line without modifying files on disk.

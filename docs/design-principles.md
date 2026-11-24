@@ -1,86 +1,97 @@
-# dsh-superworker · 动手改界面之前必读
+# dsh-superworker — Design Principles
 
-> 这份文件装的是**法**。它不装现状、不装取值：取值住在 `src/client/styles/tokens.css`，改一个值是设计动作，
-> 不违反这里任何一条。
+> This document states this repository's **law** — high-level design, architectural, and visual
+> constraints to read before changing the UI. It holds principles, not current implementation state
+> or concrete token values (those live in code and stylesheets; tuning a value is a design decision
+> that does not violate these rules).
 >
-> **加任何内容需要 user explicit approval；上限 100 行，要加一条先腾出一条。**
-> 「这一轮改了什么、为什么」写进 commit body；正在琢磨、还没定的写进 `.tmp/`（gitignored）。
+> **Adding any rule requires explicit user approval. Hard cap: 100 lines — make room before adding.**
+> Explain *what changed and why* in commit messages; keep unfinished exploration in gitignored `.tmp/`.
 
-## 这个仓在做什么
+## Purpose
 
-把 `.superworker/` 那份记录做成 DSH 里一个用户看得见的工作面板。
+This repository renders a workspace's `.superworker/` pipeline record as a live work panel inside DSH.
 
-面板是**记录的一张脸**：它印的字段都是工具里真有的，版面从记录里长出来。一个没有单位的数字，
-读者读不出它是什么——宁可不印。
+**The panel is a face of the record, not a second source of truth.** Every datum displayed comes from
+real record data, and layout emerges from that data. A bare number without a unit tells the reader
+nothing — omit it rather than print it.
 
-## 最重的两条
+## The Two Cardinal Rules
 
-- **不叙述界面。** 控件自己说状态，读数自己带单位；一句「这里显示…」都不写。控件需要一句解释
-  时，把它做清楚——这比在它旁边添一行小字管用。
-- **没有的东西不画。** 记录里没有的数不印；一个都没有的那一栏不留空标题、不写「暂无」、不留带
-  内边距的空盒子。
+- **Never narrate the UI.** Controls express their own state; readings carry their own units. Never
+  write helper copy like "This view shows…". When a control needs an explanation, clarify the control
+  itself rather than adding caption text beside it.
+- **Never draw what isn't there.** Do not print missing readings. An empty section gets no orphan
+  heading, no "None yet" placeholder, and no padded empty box.
 
-## 一、词表与判据
+## 1. Domain & Responsibility Boundaries
 
-词表以 `.superworker/` 记录的字段为准（`packages/superworker-core/src/types.ts`），本仓只引用、不另写一份，也不许各写一套读法。
+- **One vocabulary, owned by the record.** The `.superworker/` record schema is the sole source of
+  domain semantics. This repo consumes that vocabulary rather than redefining it or inventing parallel
+  readings across layers.
+- **Derived states are pure projections.** Operational states such as active execution, readiness, or
+  waiting on a human gate are computed purely from persisted record facts at read time. The panel
+  never introduces or stores synthetic status flags of its own.
+- **Never fabricate missing metrics.** If the engine does not track a quantity (such as remaining
+  steps on a pipeline line), the panel does not estimate or display it.
+- **Facts belong to the model; phrasing belongs to the client.** The model layer computes structured
+  domain facts (states, counts, gate reasons) and never formats user-facing copy. The client layer
+  owns all phrasing through locale tables with identical, compile-checked key sets — adding a language
+  means adding one table, never touching model logic.
 
-- 节点的状态只有三个：`completed` / `shelved` / `todo`。
-- `shelved` 是**出局等人**：没交付的判决落到图上就是它，谁都不许开工，要人 `dag revive`
-  放回去。面板上读作**等待处理**。
-- **人闸**是「这一格什么时候要一个人」，一个词 + 那一刻，判据全在记录里，面板不新增数据：
-  `shelved` 读作**等待处理**（判决那一步的 `ended_at`）；`mode=manual` 且还没交付读作**手动
-  节点**（它那一步的 `started_at`）；`mode=checkpoint` 交付了、**这次交付还没被批过**（批的
-  时刻不早于交付时刻才算数）、**且线还没走过去**（有依赖它的节点在这次交付之后被拿起过，就是
-  线走过去的证据），读作**检查点**（那一刻＝交付那一刻）。停不停仍然只看这一格自己的 `mode`
-  （`checkpoint` 停在收尾那一拍，`manual` 的人闸在格子的对话里）；工具里没有「我停了，在等人」
-  这个旗标：批准落在 `approved_at`（线出服/回服时才补写），线走过去的落点在 `holding`／`path`
-  的那一步——`advance` 把线带过去时不必补 `approved_at`，所以人闸不能只靠它。
-- 「谁在做它」不在状态里，记在线路的 `holding` 里，读的时候算出来：`running`（进行中）。
-- `ready`（可开工）三条判据缺一不可：自己是 `todo`、每个依赖都 `completed`、**且没有任何线
-  握着它**。少了第一条，出局等人的节点会装成可开工；少了第三条，别人手里正做的会装成可开工。
-- 线路的 `path` 只记**走过的**步。「这条线还剩多少步」在工具里不存在——盘上没有这个数。
+## 2. Visual Ground & Restraint
 
-## 二、共同地面
+- **Use DSH's design tokens exclusively.** Never invent standalone colors or ad-hoc font sizes. Keep
+  the semantic color budget strictly bounded (reusing a small fixed palette across semantic roles) —
+  to introduce a new semantic hue, retire an existing one first.
+- **Share visual primitives across views.** When two views express the same concept, they must render
+  through the same shared token and primitive rather than duplicating style values per view.
+- **Typography follows role.** Use DSH's display role only for top-level landmarks, system sans for
+  body text, and monospace with `tabular-nums` for all numeric readings so values align cleanly.
+- **Built for glanceability between tasks.** Timestamps remain static (never live-ticking), the page
+  body never scrolls, and viewport-relative units (`vh` / `vw`) are forbidden — headless capture
+  resizes the viewport before taking screenshots, causing mid-shot reflow.
+- **Contrast follows reading mode.** Marks that must be distinguished individually must meet strict
+  legibility contrast in every theme; dense scales read collectively as texture or density may sit
+  quieter. Concrete thresholds live in the style checker and tokens, not here.
 
-- 值只取自 DSH 自己的令牌，不自造颜色；**承担意义的记号有五个**（已交付 / 进行中 / 未开始 / 等待
-  处理 / 失败），只花四个值，要添一个先撤一个。
-- 共同构件住在 `src/client/styles/tokens.css`：两个面板说同一个词，就得说在同一个对象上。取值住
-  那里，本文件不抄；边距、行高、节奏这些数字住各页的页根（`.superworker-page`），也不抄。
-- 字体三个角色都取自 DSH：牌位那一档才用 Montserrat，正文走系统无衬线，一切数字走等宽并带
-  `tabular-nums`。字号只用 DSH 的档，不自造一档。
-- 读的人是在别的活之间瞄一眼：**时间一律静态**，正文不出滚动条，**任何 `vh` / `vw` 都不许用**
-  （无头截图会在拍照前撑大视口，跟视口挂钩的尺寸会在快门中间重排）。
-- **对比度的判据落在读者身上**：要逐个分辨的记号过了线才画；一整行按质量读的密排刻度可以更暗。
-  两档的具体数写在 `src/client/styles/tokens.css` 里，改档不改这条。
+## 3. Copy & Information Discipline
 
-## 三、文案纪律
+- **Never say the same thing twice.** Information already communicated by column, grouping, or layout
+  is not repeated inside every card.
+- **Keep machine telemetry out of the reading flow.** Internal scores, grades, or raw progress metrics
+  do not belong in primary prose; demote them to compact chips or hover details if kept at all.
+- **Never expose raw session IDs.** Opaque identifiers carry no meaning to a human reader.
+- **Show prerequisite status only for unstarted work.** Finished work owes nothing, and active work
+  has already cleared its gate.
+- **Human gates appear only when action is needed, and always sort first.** Items waiting on a person
+  rise ahead of routine active work so the reader encounters them first; when none exist, the group
+  vanishes completely.
 
-- **同一件事不说两遍。** 位置已经说过的不再抄一遍（所在的那一列不必在每张卡上各报一次）。
-- **机器读数不进阅读流**（进度、内部评分、判定等级）。要留就降成 chip 或悬停。
-- **不出现 session id。** 那串东西对读的人没有意义。
-- **依赖只写两种词**：`可开工` / `前置节点 N 个`，且只写给还没开动的活——落定的不欠谁，进行中的已经
-  过了这个问题。
-- **等待处理只在出问题的时候存在。** 有，它排在其他进行中的节点前头，读者先遇到它。
-- **读者看见的词从对照表里取。** 词表管「这个词是什么意思」（以 `.superworker/` 记录的字段为准，见上），对照表管「这个词在
-  哪种语言里怎么写」：中英各一本、键集一样，少一枚键编译就报错，添一种语言就是添一本。模型只说读数
-  是什么（`shelved`、`checkpoint`、还欠三个前置），不说它怎么读——那是 client 的事。
+## 4. Views, Layout & Motion
 
-## 四、每一格
+- **One organizing axis and one signature element per view.** Each view answers a single question and
+  is identified by one signature artifact; shared chrome (landmarks, workspace context, reading rows)
+  looks identical across every view.
+- **Collapsing never shifts layout.** Folding hides content in place while surrounding geometry stays
+  anchored.
+- **Only three legal motion origins:** emerging from the exact element that triggered it, scaling in
+  place from its own center on view entry, or folding back into its header on collapse. No fourth
+  origin is permitted — and never animate from an unmeasured geometry (if geometry is not measured
+  yet, render nothing).
+- **Mirror DSH controls before inventing.** Common controls (resize handles, tabs, inline actions,
+  dropdowns) match DSH's own sizing, weight, and spacing verbatim. Build custom controls only when
+  DSH provides none.
 
-- **一根组织轴 + 一个签名件。** 一格只回答一个问句，签名件是它被记住的那件东西；共同的部分
-  （牌位、工作区、读数行）在每一格里长得一样。
-- **折叠不动版面。** 它收掉的是内容，这一页的布局留在原地。
-- **动效只有三种合法的来处**：从它真实来自的地方（子窗口从发出它的那一行长出）、原地（这一页
-  自己出现时，按各自的中心放大）、以及收起来时折回标题行。**没有第四种。** 尤其不许从一个
-  还没有数的地方开始飞——舞台没测量到的时候，那里既没有角落也没有中心，这种时候什么都不画。
-- 组合件（宽度把手、标签、行内动作、下拉）**照 DSH 自己那一份抄**，字号、字重、留白逐条对齐；
-  只有 DSH 没有的东西才自己长。
+## 5. Code, Comments & Documentation
 
-## 五、代码、注释与文档
-
-- 代码和注释**不写 md 路径、不写 §节号、不写行号**；判据的指针由 md 这一侧单向持有。
-- 机制不显然的地方，把「为什么长成这样」写在它旁边——读完旁边那段代码就能看出这句话为真，
-  才算写对了。
-- 注释只留「读完旁边代码看不出」的那一句；文件级的设计说明归路牌，不归代码。
-- **读数不落纸**：条数、字节、哈希、耗时、pid 这类数字写下来就会烂——要核就现跑那条命令。
-- **路牌一行一条、一条一个意思**：本级每个子文件夹、每份散装文件各一行，行里只说「是什么＋什么时候看」；深处的事归深处的路牌。文件清单、函数清单和读数代码里随手可读，不塞进路牌——一条里塞进第二个意思，就拆开，或者删掉。
+- **One-way documentation pointers.** Code and comments never cite markdown paths, section numbers, or
+  line numbers; documentation may point to code, never the reverse.
+- **Comments explain *why*, never *what*.** Keep a comment only when reading the adjacent code cannot
+  explain why it is shaped that way. Architectural overviews belong in directory signposts
+  (`AGENTS.md`), not file headers.
+- **Never commit volatile readings to prose.** Counts, byte sizes, hashes, timings, and PIDs rot
+  immediately — run a command when you need a measurement.
+- **Signposts (`AGENTS.md`) stay brief and scoped.** One line per child directory or standalone file,
+  one idea per line ("what it holds + when to read it"), capped at 15 lines. Deeper concerns belong in
+  deeper signposts; file and function inventories belong in code.
