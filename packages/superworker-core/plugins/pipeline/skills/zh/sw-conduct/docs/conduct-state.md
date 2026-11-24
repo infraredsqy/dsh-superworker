@@ -110,7 +110,7 @@ cycle 的身份、当前持有节点与执行路径全部保存在同一条 cycl
 - **写入仅两条命令**：`config set` 仅写入单个层级，`config unset` 移除该层配置使更宽层级重新生效。写入不允许的层级会被拒绝并提示合法层级。开关的 `off` 是显式值（表示关闭），移除配置才用 `unset`。未指定层级旗标时默认写入项目层；cycle 层配置存储在 cycle 记录上，由唯一写者写入。
 - **严格报错**：文件层出现无法解析的值时立即报错退出，绝不静默回退到出厂默认（否则会误导用户以为从未配置）。唯一例外是 cycle 层：作为状态记录采用宽容读取，无法解析的值视作未配置。
 - **默认值可选**：插件阈值既可不设 `default`（未配置时显示为横线 `-`，不触发判定），也可设 `default`（安装即生效，交接票表单随之索取对应读数）。判定逻辑与表单索取读取同一数据源。
-- **cycle 的四项独立策略不入解析链**：`parallel`（最大并发持有数）、`when_shelved`（节点未交付时停机或续跑）、`stop_after_nodes`（跑满指定节点数后停机）与 `model`（会话使用的 `provider/model` 路由）直接存在 cycle 记录中，仅通过 `cycle policy` 读写。`config` 不识别这四个名字，写在项目层或全局层不会生效。
+- **cycle 的四项独立策略是线层旋钮**：`parallel`（最大并发持有数）、`when_shelved`（节点未交付时停机或续跑）、`stop_after_nodes`（跑满指定节点数后停机）与 `model`（会话使用的 `provider/model` 路由）存在 cycle 记录的 `policies` 槽中，只收线层——`config set <键> <值> --cycle <cycle>` 写、`config get <键> --cycle <cycle>` 读、`config unset <键> --cycle <cycle>` 摘除；项目层与全局层不收这四个名字。`config list --cycle <cycle>` 把这一线看得见的全部旋钮（含问题池与测试耗时的线层覆盖）连同来源层一次列出。
 
 ## 9. 插件（Plugin）与维护通道
 

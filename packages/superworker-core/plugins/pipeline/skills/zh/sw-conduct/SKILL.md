@@ -74,7 +74,7 @@ disable-model-invocation: true
 
 - **验证分档**：每轮跑快档，收尾跑一次全量（均以项目文档为准；`minimal` 档不造测试套件）。快档慢得忍不了时走测试体检插件（`doctor` 查看对应插件与方法），不要靠多跑或少跑全量来绕。报告必须附实际命令与计数，`full` 档还需附**全量套件实测耗时秒数**，无证据视同未跑。
 - 若 spec 与项目文档均未写验证命令，停手请用户回 `sw-route` 补齐。
-- 若项目为 `minimal` 档而 cycle 配了依赖全量套件耗时的读数，上报矛盾并附上关闭命令：`cycle policy <cycle> <旋钮名> off`（旋钮名从 `doctor` 的插件清单查，填读数槽名会被拒）。
+- 若项目为 `minimal` 档而 cycle 配了依赖全量套件耗时的读数，上报矛盾并附上关闭命令：`config unset <旋钮名> --cycle <cycle>`（旋钮名从 `doctor` 的插件清单查，填读数槽名会被拒）。
 
 ### 并发三层上限
 
@@ -106,7 +106,7 @@ disable-model-invocation: true
 
 全局及当前 cycle 的指令已随上下文注入，需要核对时执行 `instruction list --project <项目根绝对路径>`。
 - 新增指令只能走 `/sw-instruct`，归档/恢复只能由用户操作，`scope: global` 指令长期有效无需核销。
-- 本线策略（`when_shelved`、`parallel`、`stop_after_nodes`、`model`、维护阈值）在 `cycle current` 的 `Policy:` 行查看，用 `cycle policy <cycle> <键> <值>` 修改（数值型用 `off` 取消）。
+- 本线策略（`when_shelved`、`parallel`、`stop_after_nodes`、`model`、维护阈值）在 `cycle current` 的 `Policy:` 行查看，用 `config set <键> <值> --cycle <cycle>` 修改（数值型用 `config unset <键> --cycle <cycle>` 取消）。
 
 ### 2. 一次读齐
 

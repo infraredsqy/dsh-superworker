@@ -27,5 +27,5 @@ instruction add --text "<user's verbatim text>" --scope cycle --cycle <id>
 - **Two scopes only**: `global` and `cycle`. Constraints that apply to a single node belong in that node's `spec.md`, not here.
 - **Concurrent cycles**: specify `--cycle <id>` explicitly; if the cycle cannot be resolved, the tool rejects the call.
 - **Immediate effect**: takes effect as soon as it is written; subsequent rounds reading the list pick it up automatically.
-- **Stop conditions do not belong here**: run-length limits (e.g., "stop after 3 nodes") are cycle policies set via `cycle policy <cycle> stop_after_nodes 3` (`off` clears the limit). This only adds a cycle-level stop point—each node's `mode` still takes precedence (`checkpoint` still stops). Instruction entries never trigger stops.
+- **Stop conditions do not belong here**: run-length limits (e.g., "stop after 3 nodes") are line-layer policies set via `config set stop_after_nodes 3 --cycle <cycle>` (`config unset stop_after_nodes --cycle <cycle>` clears the limit). This only adds a cycle-level stop point—each node's `mode` still takes precedence (`checkpoint` still stops). Instruction entries never trigger stops.
 - **Confirmation**: once recorded, report the entry's `id` and `scope` back to the user.

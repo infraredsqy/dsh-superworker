@@ -27,5 +27,5 @@ instruction add --text "<用户原话>" --scope cycle --cycle <id>
 - **仅两级作用域**：`global` 与 `cycle`。只针对单个节点的约束不入清单，写入该节点的 `spec.md`。
 - **多 cycle 并行**：必须显式指定 `--cycle <id>`，无法绑定时工具会拒绝写入。
 - **即时生效**：写入后立即生效，后续读取清单的轮次会自动看到。
-- **停机条件不入清单**：类似「跑够 3 个节点就停」的运行边界属于 cycle 策略，用 `cycle policy <cycle> stop_after_nodes 3` 设置（`off` 取消）。该策略仅附加 cycle 级停点，节点自身的 `mode` 仍优先（`checkpoint` 照常停）；指令清单条目不控制停机。
+- **停机条件不入清单**：类似「跑够 3 个节点就停」的运行边界属于线层策略，用 `config set stop_after_nodes 3 --cycle <cycle>` 设置（`config unset stop_after_nodes --cycle <cycle>` 取消）。该策略仅附加 cycle 级停点，节点自身的 `mode` 仍优先（`checkpoint` 照常停）；指令清单条目不控制停机。
 - **回执**：写入完成后，向用户报出条目的 `id` 与 `scope`。

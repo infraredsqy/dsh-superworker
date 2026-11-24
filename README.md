@@ -60,10 +60,13 @@ ignored. The version policy and the third route (installing from git) live in
 ## What you get
 
 - a **Superworker** entry in the Web UI sidebar: views over the record — the overview (an empty
-  pane), the map, details, instructions, the issue pool, and the panel's own settings
+  pane), the map, details, instructions, the issue pool, and the panel's own settings — whose
+  settings pane carries the project's knobs and a **Pipelines** section: pick one line and read,
+  write, and clear that line's own policies and line-layer overrides
 - a **Superworker settings** section in the DSH settings: whether archived instructions show,
-  whether closed issues show, whether a settled line opens its next round by itself, and whether the
-  instructions in force are carried into the session context
+  whether closed issues show, whether a settled line opens its next round by itself, whether the
+  instructions in force are carried into the session context, and the machine-wide terminology
+  level (whether a term's name carries one plain sentence when reporting to a person)
 - to verify an install: `dsh --profile <name> --dump-config`, and look for the
   `# == dsh-superworker` section
 

@@ -29,7 +29,7 @@ git -C C:\Users\inf_NAS\dsh-rehearsal init
 superworker init
 superworker cycle create rehearsal --tags writing
 superworker cycle start rehearsal --tags writing      # create/start 都强制 --tags
-superworker cycle policy rehearsal parallel 2         # 并行旋钮现名 parallel
+superworker config set parallel 2 --cycle rehearsal  # 并行旋钮现名 parallel，写在线层
 superworker dag add --from-file <仓库>\tools\rehearsal\graph.json   # 不带 --project，在场地 cwd 下执行
 ```
 

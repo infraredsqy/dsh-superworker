@@ -74,7 +74,7 @@ Read `config get test_tier` at Prepare step 2 and pass it in dispatch supplement
 
 - **Two lanes**: fast lane every round, full run at close (defined by project docs; never build a test suite for `minimal`). If the fast lane becomes unbearably slow, address it via the test-hygiene plugin (`doctor` lists the plugin and method) rather than skipping or over-running the full suite. Reports must include exact commands and counts, and `full` tier must include **actual measured wall-clock seconds**—without evidence, treat as unrun.
 - If neither `spec.md` nor project docs specify verification commands, stop and ask the user to add them via `sw-route`.
-- If the project is `minimal` while the cycle configures a reading requiring full-suite timing, report the conflict with the disable command: `cycle policy <cycle> <knob_name> off` (get `<knob_name>` from `doctor`'s plugin list; slot names are rejected).
+- If the project is `minimal` while the cycle configures a reading requiring full-suite timing, report the conflict with the disable command: `config unset <knob_name> --cycle <cycle>` (get `<knob_name>` from `doctor`'s plugin list; slot names are rejected).
 
 ### Three-Layer Concurrency Cap
 
@@ -106,7 +106,7 @@ Check `git ls-files .superworker` to determine **commit mode** (output present) 
 
 Active global and cycle instructions are injected into context; verify with `instruction list --project <abs project root>` if needed.
 - Instructions are added only via `/sw-instruct` and archived/restored only by the user; `scope: global` instructions remain active and need no sign-off.
-- Cycle policies (`when_shelved`, `parallel`, `stop_after_nodes`, `model`, maintenance thresholds) appear on the `Policy:` line of `cycle current` and are set via `cycle policy <cycle> <key> <value>` (`off` clears numeric policies).
+- Cycle policies (`when_shelved`, `parallel`, `stop_after_nodes`, `model`, maintenance thresholds) appear on the `Policy:` line of `cycle current` and are set via `config set <key> <value> --cycle <cycle>` (`config unset <key> --cycle <cycle>` clears numeric policies).
 
 ### 2. Read Everything Up Front
 
