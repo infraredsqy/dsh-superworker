@@ -124,12 +124,13 @@ disable-model-invocation: true
 - **硬约束标出处**：为「必须」「不许」「上限」类约束标明出处——用户原话 / 项目目标文档（`*goals*`）/ 前序推导值（预算、配额、并行数等）。只有前两类代表真实需求边界。
 - **核对现状快照**：若 `spec.md` 中的模块数、文件名单、枚举已因代码演进过期，直接更新 `spec.md` 现值并在「自主决策清单」记一行（**不动 `intention.md`**，不写历史变更说明）。拿不准是否覆盖意图时，停手把 `intention.md` 与新现状摆给用户。
 - **确认可执行完成判定**：无可执行判定（或全是「设计一下/调一调」）→ 停手请用户回 `sw-route` 补齐。
+- **核对意图、参照与判据对齐**：对照 `intention.md` 读 `spec.md`——若意图明确依赖某套只读参照物或上游共用契约，但 `spec.md` 漏写了参照路径，或完成判定全停在机械替代指标、覆盖不到意图核心，**不要靠「自主决策」硬脑补开工**。能从仓库或上游节点确认唯一参照的，补入派发补充说明并在 `run.md` 留痕；存在歧义或判据严重错配的，停手请用户回 `sw-route` 补齐。
 
 执行中撞见不属于本节点的既有问题，派一个 subagent 按已安装插件（`doctor` 查看）的口径记入对应记录即可，不扩大本节点范围。
 
 ### 4. 尺寸检查与 Worktree
 
-- 若评估单个会话无法完成（含准备与复审），停手请用户回 `sw-route` 拆节点（做到一半发现撑不下同样停手）。
+- 仅当评估单次 Execute 明显装不下主体、会撑爆会话时，停手请用户回 `sw-route` 拆节点（做到一半发现撑不下同样停手）；不要因完整交付单元触及文件较多而过度拆分。
 - 若 `worktree_mode` 为 `fork` 或 `reuse`：**读 [`docs/git-and-worktree.md`](docs/git-and-worktree.md) 完成前置检查与 worktree 创建**（`off` 档直接在主树执行，跳过 fork 与合回）。
 - **绝不手动标 DAG 完成**——节点完成状态由收尾命令落笔。
 
@@ -141,15 +142,15 @@ disable-model-invocation: true
 
 - **`standard` 节点**：派 Execute subagent（可读写、可跑命令），prompt 固定三项：
   1. 读 `<本 skill 目录>/subagent-prompts/execute.md` 并照做
-  2. 节点 spec：`<spec.md 绝对路径>`
-  3. 补充：`run.md`「已核事实」（测试档、worktree 路径、子 agent 上限、项目约定）、本节点注意事项及必读文档
+  2. 节点文档：`<intention.md 绝对路径>`（无则省略）与 `<spec.md 绝对路径>`
+  3. 补充：`run.md`「已核事实」（测试档、worktree 路径、子 agent 上限、项目约定）、只读参照路径（若有）、本节点注意事项及必读文档
 - **`light` 节点**：你自己完成读码、改码、跑快档与写 `report.md`。
 - **多文件并行**：操作一致时可并行派多个 subagent（受 `max_agents` 限制），它们**只改文件，不编译、不测试、不提交**；全数返回后再串行派一个集成验证 subagent 负责构建、修编译错误、跑测试并出报告。
 - 收到 `report.md` 后核对四项是否齐全，含糊则要求补交。
 
 ### Review
 
-- 派**一个只读 subagent**，prompt 固定三项：读 `<本 skill 目录>/subagent-prompts/review.md` / `spec.md` 绝对路径 / 本轮补充（判尺、注意事项与本轮报告名 `review-{N}.md`）。
+- 派**一个只读 subagent**，prompt 固定三项：读 `<本 skill 目录>/subagent-prompts/review.md` / 节点 `<intention.md 绝对路径>`（无则省略）与 `<spec.md 绝对路径>` / 本轮补充（判尺、只读参照路径、注意事项与本轮报告名 `review-{N}.md`）。
 - **两级结论**：
   - `critical`：阻塞交付的问题（目标未达、错误、违背 spec）——清零前不算通过。
   - `minor`：不值得再开一轮复审的细节问题——记录后修掉即可，**只有 minor 的轮次修完不再回审**。

@@ -55,3 +55,9 @@ Review this checklist before starting a review task. The authoritative rules liv
 **Symptom**: A verification script clamps out-of-range values back within bounds (e.g., `segs = Math.min(slots, ...)`), producing a false "0 breaches" pass; removing the clamp immediately exposes the real overflow.
 
 **Correction signal**: The verification script still reports "all pass" against the old buggy behavior (e.g., a fourth-round fix verification script `fix4-verify.mjs`).
+
+## `conduct-review-rubber-stamps-mechanical-pass` — Accepting mechanical pass readings as substantive acceptance
+
+**Symptom**: Probe assertions are all green and screenshots or samples were captured, yet the review only checks mechanical metrics ("no overflow, font size met, zero console errors, fields present") while ignoring visible palette clashes, leftover legacy shells, or glaring divergence from `intention.md` or a reference—even accepting the executor's "structural trade-off" rationalization.
+
+**Correction signal**: The review reports "visually verified" with `critical=0`, yet placing the deliverable next to `intention.md` or the read-only reference shows they are obviously not the same artifact.

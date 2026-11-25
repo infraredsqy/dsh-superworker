@@ -8,11 +8,11 @@
 
 **纠正信号**：报告中出现 spec 之外的目标，且 `spec.md` 的修改时间晚于开工时刻。
 
-## `conduct-execute-adds-out-of-scope-work` · 自行补入 spec 范围外的工作
+## `conduct-execute-adds-out-of-scope-work` · 抢做他节点职责或违背明确排除项
 
-**症状**：读代码时发现某处「还缺一块」，顺手补上——但 spec 从未要求该项改动。
+**症状**：跨出本节点目标去实现下游或并行节点明确认领的功能，或偷偷做了「不做的事」里已否决的方案（为达成 `intention.md` 而连带清理同域旧骨架、旧样式不属此类）。
 
-**纠正信号**：改动清单中存在无法对应到 spec 具体条目的内容。
+**纠正信号**：改动清单触及他节点认领的独立功能，或违背 `intention.md`／`spec.md` 的明确排除项。
 
 ## `conduct-execute-parallel-edits-other-file-group` · 并行执行期间改动他组文件
 
@@ -20,11 +20,11 @@
 
 **纠正信号**：改动清单中出现了未分配给你的文件。
 
-## `conduct-execute-does-not-stop-on-blocker` · 遇阻未停止并上报
+## `conduct-execute-does-not-stop-on-blocker` · 遇阻或正面冲突未停手上报
 
-**症状**：测试反复失败仍不断重试；发现 spec 与实际代码前提不符仍继续硬改；对拿不准的操作盲目试探。
+**症状**：测试反复失败仍不断重试；发现旧骨架/旧样式与 `intention.md` 或参照物正面冲突却用局部补丁硬盖、并以「spec 条款已过，属结构取舍」交差；或对拿不准的操作盲目试探。
 
-**纠正信号**：报告里通篇是「再试一次」，却没有明确上报 `FAIL`。
+**纠正信号**：报告里通篇是「再试一次」，或用「属结构取舍」解释成品与意图/参照物的明显割裂，却没有上报 `FAIL`。
 
 ## `conduct-execute-runs-irreversible-operations` · 执行不可逆操作
 

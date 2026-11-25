@@ -46,9 +46,15 @@ Review this checklist before acting. The authoritative rules live in [`./SKILL.m
 
 ## `route-spec-has-implementation-detail-or-no-done-check` — Implementation details in spec, or missing done criterion
 
-**Symptom**: The spec includes function names, line numbers, call sequences, or step-by-step implementation instructions (directory and file names as landing points are allowed); or it consists only of vague goals like "design X" or "tune Y" with no runnable pass/fail acceptance check.
+**Symptom**: The spec includes function names, line numbers, call sequences, or step-by-step implementation instructions (directory and file names as landing points or read-only references are allowed); or it consists only of vague goals like "design X" or "tune Y" with no runnable pass/fail acceptance check.
 
 **Correction signal**: `sw-conduct` aborts during preparation, reporting that the done criterion cannot be executed or that the spec's code assumptions do not hold.
+
+## `route-spec-abstracts-reference-into-proxy-checks` — Dropping a reference baseline and substituting mechanical proxy checks
+
+**Symptom**: A mock, design, sample, or specification already exists in the repo, yet `spec.md` omits its read-only path, paraphrases its shape into a few abstract bullets, and fills completion criteria with mechanical probe assertions (font size, no overflow, element presence); or slices one cohesive artifact by mechanism so every node locks local legacy behavior and nobody owns the whole.
+
+**Correction signal**: Every probe and review check passes 100%, yet placing the deliverable side by side with `intention.md` or the reference shows they are obviously not the same thing.
 
 ## `route-spec-scope-unpinned` — Unpinned spec scope
 

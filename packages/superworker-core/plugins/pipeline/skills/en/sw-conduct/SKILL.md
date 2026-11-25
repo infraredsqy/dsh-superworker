@@ -124,12 +124,13 @@ Active global and cycle instructions are injected into context; verify with `ins
 - **Source hard constraints**: tag every "must" / "must not" / cap with its source—user's words, project goal docs (`*goals*`), or derived earlier (budgets, quotas, caps). Only the first two represent true requirement boundaries.
 - **Check snapshot freshness**: if module counts, file lists, or enumerations in `spec.md` are stale due to codebase evolution, update the current values directly in `spec.md` and log one line in "Autonomous decisions" (**never touch `intention.md`**; write no history notes). If unsure whether the intent is still covered, stop and present `intention.md` alongside the new state to the user.
 - **Verify executable acceptance**: if there is no executable completion check (or only vague goals like "design/tune it"), stop and ask the user to complete it via `sw-route`.
+- **Verify intent, references, and criterion alignment**: read `spec.md` alongside `intention.md`—if the intent clearly depends on a read-only reference artifact or an upstream shared contract that `spec.md` omits, or if the done criteria are purely mechanical proxies that miss the core intent, **do not guess through it via "autonomous decisions."** When the unique reference can be confirmed from the repo or an upstream node, pass it in the dispatch supplement and record it in `run.md`; if ambiguous or materially misaligned, stop and ask the user to complete it via `sw-route`.
 
 Unrelated pre-existing issues encountered during work: dispatch one subagent to record them according to the installed plugin's skill (`doctor` lists plugins); do not expand this node's scope.
 
 ### 4. Size Check and Worktree
 
-- If the node cannot fit in one session (including prepare and review), stop and ask the user to split it via `sw-route` (same if discovered mid-run).
+- Stop and ask the user to split via `sw-route` only when a single Execute clearly cannot fit the bulk of the work without overflowing the session (same if discovered mid-run); do not over-split a cohesive deliverable unit merely because it touches many files.
 - If `worktree_mode` is `fork` or `reuse`: **read [`docs/git-and-worktree.md`](docs/git-and-worktree.md) for pre-flight checks and worktree creation** (`off` works directly in the main tree).
 - **Never mark the DAG node complete manually**—completion is recorded by the close command.
 
@@ -141,15 +142,15 @@ After dispatching subagents, **do not poll**—the runtime wakes you when they f
 
 - **`standard` nodes**: dispatch an Execute subagent (read/write + commands) with three prompt items:
   1. Read `<this skill dir>/subagent-prompts/execute.md` and follow it
-  2. Node spec: `<abs path to spec.md>`
-  3. Supplement: `run.md` "Facts checked" (test tier, worktree path, subagent cap, project conventions), node-specific cautions, and required docs
+  2. Node docs: `<abs path to intention.md>` (omit if absent) and `<abs path to spec.md>`
+  3. Supplement: `run.md` "Facts checked" (test tier, worktree path, subagent cap, project conventions), read-only reference paths (if any), node-specific cautions, and required docs
 - **`light` nodes**: read code, edit code, run fast lane, and write `report.md` yourself.
 - **Parallel file groups**: when applying uniform edits across multiple file groups, you may dispatch parallel subagents (within `max_agents`) that **only edit files** (no compile, test, or commit). Once all finish, run a single serial integration subagent to build, fix compile errors, run tests, and report.
 - Verify all four required sections are present in `report.md`; request completion if vague.
 
 ### Review
 
-- Dispatch **one read-only subagent** with three items: `<this skill dir>/subagent-prompts/review.md` / abs `spec.md` path / supplement (criteria, cautions, and output filename `review-{N}.md`).
+- Dispatch **one read-only subagent** with three items: `<this skill dir>/subagent-prompts/review.md` / node `<abs path to intention.md>` (omit if absent) and `<abs path to spec.md>` / supplement (criteria, read-only reference paths, cautions, and output filename `review-{N}.md`).
 - **Two severities**:
   - `critical`: blocks delivery (unmet goal, bug, spec violation)—must reach zero.
   - `minor`: polish/edge/wording not worth another review round—fix and close without re-review.

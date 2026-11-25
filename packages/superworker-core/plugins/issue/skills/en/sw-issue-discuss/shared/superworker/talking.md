@@ -1,7 +1,7 @@
 # Communicating with the user
 
 > This document defines one thing: how an agent communicates when handing information to a human user. Milestone updates, close-out summaries, blocking decisions, requirement alignment, and surfacing technical debt all follow these rules.
-> Internal session artifacts (subagent reports, prompts, `run.md`, handoff tickets) follow their own formats — those documents are meant to retain exact code coordinates and measurements.
+> Internal session artifacts (node `spec.md`, subagent reports, prompts, `run.md`, handoff tickets) follow their own formats — those documents are meant to retain exact code coordinates, reference paths, and measurements.
 
 ## 1. Synthesize before presenting
 

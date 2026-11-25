@@ -8,11 +8,11 @@ Review this checklist before executing a spec. The authoritative rules live in [
 
 **Correction signal**: The report introduces goals absent from the spec, and `spec.md` was modified after work began.
 
-## `conduct-execute-adds-out-of-scope-work` — Adding work outside the spec
+## `conduct-execute-adds-out-of-scope-work` — Taking another node's work or violating explicit exclusions
 
-**Symptom**: Noticing a "missing piece" while reading code and implementing it even though the spec never asked for it.
+**Symptom**: Stepping outside this node's goal to implement features explicitly owned by downstream or sibling nodes, or sneaking in approaches rejected under "Out of Scope" (cleaning up legacy skeletons or styles in the same domain to realize `intention.md` is not this).
 
-**Correction signal**: An entry in the change list cannot be mapped to any requirement in the spec.
+**Correction signal**: Changes implement independent functionality owned by another node or violate explicit exclusions in `intention.md` or `spec.md`.
 
 ## `conduct-execute-parallel-edits-other-file-group` — Editing files outside your assigned group in parallel
 
@@ -20,11 +20,11 @@ Review this checklist before executing a spec. The authoritative rules live in [
 
 **Correction signal**: The change list includes a file not assigned to you.
 
-## `conduct-execute-does-not-stop-on-blocker` — Failing to stop and report on a blocker
+## `conduct-execute-does-not-stop-on-blocker` — Failing to stop and report on a blocker or direct conflict
 
-**Symptom**: Repeatedly retrying failing tests, pushing forward despite a mismatch between the spec and the codebase, or guessing through uncertain operations.
+**Symptom**: Repeatedly retrying failing tests; hiding a direct conflict between legacy skeletons/styles and `intention.md` or a reference behind a local patch while claiming "spec clauses passed, structural trade-off"; or guessing through uncertain operations.
 
-**Correction signal**: The report is a chain of retry attempts without a clear `FAIL` escalation.
+**Correction signal**: The report is a chain of retry attempts, or rationalizes an obvious mismatch against intent/reference as a "structural trade-off," without a clear `FAIL` escalation.
 
 ## `conduct-execute-runs-irreversible-operations` — Running irreversible operations
 

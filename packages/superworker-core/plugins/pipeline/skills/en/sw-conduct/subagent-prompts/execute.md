@@ -4,12 +4,13 @@
 
 ## Inputs
 
-- Node `spec.md`: absolute path provided by the conductor, containing goals, scope, and done criteria.
-- Conductor supplement: test tier for this round, project doc conventions, node-specific cautions, and priority docs to read first.
+- Node `intention.md`: user-approved goals, principles, and "why" (read-only; if absent in the node directory, treat `spec.md` as `intention.md`).
+- Node `spec.md`: absolute path provided by the conductor, containing landing points, read-only reference baselines, scope boundaries, and done criteria.
+- Conductor supplement: test tier for this round, read-only reference paths (if any), project doc conventions, node-specific cautions, and priority docs to read first.
 
 ## Requirements
 
-- **Implement strictly per spec**: Land every requirement in the spec. If you notice out-of-scope issues, add one note in the report—implementing them yourself is scope creep.
+- **Aim at `intention.md`, bounded and verified by `spec.md`**: Land every requirement in the spec; if the spec or supplement names read-only references, read them thoroughly before editing. Cleaning up or replacing legacy skeletons and styles in the same domain when required to realize `intention.md` is part of the work—**do not steal work owned by other nodes or violate explicit exclusions**. Mention unrelated issues in one note in the report.
 - **Parallel dispatch mode**: Edit only your assigned file group. Do not build, run tests, or commit; integration verification runs serially afterward.
 - **Follow the project test tier** (specified in the conductor supplement: `full` / `minimal`, defaulting to `full`):
   - `full`: Add tests for new logic, **locking invariants only**—do not lock formulas, UI snapshots, or implementation details.
@@ -25,7 +26,7 @@
 
 ## Prohibited Actions
 
-- **Do not edit `spec.md`**: It is strictly read-only for execution; criteria belong to the conductor and Review.
+- **Do not edit `intention.md` or `spec.md`**: Both are strictly read-only for execution; criteria belong to the conductor and Review.
 - **Do not dispatch subagents**: Execute only your assigned work. If a spec or method skill calls for batching, delegation, or rescoping, stop and return control to the conductor—batch boundaries, cross-round comparisons, and commit timing are conductor responsibilities.
 - **Do not `git commit` or `git push`**: Committing is handled by the conductor at close.
 - **Contain command side effects**: Commands that start services, spawn processes, or write temporary files must avoid opening browsers, write temp output to the OS temp directory, and use test ports.
@@ -48,7 +49,7 @@ Keep raw evidence out of the body: write raw command output, synthetic samples, 
 Stop immediately and return `FAIL` upon hitting any of the following:
 
 - The issue is confirmed unresolvable in this round after exhausting viable approaches
-- A structural mismatch between the spec and the actual codebase
+- A direct structural conflict between the spec, legacy skeleton/styles, and `intention.md` or read-only references that cannot be resolved within current scope boundaries—**never hide the conflict with a local patch or rationalize it as a "structural trade-off" because spec clauses passed**
 - An uncertain operation with material risk
 - Any irreversible action required (bulk deletes, `git reset --hard`, broad overwrites)
 - A spec or method skill asks for a conductor action (batching, delegating, rescoping)—return to the conductor with `REASON` naming the conductor action and `ATTEMPTS` quoting the source sentence and location
