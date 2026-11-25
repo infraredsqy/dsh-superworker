@@ -29,14 +29,17 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { LEGACY_DIR_NAME, isRecognizableLegacyRecord } from 'superworker-core'
+import { LEGACY_DIR_NAME, isRecognizableLegacyRecord, answer } from 'superworker-core'
 import { apply } from '../src/host/index.ts'
 import { executorOf } from '../src/host/executor.ts'
 import { TOOL_NAME, argvOf } from '../src/host/tool.ts'
+import { instructionContextTextOf } from '../src/host/instruction-context.ts'
 import { hasPipelineRecord, installToolWake, offersTool } from '../src/host/wake.ts'
+import { shippedPluginsDir } from '../src/host/skill-paths.ts'
 import { pinHome } from './helpers/env.mjs'
 import { gitIn } from './helpers/git.mjs'
 import { fakeContext } from './helpers/host-context.mjs'
+import { project as throwaway } from './helpers/superworker-project.mjs'
 
 /**
  * The host face a wake reads: the context, and the opener seam a word that opens a session travels
@@ -325,6 +328,47 @@ test('The tool\'s four layers of help: argv is composed from word / args / help,
   const answer = await ctx.tools.entries[0].definition.execute({ help: true }, { agent: agentOf() })
   assert.equal(answer.code, 0, answer.stderr)
   assert.match(answer.stdout, /superworker -- the agent pipeline/u, 'asked empty-handed, it answers the whole index')
+})
+
+test('A real verb run is the session walking in: help never marks it, a run does', async () => {
+  /* The account's globals reach a session with no line of its own only from its first real verb on.
+   * The walk-in happens here — the tool's own execute path, where the calling session is known — and
+   * the effect is read at the same door the injection reads: the carried text for that session. */
+  const stage = await throwaway('superworker-tool-walkin-')
+  try {
+    const io = { root: stage.root, pluginsDir: shippedPluginsDir() }
+    const said = await answer(['instruction', 'add', '--scope', 'global', '--text', 'a rule the whole project counts by'], io)
+    assert.equal(said.code, 0, said.stderr)
+
+    const { ctx } = context({ cwd: stage.root })
+    apply(ctx)
+    const tool = ctx.tools.entries[0].definition
+    const agent = { id: 'agent-walkin' }
+
+    // Before any call of its own, the session carries nothing — not even the standing rule.
+    assert.equal(await instructionContextTextOf(stage.root, 'agent-walkin'), '')
+
+    // Reading is not arriving: the index, a word's page, a line closed by a help flag — no mark.
+    const index = await tool.execute({ help: true }, { agent })
+    assert.equal(index.code, 0, index.stderr)
+    const page = await tool.execute({ word: 'instruction', help: true }, { agent })
+    assert.equal(page.code, 0, page.stderr)
+    const closed = await tool.execute({ word: 'instruction', args: ['list', '--help'] }, { agent })
+    assert.equal(closed.code, 0, closed.stderr)
+    assert.equal(await instructionContextTextOf(stage.root, 'agent-walkin'), '', 'help answered three times, still not one byte')
+
+    // The first real verb: `instruction list` runs, and from this call on the globals reach the
+    // session's context.
+    const run = await tool.execute({ word: 'instruction', args: ['list'] }, { agent })
+    assert.equal(run.code, 0, run.stderr)
+    const carried = await instructionContextTextOf(stage.root, 'agent-walkin')
+    assert.ok(carried.includes('a rule the whole project counts by'), 'the standing rule reaches the session that walked in')
+
+    // Another session that has not walked in still carries nothing: the mark is per session.
+    assert.equal(await instructionContextTextOf(stage.root, 'agent-elsewhere'), '')
+  } finally {
+    stage.done()
+  }
 })
 
 test('Unloading: the line\'s effects take both trigger lines back and unregister the tool', async () => {

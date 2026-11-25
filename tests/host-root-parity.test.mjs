@@ -31,7 +31,7 @@ import { answer, open, projectRootOf } from 'superworker-core'
 import { canonicalRootOf, workspaceRootOf } from '../src/host/seams.ts'
 import { executorOf, openConsultSession, openNodeSession } from '../src/host/executor.ts'
 import { SuperworkerRecordsGateway } from '../src/host/gateway.ts'
-import { ASSEMBLE_EVENT, INSTRUCTION_CONTEXT_NAME, installInstructionContext } from '../src/host/instruction-context.ts'
+import { ASSEMBLE_EVENT, INSTRUCTION_CONTEXT_NAME, installInstructionContext, markSuperworkerVerbRun } from '../src/host/instruction-context.ts'
 import { advanceLine, dispatchCell } from '../src/host/relay.ts'
 import { shippedPluginsDir } from '../src/host/skill-paths.ts'
 import { defineSuperworkerTool } from '../src/host/tool.ts'
@@ -47,8 +47,11 @@ import { absentError, readPage } from './helpers/workspace-files-port.mjs'
 const pinned = pinHome(['SUPERWORKER_HOME_DIR', 'DSH_HOME'], 'superworker-parity-home-')
 test.after(pinned.restore)
 
-/** The session every case asks about: one id, so the doors cannot be answering about different ones. */
+/** The session every case asks about: one id, so the doors cannot be answering about different ones.
+ * It has walked in — a real verb run, marked here once — so the injection door is judged on the tree
+ * it reads, which is what this file is about, and never on the walk-in gate. */
 const SESSION = 's1'
+markSuperworkerVerbRun(SESSION)
 
 /**
  * A real workspace with a real record in it: the layout the engine itself lays down, then one active

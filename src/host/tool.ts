@@ -16,6 +16,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { answer, describe, longResultPointerOf, type Executor } from 'superworker-core'
+import { markSuperworkerVerbRun } from './instruction-context.ts'
 import { workspaceRootOf } from './seams.ts'
 import { answerHandleOf } from './write.ts'
 
@@ -90,6 +91,21 @@ export function argvOf(args: SuperworkerToolArgs): string[] {
   return [word, ...rest]
 }
 
+/**
+ * Whether one call runs a verb, as opposed to asking for a page: the index (`help`, or no word at
+ * all), a word's own page (`help: true`), and a line closed by a help flag are all reading — the
+ * account's standing constraints reach a session with no line of its own from its first *run* verb
+ * on, so only a run counts. A mid-line help flag is left to the verb's parser like any other
+ * token: such a line is a run attempt, and it counts as one.
+ */
+function runsAVerb(args: SuperworkerToolArgs, argv: readonly string[]): boolean {
+  if (args.help === true) return false
+  const word = argv[0]
+  if (word === undefined || word === 'help') return false
+  const last = argv[argv.length - 1]
+  return last !== '--help' && last !== '-h'
+}
+
 /** One call's canonical value: the words layer's two streams and the exit code. */
 export interface SuperworkerToolValue {
   readonly code: number
@@ -155,6 +171,10 @@ export function defineSuperworkerTool(host: SuperworkerToolHost): SuperworkerToo
       const sessionId = raw as SessionId
       const root = (await workspaceRootOf(host.ctx, { sessionId })).root
       const argv = argvOf(args)
+      // A real verb run is the session walking into the pipeline: from here on, the account's
+      // globals reach this session's context (see `instruction-context.ts`). The word may still
+      // refuse the line — an attempt is arriving all the same.
+      if (runsAVerb(args, argv)) markSuperworkerVerbRun(sessionId)
       const outcome = await answer(argv, {
         ...answerHandleOf(root, { executor: host.executorOf(sessionId, root) }),
         // The tool call carries its cells as argv and owns no stream: `-o -` has no source here, so

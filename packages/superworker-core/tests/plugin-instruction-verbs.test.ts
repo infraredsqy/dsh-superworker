@@ -327,7 +327,7 @@ describe('the visibility matrix: scope x binding state x position', () => {
     { key: 'g', scope: 'global', binding: '—', target: 'stage', spot: 'after the line leaves service', seen: true },
     { key: 'bt', scope: 'global', binding: '—', target: 'boundary', spot: 'default', seen: true },
     { key: 'bt', scope: 'global', binding: '—', target: 'boundary', spot: 'after the line leaves service', seen: true },
-    { key: 'k1', scope: 'cycle', binding: 'in service', target: 'stage', spot: 'default', seen: true },
+    { key: 'k1', scope: 'cycle', binding: 'in service', target: 'stage', spot: 'default', seen: false },
     { key: 'k1', scope: 'cycle', binding: 'in service', target: 'stage', spot: 'on node B', seen: true },
     { key: 'k1', scope: 'cycle', binding: 'in service', target: 'stage', spot: 'after the line leaves service', seen: false },
     { key: 'k2', scope: 'cycle', binding: 'out of service', target: 'stage', spot: 'default', seen: false },
@@ -370,17 +370,25 @@ describe('the visibility matrix: scope x binding state x position', () => {
     expect(rows.includes(ids[key]!)).toBe(seen);
   });
 
-  it('a cycle waiting on an unapproved checkpoint keeps its cycle-scoped instruction in scope until approved', async () => {
+  it('a cycle-bound entry reaches exactly the sessions working its line: held node reads it, the default read does not', async () => {
     const gate = (await superworker.ledger.dag.add({ title: 'gate', mode: 'checkpoint' })).id;
     await superworker.ledger.cycles.create({ id: 'cp', tags: ['coding'] });
     await superworker.ledger.cycles.hold('cp', gate);
     await out(['add', '--scope', 'cycle', '--cycle', 'cp', '--text', 'keep checking cp']);
+    // The line's own reader — a session whose node the line holds — sees its sentence.
+    expect(await idsOf(['list', '--json', '--node', gate])).toEqual(['i-0001']);
+    // A reader that names no node stands on no line: the working rule of `cp` is not its business.
+    expect(await idsOf(['list', '--json'])).toEqual([]);
     await superworker.ledger.dag.setStatus(gate, 'completed');
     await superworker.ledger.cycles.close('cp', { node: gate, result: 'completed' });
-    // holding is empty, but last step is an unapproved checkpoint -> still in scope!
-    expect(await idsOf(['list', '--json'])).toEqual(['i-0001']);
+    // The line paused at its unapproved checkpoint holds nothing, so nobody works a node of its:
+    // even the line's own reader position is gone, and the row reaches no view at all. (The
+    // account views and the panel still carry it; approval puts it back in reach of the next
+    // worker the line holds.)
+    expect(await idsOf(['list', '--json'])).toEqual([]);
+    expect(await idsOf(['list', '--json', '--node', gate])).toEqual([]);
     await superworker.ledger.dag.approve(gate);
-    // approved -> now idle -> out of scope!
+    // approved -> the line is idle; nothing changes about the silence.
     expect(await idsOf(['list', '--json'])).toEqual([]);
   });
 
@@ -545,7 +553,7 @@ describe('list: position, order and the two views', () => {
     expect(await out(['list'])).toContain('reach: every node');
   });
 
-  it("the default view follows the reader's spot: a named node pins it; with two lines side by side and no name it falls back to the wide read", async () => {
+  it("the default view follows the reader's spot: a named node pins it; with no name the read stands on no line and the globals alone are visible", async () => {
     const nodeA = (await superworker.ledger.dag.add({ title: 'A' })).id;
     const nodeB = (await superworker.ledger.dag.add({ title: 'B' })).id;
     await superworker.ledger.cycles.create({ id: 'one', tags: ['coding'] });
@@ -559,8 +567,9 @@ describe('list: position, order and the two views', () => {
     // read; the second is in the second's, so only the second is read.
     expect(await idsOf(['list', '--json', '--node', nodeA])).toEqual(['i-0001']);
     expect(await idsOf(['list', '--json', '--node', nodeB])).toEqual(['i-0002']);
-    // Nobody is named: the spot cannot be pinned, so the read goes wide — both lines in service count.
-    expect(await idsOf(['list', '--json'])).toEqual(expect.arrayContaining(['i-0001', 'i-0002']));
+    // Nobody is named: the reader stands on no line, and a working rule of one line is nobody
+    // else's business — neither line's sentence is read out, to anybody.
+    expect(await idsOf(['list', '--json'])).toEqual([]);
   });
 
   it('an old record with no binding is visible everywhere; an unrecognized scope word reads as global; a retired word reads nowhere', async () => {
@@ -609,9 +618,10 @@ describe('list: position, order and the two views', () => {
     const fullBook = await idsOf(['list', '--all', '--json']);
     // Scope is worked out on every read and never written: after three readings the bytes are as they were.
     expect(readFileSync(file, 'utf8')).toBe(before);
-    expect(defaultView).toEqual(['i-0002']);
-    // Naming the second node still pins the same line (one, that node), so the line constraint reads.
-    expect(namedNodeB).toEqual(['i-0002']);
+    // No name, no position: the line constraint reaches nobody here (the archived global stays
+    // archived), and node B is in nobody's hand, so even naming it pins nothing.
+    expect(defaultView).toEqual([]);
+    expect(namedNodeB).toEqual([]);
     expect(fullBook).toEqual(['i-0001', 'i-0002']);
   });
 
@@ -624,7 +634,7 @@ describe('list: position, order and the two views', () => {
     expect(readFileSync(join(root, '.superworker', 'instructions.json'), 'utf8')).toContain('some other word');
   });
 
-  it('naming a node nobody holds: the spot cannot be pinned, so the read goes wide', async () => {
+  it('naming a node nobody holds pins nothing: the globals alone are visible', async () => {
     const nodeA = (await superworker.ledger.dag.add({ title: 'A' })).id;
     const nodeB = (await superworker.ledger.dag.add({ title: 'B' })).id;
     const nodeC = (await superworker.ledger.dag.add({ title: 'C' })).id;
@@ -634,10 +644,13 @@ describe('list: position, order and the two views', () => {
     await superworker.ledger.cycles.hold('two', nodeB);
     await out(['add', '--scope', 'cycle', '--cycle', 'one', '--text', 'constraint of line one']);
     await out(['add', '--scope', 'cycle', '--cycle', 'two', '--text', 'constraint of line two']);
+    await add('constraint everywhere');
 
     // The third node is on the graph but nobody holds it: the only way to pin a spot fails, so no
-    // spot is given and the read goes wide.
-    expect((await idsOf(['list', '--json', '--node', nodeC])).sort()).toEqual(['i-0001', 'i-0002']);
+    // spot is given — and standing on no line, the reader sees the globals alone.
+    expect(await idsOf(['list', '--json', '--node', nodeC])).toEqual([entries().at(-1)!.id]);
+    // The same read without a name: no position either, same answer.
+    expect(await idsOf(['list', '--json'])).toEqual([entries().at(-1)!.id]);
   });
 
   it('--project names another project root; a root with no record directory reads as an empty account', async () => {

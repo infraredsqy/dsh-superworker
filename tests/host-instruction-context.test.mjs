@@ -32,6 +32,7 @@ import {
   instructionListArgv,
   instructionListMarkArgv,
   instructionTextViewOf,
+  markSuperworkerVerbRun,
   withInstructionText,
 } from '../src/host/instruction-context.ts'
 import { PANEL_PREF_FIELDS } from '../src/host/settings-fields.ts'
@@ -105,9 +106,10 @@ test('the carried text is the word\'s own reader view, byte for byte', async () 
   try {
     await say(stage, 'keep one entry per sentence')
     await say(stage, 'read the record before writing a conclusion')
+    markSuperworkerVerbRun('s1')
 
     const printed = await readerView(stage.root)
-    const carried = await instructionContextTextOf(stage.root)
+    const carried = await instructionContextTextOf(stage.root, 's1')
 
     assert.equal(carried, printed.replace(/\n+$/u, ''), 'the context carries the listing verbatim (the joiner supplies its own line ends)')
     assert.match(carried, /^This project has 2 instruction\(s\) visible from this step:$/mu)
@@ -123,13 +125,14 @@ test('one entry changed: the next read is the new text, not the old one', async 
   const stage = await throwaway('superworker-instruction-context-')
   try {
     await say(stage, 'first constraint')
-    const before = await instructionContextTextOf(stage.root)
+    markSuperworkerVerbRun('s1')
+    const before = await instructionContextTextOf(stage.root, 's1')
     assert.ok(before.includes('first constraint'))
 
     const [first] = await idsOn(stage)
     await answer(['instruction', 'resolve', first, '--state', 'withdrawn'], ioAt(stage.root))
     await say(stage, 'second constraint')
-    const after = await instructionContextTextOf(stage.root)
+    const after = await instructionContextTextOf(stage.root, 's1')
 
     assert.notEqual(after, before, 'a change on the account is a change in the text')
     assert.ok(after.includes('second constraint'))
@@ -195,6 +198,7 @@ test('the contribution: its own name, an order among the workspace facts, and th
   const stage = await throwaway('superworker-instruction-context-')
   try {
     await say(stage, 'carried into the step')
+    markSuperworkerVerbRun('s1')
     const { ctx, registered, assemble } = contextWithPrompt(stage.root)
     const off = installInstructionContext(ctx, {})
     try {
@@ -230,6 +234,7 @@ test('the switch: off means not one byte, on the assembly and on the provider al
   const stage = await throwaway('superworker-instruction-context-')
   try {
     await say(stage, 'a constraint the switch can silence')
+    markSuperworkerVerbRun('s1')
     const { ctx, registered, assemble } = contextWithPrompt(stage.root)
     const off = installInstructionContext(ctx, { [PANEL_PREF_FIELDS.injectInstructions]: false })
     try {
@@ -248,6 +253,7 @@ test('the switch in the shape the real host hands it: a volatile reference, read
   const stage = await throwaway('superworker-instruction-context-')
   try {
     await say(stage, 'a constraint a reference-shaped switch can silence')
+    markSuperworkerVerbRun('s1')
     /* A volatile settings field is not a plain value: the resolved config carries it as a stable
      * reference whose `get()` answers the current snapshot — the shape pinned for the relay switch in
      * `tests/host-relay.test.mjs`. Only a plain boolean was fed here before, so a reference read as
@@ -310,6 +316,7 @@ test('a session working in a linked worktree carries its main tree\'s listing, n
 
     await open(main).ledger.init()
     await say({ root: main }, 'a constraint that has to reach the worktree session')
+    markSuperworkerVerbRun('s1')
 
     /* The two facts the old gate read at the raw session root: no record under it, and a checkout
      * this is. Looked for there, the gate emptied every worktree session. */
@@ -392,6 +399,8 @@ test('two lines in parallel: each session carries its own line\'s listing, not t
       const said = await answer(['instruction', 'add', '--scope', 'cycle', '--cycle', line, '--text', text], ioAt(stage.root))
       assert.equal(said.code, 0, said.stderr)
     }
+    /* One standing constraint of the whole project, beside the two line-scoped ones. */
+    await say(stage, 'a rule the whole project counts by')
 
     /* The record's own attribution: the opener notes each session under its node. */
     await open(stage.root).sessions.note('n-a', 'run', 's1')
@@ -413,13 +422,76 @@ test('two lines in parallel: each session carries its own line\'s listing, not t
       assert.ok(registered[0].text({ agent: { id: 's1' } }).includes('only the first line hears this'))
       assert.ok(registered[0].text({ agent: { id: 's2' } }).includes('only the second line hears this'))
 
-      /* The stated fallback: a session no note claims (s3) is asked with no position at all, so it
-       * answers the plugin's own default read — with two lines side by side and no node named, that
-       * is the wide read, both lines' sentences. What this pins is that the host invented no
-       * position: it did not hand the unattributed session a listing it made up. */
+      /* A session no `run` note claims stands on no line, and has not walked in yet: not one byte —
+       * neither line's working rule, and not even the project's standing rule. What this pins is
+       * that the host invented no position and carried no constraint for a session the record
+       * cannot place. */
       const unnamed = await assemble(freshAssembly(), { id: 's3' })
-      assert.ok(unnamed.contexts[0].text.includes('only the first line hears this'), 'the unattributed session carries the wide read')
-      assert.ok(unnamed.contexts[0].text.includes('only the second line hears this'), 'which is both lines, since no single line can be pinned down')
+      assert.equal(unnamed.contexts[0].text, '', 'the unattributed, unentered session carries nothing at all')
+
+      /* The same session, after it has actually run a verb of its own: the globals reach it now —
+       * the project's standing rule — but the two lines' working rules still do not. A line's
+       * sentence is for the sessions working that line, and s3 works nothing. */
+      markSuperworkerVerbRun('s3')
+      const entered = await assemble(freshAssembly(), { id: 's3' })
+      assert.ok(entered.contexts[0].text.includes('a rule the whole project counts by'), 'the globals reach the session that walked in')
+      assert.ok(!entered.contexts[0].text.includes('only the first line hears this'), 'the first line\'s rule is still not its business')
+      assert.ok(!entered.contexts[0].text.includes('only the second line hears this'), 'and neither is the second line\'s')
+    } finally {
+      off()
+    }
+  } finally {
+    stage.done()
+  }
+})
+
+test('the dispatch claim pins; a birth note claims nothing', async () => {
+  const stage = await throwaway('superworker-instruction-context-')
+  try {
+    /* One line holding one node, with a line-scoped sentence and a global one. */
+    writeFileSync(join(stage.root, '.superworker', 'ideas.json'), JSON.stringify({
+      nodes: {
+        'n-a': { status: 'todo', title: 'first', mode: 'auto', dependencies: [] },
+        'n-b': { status: 'todo', title: 'second', mode: 'auto', dependencies: [] },
+      },
+    }))
+    writeFileSync(join(stage.root, '.superworker', 'state.json'), JSON.stringify({
+      cycles: [
+        { id: 'line-a', status: 'active', tags: [], holding: [{ id: 'n-a', since: '2026-10-18T00:00:00Z' }], path: [] },
+      ],
+    }))
+    await answer(['instruction', 'add', '--scope', 'cycle', '--cycle', 'line-a', '--text', 'the working rule of line-a'], ioAt(stage.root))
+    await say(stage, 'a rule the whole project counts by')
+
+    /* s-run is the node's worker (the opener's dispatch claim); s-born is only the conversation the
+     * node was created in (`dag add`'s birth note); s-both is a session the engine once noted as
+     * another node's birth conversation that later became this node's worker. */
+    await open(stage.root).sessions.note('n-a', 'run', 's-run')
+    await open(stage.root).sessions.note('n-a', 'discussion', 's-born')
+    await open(stage.root).sessions.note('n-b', 'discussion', 's-both')
+    await open(stage.root).sessions.note('n-a', 'run', 's-both')
+
+    const { ctx, registered, assemble } = contextWithPrompt(stage.root)
+    const off = installInstructionContext(ctx, {})
+    try {
+      /* The worker reads its line's working rule, pinned by its own dispatch claim — mark or no
+       * mark, the position alone decides. */
+      const worker = await assemble(freshAssembly(), { id: 's-run' })
+      assert.ok(worker.contexts[0].text.includes('the working rule of line-a'), 'the dispatch claim pins the line')
+      assert.ok(worker.contexts[0].text.includes('a rule the whole project counts by'), 'and the globals ride with it')
+
+      /* The birth conversation claims nothing: without a mark it carries nothing at all. */
+      const born = await assemble(freshAssembly(), { id: 's-born' })
+      assert.equal(born.contexts[0].text, '', 'a session that only created the node stands on no line and has not walked in')
+      markSuperworkerVerbRun('s-born')
+      const bornEntered = await assemble(freshAssembly(), { id: 's-born' })
+      assert.ok(bornEntered.contexts[0].text.includes('a rule the whole project counts by'), 'after walking in it reads the globals')
+      assert.ok(!bornEntered.contexts[0].text.includes('the working rule of line-a'), 'but the line\'s working rule is still not its business')
+
+      /* The two-claimant fix: a birth note beside the dispatch claim does not unpin the worker —
+       * only `run` notes attribute, so one `run` claim is exactly one position. */
+      const both = await assemble(freshAssembly(), { id: 's-both' })
+      assert.ok(both.contexts[0].text.includes('the working rule of line-a'), 'the birth note beside the claim does not unpin the worker')
     } finally {
       off()
     }

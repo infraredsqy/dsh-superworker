@@ -28,7 +28,8 @@
  * with a retired scope word is skipped by every read (the level it named is gone); it stays on the
  * account byte for byte, `rm` still takes it off, and the account views say how many are sitting
  * there. `list` keeps `--node`, and it names a *position*, not a level: which node the reader holds,
- * which pins the line the read stands on when two lines run side by side.
+ * which pins the line the read stands on when two lines run side by side. No name, no position: a
+ * reader that cannot say which node it works stands on no line, and the globals alone are visible.
  *
  * Which cycle a new entry binds to is decided here, and it is the same decision as before:
  * take what the caller named (the named cycle has to be in the line account), otherwise take the
@@ -51,7 +52,6 @@ import {
   VALID_TARGETS,
   readCycles,
   readInstructions,
-  readNodes,
   short,
   withInstructionsLock,
   writeInstructions,
@@ -200,16 +200,17 @@ function scopeBinding(entry) {
 
 /**
  * The visibility decision (a pure function, THE one): whether an entry is visible from where the
- * reader stands. With a position the comparison is exact against the binding; without one it falls
- * back to a wide read — the bound line is still active — so an entry that cannot be pinned down is
- * read out rather than held back (missing a real constraint costs far more than reading one row too
- * many).
+ * reader stands. A position is the reader's own claim — the node it works, pinned to its line by
+ * the holding — and the comparison is exact against the binding: a line's entries reach exactly
+ * the sessions working that line's nodes, and nobody else. Without a position the cycle-bound rows
+ * are held back, not read out: a working rule of one line is nobody else's business, and silence
+ * costs the outside reader nothing.
  */
-function inScope(entry, activeCycleIds, readerCycle) {
+function inScope(entry, readerCycle) {
   const [kind, bound] = scopeBinding(entry)
   if (kind === 'cycle') {
-    if (readerCycle !== null) return bound === readerCycle
-    return activeCycleIds.has(bound)
+    if (readerCycle === null) return false
+    return bound === readerCycle
   }
   return true
 }
@@ -255,80 +256,19 @@ function holdingIds(record) {
   return out
 }
 
-/** Parse both UTC timestamp spellings to epoch microseconds; null when unrecognised. */
-function momentToUs(value) {
-  if (typeof value !== 'string') return null
-  const seconds = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/.exec(value)
-  if (seconds !== null) {
-    const [, y, m, d, h, mi, s] = seconds
-    return Date.UTC(Number(y), Number(m) - 1, Number(d), Number(h), Number(mi), Number(s)) * 1000
-  }
-  const micro = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{6})Z$/.exec(value)
-  if (micro !== null) {
-    const [, y, m, d, h, mi, s, frac] = micro
-    return (
-      Date.UTC(Number(y), Number(m) - 1, Number(d), Number(h), Number(mi), Number(s)) * 1000 +
-      Number(frac)
-    )
-  }
-  return null
-}
-
-/** Whether a checkpoint delivery has been approved (`approved_at >= completed_at`). */
-function deliveryApproved(node) {
-  const approved = node?.approved_at
-  const completed = node?.completed_at
-  if (typeof approved !== 'string' || typeof completed !== 'string' || approved === '' || completed === '') return false
-  const a = momentToUs(approved)
-  const c = momentToUs(completed)
-  if (a !== null && c !== null) return a >= c
-  return approved >= completed
-}
-
-/**
- * Whether a cycle is in scope for cycle-scoped instructions: either holding nodes (`running`),
- * or paused at a human gate (`waiting`: unapproved completed checkpoint, or shelved stop).
- */
-function isLineInScope(record, nodes) {
-  if (holdingIds(record).length > 0) return true
-  const path = Array.isArray(record.path) ? record.path : []
-  const last = path[path.length - 1]
-  if (last === undefined || last === null || typeof last !== 'object') return false
-  const nodeId = typeof last.node === 'string' ? last.node : ''
-  if (nodeId === '') return false
-  const node = nodes[nodeId]
-  if (node === undefined || node === null || typeof node !== 'object') return false
-  if (last.result === 'completed' && node.status === 'completed' && node.mode === 'checkpoint' && !deliveryApproved(node)) {
-    return true
-  }
-  const whenShelved = record.policies && typeof record.policies === 'object' ? record.policies.when_shelved : undefined
-  if (last.result !== 'completed' && whenShelved !== 'continue' && node.status === 'shelved') {
-    return true
-  }
-  return false
-}
-
 /**
  * Where the reader stands: `(line, node)`, both halves null when it cannot be given.
- * A named node pins the unique line holding it; without a named node, the unique line currently
- * holding nodes pins the position.
+ * Only a named node pins a position — the unique line currently holding it. With no name there is
+ * no position: the account does not invent one out of the running book, so a reader that cannot
+ * say which node it works stands on no line, and the globals alone are visible.
  */
 function positionOf(cycles, namedNode) {
-  let cycle
-  if (namedNode !== null) {
-    const hits = cycles.filter((record) => holdingIds(record).includes(namedNode))
-    if (hits.length !== 1) return { cycle: null, node: null }
-    cycle = hits[0]
-  } else {
-    const running = cycles.filter((record) => holdingIds(record).length > 0)
-    if (running.length !== 1) return { cycle: null, node: null }
-    cycle = running[0]
-  }
-  const cycleId = typeof cycle.id === 'string' ? cycle.id : null
+  if (namedNode === null) return { cycle: null, node: null }
+  const hits = cycles.filter((record) => holdingIds(record).includes(namedNode))
+  if (hits.length !== 1) return { cycle: null, node: null }
+  const cycleId = typeof hits[0].id === 'string' ? hits[0].id : null
   if (cycleId === null) return { cycle: null, node: null }
-  if (namedNode !== null) return { cycle: cycleId, node: namedNode }
-  const holding = holdingIds(cycle)
-  return { cycle: cycleId, node: holding.length > 0 ? holding[0] : null }
+  return { cycle: cycleId, node: namedNode }
 }
 
 /** The binding of a new entry: named first (and checked), then the single running line and the node it holds. */
@@ -391,7 +331,7 @@ function jsonText(value) {
 function nothingVisibleLines(total) {
   return [
     'No instruction is visible from this step.',
-    `(The instruction record has ${total} entries: they are bound to another line, or they are no longer in force. When the position cannot be pinned down these entries are still read out -- reading as empty means they really cannot reach this step.)`,
+    `(The instruction record has ${total} entries: the cycle-bound ones reach only the sessions working their own line's nodes, and the others are no longer in force. Reading as empty here means they really cannot reach this step.)`,
   ]
 }
 
@@ -541,14 +481,10 @@ async function cmdList(args, ctx) {
 
   if (!accountView) {
     const cycles = await readCycles(ctx.root, ctx.base)
-    const nodes = await readNodes(ctx.root, ctx.base)
     const position = positionOf(cycles, node ?? null)
-    const inScopeCycles = new Set(
-      cycles.filter((record) => isLineInScope(record, nodes)).map((record) => record.id).filter((id) => typeof id === 'string'),
-    )
     const visible = rows
       .filter((entry) => isLive(entry))
-      .filter((entry) => inScope(entry, inScopeCycles, position.cycle))
+      .filter((entry) => inScope(entry, position.cycle))
       .map(readerRow)
     if (json === true) {
       // The machine's view carries the four structural cells and nothing else.

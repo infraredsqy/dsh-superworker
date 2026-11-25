@@ -117,18 +117,10 @@ export async function writeInstructions(root, data, base) {
   await base.writeJson(instructionsPath(root), data)
 }
 
-// ═══ The one other record this layer reads (never writes) ═══════════════════
-
 /** The line account: `state.json`'s `cycles` table, read as records. */
 export async function readCycles(root, base) {
   const data = await readJsonRecord(join(recordDir(root), 'state.json'), 'state.json', base)
   return Array.isArray(data.cycles) ? data.cycles.filter(isRecord) : []
-}
-
-/** The graph account: `ideas.json`'s `nodes` table, read as records. */
-export async function readNodes(root, base) {
-  const data = await readJsonRecord(join(recordDir(root), 'ideas.json'), 'ideas.json', base)
-  return isRecord(data.nodes) ? data.nodes : {}
 }
 
 function isRecord(value) {

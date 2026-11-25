@@ -27,16 +27,19 @@
  * project root the flag changes nothing, so the text is byte for byte what `instruction list` prints
  * when run there.
  *
- * **The position the word is asked from is the session's own.** An instruction has two levels — the
- * project and one line — and a session's line is not written on the session anywhere: what the record
- * does say is which node the session works (its session notes), and a node is held by one line. So the
- * argv names the node (`--node`), the plugin reads the line the node is in hand on, and the
- * constraints bound to that line are what the session gets. Two lines running side by side therefore
- * hand their sessions two different listings, not both lines' sentences to each. When no note names
- * the session (a consult, a hand-opened session, a note this machine does not hold), no `--node` goes
- * in: the fallback is the plugin's own default read, which for two active lines is the wide read —
- * the host declines to invent a position it does not know, and the position rule stays the plugin's
- * one judgment, stated here as the chosen fallback.
+ * **The position the word is asked from is the session's own — or nobody's.** An instruction has two
+ * levels — the project and one line — and a session's line is not written on the session anywhere:
+ * what the record does say is which node the session works (its session notes, the `run` half the
+ * opener writes at dispatch), and a node is held by one line. So the argv names the node (`--node`),
+ * the plugin reads the line the node is in hand on, and the constraints bound to that line are what
+ * the session gets. Two lines running side by side therefore hand their sessions two different
+ * listings, not both lines' sentences to each. When no `run` note names the session — a consult, a
+ * hand-opened session, a note this machine does not hold — no `--node` goes in, and the account
+ * hands that session the globals alone: a working rule of one line is nobody else's business, and
+ * the reader view that says so is the plugin's own judgment, stated here as the chosen fallback.
+ * The globals reach an unattributed session only once it has actually run a verb of its own
+ * ({@link markSuperworkerVerbRun}): a session that has never touched the pipeline carries not one
+ * byte, however standing the constraints are — out of sight until the session walks in.
  *
  * **Four silences, and none of them is a box.** No record, a record whose entries cannot reach this
  * step, a record whose entries are all archived, and a host without the plugin each contribute
@@ -147,11 +150,37 @@ const carried = new BoundedMap<string, string>(PER_ROOT_STATE_CAP)
 const carriedKeyOf = (root: string, id: string): string => `${root}\u0000${id}`
 
 /**
+ * The sessions that have actually run a superworker verb through the agent-facing tool, in this
+ * process. The globals of the account reach a session with no line of its own only from its first
+ * real verb on — before that, not one byte: a session that has never touched the pipeline carries
+ * no standing constraints at all. Help pages and the index are reading, not arriving; the tool side
+ * decides which calls count and calls this for them. The table stays bounded ({@link BoundedMap}) —
+ * a long host keeps meeting new sessions, and a session nobody injects for any more gives its seat
+ * up; a seat given away simply returns the session to silence, which is the state it started in.
+ */
+const verbRunSessions = new BoundedMap<string, true>(PER_ROOT_STATE_CAP)
+
+/**
+ * Record that the named session has run a real verb. Called from the tool's execute path, where the
+ * calling session's id is in hand; a call without an identity marks nothing (the tool refuses those
+ * before any word runs).
+ */
+export function markSuperworkerVerbRun(sessionId: string): void {
+  if (sessionId !== '') verbRunSessions.set(sessionId, true)
+}
+
+/** Whether the named session has run a verb here: the gate the unattributed read passes through. */
+function verbRunBy(sessionId: string | undefined): boolean {
+  return sessionId !== undefined && verbRunSessions.get(sessionId) === true
+}
+
+/**
  * Which node the named session is this line's worker on, read out of the record's own session
- * notes — the one attribution the record keeps (the opener notes the session it minted under its
- * node; the engine notes the session a node was born in). A session claimed by exactly one node
- * names a position; a session two nodes claim, or no node claims (a consult, a hand-opened
- * session), names none, and answers `undefined`.
+ * notes — the one attribution the record keeps, and the `run` half alone: the opener notes the
+ * session it minted under its node, and that dispatch claim is the whole fact. A session the
+ * engine noted as a node's birth conversation (`discussion`) claims nothing — creating or talking
+ * about a node is not working it. A session claimed by exactly one node names a position; a
+ * session two nodes claim, or no node claims, answers `undefined`.
  *
  * @param accountRoot - The resolved root the record sits in (a worktree checkout already led back
  *   to its main tree).
@@ -165,7 +194,7 @@ async function nodeOfSession(accountRoot: string, sessionId: string): Promise<st
     return undefined
   }
   const claiming = rows
-    .filter((row) => [...row.note.run, ...row.note.discussion].some((entry) => entry.session === sessionId))
+    .filter((row) => row.note.run.some((entry) => entry.session === sessionId))
     .map((row) => row.node)
   return claiming.length === 1 ? claiming[0] : undefined
 }
@@ -179,14 +208,16 @@ async function nodeOfSession(accountRoot: string, sessionId: string): Promise<st
  * the marks is what admits the bytes in between.
  * @param root - The session's workspace root.
  * @param sessionId - The session asking; when named, the word is asked with the cell that session
- *   works (the record's session notes are the one attribution), so two lines running side by side
- *   hand their sessions two different listings. A session no note names gets the plugin's default
- *   read — **the chosen fallback**: no `--node` goes in rather than an invented position, because
- *   the plugin's own default is exactly what any caller that cannot name a position answers, and
- *   naming nothing keeps the position rule in the plugin's one place instead of guessing it here.
+ *   works (the record's `run` notes are the one attribution), so two lines running side by side
+ *   hand their sessions two different listings. A session no `run` note names stands on no line:
+ *   the word is asked with no position, the account answers the globals alone — and until that
+ *   session has run a real verb here ({@link markSuperworkerVerbRun}), not one byte is carried at
+ *   all. Naming nothing keeps the position rule in the plugin's one place instead of guessing it
+ *   here; the gate keeps even the globals out of a session that has never walked in.
  */
 export async function instructionContextTextOf(root: string, sessionId?: string): Promise<string> {
   const node = sessionId === undefined ? undefined : await nodeOfSession(projectRootOf(undefined, root), sessionId)
+  if (node === undefined && !verbRunBy(sessionId)) return ''
   const mark = await answer(instructionListMarkArgv(root, node), answerHandleOf(root))
   if (!instructionListingHeldBy(mark)) return ''
   const view = await answer(instructionListArgv(root, node), answerHandleOf(root))
